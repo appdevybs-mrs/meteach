@@ -11,6 +11,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+    uses-material-design: true
+
 
   cupertino_icons: ^1.0.8
 
@@ -29,3 +31,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/ybs_logo.png
+    - assets/kb/academy_kb.json
+
