@@ -11,11 +11,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-    uses-material-design: true
-
 
   cupertino_icons: ^1.0.8
-
   speech_to_text: ^7.3.0
   permission_handler: ^11.3.1
   flutter_tts: ^4.0.2
@@ -24,12 +21,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/ybs_logo.png
-    - assets/kb/academy_kb.json
-

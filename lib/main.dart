@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'LearnerDashboard.dart';
 
 void main() {
   runApp(const DreamEnglishAcademyApp());
@@ -877,6 +878,20 @@ class ClassroomHome extends StatelessWidget {
                           height: 1.4,
                         ),
                       ),
+                      const SizedBox(height: 16),
+
+                      // ✅ Dummy enroll button
+                      FilledButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const LearnerDashboard(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.how_to_reg_rounded),
+                        label: const Text('Enroll (Demo)'),
+                      ),
                     ],
                   ),
                 ),
@@ -937,3 +952,4 @@ class StoriesHome extends StatelessWidget {
     );
   }
 }
+
