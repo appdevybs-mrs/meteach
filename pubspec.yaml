@@ -1,0 +1,31 @@
+name: dream_english_academy
+description: "Dream English Academy – Assistant, Classroom, Stories"
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.10.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  speech_to_text: ^7.3.0
+  permission_handler: ^11.3.1
+  flutter_tts: ^4.0.2
+  shared_preferences: ^2.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/ybs_logo.png
