@@ -1270,12 +1270,28 @@ class _CourseLite {
 
   static List<String> _parseList(dynamic v) {
     if (v == null) return [];
-    if (v is List) return v.map((e) => e.toString()).toList();
-    if (v is String) {
-      return v.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+
+    if (v is List) {
+      return v.map((e) => e.toString()).toList();
     }
+
+    if (v is Map) {
+      final entries = v.entries.toList()
+        ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
+      return entries.map((e) => e.value.toString()).toList();
+    }
+
+    if (v is String) {
+      return v
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+
     return [];
   }
+
 
   static double? _parseDouble(dynamic v) {
     if (v == null) return null;
@@ -1299,33 +1315,45 @@ class _CourseLite {
   }
 
   factory _CourseLite.fromMap(String id, Map<dynamic, dynamic> m) {
+    String pickString(List<String> keys) {
+      for (final k in keys) {
+        final v = m[k];
+        if (v != null && v.toString().trim().isNotEmpty) return v.toString();
+      }
+      return '';
+    }
+
     return _CourseLite(
       id: id,
-      title: (m['title'] ?? '').toString(),
-      thumb: _fixUrl((m['thumbnail'] ?? '').toString()),
-      shortDesc: (m['short_description'] ?? '').toString(),
-      longDesc: (m['long_description'] ?? '').toString(),
-      content: (m['content'] ?? '').toString(),
-      duration: (m['duration'] ?? '').toString(),
-      level: (m['level'] ?? '').toString(),
-      language: (m['language'] ?? '').toString(),
+      title: pickString(['title']),
+      thumb: _fixUrl(pickString(['thumbnail', 'thumb', 'image'])),
+      shortDesc: pickString(['short_description', 'shortDesc']),
+      longDesc: pickString(['long_description', 'longDesc']),
+      content: pickString(['content', 'what_you_will_learn']),
 
-      // handle both formats
-      deliveryOptions: _parseList(m['delivery_options']),
-      deliveryOptionRaw: (m['delivery_option'] ?? '').toString(),
+      duration: pickString(['duration']),
+      level: pickString(['level']),
+      language: pickString(['language']),
 
-      instructors: _parseList(m['instructors']),
+      // ✅ support both: delivery_options (array) and delivery_option (string)
+      deliveryOptions: _parseList(m['delivery_options'] ?? m['deliveryOptions']),
+      deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
 
-      pricePerMonth: _parseDouble(m['price_per_month']),
-      pricePerLevel: _parseDouble(m['price_per_level']),
-      accessType: (m['access_type'] ?? '').toString(),
-      requirements: (m['requirement'] ?? '').toString(),
+      instructors: _parseList(m['instructors'] ?? m['teacher'] ?? m['teachers']),
+
+      pricePerMonth: _parseDouble(m['price_per_month'] ?? m['pricePerMonth']),
+      pricePerLevel: _parseDouble(m['price_per_level'] ?? m['pricePerLevel']),
+
+      accessType: pickString(['access_type', 'accessType']),
+      requirements: pickString(['requirement', 'requirements']),
+
       tags: _parseList(m['tags']),
-      status: (m['status'] ?? '').toString(),
-      category: (m['category'] ?? 'Other').toString(),
-      updatedAt: _parseInt(m['updatedAt']),
+      status: pickString(['status']),
+      category: pickString(['category']).isEmpty ? 'Other' : pickString(['category']),
+      updatedAt: _parseInt(m['updatedAt'] ?? m['updated_at']),
     );
   }
+
 }
 
 
@@ -1456,18 +1484,6 @@ class _CategoryRow extends StatelessWidget {
   }
 }
 
-// =========================
-// REPLACE EVERYTHING WITH THIS
-// ( _CourseCardMini, _PrettyChip, _Section, _InfoTile, _CourseDetailsSheet )
-// ✅ Adds: Enroll flow -> popup form -> saves to Realtime DB under: subscriptions/<pushId>
-// ✅ Saves: courseId + courseTitle + name + lastName + phone + createdAt
-// ✅ Fixes overflow in mini card by using Expanded on description
-// =========================
-
-// =========================
-// DROP-IN FINAL SECTION
-// Keep ONLY ONE copy in the file
-// =========================
 
 class _CourseCardMini extends StatelessWidget {
   const _CourseCardMini({required this.course});
@@ -1681,14 +1697,16 @@ class _CourseDetailsSheet extends StatelessWidget {
   const _CourseDetailsSheet({required this.course});
   final _CourseLite course;
 
-  String _priceText() {
+  List<String> _priceLines() {
     final pm = course.pricePerMonth;
     final pl = course.pricePerLevel;
 
-    if (pm != null && pm > 0) return '${pm.toStringAsFixed(0)} DA / month';
-    if (pl != null && pl > 0) return '${pl.toStringAsFixed(0)} DA / level';
-    return '';
+    final out = <String>[];
+    if (pm != null && pm > 0) out.add('${pm.toStringAsFixed(0)} DA / month');
+    if (pl != null && pl > 0) out.add('${pl.toStringAsFixed(0)} DA / level');
+    return out;
   }
+
 
   Widget _hero() {
     if (course.thumb.trim().isEmpty) {
@@ -1870,7 +1888,11 @@ class _CourseDetailsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final price = _priceText();
+    final prices = _priceLines();
+    final deliveryText = course.deliveryOptions.isNotEmpty
+        ? course.deliveryOptions.join(', ')
+        : course.deliveryOptionRaw.trim();
+
 
     return SafeArea(
       child: Padding(
@@ -1899,11 +1921,46 @@ class _CourseDetailsSheet extends StatelessWidget {
                     _PrettyChip(icon: Icons.bar_chart_rounded, label: course.level),
                   if (course.language.trim().isNotEmpty)
                     _PrettyChip(icon: Icons.language_rounded, label: course.language),
-                  if (course.deliveryOptions.isNotEmpty)
+                  if (deliveryText.isNotEmpty)
                     _PrettyChip(
                       icon: Icons.videocam_rounded,
-                      label: course.deliveryOptions.join(', '),
+                      label: deliveryText,
                     ),
+                  const SizedBox(height: 18),
+
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      if (course.category.trim().isNotEmpty)
+                        _InfoTile(icon: Icons.category_rounded, text: course.category),
+
+                      if (course.accessType.trim().isNotEmpty)
+                        _InfoTile(icon: Icons.lock_open_rounded, text: course.accessType),
+
+                      if (course.instructors.isNotEmpty)
+                        _InfoTile(
+                          icon: Icons.people_alt_rounded,
+                          text: course.instructors.join(', '),
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  if (course.content.trim().isNotEmpty)
+                    _Section(
+                      title: 'What you will learn',
+                      child: Text(
+                        course.content,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          height: 1.55,
+                          color: Brand.mainText.withOpacity(0.85),
+                        ),
+                      ),
+                    ),
+
+
                   if (course.duration.trim().isNotEmpty)
                     _PrettyChip(icon: Icons.schedule_rounded, label: course.duration),
                 ],
@@ -1911,7 +1968,7 @@ class _CourseDetailsSheet extends StatelessWidget {
 
               const SizedBox(height: 18),
 
-              if (price.isNotEmpty)
+              if (prices.isNotEmpty)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
@@ -1921,24 +1978,34 @@ class _CourseDetailsSheet extends StatelessWidget {
                     border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Icon(Icons.payments_rounded, color: Brand.actionOrange),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          price,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: Brand.actionOrange,
-                            fontSize: 16,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: prices
+                              .map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              p,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: Brand.actionOrange,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ))
+                              .toList(),
                         ),
                       ),
                     ],
                   ),
                 ),
 
-              if (price.isNotEmpty) const SizedBox(height: 18),
+
+              if (prices.isNotEmpty) const SizedBox(height: 18),
 
               if (course.longDesc.trim().isNotEmpty)
                 _Section(
