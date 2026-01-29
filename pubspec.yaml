@@ -13,10 +13,28 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
+
+  # 🎤 Speech & TTS
   speech_to_text: ^7.3.0
-  permission_handler: ^11.3.1
   flutter_tts: ^4.0.2
+
+  # 🔐 Permissions & storage
+  permission_handler: ^11.3.1
   shared_preferences: ^2.2.3
+
+  # 🔥 Firebase
+  firebase_core: ^3.0.0
+  firebase_database: ^11.0.0
+  firebase_auth: ^5.1.0
+
+  # 🔑 Google Sign-In
+  google_sign_in: ^6.2.1
+
+  # 📸 Image picker (thumbnail upload)
+  image_picker: ^1.1.2
+
+  # 🌐 HTTP (PHP upload endpoint)
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

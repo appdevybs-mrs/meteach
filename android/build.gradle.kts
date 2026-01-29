@@ -1,3 +1,17 @@
+import org.gradle.api.file.Directory
+import org.gradle.api.tasks.Delete
+
+// ✅ Needed so Gradle can find com.google.gms.google-services
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
+
 allprojects {
     repositories {
         google()

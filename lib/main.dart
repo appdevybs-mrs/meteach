@@ -4,10 +4,29 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'LearnerDashboard.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'admin/admin_home.dart';
 
-void main() {
+// Keeping your imports (even if not used yet) so nothing breaks in your project
+import 'LearnerDashboard.dart';
+import 'auth/auth_gate.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(); // uses google-services.json on Android
   runApp(const DreamEnglishAcademyApp());
+}
+
+/// ===== Brand Colors =====
+class Brand {
+  static const primaryBlue = Color(0xFF1A2B48); // #1A2B48
+  static const actionOrange = Color(0xFFF98D28); // #F98D28
+  static const accentCyan = Color(0xFF00D4FF); // #00D4FF
+  static const mainText = Color(0xFF2D2D2D); // #2D2D2D
+  static const appBg = Color(0xFFF4F7F9); // #F4F7F9
+  static const uiBorder = Color(0xFFD1D9E0); // #D1D9E0
 }
 
 class DreamEnglishAcademyApp extends StatelessWidget {
@@ -15,23 +34,58 @@ class DreamEnglishAcademyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: Brand.primaryBlue,
+      brightness: Brightness.light,
+      primary: Brand.primaryBlue,
+      secondary: Brand.actionOrange,
+      tertiary: Brand.accentCyan,
+      surface: Colors.white,
+      background: Brand.appBg,
+      onPrimary: Colors.white,
+      onSecondary: Colors.white,
+      onSurface: Brand.mainText,
+      onBackground: Brand.mainText,
+      outline: Brand.uiBorder,
+      error: const Color(0xFFB00020),
+    );
+
     return MaterialApp(
-      title: 'Dream English Academy',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.light,
-        colorSchemeSeed: const Color(0xFF2E7AF0),
-        scaffoldBackgroundColor: const Color(0xFFF6F8FF),
+        colorScheme: colorScheme,
+        scaffoldBackgroundColor: Brand.appBg,
+        textTheme: const TextTheme(
+          bodyMedium: TextStyle(color: Brand.mainText),
+          bodyLarge: TextStyle(color: Brand.mainText),
+          titleLarge: TextStyle(color: Brand.mainText),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Brand.uiBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Brand.uiBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Brand.accentCyan, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        ),
       ),
-      home: const HomeShell(),
+      home: const HomeShell(), // ✅ uses your existing tabs (Assistant / Classroom / Stories)
     );
   }
 }
 
 enum AppMode { assistant, classroom, stories }
 enum VoiceState { idle, listening, speaking }
-
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -51,8 +105,8 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        // Keep screens alive; no rebuild = no re-greeting on tab switching
         child: IndexedStack(
           index: mode.index,
           children: _pages,
@@ -90,16 +144,23 @@ class SoftBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Soft gradient base
+        // Soft pearl base
         Container(
           decoration: const BoxDecoration(
+            color: Brand.appBg,
+          ),
+        ),
+
+        // Gentle gradient wash
+        Container(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Color(0xFFF7FAFF),
-                Color(0xFFEFF3FF),
-                Color(0xFFF7F8FF),
+                Brand.appBg,
+                Brand.appBg.withOpacity(0.85),
+                Colors.white.withOpacity(0.55),
               ],
             ),
           ),
@@ -109,13 +170,18 @@ class SoftBackground extends StatelessWidget {
         Positioned.fill(
           child: IgnorePointer(
             child: Opacity(
-              opacity: 0.045, // keep very subtle
+              opacity: 0.040,
               child: Center(
                 child: FractionallySizedBox(
-                  widthFactor: 0.78,
+                  widthFactor: 0.72,
                   child: Image.asset(
                     'assets/images/ybs_logo.png',
                     fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.school_rounded,
+                      size: 160,
+                      color: Brand.uiBorder,
+                    ),
                   ),
                 ),
               ),
@@ -123,13 +189,11 @@ class SoftBackground extends StatelessWidget {
           ),
         ),
 
-        // Real content
         child,
       ],
     );
   }
 }
-
 
 class SimpleTopBar extends StatelessWidget {
   final String title;
@@ -144,6 +208,7 @@ class SimpleTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
       child: Row(
@@ -171,17 +236,18 @@ class CardShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        color: Colors.white.withOpacity(0.85),
-        border: Border.all(color: cs.onSurface.withOpacity(0.08)),
+        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withOpacity(0.92),
+        border: Border.all(color: cs.outline.withOpacity(0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 22,
-            offset: const Offset(0, 12),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
           )
         ],
       ),
@@ -189,9 +255,6 @@ class CardShell extends StatelessWidget {
     );
   }
 }
-
-/// ===== Assistant Screen (clean UI + greeting/day + silent toggle) =====
-
 class AssistantHome extends StatefulWidget {
   const AssistantHome({super.key});
 
@@ -199,24 +262,19 @@ class AssistantHome extends StatefulWidget {
   State<AssistantHome> createState() => _AssistantHomeState();
 }
 
-class _AssistantHomeState extends State<AssistantHome>
-    with TickerProviderStateMixin {
+class _AssistantHomeState extends State<AssistantHome> with TickerProviderStateMixin {
   VoiceState state = VoiceState.idle;
 
-  // Speech + TTS
   final stt.SpeechToText _stt = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
   bool _sttReady = false;
 
-  // Persisted settings
   bool silentMode = false;
   String lastGreetedDay = ''; // yyyy-mm-dd
 
-  // UI
   String userHeard = '';
   String assistantReply = '';
 
-  // Animations
   late final AnimationController _pulseCtrl;
   late final AnimationController _waveCtrl;
 
@@ -226,15 +284,10 @@ class _AssistantHomeState extends State<AssistantHome>
   void initState() {
     super.initState();
 
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))
+      ..repeat(reverse: true);
 
-    _waveCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
+    _waveCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
 
     _initAll();
   }
@@ -268,10 +321,7 @@ class _AssistantHomeState extends State<AssistantHome>
     if (!mounted) return;
     setState(() {});
 
-    // Greet ONLY once per day (and never again on tab switching)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeGreetOncePerDay();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeGreetOncePerDay());
   }
 
   Future<void> _loadPrefs() async {
@@ -369,14 +419,12 @@ class _AssistantHomeState extends State<AssistantHome>
 
     final ok = await _ensureMicPermission();
     if (!ok) {
-      setState(() => assistantReply =
-      'Microphone permission denied. Enable it from settings.');
+      setState(() => assistantReply = 'Microphone permission denied. Enable it from settings.');
       return;
     }
 
     setState(() {
       userHeard = '';
-      // keep greeting/last answer visible; don’t wipe the UI every time
     });
 
     _setVoiceState(VoiceState.listening);
@@ -408,7 +456,6 @@ class _AssistantHomeState extends State<AssistantHome>
     final reply = _faqAnswer(q);
     setState(() => assistantReply = reply);
 
-    // IMPORTANT: We do NOT say "You said ..." (we only show it on screen)
     if (!silentMode) {
       await _speak(reply);
     } else {
@@ -435,7 +482,6 @@ class _AssistantHomeState extends State<AssistantHome>
   Future<void> _toggleSilent() async {
     setState(() => silentMode = !silentMode);
     await _savePrefs();
-    // No auto speaking when toggling; just change mode.
   }
 
   String _faqAnswer(String q) {
@@ -464,18 +510,15 @@ class _AssistantHomeState extends State<AssistantHome>
       return 'You can find our location on the Dream English Academy website and social pages. Tell me your city or area and I will guide you.';
     }
     if (hasAny(['hello', 'hi', 'hey'])) {
-      // IMPORTANT: no big greeting here (we already greet once per day)
       return 'Hello! How can I help you today? You can ask about IELTS, TOEFL, schedules, levels, or fees.';
     }
 
     return 'I can help with IELTS, TOEFL, TESOL, schedules, levels, and general info. Please tell me what you need, or contact reception for official confirmation.';
   }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Minimal status text (no clutter)
     final status = switch (state) {
       VoiceState.idle => 'Tap the orb to speak',
       VoiceState.listening => 'Listening…',
@@ -492,7 +535,7 @@ class _AssistantHomeState extends State<AssistantHome>
               tooltip: silentMode ? 'Silent: ON' : 'Silent: OFF',
               icon: Icon(
                 silentMode ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                color: const Color(0xFFF26B3A),
+                color: Brand.actionOrange,
               ),
             ),
           ),
@@ -500,7 +543,7 @@ class _AssistantHomeState extends State<AssistantHome>
           Expanded(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 620),
+                constraints: const BoxConstraints(maxWidth: 680),
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
                   child: Column(
@@ -515,7 +558,7 @@ class _AssistantHomeState extends State<AssistantHome>
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.w800,
-                          color: cs.onSurface.withOpacity(0.80),
+                          color: cs.onSurface.withOpacity(0.85),
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -530,18 +573,15 @@ class _AssistantHomeState extends State<AssistantHome>
                       ),
 
                       const SizedBox(height: 14),
-
-                      const SizedBox(height: 14),
                       Text(
                         status,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.w800,
-                          color: cs.onSurface.withOpacity(0.80),
+                          color: cs.onSurface.withOpacity(0.82),
                         ),
                       ),
                       const SizedBox(height: 14),
 
-                      // Only show "You said" after user speaks
                       if (userHeard.trim().isNotEmpty) ...[
                         CardShell(
                           child: Column(
@@ -568,20 +608,34 @@ class _AssistantHomeState extends State<AssistantHome>
                         const SizedBox(height: 12),
                       ],
 
-                      // Show assistant message if available (includes daily greeting)
                       if (assistantReply.trim().isNotEmpty) ...[
                         CardShell(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Reception',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(fontWeight: FontWeight.w900),
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Brand.accentCyan.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Brand.uiBorder),
+                                    ),
+                                    child: const Icon(Icons.support_agent_rounded, color: Brand.primaryBlue),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Reception',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(fontWeight: FontWeight.w900),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
                               Text(
                                 assistantReply,
                                 style: Theme.of(context)
@@ -589,29 +643,49 @@ class _AssistantHomeState extends State<AssistantHome>
                                     .bodyMedium
                                     ?.copyWith(height: 1.35),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  FilledButton.icon(
-                                    onPressed: silentMode
-                                        ? null
-                                        : () async {
-                                      if (assistantReply.isNotEmpty) {
-                                        await _speak(assistantReply);
-                                      }
-                                    },
-                                    icon: const Icon(Icons.volume_up_rounded),
-                                    label: const Text('Speak'),
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      onPressed: silentMode
+                                          ? null
+                                          : () async {
+                                        if (assistantReply.isNotEmpty) {
+                                          await _speak(assistantReply);
+                                        }
+                                      },
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Brand.actionOrange,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.volume_up_rounded),
+                                      label: const Text('Speak'),
+                                    ),
                                   ),
                                   const SizedBox(width: 10),
-                                  OutlinedButton.icon(
-                                    onPressed: () async {
-                                      await _tts.stop();
-                                      if (!mounted) return;
-                                      _setVoiceState(VoiceState.idle);
-                                    },
-                                    icon: const Icon(Icons.stop_rounded),
-                                    label: const Text('Stop'),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () async {
+                                        await _tts.stop();
+                                        if (!mounted) return;
+                                        _setVoiceState(VoiceState.idle);
+                                      },
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Brand.primaryBlue,
+                                        side: const BorderSide(color: Brand.uiBorder),
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.stop_rounded),
+                                      label: const Text('Stop'),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -621,7 +695,6 @@ class _AssistantHomeState extends State<AssistantHome>
                         const SizedBox(height: 12),
                       ],
 
-                      // Small utility row (clean)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -688,6 +761,8 @@ class _Orb extends StatelessWidget {
           VoiceState.speaking => 0.28 + pulse * 0.25,
         };
 
+        final isHot = state == VoiceState.listening;
+
         return SizedBox(
           width: 280,
           height: 280,
@@ -696,29 +771,24 @@ class _Orb extends StatelessWidget {
             children: [
               _GlowRing(
                 size: orbSize + 92,
-                opacity: glow * 0.25,
+                opacity: glow * 0.22,
                 blur: 60,
-                color: (state == VoiceState.listening)
-                    ? const Color(0xFFF26B3A) // orange
-                    : const Color(0xFF0B2A4A), // blue
+                color: isHot ? Brand.actionOrange : Brand.primaryBlue,
               ),
               _GlowRing(
                 size: orbSize + 46,
-                opacity: glow * 0.42,
+                opacity: glow * 0.40,
                 blur: 34,
-                color: (state == VoiceState.listening)
-                    ? const Color(0xFFF26B3A)
-                    : const Color(0xFF0B2A4A),
+                color: isHot ? Brand.actionOrange : Brand.primaryBlue,
               ),
 
               if (state == VoiceState.speaking)
                 _WaveRings(
                   t: waveCtrl.value,
                   baseSize: orbSize + 6,
-                  color: const Color(0xFFF26B3A),
+                  color: Brand.accentCyan,
                 ),
 
-              // TODO: When you send your logo, we’ll replace this icon with your logo image
               GestureDetector(
                 onTap: onTap,
                 child: Container(
@@ -730,21 +800,15 @@ class _Orb extends StatelessWidget {
                       center: const Alignment(-0.25, -0.35),
                       radius: 1.2,
                       colors: [
-                        (state == VoiceState.listening)
-                            ? const Color(0xFFF26B3A).withOpacity(0.95) // brand orange
-                            : const Color(0xFF0B2A4A).withOpacity(0.95), // brand blue
-                        (state == VoiceState.listening)
-                            ? const Color(0xFFF26B3A).withOpacity(0.80)
-                            : const Color(0xFF0B2A4A).withOpacity(0.80),
+                        (isHot ? Brand.actionOrange : Brand.primaryBlue).withOpacity(0.98),
+                        (isHot ? Brand.actionOrange : Brand.primaryBlue).withOpacity(0.80),
                         Colors.white.withOpacity(0.10),
                       ],
                       stops: const [0.0, 0.62, 1.0],
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: (state == VoiceState.listening)
-                            ? const Color(0xFFF26B3A).withOpacity(0.35)
-                            : const Color(0xFF0B2A4A).withOpacity(0.30),
+                        color: (isHot ? Brand.actionOrange : Brand.primaryBlue).withOpacity(0.30),
                         blurRadius: 40,
                         spreadRadius: 4,
                       ),
@@ -758,13 +822,11 @@ class _Orb extends StatelessWidget {
                           ? Icons.volume_up_rounded
                           : Icons.touch_app_rounded,
                       size: 40,
-                      color: cs.onPrimary,
+                      color: Colors.white,
                     ),
                   ),
-
                 ),
               ),
-
             ],
           ),
         );
@@ -772,7 +834,6 @@ class _Orb extends StatelessWidget {
     );
   }
 }
-
 class _GlowRing extends StatelessWidget {
   final double size;
   final double opacity;
@@ -823,7 +884,7 @@ class _WaveRings extends StatelessWidget {
       children: List.generate(3, (i) {
         final phase = (t + i * 0.22) % 1.0;
         final size = baseSize + (phase * 96);
-        final opacity = (1.0 - phase).clamp(0.0, 1.0) * 0.20;
+        final opacity = (1.0 - phase).clamp(0.0, 1.0) * 0.22;
 
         return Container(
           width: size,
@@ -840,15 +901,18 @@ class _WaveRings extends StatelessWidget {
     );
   }
 }
-
-/// ===== Classroom Screen =====
-class ClassroomHome extends StatelessWidget {
+class ClassroomHome extends StatefulWidget {
   const ClassroomHome({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+  State<ClassroomHome> createState() => _ClassroomHomeState();
+}
 
+class _ClassroomHomeState extends State<ClassroomHome> {
+  bool showLogin = true;
+
+  @override
+  Widget build(BuildContext context) {
     return SoftBackground(
       child: Column(
         children: [
@@ -857,42 +921,70 @@ class ClassroomHome extends StatelessWidget {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
-                child: CardShell(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.school_rounded, size: 46, color: cs.primary),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Classroom (Next)',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Next step: student/teacher login.\nTeachers mark attendance and post assignments.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurface.withOpacity(0.70),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ✅ Dummy enroll button
-                      FilledButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const LearnerDashboard(),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                  // ✅ Keyboard-safe, overflow-proof
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                    ),
+                    child: CardShell(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        child: showLogin
+                            ? ClassroomLoginSection(
+                          key: const ValueKey('login'),
+                          onLoggedInAdmin: () {
+                            // keep your logic (AuthGate later)
+                          },
+                        )
+                            : Column(
+                          key: const ValueKey('classroomInfo'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 54,
+                              height: 54,
+                              decoration: BoxDecoration(
+                                color: Brand.accentCyan.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Brand.uiBorder),
+                              ),
+                              child: const Icon(Icons.school_rounded, color: Brand.primaryBlue),
                             ),
-                          );
-                        },
-                        icon: const Icon(Icons.how_to_reg_rounded),
-                        label: const Text('Enroll (Demo)'),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Classroom (Next)',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Next step: student/teacher login.\nTeachers mark attendance and post assignments.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Brand.mainText.withOpacity(0.75),
+                                height: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              onPressed: () => setState(() => showLogin = true),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Brand.primaryBlue,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
+                              child: const Text('Open Login'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -903,15 +995,401 @@ class ClassroomHome extends StatelessWidget {
     );
   }
 }
+class ClassroomLoginSection extends StatefulWidget {
+  final VoidCallback onLoggedInAdmin;
 
-/// ===== Stories Screen =====
+  const ClassroomLoginSection({
+    super.key,
+    required this.onLoggedInAdmin,
+  });
+
+  @override
+  State<ClassroomLoginSection> createState() => _ClassroomLoginSectionState();
+}
+
+class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
+  final emailCtrl = TextEditingController();
+  final passCtrl = TextEditingController();
+  bool rememberMe = false;
+
+  bool loading = false;
+  String error = '';
+
+  // ✅ Captcha state (still "easy", but now actually checked)
+  int a = 2, b = 3;
+  final captchaCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshCaptcha();
+    _loadRememberedLoginAndAutoSignIn();
+  }
+  Future<void> _loadRememberedLoginAndAutoSignIn() async {
+    final p = await SharedPreferences.getInstance();
+
+    final savedRemember = p.getBool('rememberMe') ?? false;
+    final savedEmail = p.getString('rememberEmail') ?? '';
+    final savedPass = p.getString('rememberPass') ?? '';
+
+    if (!mounted) return;
+
+    setState(() {
+      rememberMe = savedRemember;
+      if (savedRemember && savedEmail.isNotEmpty) {
+        emailCtrl.text = savedEmail;
+      }
+      if (savedRemember && savedPass.isNotEmpty) {
+        passCtrl.text = savedPass;
+      }
+    });
+
+    // ✅ Auto-login ONLY if remember me is on and credentials exist
+    if (savedRemember && savedEmail.isNotEmpty && savedPass.isNotEmpty) {
+      // Skip captcha for auto-login (better UX)
+      await _signInWithFirebase(savedEmail, savedPass, fromAutoLogin: true);
+    }
+  }
+  Future<void> _signInWithFirebase(String email, String pass, {bool fromAutoLogin = false}) async {
+    setState(() {
+      loading = true;
+      error = '';
+    });
+
+    try {
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: pass,
+      );
+
+      final uid = cred.user?.uid;
+      if (uid == null) throw Exception('Login failed (no user).');
+
+      final ref = FirebaseDatabase.instance.ref('users/$uid/role');
+      final snap = await ref.get();
+      final role = snap.value?.toString().trim().toLowerCase();
+
+      if (role == 'admin') {
+        // ✅ Save if remember me
+        if (rememberMe) {
+          final p = await SharedPreferences.getInstance();
+          await p.setBool('rememberMe', true);
+          await p.setString('rememberEmail', email);
+          await p.setString('rememberPass', pass);
+        }
+
+        if (!mounted) return;
+        setState(() => loading = false);
+
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const AdminHome()),
+        );
+        return;
+      }
+
+      await FirebaseAuth.instance.signOut();
+      setState(() {
+        loading = false;
+        error = 'Access denied: you are not an admin.';
+      });
+
+      if (!fromAutoLogin) _refreshCaptcha();
+    } on FirebaseAuthException catch (e) {
+      String msg = 'Login failed.';
+      if (e.code == 'user-not-found') msg = 'No user found for that email.';
+      if (e.code == 'wrong-password') msg = 'Wrong password.';
+      if (e.code == 'invalid-email') msg = 'Invalid email.';
+      if (e.code == 'user-disabled') msg = 'This account is disabled.';
+
+      setState(() {
+        loading = false;
+        error = msg;
+      });
+
+      if (!fromAutoLogin) _refreshCaptcha();
+    } catch (e) {
+      setState(() {
+        loading = false;
+        error = 'Error: $e';
+      });
+
+      if (!fromAutoLogin) _refreshCaptcha();
+    }
+  }
+
+
+  void _refreshCaptcha() {
+    // Simple deterministic random-like without extra packages
+    final now = DateTime.now().millisecondsSinceEpoch;
+    a = (now % 8) + 1;      // 1..9
+    b = ((now ~/ 7) % 8) + 1; // 1..9
+    captchaCtrl.text = '';
+  }
+
+  @override
+  void dispose() {
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    captchaCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _validate() {
+    final email = emailCtrl.text.trim();
+    final pass = passCtrl.text.trim();
+    final cap = captchaCtrl.text.trim();
+
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => error = 'Please enter a valid email.');
+      return false;
+    }
+    if (pass.length < 4) {
+      setState(() => error = 'Password looks too short.');
+      return false;
+    }
+    final expected = (a + b).toString();
+    if (cap != expected) {
+      setState(() => error = 'Captcha is incorrect. Try again.');
+      _refreshCaptcha();
+      return false;
+    }
+
+    setState(() => error = '');
+    return true;
+  }
+
+  Future<void> _fakeLoginForNow() async {
+    FocusScope.of(context).unfocus();
+
+    // ✅ If user is clicking manually, validate captcha as before
+    if (!_validate()) return;
+
+    final email = emailCtrl.text.trim();
+    final pass = passCtrl.text.trim();
+
+    await _signInWithFirebase(email, pass, fromAutoLogin: false);
+  }
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ✅ Logo + Title
+        Center(
+          child: Column(
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Brand.uiBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
+                    )
+                  ],
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Image.asset(
+                  'assets/images/ybs_logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.school_rounded,
+                    size: 44,
+                    color: Brand.primaryBlue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Admin Login',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Sign in to manage classrooms & attendance',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Brand.mainText.withOpacity(0.70),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 18),
+
+        // ✅ Email
+        TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(
+            labelText: 'Email',
+            prefixIcon: Icon(Icons.alternate_email_rounded),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ✅ Password
+        TextField(
+          controller: passCtrl,
+          obscureText: true,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            labelText: 'Password',
+            prefixIcon: Icon(Icons.lock_rounded),
+          ),
+          onSubmitted: (_) => loading ? null : _fakeLoginForNow(),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ✅ Captcha (better UI)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Brand.accentCyan.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Brand.uiBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.verified_user_rounded, color: Brand.primaryBlue, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Quick check',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: Brand.primaryBlue,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: loading
+                        ? null
+                        : () {
+                      setState(() => _refreshCaptcha());
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('New'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'What is $a + $b ?',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Brand.mainText.withOpacity(0.85),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: captchaCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  hintText: 'Answer',
+                  prefixIcon: Icon(Icons.calculate_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // ✅ Main sign in button (Action Orange)
+        FilledButton.icon(
+          onPressed: loading ? null : _fakeLoginForNow,
+          style: FilledButton.styleFrom(
+            backgroundColor: Brand.actionOrange,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          icon: loading
+              ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+          )
+              : const Icon(Icons.login_rounded),
+          label: Text(loading ? 'Signing in...' : 'Sign in'),
+        ),
+
+        const SizedBox(height: 10),
+
+        // ✅ Secondary button (Blue outline)
+        OutlinedButton.icon(
+          onPressed: loading
+              ? null
+              : () {
+            setState(() => error = 'Google sign-in: not wired yet');
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Brand.primaryBlue,
+            side: const BorderSide(color: Brand.uiBorder),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          icon: const Icon(Icons.g_mobiledata_rounded),
+          label: const Text('Continue with Google'),
+        ),
+
+        if (error.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.error.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Theme.of(context).colorScheme.error.withOpacity(0.35)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: Theme.of(context).colorScheme.error),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    error,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
 class StoriesHome extends StatelessWidget {
   const StoriesHome({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return SoftBackground(
       child: Column(
         children: [
@@ -920,28 +1398,40 @@ class StoriesHome extends StatelessWidget {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
-                child: CardShell(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.menu_book_rounded, size: 46, color: cs.primary),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Stories & Quizzes (Next)',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                  child: CardShell(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            color: Brand.accentCyan.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Brand.uiBorder),
+                          ),
+                          child: const Icon(Icons.menu_book_rounded, color: Brand.primaryBlue),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Next step: story levels, audio player, and quizzes.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurface.withOpacity(0.70),
-                          height: 1.4,
+                        const SizedBox(height: 12),
+                        Text(
+                          'Stories & Quizzes (Next)',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Text(
+                          'Next step: story levels, audio player, and quizzes.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Brand.mainText.withOpacity(0.75),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -952,4 +1442,3 @@ class StoriesHome extends StatelessWidget {
     );
   }
 }
-

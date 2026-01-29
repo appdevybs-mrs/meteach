@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "337224826950",
+    "firebase_url": "https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com",
+    "project_id": "dreamenglishacademy-3efcd",
+    "storage_bucket": "dreamenglishacademy-3efcd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:337224826950:android:4436289f9a3a338ff48a47",
+        "android_client_info": {
+          "package_name": "com.dreamenglish.academy.dream_english_academy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD8SFtCkgJXfnZMoPWxwGcpsshDJ3IeeJ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
