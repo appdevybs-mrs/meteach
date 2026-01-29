@@ -991,6 +991,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
   // Controllers for your 15 fields
   late final TextEditingController titleC;
+  late final TextEditingController categoryC;
+
   late final TextEditingController thumbnailUrlC;
   late final TextEditingController shortDescC;
   late final TextEditingController longDescC;
@@ -1006,6 +1008,43 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   late final TextEditingController requirementsC;
   late final TextEditingController tagsC;
 
+  List<String> _categorySuggestions = [];
+  bool _loadingCategories = false;
+
+  Future<void> _loadCategorySuggestions() async {
+    setState(() => _loadingCategories = true);
+    try {
+      final snap = await _coursesRef.get();
+      final data = snap.value;
+
+      final set = <String>{};
+
+      if (data is Map) {
+        data.forEach((_, value) {
+          if (value is Map) {
+            final raw = value['category'];
+            if (raw != null) {
+              final c = raw.toString().trim();
+              if (c.isNotEmpty) set.add(c);
+            }
+          }
+        });
+      }
+
+      final list = set.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+      if (!mounted) return;
+      setState(() => _categorySuggestions = list);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _categorySuggestions = []);
+    } finally {
+      if (mounted) setState(() => _loadingCategories = false);
+    }
+  }
+
+
+
   CourseStatus _status = CourseStatus.draft;
 
   bool _saving = false;
@@ -1020,6 +1059,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final initial = widget.initial;
 
     titleC = TextEditingController(text: initial?.title ?? '');
+    categoryC = TextEditingController(text: (initial?.category ?? ''));
+
     thumbnailUrlC = TextEditingController(text: initial?.thumbnailUrl ?? '');
     shortDescC = TextEditingController(text: initial?.shortDescription ?? '');
     longDescC = TextEditingController(text: initial?.longDescription ?? '');
@@ -1050,6 +1091,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       deliveryC.text = (initial?.deliveryOption ?? '').trim();
     }
 
+    _loadCategorySuggestions();
 
 // Price type default (if missing, per month)
 
@@ -1058,6 +1100,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   @override
   void dispose() {
     titleC.dispose();
+    categoryC.dispose();
+
     thumbnailUrlC.dispose();
     shortDescC.dispose();
     longDescC.dispose();
@@ -1124,6 +1168,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           ? 'Title is required'
                           : null,
                     ),
+                    const SizedBox(height: 12),
+
+                    _CategoryAutocomplete(
+                      controller: categoryC,
+                      suggestions: _categorySuggestions,
+                      loading: _loadingCategories,
+                    ),
+                    const SizedBox(height: 12),
+
                     const SizedBox(height: 12),
                     _ThumbPicker(
                       thumbnailUrlC: thumbnailUrlC,
@@ -1325,6 +1378,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
       final course = Course(
         title: titleC.text.trim(),
+        category: categoryC.text.trim(),
+
         thumbnailUrl: thumbnailUrlC.text.trim(),
         shortDescription: shortDescC.text.trim(),
         longDescription: longDescC.text.trim(),
@@ -1460,6 +1515,72 @@ class _TextField extends StatelessWidget {
           borderSide: BorderSide.none,
         ),
       ),
+    );
+  }
+}
+
+
+class _CategoryAutocomplete extends StatelessWidget {
+  const _CategoryAutocomplete({
+    required this.controller,
+    required this.suggestions,
+    required this.loading,
+  });
+
+  final TextEditingController controller;
+  final List<String> suggestions;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: controller.text),
+      optionsBuilder: (TextEditingValue value) {
+        final q = value.text.trim().toLowerCase();
+        if (q.isEmpty) return const Iterable<String>.empty();
+
+        // startsWith first, then contains
+        final starts = suggestions.where((s) => s.toLowerCase().startsWith(q));
+        final contains = suggestions.where((s) =>
+        !s.toLowerCase().startsWith(q) && s.toLowerCase().contains(q));
+
+        return [...starts, ...contains].take(10);
+      },
+      onSelected: (String selected) {
+        controller.text = selected;
+      },
+      fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
+        // keep in sync
+        textController.value = controller.value;
+        textController.addListener(() {
+          controller.value = textController.value;
+        });
+
+        return TextFormField(
+          controller: textController,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: 'Category',
+            hintText: loading ? 'Loading categories…' : 'Type and pick a suggestion',
+            filled: true,
+            fillColor: AdminCoursesScreen.appBg,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: loading
+                ? const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+                : null,
+          ),
+        );
+      },
     );
   }
 }
@@ -1729,6 +1850,7 @@ enum CourseStatus {
 class Course {
   Course({
     required this.title,
+    required this.category,
     required this.thumbnailUrl,
     required this.shortDescription,
     required this.longDescription,
@@ -1737,8 +1859,8 @@ class Course {
     required this.instructors,
     required this.level,
     required this.language,
-    required this.deliveryOption,      // old string (for pill display)
-    required this.deliveryOptions,     // new list (checkboxes)
+    required this.deliveryOption,
+    required this.deliveryOptions,
     required this.pricePerMonth,
     required this.pricePerLevel,
     required this.accessType,
@@ -1750,7 +1872,9 @@ class Course {
   });
 
   final String title;
+  final String category;
   final String thumbnailUrl;
+
   final String shortDescription;
   final String longDescription;
   final String duration;
@@ -1759,10 +1883,7 @@ class Course {
   final String level;
   final String language;
 
-  /// display string for the course card pill
   final String deliveryOption;
-
-  /// multi-select values from checkboxes
   final List<String> deliveryOptions;
 
   final double? pricePerMonth;
@@ -1773,13 +1894,13 @@ class Course {
   final String requirementsText;
   final List<String> tags;
 
-  /// timestamps (optional; used for sorting)
   final int? updatedAtMs;
   final int? trashedAtMs;
 
   Map<String, dynamic> toMap() {
     return {
       'title': title,
+      'category': category,
       'thumbnail': thumbnailUrl,
       'short_description': shortDescription,
       'long_description': longDescription,
@@ -1788,18 +1909,14 @@ class Course {
       'instructors': instructors,
       'level': level,
       'language': language,
-
-      // keep both:
-      'delivery_option': deliveryOption,        // string
-      'delivery_options': deliveryOptions,      // list
-
+      'delivery_option': deliveryOption,
+      'delivery_options': deliveryOptions,
       'price_per_month': pricePerMonth,
       'price_per_level': pricePerLevel,
       'access_type': accessType,
       'status': status.value,
       'requirement': requirementsText,
       'tags': tags,
-
       'updatedAt': updatedAtMs,
       'trashedAt': trashedAtMs,
     };
@@ -1834,6 +1951,7 @@ class Course {
 
     return Course(
       title: (m['title'] ?? '').toString(),
+      category: (m['category'] ?? '').toString(),
       thumbnailUrl: _fixUrl((m['thumbnail'] ?? '').toString()),
       shortDescription: (m['short_description'] ?? '').toString(),
       longDescription: (m['long_description'] ?? '').toString(),
@@ -1842,10 +1960,8 @@ class Course {
       instructors: parseList(m['instructors']),
       level: (m['level'] ?? '').toString(),
       language: (m['language'] ?? '').toString(),
-
       deliveryOption: (m['delivery_option'] ?? '').toString(),
       deliveryOptions: parseList(m['delivery_options']),
-
       pricePerMonth: parsePrice(m['price_per_month']),
       pricePerLevel: parsePrice(m['price_per_level']),
       accessType: (m['access_type'] ?? '').toString(),
@@ -1857,6 +1973,7 @@ class Course {
     );
   }
 }
+
 
 
 /// row helper

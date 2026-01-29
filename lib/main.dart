@@ -1314,7 +1314,10 @@ class _CourseLite {
     return u;
   }
 
-  factory _CourseLite.fromMap(String id, Map<dynamic, dynamic> m) {
+  factory _CourseLite.fromMap(String id, Map<dynamic, dynamic> raw) {
+    // ✅ Normalize keys to String (critical)
+    final m = raw.map((k, v) => MapEntry(k.toString(), v));
+
     String pickString(List<String> keys) {
       for (final k in keys) {
         final v = m[k];
@@ -1325,8 +1328,11 @@ class _CourseLite {
 
     return _CourseLite(
       id: id,
+
+      // ✅ include more variants just in case
       title: pickString(['title']),
-      thumb: _fixUrl(pickString(['thumbnail', 'thumb', 'image'])),
+      thumb: _fixUrl(pickString(['thumbnail', 'thumb', 'image', 'thumbnailUrl'])),
+
       shortDesc: pickString(['short_description', 'shortDesc']),
       longDesc: pickString(['long_description', 'longDesc']),
       content: pickString(['content', 'what_you_will_learn']),
@@ -1335,7 +1341,6 @@ class _CourseLite {
       level: pickString(['level']),
       language: pickString(['language']),
 
-      // ✅ support both: delivery_options (array) and delivery_option (string)
       deliveryOptions: _parseList(m['delivery_options'] ?? m['deliveryOptions']),
       deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
 
@@ -1349,10 +1354,12 @@ class _CourseLite {
 
       tags: _parseList(m['tags']),
       status: pickString(['status']),
-      category: pickString(['category']).isEmpty ? 'Other' : pickString(['category']),
-      updatedAt: _parseInt(m['updatedAt'] ?? m['updated_at']),
+      category: pickString(['category']).trim().isEmpty ? 'Other' : pickString(['category']).trim(),
+
+      updatedAt: _parseInt(m['updatedAt'] ?? m['updated_at'] ?? m['updatedAtMs']),
     );
   }
+
 
 }
 
@@ -1401,6 +1408,8 @@ class _CoursesByCategory extends StatelessWidget {
 
         final raw = snap.data!.snapshot.value;
         final items = _parseCoursesLite(raw);
+        debugPrint('Loaded ${items.length} courses. First: ${items.isNotEmpty ? items.first.title : "none"} | pm=${items.isNotEmpty ? items.first.pricePerMonth : null} | cat=${items.isNotEmpty ? items.first.category : null}');
+
 
         final published = items
             .where((c) => c.status.toLowerCase().trim() == 'published')
@@ -1913,6 +1922,7 @@ class _CourseDetailsSheet extends StatelessWidget {
               _hero(),
               const SizedBox(height: 16),
 
+// ✅ Chips row (level / language / delivery)
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -1922,49 +1932,45 @@ class _CourseDetailsSheet extends StatelessWidget {
                   if (course.language.trim().isNotEmpty)
                     _PrettyChip(icon: Icons.language_rounded, label: course.language),
                   if (deliveryText.isNotEmpty)
-                    _PrettyChip(
-                      icon: Icons.videocam_rounded,
-                      label: deliveryText,
-                    ),
-                  const SizedBox(height: 18),
-
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      if (course.category.trim().isNotEmpty)
-                        _InfoTile(icon: Icons.category_rounded, text: course.category),
-
-                      if (course.accessType.trim().isNotEmpty)
-                        _InfoTile(icon: Icons.lock_open_rounded, text: course.accessType),
-
-                      if (course.instructors.isNotEmpty)
-                        _InfoTile(
-                          icon: Icons.people_alt_rounded,
-                          text: course.instructors.join(', '),
-                        ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  if (course.content.trim().isNotEmpty)
-                    _Section(
-                      title: 'What you will learn',
-                      child: Text(
-                        course.content,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          height: 1.55,
-                          color: Brand.mainText.withOpacity(0.85),
-                        ),
-                      ),
-                    ),
-
-
+                    _PrettyChip(icon: Icons.videocam_rounded, label: deliveryText),
                   if (course.duration.trim().isNotEmpty)
                     _PrettyChip(icon: Icons.schedule_rounded, label: course.duration),
                 ],
               ),
+
+              const SizedBox(height: 18),
+
+// ✅ Info tiles (category / access / instructors)
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  if (course.category.trim().isNotEmpty)
+                    _InfoTile(icon: Icons.category_rounded, text: course.category),
+
+                  if (course.accessType.trim().isNotEmpty)
+                    _InfoTile(icon: Icons.lock_open_rounded, text: course.accessType),
+
+                  if (course.instructors.isNotEmpty)
+                    _InfoTile(icon: Icons.people_alt_rounded, text: course.instructors.join(', ')),
+                ],
+              ),
+
+              const SizedBox(height: 18),
+
+// ✅ What you will learn
+              if (course.content.trim().isNotEmpty)
+                _Section(
+                  title: 'What you will learn',
+                  child: Text(
+                    course.content,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.55,
+                      color: Brand.mainText.withOpacity(0.85),
+                    ),
+                  ),
+                ),
+
 
               const SizedBox(height: 18),
 
