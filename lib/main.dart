@@ -356,7 +356,7 @@ class _AssistantHomeState extends State<AssistantHome> with TickerProviderStateM
     if (lastGreetedDay == today) return;
 
     final greeting =
-        '${_timeGreeting()}! Welcome to Dream English Academy. How can I help you today?';
+        '${_timeGreeting()}! Welcome to Your Brigde School. How can I help you today?';
 
     setState(() {
       assistantReply = greeting;
@@ -507,7 +507,7 @@ class _AssistantHomeState extends State<AssistantHome> with TickerProviderStateM
       return 'We can help you choose the right level. Tell me your last exam score or your current level and I will suggest the best starting course.';
     }
     if (hasAny(['location', 'address', 'where'])) {
-      return 'You can find our location on the Dream English Academy website and social pages. Tell me your city or area and I will guide you.';
+      return 'You can find our location on the Your Brigde School website and social pages. Tell me your city or area and I will guide you.';
     }
     if (hasAny(['hello', 'hi', 'hey'])) {
       return 'Hello! How can I help you today? You can ask about IELTS, TOEFL, schedules, levels, or fees.';
@@ -519,388 +519,50 @@ class _AssistantHomeState extends State<AssistantHome> with TickerProviderStateM
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    final status = switch (state) {
-      VoiceState.idle => 'Tap the orb to speak',
-      VoiceState.listening => 'Listening…',
-      VoiceState.speaking => 'Speaking…',
-    };
-
     return SoftBackground(
-      child: Column(
+      child: Stack(
         children: [
-          SimpleTopBar(
-            title: 'Dream English Academy',
-            right: IconButton(
-              onPressed: _toggleSilent,
-              tooltip: silentMode ? 'Silent: ON' : 'Silent: OFF',
-              icon: Icon(
-                silentMode ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                color: Brand.actionOrange,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        state == VoiceState.listening
-                            ? '🎙️ Listening…'
-                            : state == VoiceState.speaking
-                            ? '🔊 Speaking…'
-                            : '👆 Tap the orb to speak',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: cs.onSurface.withOpacity(0.85),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      _Orb(
-                        pulseCtrl: _pulseCtrl,
-                        waveCtrl: _waveCtrl,
-                        state: state,
-                        onTap: _toggleListening,
-                        cs: cs,
-                        ease: _easeInOut,
-                      ),
-
-                      const SizedBox(height: 14),
-                      Text(
-                        status,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: cs.onSurface.withOpacity(0.82),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      if (userHeard.trim().isNotEmpty) ...[
-                        CardShell(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'You said',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                userHeard,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(height: 1.35),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      if (assistantReply.trim().isNotEmpty) ...[
-                        CardShell(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: Brand.accentCyan.withOpacity(0.10),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Brand.uiBorder),
-                                    ),
-                                    child: const Icon(Icons.support_agent_rounded, color: Brand.primaryBlue),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    'Reception',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(fontWeight: FontWeight.w900),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                assistantReply,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(height: 1.35),
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: FilledButton.icon(
-                                      onPressed: silentMode
-                                          ? null
-                                          : () async {
-                                        if (assistantReply.isNotEmpty) {
-                                          await _speak(assistantReply);
-                                        }
-                                      },
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: Brand.actionOrange,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14),
-                                        ),
-                                      ),
-                                      icon: const Icon(Icons.volume_up_rounded),
-                                      label: const Text('Speak'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () async {
-                                        await _tts.stop();
-                                        if (!mounted) return;
-                                        _setVoiceState(VoiceState.idle);
-                                      },
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: Brand.primaryBlue,
-                                        side: const BorderSide(color: Brand.uiBorder),
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14),
-                                        ),
-                                      ),
-                                      icon: const Icon(Icons.stop_rounded),
-                                      label: const Text('Stop'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          TextButton.icon(
-                            onPressed: () => setState(() {
-                              userHeard = '';
-                              assistantReply = '';
-                            }),
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('Clear'),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            _sttReady ? 'Voice ready' : 'Voice not ready',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: cs.onSurface.withOpacity(0.55),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Orb (fixed size so UI doesn’t jump)
-class _Orb extends StatelessWidget {
-  final AnimationController pulseCtrl;
-  final AnimationController waveCtrl;
-  final VoiceState state;
-  final VoidCallback onTap;
-  final ColorScheme cs;
-  final double Function(double) ease;
-
-  const _Orb({
-    required this.pulseCtrl,
-    required this.waveCtrl,
-    required this.state,
-    required this.onTap,
-    required this.cs,
-    required this.ease,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([pulseCtrl, waveCtrl]),
-      builder: (context, _) {
-        final pulse = ease(pulseCtrl.value);
-
-        final base = 150.0;
-        final orbSize = base + (pulse * 14);
-
-        final glow = switch (state) {
-          VoiceState.idle => 0.18 + pulse * 0.18,
-          VoiceState.listening => 0.30 + pulse * 0.30,
-          VoiceState.speaking => 0.28 + pulse * 0.25,
-        };
-
-        final isHot = state == VoiceState.listening;
-
-        return SizedBox(
-          width: 280,
-          height: 280,
-          child: Stack(
-            alignment: Alignment.center,
+          Column(
             children: [
-              _GlowRing(
-                size: orbSize + 92,
-                opacity: glow * 0.22,
-                blur: 60,
-                color: isHot ? Brand.actionOrange : Brand.primaryBlue,
-              ),
-              _GlowRing(
-                size: orbSize + 46,
-                opacity: glow * 0.40,
-                blur: 34,
-                color: isHot ? Brand.actionOrange : Brand.primaryBlue,
-              ),
+              const SimpleTopBar(title: 'Your Brigde School'),
+              const SizedBox(height: 6),
 
-              if (state == VoiceState.speaking)
-                _WaveRings(
-                  t: waveCtrl.value,
-                  baseSize: orbSize + 6,
-                  color: Brand.accentCyan,
-                ),
-
-              GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  width: orbSize,
-                  height: orbSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      center: const Alignment(-0.25, -0.35),
-                      radius: 1.2,
-                      colors: [
-                        (isHot ? Brand.actionOrange : Brand.primaryBlue).withOpacity(0.98),
-                        (isHot ? Brand.actionOrange : Brand.primaryBlue).withOpacity(0.80),
-                        Colors.white.withOpacity(0.10),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 110),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (assistantReply.trim().isNotEmpty) ...[
+                        _AiBubble(text: assistantReply),
+                        const SizedBox(height: 14),
                       ],
-                      stops: const [0.0, 0.62, 1.0],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (isHot ? Brand.actionOrange : Brand.primaryBlue).withOpacity(0.30),
-                        blurRadius: 40,
-                        spreadRadius: 4,
-                      ),
+                      const _CoursesByCategory(),
                     ],
-                  ),
-                  child: Center(
-                    child: Icon(
-                      state == VoiceState.listening
-                          ? Icons.mic_rounded
-                          : state == VoiceState.speaking
-                          ? Icons.volume_up_rounded
-                          : Icons.touch_app_rounded,
-                      size: 40,
-                      color: Colors.white,
-                    ),
                   ),
                 ),
               ),
             ],
+          ), // ✅ COMMA IS HERE
+
+          Positioned(
+            right: 18,
+            bottom: 18,
+            child: _FloatingCharacterButton(
+              pulseCtrl: _pulseCtrl,
+              state: state,
+              onTap: _toggleListening,
+            ),
           ),
-        );
-      },
-    );
-  }
-}
-class _GlowRing extends StatelessWidget {
-  final double size;
-  final double opacity;
-  final double blur;
-  final Color color;
-
-  const _GlowRing({
-    required this.size,
-    required this.opacity,
-    required this.blur,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(opacity),
-            blurRadius: blur,
-            spreadRadius: 2,
-          )
         ],
       ),
     );
+
   }
+
 }
 
-class _WaveRings extends StatelessWidget {
-  final double t;
-  final double baseSize;
-  final Color color;
 
-  const _WaveRings({
-    required this.t,
-    required this.baseSize,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: List.generate(3, (i) {
-        final phase = (t + i * 0.22) % 1.0;
-        final size = baseSize + (phase * 96);
-        final opacity = (1.0 - phase).clamp(0.0, 1.0) * 0.22;
-
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: color.withOpacity(opacity),
-              width: 2,
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
 class ClassroomHome extends StatefulWidget {
   const ClassroomHome({super.key});
 
@@ -1442,3 +1104,907 @@ class StoriesHome extends StatelessWidget {
     );
   }
 }
+class _AiBubble extends StatelessWidget {
+  final String text;
+
+  const _AiBubble({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return CardShell(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Brand.accentCyan.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Brand.uiBorder),
+                ),
+                child: const Icon(Icons.support_agent_rounded, color: Brand.primaryBlue),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Reception',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            text,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+}
+class _FloatingCharacterButton extends StatelessWidget {
+  final AnimationController pulseCtrl;
+  final VoiceState state;
+  final VoidCallback onTap;
+
+  const _FloatingCharacterButton({
+    required this.pulseCtrl,
+    required this.state,
+    required this.onTap,
+  });
+
+  double _easeInOut(double t) => t * t * (3 - 2 * t);
+
+  @override
+  Widget build(BuildContext context) {
+    final isListening = state == VoiceState.listening;
+
+    return AnimatedBuilder(
+      animation: pulseCtrl,
+      builder: (context, _) {
+        final t = _easeInOut(pulseCtrl.value);
+        final scale = (state == VoiceState.idle)
+            ? 1.0
+            : (state == VoiceState.speaking)
+            ? (1.02 + t * 0.04)
+            : (1.05 + t * 0.06);
+
+        return Transform.scale(
+          scale: scale,
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                border: Border.all(
+                  color: isListening ? Brand.actionOrange : Brand.uiBorder,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: (isListening ? Brand.actionOrange : Brand.primaryBlue)
+                        .withOpacity(0.22),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(10),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/character.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.person_rounded,
+                    color: Brand.primaryBlue,
+                    size: 34,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CourseLite {
+  _CourseLite({
+    required this.id,
+    required this.title,
+    required this.thumb,
+    required this.shortDesc,
+    required this.longDesc,
+    required this.duration,
+    required this.level,
+    required this.language,
+    required this.deliveryOptions,
+    required this.deliveryOptionRaw,
+    required this.pricePerMonth,
+    required this.pricePerLevel,
+    required this.accessType,
+    required this.requirements,
+    required this.tags,
+    required this.status,
+    required this.category,
+    required this.content,
+    required this.instructors,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String category;
+  final String title;
+  final String thumb;
+
+  final String shortDesc;
+  final String longDesc;
+  final String content;
+
+  final String duration;
+  final String level;
+  final String language;
+
+  final List<String> deliveryOptions;     // delivery_options (array)
+  final String deliveryOptionRaw;         // delivery_option (string)
+
+  final List<String> instructors;
+
+  final double? pricePerMonth;
+  final double? pricePerLevel;
+
+  final String accessType;
+  final String requirements;
+  final List<String> tags;
+
+  final String status;
+  final int? updatedAt;
+
+  static List<String> _parseList(dynamic v) {
+    if (v == null) return [];
+    if (v is List) return v.map((e) => e.toString()).toList();
+    if (v is String) {
+      return v.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+    return [];
+  }
+
+  static double? _parseDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  static int? _parseInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
+  static String _fixUrl(String url) {
+    final u = url.trim();
+    if (u.isEmpty) return u;
+    if (u.startsWith('//')) return 'https:$u';
+    if (u.startsWith('www.')) return 'https://$u';
+    return u;
+  }
+
+  factory _CourseLite.fromMap(String id, Map<dynamic, dynamic> m) {
+    return _CourseLite(
+      id: id,
+      title: (m['title'] ?? '').toString(),
+      thumb: _fixUrl((m['thumbnail'] ?? '').toString()),
+      shortDesc: (m['short_description'] ?? '').toString(),
+      longDesc: (m['long_description'] ?? '').toString(),
+      content: (m['content'] ?? '').toString(),
+      duration: (m['duration'] ?? '').toString(),
+      level: (m['level'] ?? '').toString(),
+      language: (m['language'] ?? '').toString(),
+
+      // handle both formats
+      deliveryOptions: _parseList(m['delivery_options']),
+      deliveryOptionRaw: (m['delivery_option'] ?? '').toString(),
+
+      instructors: _parseList(m['instructors']),
+
+      pricePerMonth: _parseDouble(m['price_per_month']),
+      pricePerLevel: _parseDouble(m['price_per_level']),
+      accessType: (m['access_type'] ?? '').toString(),
+      requirements: (m['requirement'] ?? '').toString(),
+      tags: _parseList(m['tags']),
+      status: (m['status'] ?? '').toString(),
+      category: (m['category'] ?? 'Other').toString(),
+      updatedAt: _parseInt(m['updatedAt']),
+    );
+  }
+}
+
+
+List<_CourseLite> _parseCoursesLite(dynamic data) {
+  if (data == null) return [];
+  if (data is! Map) return [];
+
+  final out = <_CourseLite>[];
+
+  data.forEach((key, value) {
+    if (key == null || value == null) return;
+    if (value is Map) {
+      out.add(_CourseLite.fromMap(key.toString(), value));
+    }
+  });
+
+  // optional: newest first
+  out.sort((a, b) => (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0));
+
+  return out;
+}
+
+
+class _CoursesByCategory extends StatelessWidget {
+  const _CoursesByCategory();
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('courses');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return const CardShell(child: Text('Could not load courses.'));
+        }
+        if (!snap.hasData) {
+          return const CardShell(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
+
+        final raw = snap.data!.snapshot.value;
+        final items = _parseCoursesLite(raw);
+
+        final published = items
+            .where((c) => c.status.toLowerCase().trim() == 'published')
+            .toList();
+
+        if (published.isEmpty) {
+          return const CardShell(child: Text('No courses available right now.'));
+        }
+
+        // ✅ Group by category
+        final Map<String, List<_CourseLite>> grouped = {};
+        for (final c in published) {
+          final cat = (c.category.trim().isEmpty) ? 'Other' : c.category.trim();
+          grouped.putIfAbsent(cat, () => []);
+          grouped[cat]!.add(c);
+        }
+
+        // ✅ sort category names
+        final cats = grouped.keys.toList()..sort();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final cat in cats) ...[
+              _CategoryRow(
+                title: cat,
+                courses: grouped[cat]!,
+              ),
+              const SizedBox(height: 18),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({
+    required this.title,
+    required this.courses,
+  });
+
+  final String title;
+  final List<_CourseLite> courses;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ✅ Category title (NOT "Courses")
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: Brand.primaryBlue,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        SizedBox(
+          height: 230, // ✅ smaller cards height overall
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: courses.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) {
+              return SizedBox(
+                width: 260, // ✅ card width
+                child: _CourseCardMini(course: courses[i]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// =========================
+// REPLACE EVERYTHING WITH THIS
+// ( _CourseCardMini, _PrettyChip, _Section, _InfoTile, _CourseDetailsSheet )
+// ✅ Adds: Enroll flow -> popup form -> saves to Realtime DB under: subscriptions/<pushId>
+// ✅ Saves: courseId + courseTitle + name + lastName + phone + createdAt
+// ✅ Fixes overflow in mini card by using Expanded on description
+// =========================
+
+// =========================
+// DROP-IN FINAL SECTION
+// Keep ONLY ONE copy in the file
+// =========================
+
+class _CourseCardMini extends StatelessWidget {
+  const _CourseCardMini({required this.course});
+  final _CourseLite course;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (_) => _CourseDetailsSheet(course: course),
+      ),
+      child: CardShell(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min, // ✅ important
+          children: [
+            // Thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: SizedBox(
+                height: 110,
+                width: double.infinity,
+                child: course.thumb.trim().isNotEmpty
+                    ? Image.network(
+                  course.thumb,
+                  fit: BoxFit.cover,
+                  // ✅ stable while loading
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return Container(color: Brand.appBg);
+                  },
+                  errorBuilder: (_, __, ___) =>
+                  const Center(child: Icon(Icons.image_not_supported)),
+                )
+                    : Container(
+                  color: Brand.appBg,
+                  child: const Icon(Icons.school_rounded, size: 40),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Title
+            Text(
+              course.title.isEmpty ? '(Untitled course)' : course.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: Brand.primaryBlue,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Duration only
+            if (course.duration.trim().isNotEmpty)
+              Row(
+                children: [
+                  const Icon(Icons.schedule_rounded,
+                      size: 16, color: Brand.primaryBlue),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      course.duration,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Brand.mainText.withOpacity(0.7),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+class _PrettyChip extends StatelessWidget {
+  const _PrettyChip({
+    this.icon,
+    required this.label,
+    this.ellipsize = false,
+  });
+
+  final IconData? icon;
+  final String label;
+  final bool ellipsize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Brand.appBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Brand.uiBorder),
+      ),
+      child: Row(
+        mainAxisSize: ellipsize ? MainAxisSize.max : MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: Brand.primaryBlue),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: Brand.primaryBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _InfoTile extends StatelessWidget {
+  const _InfoTile({
+    required this.icon,
+    required this.text,
+    this.highlight = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: highlight ? Brand.actionOrange.withOpacity(0.12) : Brand.appBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: highlight ? Brand.actionOrange : Brand.uiBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: highlight ? Brand.actionOrange : Brand.primaryBlue,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: highlight ? Brand.actionOrange : Brand.primaryBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: Brand.primaryBlue,
+            ),
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _CourseDetailsSheet extends StatelessWidget {
+  const _CourseDetailsSheet({required this.course});
+  final _CourseLite course;
+
+  String _priceText() {
+    final pm = course.pricePerMonth;
+    final pl = course.pricePerLevel;
+
+    if (pm != null && pm > 0) return '${pm.toStringAsFixed(0)} DA / month';
+    if (pl != null && pl > 0) return '${pl.toStringAsFixed(0)} DA / level';
+    return '';
+  }
+
+  Widget _hero() {
+    if (course.thumb.trim().isEmpty) {
+      return Container(
+        height: 190,
+        decoration: BoxDecoration(
+          color: Brand.appBg,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Brand.uiBorder),
+        ),
+        child: const Center(
+          child: Icon(Icons.school_rounded, size: 44, color: Brand.primaryBlue),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Image.network(
+          course.thumb,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: Brand.appBg,
+            child: const Center(child: Icon(Icons.image_not_supported)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEnrollDialog(BuildContext context) async {
+    final nameC = TextEditingController();
+    final lastNameC = TextEditingController();
+    final phoneC = TextEditingController();
+
+    bool saving = false;
+
+    Future<void> save() async {
+      final name = nameC.text.trim();
+      final lastName = lastNameC.text.trim();
+      final phone = phoneC.text.trim();
+
+      if (name.isEmpty || lastName.isEmpty || phone.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please fill all fields.')),
+        );
+        return;
+      }
+
+      if (phone.length < 8) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Phone number looks too short.')),
+        );
+        return;
+      }
+
+      final ref = FirebaseDatabase.instance.ref('subscriptions').push();
+
+      await ref.set({
+        'courseId': course.id,
+        'courseTitle': course.title,
+        'firstName': name,
+        'lastName': lastName,
+        'phone': phone,
+        'createdAt': ServerValue.timestamp,
+      });
+    }
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: const Text('Enroll'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameC,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'First name',
+                        prefixIcon: Icon(Icons.person_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: lastNameC,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Last name',
+                        prefixIcon: Icon(Icons.badge_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: phoneC,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone number',
+                        prefixIcon: Icon(Icons.phone_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'We will contact you to confirm your subscription.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Brand.mainText.withOpacity(0.7),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Brand.primaryBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: saving
+                      ? null
+                      : () async {
+                    setState(() => saving = true);
+                    try {
+                      await save();
+                      if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                      if (context.mounted) Navigator.pop(context); // close bottom sheet
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Enrollment sent ✅ We will contact you soon.'),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      setState(() => saving = false);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to enroll: $e')),
+                        );
+                      }
+                    }
+                  },
+                  icon: saving
+                      ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                      : const Icon(Icons.check_circle_rounded),
+                  label: Text(saving ? 'Saving...' : 'Enroll'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    nameC.dispose();
+    lastNameC.dispose();
+    phoneC.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final price = _priceText();
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                course.title.isEmpty ? 'Course' : course.title,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              _hero(),
+              const SizedBox(height: 16),
+
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (course.level.trim().isNotEmpty)
+                    _PrettyChip(icon: Icons.bar_chart_rounded, label: course.level),
+                  if (course.language.trim().isNotEmpty)
+                    _PrettyChip(icon: Icons.language_rounded, label: course.language),
+                  if (course.deliveryOptions.isNotEmpty)
+                    _PrettyChip(
+                      icon: Icons.videocam_rounded,
+                      label: course.deliveryOptions.join(', '),
+                    ),
+                  if (course.duration.trim().isNotEmpty)
+                    _PrettyChip(icon: Icons.schedule_rounded, label: course.duration),
+                ],
+              ),
+
+              const SizedBox(height: 18),
+
+              if (price.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Brand.actionOrange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.payments_rounded, color: Brand.actionOrange),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          price,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Brand.actionOrange,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              if (price.isNotEmpty) const SizedBox(height: 18),
+
+              if (course.longDesc.trim().isNotEmpty)
+                _Section(
+                  title: 'About this course',
+                  child: Text(
+                    course.longDesc,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.55,
+                      color: Brand.mainText.withOpacity(0.85),
+                    ),
+                  ),
+                ),
+
+              if (course.longDesc.trim().isEmpty && course.shortDesc.trim().isNotEmpty)
+                _Section(
+                  title: 'Overview',
+                  child: Text(
+                    course.shortDesc,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.55,
+                      color: Brand.mainText.withOpacity(0.85),
+                    ),
+                  ),
+                ),
+
+              if (course.requirements.trim().isNotEmpty)
+                _Section(
+                  title: 'Requirements',
+                  child: Text(
+                    course.requirements,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.45),
+                  ),
+                ),
+
+              if (course.tags.isNotEmpty)
+                _Section(
+                  title: 'Tags',
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: course.tags.map((t) => _PrettyChip(label: t)).toList(),
+                  ),
+                ),
+
+              const SizedBox(height: 8),
+
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Brand.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () => _showEnrollDialog(context),
+                  icon: const Icon(Icons.how_to_reg_rounded),
+                  label: const Text('Enroll'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+

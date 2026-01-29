@@ -1814,21 +1814,7 @@ class Course {
 
     List<String> parseList(dynamic v) {
       if (v == null) return [];
-
-      // ✅ normal list
-      if (v is List) {
-        return v.map((e) => e.toString()).toList();
-      }
-
-      // ✅ realtime db sometimes returns arrays as Map {0:..., 1:...}
-      if (v is Map) {
-        // keep order if keys are 0,1,2...
-        final entries = v.entries.toList()
-          ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
-        return entries.map((e) => e.value.toString()).toList();
-      }
-
-      // ✅ fallback: comma-separated string
+      if (v is List) return v.map((e) => e.toString()).toList();
       if (v is String) {
         return v
             .split(',')
@@ -1836,10 +1822,8 @@ class Course {
             .where((e) => e.isNotEmpty)
             .toList();
       }
-
       return [];
     }
-
 
     int? parseInt(dynamic v) {
       if (v == null) return null;
