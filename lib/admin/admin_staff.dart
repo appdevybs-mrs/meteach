@@ -121,16 +121,73 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     );
     if (!ok) return;
 
-    final data = staff.toMap()
-      ..addAll({
-        'movedAt': ServerValue.timestamp,
-        'movedFrom': _usersPath,
-      });
+    try {
+      // Read their courses BEFORE moving (so we can clean instructors if teacher)
+      final userCoursesSnap = await _usersRef.child(uid).child('courses').get();
+      final userCoursesVal = userCoursesSnap.value;
 
-    await _deletedRef.child(uid).set(data);
-    await _usersRef.child(uid).remove();
+      final courseIds = <String>[];
+      if (userCoursesVal is Map) {
+        userCoursesVal.forEach((k, v) {
+          if (v is Map) {
+            final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+            final id = (mm['id'] ?? '').toString().trim();
+            if (id.isNotEmpty) courseIds.add(id);
+          }
+        });
+      }
 
-    _snack('Moved to deleted 🗑️');
+      // If this staff is teacher: remove their name from courses instructors
+      final teacherName = staff.fullName.trim();
+      if (staff.role == StaffRole.teacher && teacherName.isNotEmpty) {
+        for (final courseId in courseIds) {
+          final instrRef = _db.ref('courses/$courseId/instructors');
+          final snap = await instrRef.get();
+          final v = snap.value;
+
+          final list = <String>[];
+          if (v is List) {
+            for (final item in v) {
+              final s = (item ?? '').toString().trim();
+              if (s.isNotEmpty) list.add(s);
+            }
+          } else if (v is Map) {
+            v.forEach((_, item) {
+              final s = (item ?? '').toString().trim();
+              if (s.isNotEmpty) list.add(s);
+            });
+          }
+
+          list.removeWhere((x) => x.toLowerCase().trim() == teacherName.toLowerCase().trim());
+
+          if (list.isEmpty) {
+            await instrRef.remove();
+          } else {
+            await instrRef.set(list);
+          }
+        }
+      }
+
+      // Build deleted data
+      final data = staff.toMap()
+        ..addAll({
+          'uid': uid,
+          'movedAt': ServerValue.timestamp,
+          'movedFrom': _usersPath,
+        });
+
+      // ✅ Atomic move: set deleted + remove users in ONE update
+      final updates = <String, dynamic>{
+        '$_deletedPath/$uid': data,
+        '$_usersPath/$uid': null,
+      };
+
+      await _db.ref().update(updates);
+
+      _snack('Moved to deleted 🗑️');
+    } catch (e) {
+      _snack('Delete failed: $e');
+    }
   }
 
   Future<void> _moveToBlocked(String uid, Staff staff) async {
