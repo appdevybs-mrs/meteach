@@ -389,7 +389,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
-class _LearnersList extends StatelessWidget {
+class _LearnersList extends StatefulWidget {
   const _LearnersList({
     required this.titleHint,
     required this.stream,
@@ -403,8 +403,6 @@ class _LearnersList extends StatelessWidget {
   });
 
   final String titleHint;
-
-  /// IMPORTANT: broadcast stream to avoid "already listened"
   final Stream<DatabaseEvent> stream;
 
   final String search;
@@ -422,25 +420,35 @@ class _LearnersList extends StatelessWidget {
   final Future<void> Function(String uid, Learner learner)? onEdit;
 
   @override
+  State<_LearnersList> createState() => _LearnersListState();
+}
+
+class _LearnersListState extends State<_LearnersList>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // IMPORTANT for keep-alive
+
     return Column(
       children: [
         _TopBar(
-          hint: titleHint,
-          value: search,
-          onChanged: onSearchChanged,
-          filters: statusFilter == null
+          hint: widget.titleHint,
+          value: widget.search,
+          onChanged: widget.onSearchChanged,
+          filters: widget.statusFilter == null
               ? const []
               : [
             _FilterChipItem(
               label: 'All',
-              selected: statusFilter == null,
-              onTap: () => onStatusFilterChanged(null),
+              selected: widget.statusFilter == null,
+              onTap: () => widget.onStatusFilterChanged(null),
             ),
           ],
-          // Users tab passes real filter chips via statusFilter != null in parent
         ),
-        if (statusFilter != null)
+        if (widget.statusFilter != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             child: SizedBox(
@@ -453,15 +461,15 @@ class _LearnersList extends StatelessWidget {
                   if (i == 0) {
                     return ChoiceChip(
                       label: const Text('All'),
-                      selected: statusFilter == null,
-                      onSelected: (_) => onStatusFilterChanged(null),
+                      selected: widget.statusFilter == null,
+                      onSelected: (_) => widget.onStatusFilterChanged(null),
                     );
                   }
                   final s = LearnerStatus.values[i - 1];
                   return ChoiceChip(
                     label: Text(s.label),
-                    selected: statusFilter == s,
-                    onSelected: (_) => onStatusFilterChanged(s),
+                    selected: widget.statusFilter == s,
+                    onSelected: (_) => widget.onStatusFilterChanged(s),
                   );
                 },
               ),
@@ -469,7 +477,7 @@ class _LearnersList extends StatelessWidget {
           ),
         Expanded(
           child: StreamBuilder<DatabaseEvent>(
-            stream: stream,
+            stream: widget.stream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return const _StateCard(
@@ -478,11 +486,14 @@ class _LearnersList extends StatelessWidget {
                   icon: Icons.error_outline,
                 );
               }
-              if (!snapshot.hasData) {
+
+              // ✅ Important: only show loading the very first time
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
                 return const _LoadingList();
               }
 
-              final data = snapshot.data!.snapshot.value;
+              final data = snapshot.data?.snapshot.value;
               final rows = _parseLearnersMap(data);
 
               rows.sort((a, b) {
@@ -491,7 +502,7 @@ class _LearnersList extends StatelessWidget {
                 return bT.compareTo(aT);
               });
 
-              final s = search.trim().toLowerCase();
+              final s = widget.search.trim().toLowerCase();
               final filtered = rows.where((r) {
                 final l = r.learner;
 
@@ -503,9 +514,9 @@ class _LearnersList extends StatelessWidget {
                     l.phone1.toLowerCase().contains(s) ||
                     l.phone2.toLowerCase().contains(s);
 
-                final matchesStatus = statusFilter == null
+                final matchesStatus = widget.statusFilter == null
                     ? true
-                    : (l.status == statusFilter);
+                    : (l.status == widget.statusFilter);
 
                 return matchesSearch && matchesStatus;
               }).toList();
@@ -530,7 +541,8 @@ class _LearnersList extends StatelessWidget {
                     elevation: 0,
                     color: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(
@@ -595,22 +607,25 @@ class _LearnersList extends StatelessWidget {
                             tooltip: 'Actions',
                             onSelected: (a) async {
                               if (a == _RowAction.edit) {
-                                if (onEdit != null) {
-                                  await onEdit!(row.uid, l);
+                                if (widget.onEdit != null) {
+                                  await widget.onEdit!(row.uid, l);
                                 }
                                 return;
                               }
-                              await onAction(row.uid, l, a);
+                              await widget.onAction(row.uid, l, a);
                             },
                             itemBuilder: (_) {
                               final items = <PopupMenuEntry<_RowAction>>[];
-                              if (onEdit != null) {
-                                items.add(const PopupMenuItem(
+                              if (widget.onEdit != null) {
+                                items.add(
+                                  const PopupMenuItem(
                                     value: _RowAction.edit,
-                                    child: Text('Edit')));
+                                    child: Text('Edit'),
+                                  ),
+                                );
                                 items.add(const PopupMenuDivider());
                               }
-                              items.addAll(actionsBuilder(row.uid, l));
+                              items.addAll(widget.actionsBuilder(row.uid, l));
                               return items;
                             },
                           ),
@@ -627,6 +642,7 @@ class _LearnersList extends StatelessWidget {
     );
   }
 }
+
 
 class _TopBar extends StatelessWidget {
   const _TopBar({
