@@ -826,6 +826,11 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
   Map<String, Map<String, dynamic>> _allCourses = {};
   final Set<String> _selectedCourseIds = {};
   bool _loadingCourses = true;
+  // --- to track what was assigned BEFORE editing (needed for add/remove instructors) ---
+  final Set<String> _initialCourseIds = {}; // courses before edit
+  StaffRole? _initialRole;                  // role before edit
+  String _initialTeacherName = '';          // name before edit
+
 
   @override
   void initState() {
@@ -909,6 +914,14 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
           });
         }
       }
+      // ✅ Save "before" state so we can know what changed on Save
+      _initialCourseIds
+        ..clear()
+        ..addAll(_selectedCourseIds);
+
+      _initialRole = _role;
+      _initialTeacherName = _teacherFullName;
+
 
       if (!mounted) return;
       setState(() {
@@ -1127,41 +1140,114 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
   /// If staff role == teacher:
   /// add teacher full name into /courses/{courseId}/instructors (list) if not present.
-  Future<void> _ensureTeacherInCourseInstructors() async {
-    if (_role != StaffRole.teacher) return;
 
-    final name = _teacherFullName;
-    if (name.isEmpty) return;
 
-    for (final courseId in _selectedCourseIds) {
-      final instrRef = _coursesRef.child(courseId).child('instructors');
-      final snap = await instrRef.get();
-      final v = snap.value;
+  // ----------------------------
+// Course instructors sync (add/remove teacher name)
+// ----------------------------
 
-      final List<String> instructors = [];
+  Future<List<String>> _readInstructorsList(DatabaseReference ref) async {
+    final snap = await ref.get();
+    final v = snap.value;
 
-      if (v is List) {
-        for (final item in v) {
-          if (item == null) continue;
-          final s = item.toString().trim();
-          if (s.isNotEmpty) instructors.add(s);
-        }
-      } else if (v is Map) {
-        // sometimes lists come as maps in RTDB
-        v.forEach((_, item) {
-          if (item == null) return;
-          final s = item.toString().trim();
-          if (s.isNotEmpty) instructors.add(s);
-        });
+    final out = <String>[];
+
+    if (v is List) {
+      for (final item in v) {
+        final s = (item ?? '').toString().trim();
+        if (s.isNotEmpty) out.add(s);
       }
+    } else if (v is Map) {
+      v.forEach((_, item) {
+        final s = (item ?? '').toString().trim();
+        if (s.isNotEmpty) out.add(s);
+      });
+    }
 
-      final exists = instructors.any((x) => x.toLowerCase() == name.toLowerCase());
-      if (!exists) {
-        instructors.add(name);
-        await instrRef.set(instructors);
+    return out;
+  }
+
+  Future<void> _addTeacherToCourse(String courseId, String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return;
+
+    final instrRef = _coursesRef.child(courseId).child('instructors');
+    final list = await _readInstructorsList(instrRef);
+
+    final exists = list.any((x) => x.toLowerCase().trim() == n.toLowerCase().trim());
+    if (!exists) {
+      list.add(n);
+      await instrRef.set(list);
+    }
+  }
+
+  Future<void> _removeTeacherFromCourse(String courseId, String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return;
+
+    final instrRef = _coursesRef.child(courseId).child('instructors');
+    final list = await _readInstructorsList(instrRef);
+
+    list.removeWhere((x) => x.toLowerCase().trim() == n.toLowerCase().trim());
+
+    // improvement: remove node if empty
+    if (list.isEmpty) {
+      await instrRef.remove();
+    } else {
+      await instrRef.set(list);
+    }
+  }
+
+  Future<void> _syncTeacherInstructors({
+    required Set<String> beforeCourses,
+    required Set<String> afterCourses,
+    required StaffRole? beforeRole,
+    required StaffRole afterRole,
+    required String beforeName,
+    required String afterName,
+  }) async {
+    final wasTeacher = (beforeRole ?? StaffRole.other) == StaffRole.teacher;
+    final isTeacherNow = afterRole == StaffRole.teacher;
+
+    // 1) Remove teacher from courses that were removed OR from all if role changed away
+    if (wasTeacher) {
+      final removed = isTeacherNow
+          ? beforeCourses.difference(afterCourses)
+          : beforeCourses;
+
+      for (final courseId in removed) {
+        await _removeTeacherFromCourse(courseId, beforeName);
+      }
+    }
+
+    // 2) If still teacher but name changed: replace name in still assigned courses
+    if (wasTeacher && isTeacherNow) {
+      final still = beforeCourses.intersection(afterCourses);
+      final oldN = beforeName.trim();
+      final newN = afterName.trim();
+
+      if (oldN.isNotEmpty &&
+          newN.isNotEmpty &&
+          oldN.toLowerCase() != newN.toLowerCase()) {
+        for (final courseId in still) {
+          await _removeTeacherFromCourse(courseId, oldN);
+          await _addTeacherToCourse(courseId, newN);
+        }
+      }
+    }
+
+    // 3) Add teacher to newly added courses OR all if role changed to teacher
+    if (isTeacherNow) {
+      final added = wasTeacher
+          ? afterCourses.difference(beforeCourses)
+          : afterCourses;
+
+      for (final courseId in added) {
+        await _addTeacherToCourse(courseId, afterName);
       }
     }
   }
+
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -1215,8 +1301,34 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         });
       }
 
+      // BEFORE/AFTER diff for instructors update
+      final beforeCourses = Set<String>.from(_initialCourseIds);
+      final beforeRole = _initialRole;
+      final beforeName = _initialTeacherName;
+
       await _saveUserCourses(uid);
-      await _ensureTeacherInCourseInstructors();
+
+      final afterCourses = Set<String>.from(_selectedCourseIds);
+      final afterRole = _role;
+      final afterName = _teacherFullName;
+
+// sync instructors in /courses
+      await _syncTeacherInstructors(
+        beforeCourses: beforeCourses,
+        afterCourses: afterCourses,
+        beforeRole: beforeRole,
+        afterRole: afterRole,
+        beforeName: beforeName,
+        afterName: afterName,
+      );
+
+// update initial cache (so edits stay consistent)
+      _initialCourseIds
+        ..clear()
+        ..addAll(afterCourses);
+      _initialRole = afterRole;
+      _initialTeacherName = afterName;
+
 
       if (!mounted) return;
       Navigator.of(context).pop(staff);
