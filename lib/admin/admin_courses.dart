@@ -563,11 +563,26 @@ class _CourseCard extends StatelessWidget {
                       color: AdminCoursesScreen.primaryBlue,
                     ),
                   ),
+
+// ✅ show course code (if exists)
+                  if (course.courseCode.trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      course.courseCode,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black.withOpacity(0.55),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 4),
                   Text(
                     course.shortDescription.isEmpty
                         ? 'No short description'
                         : course.shortDescription,
+
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Colors.black.withOpacity(0.65)),
@@ -1376,11 +1391,19 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     try {
       final nowTs = ServerValue.timestamp;
 
+      final existing = (widget.initial?.courseCode ?? '').trim();
+
+      final computedCode = widget.mode == EditorMode.create
+          ? generateCourseCode(titleC.text)
+          : (existing.isNotEmpty ? existing : generateCourseCode(titleC.text));
+
+
       final course = Course(
         title: titleC.text.trim(),
         category: categoryC.text.trim(),
-
         thumbnailUrl: thumbnailUrlC.text.trim(),
+        courseCode: computedCode,
+
         shortDescription: shortDescC.text.trim(),
         longDescription: longDescC.text.trim(),
         duration: durationC.text.trim(),
@@ -1390,14 +1413,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         language: languageC.text.trim(),
         deliveryOption: deliveryC.text.trim(),
         deliveryOptions: _deliverySelected.toList(),
-
         pricePerMonth: _parseDoubleOrNull(priceMonthC.text),
         pricePerLevel: _parseDoubleOrNull(priceLevelC.text),
         accessType: accessTypeC.text.trim(),
         status: _status,
         requirementsText: requirementsC.text.trim(),
         tags: _splitCsv(tagsC.text),
-        updatedAtMs: null, // server timestamp will overwrite
+        updatedAtMs: null,
         trashedAtMs: null,
       );
 
@@ -1407,15 +1429,21 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           ...course.toMap(),
           'createdAt': nowTs,
           'updatedAt': nowTs,
-
         });
       } else {
         final id = widget.courseId!;
-        await _coursesRef.child(id).update({
-          ...course.toMap(),
-          'updatedAt': nowTs,
+        final updateMap = course.toMap()
+          ..remove('course_code'); // default: don’t overwrite
 
+        if (existing.isEmpty) {
+          updateMap['course_code'] = computedCode; // fill once
+        }
+
+        await _coursesRef.child(id).update({
+          ...updateMap,
+          'updatedAt': nowTs,
         });
+
       }
 
       if (!mounted) return;
@@ -1429,6 +1457,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       if (mounted) setState(() => _saving = false);
     }
   }
+
 
   static List<String> _splitCsv(String input) {
     return input
@@ -1850,8 +1879,11 @@ enum CourseStatus {
 class Course {
   Course({
     required this.title,
+
     required this.category,
     required this.thumbnailUrl,
+    required this.courseCode,
+
     required this.shortDescription,
     required this.longDescription,
     required this.duration,
@@ -1874,6 +1906,7 @@ class Course {
   final String title;
   final String category;
   final String thumbnailUrl;
+  final String courseCode;
 
   final String shortDescription;
   final String longDescription;
@@ -1902,6 +1935,8 @@ class Course {
       'title': title,
       'category': category,
       'thumbnail': thumbnailUrl,
+      'course_code': courseCode,
+
       'short_description': shortDescription,
       'long_description': longDescription,
       'duration': duration,
@@ -1953,6 +1988,8 @@ class Course {
       title: (m['title'] ?? '').toString(),
       category: (m['category'] ?? '').toString(),
       thumbnailUrl: _fixUrl((m['thumbnail'] ?? '').toString()),
+      courseCode: (m['course_code'] ?? '').toString(),
+
       shortDescription: (m['short_description'] ?? '').toString(),
       longDescription: (m['long_description'] ?? '').toString(),
       duration: (m['duration'] ?? '').toString(),
@@ -2072,4 +2109,20 @@ String _fixUrl(String url) {
 
   // if it already has http/https => keep it
   return u;
+}
+String generateCourseCode(String title) {
+  final words = title
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty)
+      .toList();
+
+  final initials = words
+      .map((w) => w[0].toUpperCase())
+      .join();
+
+  final number = DateTime.now().millisecondsSinceEpoch % 1000;
+  final padded = number.toString().padLeft(3, '0');
+
+  return '$initials-$padded';
 }
