@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:dream_english_academy/course_syllabus_screen.dart';
 
 class AdminCoursesScreen extends StatefulWidget {
   const AdminCoursesScreen({super.key});
@@ -613,6 +614,24 @@ class _CourseCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+
+// 📘 Syllabus button
+            IconButton(
+              tooltip: 'Syllabus',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CourseSyllabusScreen(
+                      courseId: courseId,
+                      courseTitle: course.title,
+                    ),
+                  ),
+                );
+              },
+              icon: const Text('📘', style: TextStyle(fontSize: 18)),
+            ),
+
+// ⋮ Existing menu
             PopupMenuButton<_CourseAction>(
               tooltip: 'Actions',
               onSelected: (a) async {
@@ -666,6 +685,7 @@ class _CourseCard extends StatelessWidget {
                 ),
               ],
             ),
+
           ],
         ),
       ),
