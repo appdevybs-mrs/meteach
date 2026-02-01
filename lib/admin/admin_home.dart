@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'admin_courses.dart';
 import '../admin_learners.dart';
+import 'admin_staff.dart';
 
 class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
@@ -156,6 +157,19 @@ class AdminHome extends StatelessWidget {
                   Navigator.pop(context);
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.badge_rounded, color: primaryBlue),
+                title: const Text(
+                  'Staff',
+                  style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
                   );
                 },
               ),
