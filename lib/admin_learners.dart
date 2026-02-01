@@ -872,6 +872,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   final _db = FirebaseDatabase.instance;
 
   DatabaseReference get _usersRef => _db.ref('users');
+  DatabaseReference get _coursesRef => _db.ref('courses');
 
   // fields
   late final TextEditingController firstNameC;
@@ -883,11 +884,16 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   late final TextEditingController passwordC;
   late final TextEditingController serialC;
 
+
   DateTime? _dob;
 
   LearnerStatus _status = LearnerStatus.active;
 
   bool _saving = false;
+  Map<String, Map<String, dynamic>> _allCourses = {}; // all courses from DB
+  final Set<String> _selectedCourseIds = {}; // selected course IDs
+  bool _loadingCourses = true; // loading indicator
+
 
   @override
   void initState() {
@@ -926,6 +932,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         if (serialC.text.trim().isEmpty) serialC.text = s;
       });
     }
+    _loadCoursesAndSelection();
+
   }
 
   @override
@@ -945,6 +953,52 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
+
+  Future<void> _loadCoursesAndSelection() async {
+    try {
+      // Load all courses from /courses
+      final coursesSnap = await _coursesRef.get();
+      final coursesVal = coursesSnap.value;
+
+      final Map<String, Map<String, dynamic>> coursesOut = {};
+      if (coursesVal is Map) {
+        coursesVal.forEach((key, value) {
+          if (key == null || value == null) return;
+          if (value is Map) {
+            coursesOut[key.toString()] =
+                value.map((k, v) => MapEntry(k.toString(), v));
+          }
+        });
+      }
+
+      // If editing, load learner's existing courses from /users/{uid}/courses
+      if (widget.mode == EditorMode.edit && widget.uid != null) {
+        final userCoursesSnap =
+        await _usersRef.child(widget.uid!).child('courses').get();
+        final userCoursesVal = userCoursesSnap.value;
+
+        _selectedCourseIds.clear();
+
+        if (userCoursesVal is Map) {
+          userCoursesVal.forEach((k, v) {
+            if (k == null) return;
+            _selectedCourseIds.add(k.toString());
+          });
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _allCourses = coursesOut;
+        _loadingCourses = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingCourses = false);
+      _snack('Failed to load courses: $e');
+    }
+  }
+
 
   Future<void> _pickDob() async {
     FocusScope.of(context).unfocus();
@@ -1018,6 +1072,190 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     }
   }
 
+  Future<void> _openCoursesPicker() async {
+    final tempSelected = Set<String>.from(_selectedCourseIds);
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Select courses'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: _allCourses.isEmpty
+                ? const Text('No courses found.')
+                : ListView(
+              shrinkWrap: true,
+              children: _allCourses.entries.map((e) {
+                final id = e.key;
+                final data = e.value;
+
+                final code = (data['course_code'] ?? '').toString().trim();
+                final titleText = (data['title'] ?? data['name'] ?? '').toString().trim();
+                final category = (data['category'] ?? '').toString().trim();
+
+// What we show to admin:
+                final display = [
+                  if (code.isNotEmpty) code,
+                  if (titleText.isNotEmpty) titleText,
+                ].join(' — ');
+
+// Fallback if DB doesn't have title/name:
+                final finalTitle = display.isNotEmpty
+                    ? display
+                    : (category.isNotEmpty ? category : id);
+
+
+                return CheckboxListTile(
+                  value: tempSelected.contains(id),
+                  title: Text(finalTitle),
+                  subtitle: Text(
+                    id,
+                    style: TextStyle(
+                      color: Colors.black.withOpacity(0.5),
+                      fontSize: 12,
+                    ),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  onChanged: (v) {
+                    setDialogState(() {
+                      if (v == true) {
+                        tempSelected.add(id);
+                      } else {
+                        tempSelected.remove(id);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  _selectedCourseIds
+                    ..clear()
+                    ..addAll(tempSelected);
+                });
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Save selection'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _courseLabelFor(String courseId) {
+    final c = _allCourses[courseId];
+    final code = (c?['course_code'] ?? '').toString().trim();
+    final title = (c?['title'] ?? c?['name'] ?? '').toString().trim();
+    final category = (c?['category'] ?? '').toString().trim();
+
+    final label = [
+      if (code.isNotEmpty) code,
+      if (title.isNotEmpty) title,
+    ].join(' — ');
+
+    return label.isNotEmpty ? label : (category.isNotEmpty ? category : courseId);
+  }
+
+  /// Reads existing /users/{uid}/courses and returns the largest N in course_N keys
+  int _maxCourseIndexFromExisting(dynamic v) {
+    if (v is! Map) return 0;
+    int maxI = 0;
+    v.forEach((k, _) {
+      final key = k.toString();
+      final m = RegExp(r'^course_(\d+)$').firstMatch(key);
+      if (m != null) {
+        final n = int.tryParse(m.group(1) ?? '');
+        if (n != null && n > maxI) maxI = n;
+      }
+    });
+    return maxI;
+  }
+
+
+  Future<void> _saveUserCourses(String uid) async {
+    final coursesRef = _usersRef.child(uid).child('courses');
+
+    // If nothing selected => remove node
+    if (_selectedCourseIds.isEmpty) {
+      await coursesRef.remove();
+      return;
+    }
+
+    // Read current courses to avoid losing progress later
+    final existingSnap = await coursesRef.get();
+    final existingVal = existingSnap.value;
+
+    // Build a map: courseId -> courseNodeKey (course_1, course_2, ...)
+    final Map<String, String> idToKey = {};
+
+    if (existingVal is Map) {
+      existingVal.forEach((k, v) {
+        if (k == null || v == null) return;
+        if (v is Map) {
+          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          final existingId = (mm['id'] ?? '').toString();
+          if (existingId.isNotEmpty) {
+            idToKey[existingId] = k.toString();
+          }
+        }
+      });
+    }
+
+    int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
+
+    // We will update existing + add new, and delete removed
+    final Map<String, dynamic> updates = {};
+
+    // 1) Remove courses that are no longer selected (delete whole node)
+    if (existingVal is Map) {
+      existingVal.forEach((k, v) {
+        if (k == null) return;
+        if (k.toString().startsWith('course_')) {
+          // check if its id is still selected
+          String existingId = '';
+          if (v is Map) {
+            final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+            existingId = (mm['id'] ?? '').toString();
+          }
+          if (existingId.isNotEmpty && !_selectedCourseIds.contains(existingId)) {
+            updates[k.toString()] = null; // delete
+          }
+        }
+      });
+    }
+
+    // 2) Upsert selected courses (keep existing course_N keys if already there)
+    for (final courseId in _selectedCourseIds) {
+      final key = idToKey[courseId] ?? 'course_${nextIndex++}';
+
+      final c = _allCourses[courseId];
+      final code = (c?['course_code'] ?? '').toString().trim();
+      final title = (c?['title'] ?? c?['name'] ?? '').toString().trim();
+      final category = (c?['category'] ?? '').toString().trim();
+
+      // IMPORTANT: we set basic info, but DO NOT overwrite future progress/attendance nodes
+      // We update only these fields.
+      updates['$key/id'] = courseId;
+      updates['$key/course_code'] = code;
+      updates['$key/title'] = title;
+      updates['$key/category'] = category;
+      updates['$key/assignedAt'] = ServerValue.timestamp;
+    }
+
+    await coursesRef.update(updates);
+  }
+
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -1073,6 +1311,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
           'updatedAt': nowTs,
         });
       }
+      await _saveUserCourses(uid);
+
 
       if (!mounted) return;
       Navigator.of(context).pop(learner);
@@ -1255,6 +1495,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+
               _SectionCard(
                 title: 'Status',
                 child: DropdownButtonFormField<LearnerStatus>(
@@ -1282,6 +1523,61 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   },
                 ),
               ),
+
+              const SizedBox(height: 12),
+
+              _SectionCard(
+                title: 'Assign Courses',
+                child: _loadingCourses
+                    ? const Row(
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 10),
+                    Text('Loading courses...'),
+                  ],
+                )
+                    : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: _allCourses.isEmpty ? null : _openCoursesPicker,
+                      icon: const Icon(Icons.school_rounded),
+                      label: Text(
+                        _selectedCourseIds.isEmpty
+                            ? 'Select courses'
+                            : 'Selected: ${_selectedCourseIds.length}',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_selectedCourseIds.isNotEmpty)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _selectedCourseIds.map((id) {
+                          final c = _allCourses[id];
+                          final code = (c?['course_code'] ?? '').toString().trim();
+                          final titleText = (c?['title'] ?? c?['name'] ?? '').toString().trim();
+                          final category = (c?['category'] ?? '').toString().trim();
+
+                          final label = [
+                            if (code.isNotEmpty) code,
+                            if (titleText.isNotEmpty) titleText,
+                          ].join(' — ');
+
+                          return _Pill(
+                            label: label.isNotEmpty ? label : (category.isNotEmpty ? category : id),
+                          );
+
+                        }).toList(),
+                      ),
+                  ],
+                ),
+              ),
+
             ],
           ),
         ),
@@ -1289,6 +1585,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     );
   }
 }
+
+
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
