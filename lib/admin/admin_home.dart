@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'admin_courses.dart';
 import '../admin_learners.dart';
 import 'admin_staff.dart';
+import 'admin_classes.dart';
 
 class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
@@ -143,6 +144,23 @@ class AdminHome extends StatelessWidget {
                   );
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.class_rounded, color: primaryBlue),
+                title: const Text(
+                  'Classes',
+                  style: TextStyle(
+                    color: mainText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+                  );
+                },
+              ),
+
 
               ListTile(
                 leading: const Icon(Icons.people_alt_rounded, color: primaryBlue),
