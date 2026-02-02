@@ -11,12 +11,11 @@ class AdminClassesScreen extends StatefulWidget {
 }
 
 class _AdminClassesScreenState extends State<AdminClassesScreen> {
-  // ====== NODES ======
+  // ====== DB NODES ======
   static const String coursesNode = "courses";
   static const String classesNode = "classes";
   static const String usersNode = "users"; // learners live here
 
-  // ===== Firebase refs =====
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _coursesRef = _db.child(coursesNode);
   late final DatabaseReference _classesRef = _db.child(classesNode);
@@ -26,6 +25,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool _loadingCourses = true;
   List<Map<String, dynamic>> _courses = [];
 
+  // ===== Learners cache (ALL learners) =====
+  bool _loadingLearners = true;
+  List<Map<String, dynamic>> _allLearners = []; // {uid, serial, name, coursesMap}
+
   // ===== Search =====
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = "";
@@ -34,6 +37,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   void initState() {
     super.initState();
     _loadCourses();
+    _loadAllLearners();
 
     _searchCtrl.addListener(() {
       setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
@@ -55,33 +59,32 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   String _formatDate(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 
+  bool _isLearnerRole(dynamic role) {
+    final r = (role ?? "").toString().trim().toLowerCase();
+    return r == "learner" || r == "learners" || r == "learner(s)";
+  }
+
   String _levelShort(String levelRaw) {
     final t = levelRaw.trim();
     if (t.isEmpty) return "CLS";
     return t.split(RegExp(r'\s+')).first;
   }
 
-  /// Short Class ID: exactly 5 chars
+  /// Short Class ID: exactly 5 chars (human-friendly)
   String _makeShortClassId() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid 0/O/1/I
     final rnd = Random.secure();
     return List.generate(5, (_) => chars[rnd.nextInt(chars.length)]).join();
   }
 
   Future<String> _generateUniqueClassId() async {
     String id = _makeShortClassId();
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 12; i++) {
       final snap = await _classesRef.child(id).get();
       if (!snap.exists) return id;
       id = _makeShortClassId();
     }
-    return id;
-  }
-
-  bool _isLearnerRole(dynamic role) {
-    final r = (role ?? "").toString().trim().toLowerCase();
-    return r == "learner" || r == "learners" || r == "learner(s)" || r == "learner ".trim();
-    // ✅ the above covers "LEARNER" as well because we lower-case
+    return id; // best effort
   }
 
   // -------------------- Load courses --------------------
@@ -99,9 +102,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final id = entry.key.toString();
         final data = Map<String, dynamic>.from(entry.value as Map);
 
-        // optional: only published courses
-        // if ((data["status"] ?? "") != "published") continue;
-
         final levelRaw = (data["level"] ?? "").toString();
 
         list.add({
@@ -117,7 +117,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         });
       }
 
-      list.sort((a, b) => (a["course_code"] as String).compareTo(b["course_code"] as String));
+      list.sort((a, b) =>
+          (a["course_code"] as String).compareTo(b["course_code"] as String));
     }
 
     setState(() {
@@ -126,96 +127,142 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     });
   }
 
-  // -------------------- Learners logic --------------------
-  // users/{uid} with role == LEARNER (case-insensitive)
-  // only those who have courses/*/id == selectedCourseId
+  // -------------------- Load ALL learners --------------------
 
-  Future<List<Map<String, dynamic>>> _loadLearnersForCourse(String courseId) async {
+  Future<void> _loadAllLearners() async {
+    setState(() => _loadingLearners = true);
+
     final snap = await _usersRef.get();
-    final List<Map<String, dynamic>> learners = [];
+    final List<Map<String, dynamic>> list = [];
 
-    if (!snap.exists || snap.value is! Map) return learners;
+    if (snap.exists && snap.value is Map) {
+      final all = Map<dynamic, dynamic>.from(snap.value as Map);
 
-    final all = Map<dynamic, dynamic>.from(snap.value as Map);
+      for (final entry in all.entries) {
+        final uid = entry.key.toString();
+        final data = Map<String, dynamic>.from(entry.value as Map);
 
-    for (final entry in all.entries) {
-      final uid = entry.key.toString();
-      final data = Map<String, dynamic>.from(entry.value as Map);
+        if (!_isLearnerRole(data["role"])) continue;
 
-      if (!_isLearnerRole(data["role"])) continue;
+        final serial = (data["serial"] ?? "").toString().trim();
+        final first = (data["first_name"] ?? "").toString().trim();
+        final last = (data["last_name"] ?? "").toString().trim();
+        final name = "$first $last".trim();
 
-      final courses = (data["courses"] is Map) ? Map<dynamic, dynamic>.from(data["courses"]) : null;
-      if (courses == null) continue;
+        final coursesMap = (data["courses"] is Map)
+            ? Map<String, dynamic>.from((data["courses"] as Map).map(
+              (k, v) => MapEntry(
+            k.toString(),
+            v is Map ? Map<String, dynamic>.from(v) : v,
+          ),
+        ))
+            : <String, dynamic>{};
 
-      bool hasCourse = false;
-      for (final cEntry in courses.entries) {
-        final cMap = (cEntry.value is Map) ? Map<String, dynamic>.from(cEntry.value as Map) : <String, dynamic>{};
-        final id = (cMap["id"] ?? "").toString();
-        if (id == courseId) {
-          hasCourse = true;
+        list.add({
+          "uid": uid,
+          "serial": serial.isEmpty ? "N/A" : serial,
+          "name": name.isEmpty ? "Unnamed" : name,
+          "courses": coursesMap,
+        });
+      }
+    }
+
+    list.sort((a, b) => (a["name"] as String).compareTo(b["name"] as String));
+
+    setState(() {
+      _allLearners = list;
+      _loadingLearners = false;
+    });
+  }
+
+  // -------------------- Learner / course helpers --------------------
+
+  Set<String> _uidsWhoHaveCourse(String courseId) {
+    final set = <String>{};
+    for (final l in _allLearners) {
+      final courses = (l["courses"] is Map)
+          ? Map<String, dynamic>.from(l["courses"] as Map)
+          : <String, dynamic>{};
+
+      bool has = false;
+      for (final e in courses.entries) {
+        final m = (e.value is Map)
+            ? Map<String, dynamic>.from(e.value)
+            : <String, dynamic>{};
+        if ((m["id"] ?? "").toString() == courseId) {
+          has = true;
           break;
         }
       }
-      if (!hasCourse) continue;
 
-      final serial = (data["serial"] ?? "").toString().trim();
-      final first = (data["first_name"] ?? "").toString().trim();
-      final last = (data["last_name"] ?? "").toString().trim();
-      final name = "$first $last".trim();
-
-      learners.add({
-        "uid": uid,
-        "serial": serial.isEmpty ? "N/A" : serial,
-        "name": name.isEmpty ? "Unnamed" : name,
-      });
+      if (has) set.add(l["uid"].toString());
     }
-
-    learners.sort((a, b) => (a["name"] as String).compareTo(b["name"] as String));
-    return learners;
+    return set;
   }
 
-  /// Find the learner's courseKey where courses/{courseKey}/id == courseId
-  String? _findCourseKeyForLearner(Map<String, dynamic> userData, String courseId) {
-    final courses = (userData["courses"] is Map) ? Map<dynamic, dynamic>.from(userData["courses"]) : null;
-    if (courses == null) return null;
-
-    for (final entry in courses.entries) {
-      final key = entry.key.toString();
-      final cMap = (entry.value is Map) ? Map<String, dynamic>.from(entry.value as Map) : <String, dynamic>{};
-      if ((cMap["id"] ?? "").toString() == courseId) return key;
-    }
-    return null;
-  }
-
-  Future<void> _syncLearnersClassData({
+  Future<void> _syncLearnersClassDataStrict({
     required String courseId,
     required Map<String, dynamic> classPayload,
-    required Map<String, dynamic> selectedLearnersByUid, // uid -> {serial,name}
-    required Map<String, dynamic> previousLearnersByUid, // uid -> ...
+    required Map<String, dynamic> selectedLearnersByUid,
+    required Map<String, dynamic> previousLearnersByUid,
   }) async {
     final classId = (classPayload["class_id"] ?? "").toString();
     final status = (classPayload["status"] ?? "active").toString();
 
-    // removed learners
-    final removedUids = previousLearnersByUid.keys.where((uid) => !selectedLearnersByUid.containsKey(uid)).toList();
+    // removed learners => remove class field
+    final removedUids = previousLearnersByUid.keys
+        .where((uid) => !selectedLearnersByUid.containsKey(uid))
+        .toList();
+
     for (final uid in removedUids) {
       final userSnap = await _usersRef.child(uid).get();
       if (!userSnap.exists || userSnap.value is! Map) continue;
-      final userData = Map<String, dynamic>.from(userSnap.value as Map);
 
-      final courseKey = _findCourseKeyForLearner(userData, courseId);
+      final userData = Map<String, dynamic>.from(userSnap.value as Map);
+      final courses = (userData["courses"] is Map)
+          ? Map<dynamic, dynamic>.from(userData["courses"])
+          : <dynamic, dynamic>{};
+
+      String? courseKey;
+      for (final entry in courses.entries) {
+        final m = (entry.value is Map)
+            ? Map<String, dynamic>.from(entry.value)
+            : <String, dynamic>{};
+        if ((m["id"] ?? "").toString() == courseId) {
+          courseKey = entry.key.toString();
+          break;
+        }
+      }
       if (courseKey == null) continue;
 
-      await _usersRef.child(uid).child("courses").child(courseKey).child("class").remove();
+      await _usersRef
+          .child(uid)
+          .child("courses")
+          .child(courseKey)
+          .child("class")
+          .remove();
     }
 
-    // added/kept learners
+    // kept/added learners => set class field (only if enrolled)
     for (final uid in selectedLearnersByUid.keys) {
       final userSnap = await _usersRef.child(uid).get();
       if (!userSnap.exists || userSnap.value is! Map) continue;
-      final userData = Map<String, dynamic>.from(userSnap.value as Map);
 
-      final courseKey = _findCourseKeyForLearner(userData, courseId);
+      final userData = Map<String, dynamic>.from(userSnap.value as Map);
+      final courses = (userData["courses"] is Map)
+          ? Map<dynamic, dynamic>.from(userData["courses"])
+          : <dynamic, dynamic>{};
+
+      String? courseKey;
+      for (final entry in courses.entries) {
+        final m = (entry.value is Map)
+            ? Map<String, dynamic>.from(entry.value)
+            : <String, dynamic>{};
+        if ((m["id"] ?? "").toString() == courseId) {
+          courseKey = entry.key.toString();
+          break;
+        }
+      }
       if (courseKey == null) continue;
 
       final clsMini = {
@@ -228,7 +275,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         "updatedAt": ServerValue.timestamp,
       };
 
-      await _usersRef.child(uid).child("courses").child(courseKey).child("class").set(clsMini);
+      await _usersRef
+          .child(uid)
+          .child("courses")
+          .child(courseKey)
+          .child("class")
+          .set(clsMini);
     }
   }
 
@@ -249,12 +301,19 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   Future<void> _deleteClass(String classId) async {
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => AlertDialog(
         title: const Text("Delete class?"),
         content: Text("This will permanently delete:\n$classId"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete")),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete"),
+          ),
         ],
       ),
     );
@@ -262,16 +321,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (ok != true) return;
 
     try {
-      // remove learner course->class (best effort)
       final clsSnap = await _classesRef.child(classId).get();
       if (clsSnap.exists && clsSnap.value is Map) {
         final cls = Map<String, dynamic>.from(clsSnap.value as Map);
         final courseId = (cls["course_id"] ?? "").toString();
+
         final prevLearners = (cls["learners"] is Map)
-            ? Map<String, dynamic>.from((cls["learners"] as Map).map((k, v) => MapEntry(k.toString(), v)))
+            ? Map<String, dynamic>.from((cls["learners"] as Map)
+            .map((k, v) => MapEntry(k.toString(), v)))
             : <String, dynamic>{};
 
-        await _syncLearnersClassData(
+        await _syncLearnersClassDataStrict(
           courseId: courseId,
           classPayload: {"class_id": classId, "course_id": courseId},
           selectedLearnersByUid: const <String, dynamic>{},
@@ -294,7 +354,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     final title = (cls["course_title"] ?? "").toString().toLowerCase();
     final code = (cls["course_code"] ?? "").toString().toLowerCase();
     final inst = (cls["instructor"] ?? "").toString().toLowerCase();
-    return id.contains(_searchQuery) || title.contains(_searchQuery) || code.contains(_searchQuery) || inst.contains(_searchQuery);
+    return id.contains(_searchQuery) ||
+        title.contains(_searchQuery) ||
+        code.contains(_searchQuery) ||
+        inst.contains(_searchQuery);
   }
 
   Color _statusColor(String status) {
@@ -309,8 +372,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 
   String _prettySessions(Map<String, dynamic> cls) {
-    final sched = (cls["schedule"] is Map) ? Map<String, dynamic>.from(cls["schedule"]) : {};
-    final sessions = (sched["sessions"] is List) ? List<dynamic>.from(sched["sessions"]) : [];
+    final sched =
+    (cls["schedule"] is Map) ? Map<String, dynamic>.from(cls["schedule"]) : {};
+    final sessions =
+    (sched["sessions"] is List) ? List<dynamic>.from(sched["sessions"]) : [];
     if (sessions.isEmpty) return "No schedule";
 
     final parts = sessions.map((s) {
@@ -324,7 +389,126 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return parts.join(" • ");
   }
 
-  // -------------------- FULL Create/Edit Bottom Sheet --------------------
+  // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
+
+  Future<void> _openLearnersPickerStrict({
+    required String selectedCourseId,
+    required Map<String, dynamic> selectedLearnersByUid,
+    required StateSetter setModalState,
+  }) async {
+    if (_loadingLearners) {
+      _toast("Learners are still loading...");
+      return;
+    }
+
+    final enrolledUids = _uidsWhoHaveCourse(selectedCourseId);
+
+    final TextEditingController searchCtrl = TextEditingController();
+    String q = "";
+
+    await showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (_) {
+        return StatefulBuilder(builder: (context, setDState) {
+          final filtered = _allLearners.where((l) {
+            if (q.isEmpty) return true;
+            final serial = (l["serial"] ?? "").toString().toLowerCase();
+            final name = (l["name"] ?? "").toString().toLowerCase();
+            return serial.contains(q) || name.contains(q);
+          }).toList();
+
+          return AlertDialog(
+            title: const Text("Pick learners"),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 460,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: "Search by name or ID (serial)",
+                    ),
+                    onChanged: (v) => setDState(() => q = v.trim().toLowerCase()),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final l = filtered[i];
+                        final uid = l["uid"].toString();
+                        final serial = l["serial"].toString();
+                        final name = l["name"].toString();
+
+                        final isEnrolled = enrolledUids.contains(uid);
+                        final isSelected = selectedLearnersByUid.containsKey(uid);
+
+                        return CheckboxListTile(
+                          value: isSelected,
+                          onChanged: (val) {
+                            if (!isEnrolled) {
+                              _toast("This learner is not enrolled in this course. Assign course first.");
+                              return;
+                            }
+
+                            setDState(() {
+                              if (val == true) {
+                                selectedLearnersByUid[uid] = {"serial": serial, "name": name};
+                              } else {
+                                selectedLearnersByUid.remove(uid);
+                              }
+                            });
+                            setModalState(() {});
+                          },
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              ),
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(999),
+                                  color: isEnrolled
+                                      ? Colors.blue.withOpacity(0.12)
+                                      : Colors.grey.withOpacity(0.10),
+                                  border: Border.all(
+                                    color: isEnrolled
+                                        ? Colors.blue.withOpacity(0.35)
+                                        : Colors.grey.withOpacity(0.35),
+                                  ),
+                                ),
+                                child: Text(
+                                  isEnrolled ? "Enrolled" : "Not enrolled",
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text("ID: $serial"),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Done")),
+            ],
+          );
+        });
+      },
+    );
+
+    searchCtrl.dispose();
+  }
+
+  // -------------------- Full Create/Edit Bottom Sheet --------------------
 
   Future<void> _openClassEditor({Map<String, dynamic>? existingClass}) async {
     if (_loadingCourses) return _toast("Courses are still loading...");
@@ -332,7 +516,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     final bool isEdit = existingClass != null;
 
-    // initial course
+    // Generate & show class ID immediately
+    final String classId = isEdit
+        ? (existingClass["class_id"] ?? "").toString()
+        : await _generateUniqueClassId();
+
+    // Initial course (LOCKED in edit mode)
     Map<String, dynamic> selectedCourse = _courses.first;
     if (isEdit) {
       final courseId = (existingClass["course_id"] ?? "").toString();
@@ -340,17 +529,27 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       if (found.isNotEmpty) selectedCourse = found.first;
     }
 
-    // instructor
+    // Instructor
     final instructors = (selectedCourse["instructors"] as List<String>);
-    String? selectedInstructor = instructors.isNotEmpty ? instructors.first : null;
+    String? selectedInstructor =
+    instructors.isNotEmpty ? instructors.first : null;
     if (isEdit) {
       final exInst = (existingClass["instructor"] ?? "").toString();
       if (exInst.isNotEmpty) selectedInstructor = exInst;
     }
 
-    // schedule
-    final schedule = (isEdit && existingClass["schedule"] is Map) ? Map<String, dynamic>.from(existingClass["schedule"]) : {};
-    final sessionsCountCtrl = TextEditingController(text: isEdit ? (schedule["sessions_count"] ?? "12").toString() : "12");
+    // Status
+    final String status =
+    isEdit ? (existingClass["status"] ?? "active").toString() : "active";
+
+    // Schedule
+    final schedule = (isEdit && existingClass["schedule"] is Map)
+        ? Map<String, dynamic>.from(existingClass["schedule"])
+        : <String, dynamic>{};
+
+    final sessionsCountCtrl = TextEditingController(
+      text: isEdit ? (schedule["sessions_count"] ?? "12").toString() : "12",
+    );
 
     DateTime? firstSessionDate;
     if (isEdit) {
@@ -362,14 +561,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
-    // schedule rows
     final List<_ScheduleRow> scheduleRows = [];
     if (isEdit && schedule["sessions"] is List) {
       final list = List<dynamic>.from(schedule["sessions"]);
       for (final item in list) {
         final m = (item is Map) ? Map<String, dynamic>.from(item) : {};
         final row = _ScheduleRow(day: (m["day"] ?? "Mon").toString());
-        row.startTime = (m["start_time"] ?? "").toString().isEmpty ? null : (m["start_time"] ?? "").toString();
+        row.startTime = (m["start_time"] ?? "").toString().isEmpty
+            ? null
+            : (m["start_time"] ?? "").toString();
         row.durationCtrl.text = (m["duration_min"] ?? "90").toString();
         scheduleRows.add(row);
       }
@@ -379,9 +579,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       scheduleRows.add(_ScheduleRow(day: "Tue"));
     }
 
-    // learners selected
+    // Learners
     Map<String, dynamic> previousLearnersByUid = {};
     Map<String, dynamic> selectedLearnersByUid = {};
+
     if (isEdit && existingClass["learners"] is Map) {
       previousLearnersByUid = Map<String, dynamic>.from(
         (existingClass["learners"] as Map).map((k, v) => MapEntry(k.toString(), v)),
@@ -393,6 +594,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       final now = DateTime.now();
       final picked = await showDatePicker(
         context: context,
+        useRootNavigator: true,
         firstDate: DateTime(now.year - 1),
         lastDate: DateTime(now.year + 3),
         initialDate: firstSessionDate ?? now,
@@ -401,7 +603,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
 
     Future<void> pickTime(StateSetter setModalState, _ScheduleRow row) async {
-      final picked = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+      final picked = await showTimePicker(
+        context: context,
+        useRootNavigator: true,
+        initialTime: TimeOfDay.now(),
+      );
       if (picked != null) {
         final hh = picked.hour.toString().padLeft(2, '0');
         final mm = picked.minute.toString().padLeft(2, '0');
@@ -409,110 +615,66 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
-    Future<void> pickLearners(StateSetter setModalState) async {
-      final courseId = selectedCourse["id"].toString();
-      final all = await _loadLearnersForCourse(courseId);
-
-      final TextEditingController searchCtrl = TextEditingController();
-      String q = "";
-
-      await showDialog(
-        context: context,
-        builder: (_) {
-          return StatefulBuilder(
-            builder: (context, setDState) {
-              final filtered = all.where((l) {
-                if (q.isEmpty) return true;
-                final serial = (l["serial"] ?? "").toString().toLowerCase();
-                final name = (l["name"] ?? "").toString().toLowerCase();
-                return serial.contains(q) || name.contains(q);
-              }).toList();
-
-              return AlertDialog(
-                title: const Text("Pick learners"),
-                content: SizedBox(
-                  width: double.maxFinite,
-                  height: 420,
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: searchCtrl,
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
-                          hintText: "Search by name or ID (serial)",
-                        ),
-                        onChanged: (v) => setDState(() => q = v.trim().toLowerCase()),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) {
-                            final l = filtered[i];
-                            final uid = l["uid"].toString();
-                            final serial = l["serial"].toString();
-                            final name = l["name"].toString();
-                            final checked = selectedLearnersByUid.containsKey(uid);
-
-                            return CheckboxListTile(
-                              value: checked,
-                              onChanged: (val) {
-                                setDState(() {
-                                  if (val == true) {
-                                    selectedLearnersByUid[uid] = {"serial": serial, "name": name};
-                                  } else {
-                                    selectedLearnersByUid.remove(uid);
-                                  }
-                                });
-                              },
-                              title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text("ID: $serial"),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text("Done")),
-                ],
-              );
-            },
-          );
-        },
-      );
-
-      searchCtrl.dispose();
-      setModalState(() {}); // refresh count
-    }
-
     await showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final learnersCount = selectedLearnersByUid.length;
+        return StatefulBuilder(builder: (context, setModalState) {
+          final learnersCount = selectedLearnersByUid.length;
+          final courseId = selectedCourse["id"].toString();
 
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 16,
-                  right: 16,
-                  top: 10,
-                  bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(isEdit ? "Edit Class" : "Add Class",
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 12),
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 10,
+                bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isEdit ? "Edit Class" : "Add Class",
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            color: Colors.black.withOpacity(0.06),
+                          ),
+                          child: Text("ID: $classId", style: const TextStyle(fontWeight: FontWeight.w900)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
 
-                      // Course dropdown
+                    // COURSE (LOCKED IN EDIT MODE)
+                    if (isEdit)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.withOpacity(0.35)),
+                          color: Colors.grey.withOpacity(0.06),
+                        ),
+                        child: Text(
+                          "Course: ${selectedCourse["course_code"]} — ${selectedCourse["title"]}",
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    else
                       DropdownButtonFormField<Map<String, dynamic>>(
                         isExpanded: true,
                         value: selectedCourse,
@@ -542,187 +704,196 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             selectedCourse = val;
                             final ins = (val["instructors"] as List<String>);
                             selectedInstructor = ins.isNotEmpty ? ins.first : null;
-
-                            // changing course resets learners selection
-                            selectedLearnersByUid = {};
-                            previousLearnersByUid = {};
                           });
                         },
                       ),
 
-                      const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        value: selectedInstructor,
-                        decoration: const InputDecoration(labelText: "Instructor", border: OutlineInputBorder()),
-                        items: ((selectedCourse["instructors"] as List<String>))
-                            .map((name) => DropdownMenuItem(
-                          value: name,
-                          child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ))
-                            .toList(),
-                        onChanged: (val) => setModalState(() => selectedInstructor = val),
+                    DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: selectedInstructor,
+                      decoration: const InputDecoration(labelText: "Instructor", border: OutlineInputBorder()),
+                      items: ((selectedCourse["instructors"] as List<String>))
+                          .map((name) => DropdownMenuItem(
+                        value: name,
+                        child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ))
+                          .toList(),
+                      onChanged: (val) => setModalState(() => selectedInstructor = val),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    TextField(
+                      controller: sessionsCountCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: "Number of sessions", border: OutlineInputBorder()),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    OutlinedButton.icon(
+                      onPressed: () => pickDate(setModalState),
+                      icon: const Icon(Icons.date_range),
+                      label: Text(firstSessionDate == null
+                          ? "Pick first session date"
+                          : "First session: ${_formatDate(firstSessionDate!)}"),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    OutlinedButton.icon(
+                      onPressed: () => _openLearnersPickerStrict(
+                        selectedCourseId: courseId,
+                        selectedLearnersByUid: selectedLearnersByUid,
+                        setModalState: setModalState,
                       ),
-
-                      const SizedBox(height: 12),
-
-                      TextField(
-                        controller: sessionsCountCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: "Number of sessions", border: OutlineInputBorder()),
+                      icon: const Icon(Icons.people_alt_rounded),
+                      label: Text(
+                        _loadingLearners
+                            ? "Loading learners..."
+                            : learnersCount == 0
+                            ? "Pick learners"
+                            : "Learners selected: $learnersCount",
                       ),
+                    ),
 
-                      const SizedBox(height: 12),
+                    const SizedBox(height: 16),
+                    const Text("Weekly schedule (day / start time / duration)",
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 8),
 
-                      OutlinedButton.icon(
-                        onPressed: () => pickDate(setModalState),
-                        icon: const Icon(Icons.date_range),
-                        label: Text(firstSessionDate == null
-                            ? "Pick first session date"
-                            : "First session: ${_formatDate(firstSessionDate!)}"),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      OutlinedButton.icon(
-                        onPressed: () => pickLearners(setModalState),
-                        icon: const Icon(Icons.people_alt_rounded),
-                        label: Text(learnersCount == 0 ? "Pick learners" : "Learners selected: $learnersCount"),
-                      ),
-
-                      const SizedBox(height: 16),
-                      const Text("Weekly schedule (day / start time / duration)",
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 8),
-
-                      ...scheduleRows.map((row) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
-                            children: [
-                              SizedBox(width: 62, child: Text(row.day, style: const TextStyle(fontWeight: FontWeight.w700))),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () => pickTime(setModalState, row),
-                                  child: Text(row.startTime == null ? "Start time" : row.startTime!),
-                                ),
+                    ...scheduleRows.map((row) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            SizedBox(width: 62, child: Text(row.day, style: const TextStyle(fontWeight: FontWeight.w700))),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => pickTime(setModalState, row),
+                                child: Text(row.startTime == null ? "Start time" : row.startTime!),
                               ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 120,
-                                child: TextField(
-                                  controller: row.durationCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(labelText: "Minutes", border: OutlineInputBorder()),
-                                ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 120,
+                              child: TextField(
+                                controller: row.durationCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(labelText: "Minutes", border: OutlineInputBorder()),
                               ),
-                              IconButton(
-                                tooltip: "Remove",
-                                onPressed: () {
-                                  if (scheduleRows.length <= 1) return;
-                                  setModalState(() => scheduleRows.remove(row));
-                                },
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-
-                      OutlinedButton.icon(
-                        onPressed: () => setModalState(() => scheduleRows.add(_ScheduleRow(day: "Mon"))),
-                        icon: const Icon(Icons.add),
-                        label: const Text("Add another day"),
-                      ),
-
-                      const SizedBox(height: 18),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            if (selectedInstructor == null || selectedInstructor!.trim().isEmpty) {
-                              return _toast("Pick an instructor.");
-                            }
-
-                            final sessionsCount = int.tryParse(sessionsCountCtrl.text.trim());
-                            if (sessionsCount == null || sessionsCount <= 0) return _toast("Sessions count invalid.");
-                            if (firstSessionDate == null) return _toast("Pick the first session date.");
-
-                            final sessions = <Map<String, dynamic>>[];
-                            for (final row in scheduleRows) {
-                              if (row.startTime == null) return _toast("Pick start time for ${row.day}.");
-                              final dur = int.tryParse(row.durationCtrl.text.trim());
-                              if (dur == null || dur <= 0) return _toast("Duration invalid for ${row.day}.");
-                              sessions.add({"day": row.day, "start_time": row.startTime, "duration_min": dur});
-                            }
-
-                            final courseId = selectedCourse["id"].toString();
-                            final courseCode = (selectedCourse["course_code"] ?? "").toString();
-                            final courseTitle = (selectedCourse["title"] ?? "").toString();
-                            final courseDuration = (selectedCourse["duration"] ?? "").toString();
-                            final courseLevel = (selectedCourse["level"] ?? "").toString();
-                            final courseCategory = (selectedCourse["category"] ?? "").toString();
-
-                            final classId = isEdit
-                                ? (existingClass!["class_id"] ?? "").toString()
-                                : await _generateUniqueClassId();
-                            final status = isEdit ? (existingClass!["status"] ?? "active").toString() : "active";
-
-                            final payload = <String, dynamic>{
-                              "class_id": classId,
-                              "status": status,
-                              "course_id": courseId,
-                              "course_code": courseCode,
-                              "course_title": courseTitle,
-                              "course_duration": courseDuration,
-                              "course_level": courseLevel,
-                              "category": courseCategory,
-                              "instructor": selectedInstructor,
-                              "schedule": {
-                                "first_session_date": _formatDate(firstSessionDate!),
-                                "sessions_count": sessionsCount,
-                                "sessions": sessions,
+                            ),
+                            IconButton(
+                              tooltip: "Remove",
+                              onPressed: () {
+                                if (scheduleRows.length <= 1) return;
+                                setModalState(() => scheduleRows.remove(row));
                               },
-                              "learners": selectedLearnersByUid, // uid -> {serial,name}
-                              "updated_at": ServerValue.timestamp,
-                              if (!isEdit) "created_at": ServerValue.timestamp,
-                            };
-
-                            try {
-                              await _classesRef.child(classId).update(payload);
-
-                              await _syncLearnersClassData(
-                                courseId: courseId,
-                                classPayload: payload,
-                                selectedLearnersByUid: selectedLearnersByUid,
-                                previousLearnersByUid: previousLearnersByUid,
-                              );
-
-                              if (!mounted) return;
-                              Navigator.pop(context);
-                              _toast(isEdit ? "Saved: $classId" : "Class created: $classId");
-                            } catch (e) {
-                              _toast("Failed: $e");
-                            } finally {
-                              for (final r in scheduleRows) {
-                                r.durationCtrl.dispose();
-                              }
-                              sessionsCountCtrl.dispose();
-                            }
-                          },
-                          child: Text(isEdit ? "Save Changes" : "Create Class"),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
                         ),
+                      );
+                    }),
+
+                    OutlinedButton.icon(
+                      onPressed: () => setModalState(() => scheduleRows.add(_ScheduleRow(day: "Mon"))),
+                      icon: const Icon(Icons.add),
+                      label: const Text("Add another day"),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (selectedInstructor == null || selectedInstructor!.trim().isEmpty) {
+                            return _toast("Pick an instructor.");
+                          }
+
+                          final sessionsCount = int.tryParse(sessionsCountCtrl.text.trim());
+                          if (sessionsCount == null || sessionsCount <= 0) return _toast("Sessions count invalid.");
+                          if (firstSessionDate == null) return _toast("Pick the first session date.");
+
+                          final sessions = <Map<String, dynamic>>[];
+                          for (final row in scheduleRows) {
+                            if (row.startTime == null) return _toast("Pick start time for ${row.day}.");
+                            final dur = int.tryParse(row.durationCtrl.text.trim());
+                            if (dur == null || dur <= 0) return _toast("Duration invalid for ${row.day}.");
+                            sessions.add({"day": row.day, "start_time": row.startTime, "duration_min": dur});
+                          }
+
+                          final enrolledUids = _uidsWhoHaveCourse(courseId);
+                          final notEnrolledSelected = selectedLearnersByUid.keys
+                              .where((uid) => !enrolledUids.contains(uid))
+                              .toList();
+
+                          if (notEnrolledSelected.isNotEmpty) {
+                            _toast("Some selected learners are not enrolled in this course. Assign course first.");
+                            return;
+                          }
+
+                          final courseCode = (selectedCourse["course_code"] ?? "").toString();
+                          final courseTitle = (selectedCourse["title"] ?? "").toString();
+                          final courseDuration = (selectedCourse["duration"] ?? "").toString();
+                          final courseLevel = (selectedCourse["level"] ?? "").toString();
+                          final courseCategory = (selectedCourse["category"] ?? "").toString();
+
+                          final payload = <String, dynamic>{
+                            "class_id": classId,
+                            "status": status,
+                            "course_id": courseId,
+                            "course_code": courseCode,
+                            "course_title": courseTitle,
+                            "course_duration": courseDuration,
+                            "course_level": courseLevel,
+                            "category": courseCategory,
+                            "instructor": selectedInstructor,
+                            "schedule": {
+                              "first_session_date": _formatDate(firstSessionDate!),
+                              "sessions_count": sessionsCount,
+                              "sessions": sessions,
+                            },
+                            "learners": selectedLearnersByUid,
+                            "updated_at": ServerValue.timestamp,
+                            if (!isEdit) "created_at": ServerValue.timestamp,
+                          };
+
+                          try {
+                            await _classesRef.child(classId).update(payload);
+
+                            await _syncLearnersClassDataStrict(
+                              courseId: courseId,
+                              classPayload: payload,
+                              selectedLearnersByUid: selectedLearnersByUid,
+                              previousLearnersByUid: previousLearnersByUid,
+                            );
+
+                            if (!mounted) return;
+                            Navigator.pop(context);
+                            _toast(isEdit ? "Saved: $classId" : "Class created: $classId");
+                          } catch (e) {
+                            _toast("Failed: $e");
+                          } finally {
+                            for (final r in scheduleRows) {
+                              r.durationCtrl.dispose();
+                            }
+                            sessionsCountCtrl.dispose();
+                          }
+                        },
+                        child: Text(isEdit ? "Save Changes" : "Create Class"),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            );
-          },
-        );
+            ),
+          );
+        });
       },
     );
   }
@@ -742,6 +913,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           ),
         ),
         const SizedBox(height: 12),
+
         StreamBuilder<DatabaseEvent>(
           stream: _classesRef.onValue,
           builder: (context, snap) {
@@ -907,8 +1079,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
-  // -------------------- Build --------------------
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -925,9 +1095,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 }
 
+// -------------------- Helpers --------------------
+
 class _ScheduleRow {
   _ScheduleRow({required this.day});
   final String day;
-  String? startTime;
+  String? startTime; // "HH:mm"
   final TextEditingController durationCtrl = TextEditingController(text: "90");
 }
