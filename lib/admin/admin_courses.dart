@@ -787,7 +787,8 @@ class _Thumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasUrl = url.trim().isNotEmpty;
+    final u = url.trim();
+    final hasUrl = u.isNotEmpty && (u.startsWith('http://') || u.startsWith('https://'));
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -798,10 +799,24 @@ class _Thumb extends StatelessWidget {
             ? Image.network(
           url,
           fit: BoxFit.cover,
+          // ✅ prevents noisy logs for 404 / bad images
           errorBuilder: (_, __, ___) =>
           const Icon(Icons.image_not_supported_outlined),
+          // ✅ also helps avoid repeated reload attempts
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded) return child;
+            if (frame != null) return child;
+            return const Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          },
         )
             : const Icon(Icons.image_outlined),
+
       ),
     );
   }

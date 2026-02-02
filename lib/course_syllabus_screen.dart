@@ -58,6 +58,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   bool _saving = false;
 
   List<SyllabusUnit> _units = [];
+  final Map<String, bool> _unitExpanded = {}; // unitId -> true/false
 
   @override
   void initState() {
@@ -424,6 +425,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   key: ValueKey(unit.id),
                   unitNumber: unitIndex + 1,
                   unit: unit,
+
+                  // ✅ NEW (collapse/expand)
+                  isExpanded: _isExpanded(unit.id),
+                  onToggleExpanded: () => _toggleExpanded(unit.id),
+
                   onEdit: () => _editUnit(unitIndex),
                   onDelete: () => _deleteUnit(unitIndex),
                   onAddSession: () => _addSession(unitIndex),
@@ -436,6 +442,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   onDeleteSession: (sessionIndex) =>
                       _deleteSession(unitIndex, sessionIndex),
                 );
+
               },
             ),
           ),
@@ -474,6 +481,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   }
 
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+  bool _isExpanded(String unitId) => _unitExpanded[unitId] ?? true;
+
+  void _toggleExpanded(String unitId) {
+    setState(() => _unitExpanded[unitId] = !(_unitExpanded[unitId] ?? true));
+  }
+
 }
 
 /// ----------------------------
@@ -559,6 +572,8 @@ class _UnitCard extends StatelessWidget {
     super.key,
     required this.unitNumber,
     required this.unit,
+    required this.isExpanded,
+    required this.onToggleExpanded,
     required this.onEdit,
     required this.onDelete,
     required this.onAddSession,
@@ -567,8 +582,11 @@ class _UnitCard extends StatelessWidget {
     required this.onDeleteSession,
   });
 
+
   final int unitNumber;
   final SyllabusUnit unit;
+  final bool isExpanded;
+  final VoidCallback onToggleExpanded;
 
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -594,32 +612,48 @@ class _UnitCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            Row(
-              children: [
-                _Pill(label: 'Unit $unitNumber'),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title.isEmpty ? '(Untitled unit)' : title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF1A2B48),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A2B48).withOpacity(0.08), // light blue bar
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  _Pill(label: 'Unit $unitNumber'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title.isEmpty ? '(Untitled unit)' : title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A2B48),
+                      ),
                     ),
                   ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (v) {
-                    if (v == 'edit') onEdit();
-                    if (v == 'delete') onDelete();
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Edit unit')),
-                    PopupMenuDivider(),
-                    PopupMenuItem(value: 'delete', child: Text('Delete unit')),
-                  ],
-                ),
-              ],
+                  IconButton(
+                    tooltip: isExpanded ? 'Collapse' : 'Expand',
+                    onPressed: onToggleExpanded,
+                    icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                  ),
+
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'edit') onEdit();
+                      if (v == 'delete') onDelete();
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Edit unit')),
+                      PopupMenuDivider(),
+                      PopupMenuItem(value: 'delete', child: Text('Delete unit')),
+                    ],
+                  ),
+                ],
+              ),
             ),
+
             if (unit.description.trim().isNotEmpty) ...[
               const SizedBox(height: 8),
               Align(
@@ -647,7 +681,18 @@ class _UnitCard extends StatelessWidget {
               ],
             ),
 
-            if (unit.sessions.isEmpty)
+            if (!isExpanded)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Collapsed • ${unit.sessions.length} sessions',
+                    style: TextStyle(color: Colors.black.withOpacity(0.55)),
+                  ),
+                ),
+              )
+            else if (unit.sessions.isEmpty)
               Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
@@ -662,13 +707,17 @@ class _UnitCard extends StatelessWidget {
               ReorderableListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
                 itemCount: unit.sessions.length,
                 onReorder: onReorderSession,
                 itemBuilder: (context, i) {
                   final s = unit.sessions[i];
                   return ListTile(
                     key: ValueKey(s.id),
-                    leading: const Icon(Icons.drag_handle),
+                    leading: ReorderableDragStartListener(
+                      index: i,
+                      child: const Icon(Icons.drag_handle),
+                    ),
                     title: Text(
                       s.title.isEmpty ? '(Untitled session)' : s.title,
                       style: const TextStyle(fontWeight: FontWeight.w800),
@@ -692,6 +741,7 @@ class _UnitCard extends StatelessWidget {
                   );
                 },
               ),
+
           ],
         ),
       ),
