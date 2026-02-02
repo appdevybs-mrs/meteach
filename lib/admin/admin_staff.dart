@@ -1363,11 +1363,19 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
       final beforeRole = _initialRole;
       final beforeName = _initialTeacherName;
 
-      await _saveUserCourses(uid);
+      if (_role == StaffRole.teacher) {
+        await _saveUserCourses(uid);
+      } else {
+        // ✅ non-teachers must not have courses in DB
+        await _usersRef.child(uid).child('courses').remove();
+        _selectedCourseIds.clear();
+      }
 
-      final afterCourses = Set<String>.from(_selectedCourseIds);
       final afterRole = _role;
       final afterName = _teacherFullName;
+      final afterCourses = (_role == StaffRole.teacher)
+          ? Set<String>.from(_selectedCourseIds)
+          : <String>{};
 
 // sync instructors in /courses
       await _syncTeacherInstructors(
@@ -1566,8 +1574,16 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
-                        setState(() => _role = v);
+                        setState(() {
+                          _role = v;
+
+                          // ✅ only teacher can keep courses
+                          if (_role != StaffRole.teacher) {
+                            _selectedCourseIds.clear();
+                          }
+                        });
                       },
+
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<StaffStatus>(
@@ -1607,7 +1623,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     FilledButton.tonalIcon(
-                      onPressed: _allCourses.isEmpty ? null : _openCoursesPicker,
+                      onPressed: (_allCourses.isEmpty || _role != StaffRole.teacher)
+                          ? null
+                          : _openCoursesPicker,
                       icon: const Icon(Icons.school_rounded),
                       label: Text(
                         _selectedCourseIds.isEmpty
@@ -1615,6 +1633,18 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                             : 'Selected: ${_selectedCourseIds.length}',
                       ),
                     ),
+                    if (_role != StaffRole.teacher) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Only teachers can be assigned to courses.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black.withOpacity(0.55),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 10),
                     if (_selectedCourseIds.isNotEmpty)
                       Wrap(
