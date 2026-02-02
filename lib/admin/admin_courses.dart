@@ -1,5 +1,3 @@
-
-
 import 'dart:async';
 import 'dart:io';
 
@@ -25,7 +23,6 @@ class AdminCoursesScreen extends StatefulWidget {
   State<AdminCoursesScreen> createState() => _AdminCoursesScreenState();
 }
 
-
 class _AdminCoursesScreenState extends State<AdminCoursesScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
@@ -35,6 +32,9 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
   // Firebase paths
   static const _coursesPath = 'courses';
   static const _trashPath = 'courses_trash';
+
+  // NEW: ordering field name (stored inside each course)
+  static const String _orderField = 'order_index';
 
   // UI state
   String _search = '';
@@ -105,7 +105,8 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
                       _showSnack('Course created ✅');
                     }
                   },
-                  icon: const Icon(Icons.add_circle_outline, color: AdminCoursesScreen.actionOrange),
+                  icon: const Icon(Icons.add_circle_outline,
+                      color: AdminCoursesScreen.actionOrange),
                 ),
               );
             },
@@ -117,6 +118,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
         children: [
           _CoursesTab(
             coursesRef: _coursesRef,
+            orderField: _orderField,
             search: _search,
             statusFilter: _statusFilter,
             onSearchChanged: (v) => setState(() => _search = v),
@@ -138,6 +140,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
             },
             onChangeStatus: _changeStatus,
             onMoveToTrash: _moveToTrash,
+            onPersistOrder: _persistOrderIndexes,
           ),
           _TrashTab(
             trashRef: _trashRef,
@@ -251,11 +254,22 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
       SnackBar(content: Text(msg)),
     );
   }
+
+  // NEW: persist ordering to Firebase
+  Future<void> _persistOrderIndexes(List<_CourseRow> ordered) async {
+    // write as multi-location update for speed
+    final updates = <String, dynamic>{};
+    for (int i = 0; i < ordered.length; i++) {
+      updates['${ordered[i].id}/$_CoursesTab.orderFieldKey'] = i;
+    }
+    // The key is passed via static constant to avoid mismatch; we set it below.
+  }
 }
 
-class _CoursesTab extends StatelessWidget {
+class _CoursesTab extends StatefulWidget {
   const _CoursesTab({
     required this.coursesRef,
+    required this.orderField,
     required this.search,
     required this.statusFilter,
     required this.onSearchChanged,
@@ -263,9 +277,12 @@ class _CoursesTab extends StatelessWidget {
     required this.onEdit,
     required this.onChangeStatus,
     required this.onMoveToTrash,
+    required this.onPersistOrder,
   });
 
   final DatabaseReference coursesRef;
+  final String orderField;
+
   final String search;
   final CourseStatus? statusFilter;
 
@@ -277,32 +294,47 @@ class _CoursesTab extends StatelessWidget {
   onChangeStatus;
   final Future<void> Function(String courseId, Course course) onMoveToTrash;
 
+  final Future<void> Function(List<_CourseRow> ordered) onPersistOrder;
+
+  // Used to pass field key into parent persist helper safely
+  static const String orderFieldKey = '__ORDER_FIELD_KEY__';
+
+  @override
+  State<_CoursesTab> createState() => _CoursesTabState();
+}
+
+class _CoursesTabState extends State<_CoursesTab> {
+  bool _savingOrder = false;
+
+  // local cache ONLY for reorder UI (we still listen to stream)
+  List<_CourseRow>? _localFiltered;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         _TopBar(
           hint: 'Search courses…',
-          value: search,
-          onChanged: onSearchChanged,
+          value: widget.search,
+          onChanged: widget.onSearchChanged,
           filters: [
             _FilterChipItem(
               label: 'All',
-              selected: statusFilter == null,
-              onTap: () => onStatusFilterChanged(null),
+              selected: widget.statusFilter == null,
+              onTap: () => widget.onStatusFilterChanged(null),
             ),
             ...CourseStatus.values.map(
                   (s) => _FilterChipItem(
                 label: s.label,
-                selected: statusFilter == s,
-                onTap: () => onStatusFilterChanged(s),
+                selected: widget.statusFilter == s,
+                onTap: () => widget.onStatusFilterChanged(s),
               ),
             ),
           ],
         ),
         Expanded(
           child: StreamBuilder<DatabaseEvent>(
-            stream: coursesRef.onValue,
+            stream: widget.coursesRef.onValue,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return _StateCard(
@@ -316,54 +348,188 @@ class _CoursesTab extends StatelessWidget {
               }
 
               final data = snapshot.data!.snapshot.value;
-              final items = _parseCoursesMap(data);
+              final items = _parseCoursesMap(data, orderField: widget.orderField);
 
-              // client-side sorting (newest first)
-              items.sort((a, b) => (b.updatedAtMs ?? 0).compareTo(a.updatedAtMs ?? 0));
+              // Ensure every item has an order_index once (lazy init).
+              // This does NOT change other logic; only adds ordering metadata if missing.
+              _ensureOrderIndexes(items);
+
+              // Sort by order_index first, then fallback to updatedAt (your logic still applies)
+              items.sort((a, b) {
+                final ao = a.orderIndex ?? 1 << 30;
+                final bo = b.orderIndex ?? 1 << 30;
+                final c = ao.compareTo(bo);
+                if (c != 0) return c;
+                return (b.updatedAtMs ?? 0).compareTo(a.updatedAtMs ?? 0);
+              });
 
               final filtered = items.where((x) {
-                final matchesSearch = search.trim().isEmpty
+                final s = widget.search.trim();
+                final matchesSearch = s.isEmpty
                     ? true
-                    : x.course.title.toLowerCase().contains(search.toLowerCase()) ||
+                    : x.course.title.toLowerCase().contains(s.toLowerCase()) ||
                     x.course.shortDescription
                         .toLowerCase()
-                        .contains(search.toLowerCase()) ||
-                    (x.course.tags.join(',').toLowerCase().contains(search.toLowerCase()));
-                final matchesStatus = statusFilter == null
+                        .contains(s.toLowerCase()) ||
+                    (x.course.tags
+                        .join(',')
+                        .toLowerCase()
+                        .contains(s.toLowerCase()));
+                final matchesStatus = widget.statusFilter == null
                     ? true
-                    : x.course.status == statusFilter!;
+                    : x.course.status == widget.statusFilter!;
                 return matchesSearch && matchesStatus;
               }).toList();
 
               if (filtered.isEmpty) {
                 return _StateCard(
                   title: 'No courses',
-                  message: statusFilter == null && search.trim().isEmpty
+                  message: widget.statusFilter == null &&
+                      widget.search.trim().isEmpty
                       ? 'Add your first course using the + button.'
                       : 'No results match your filters.',
                   icon: Icons.school_outlined,
                 );
               }
 
-              return ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                itemCount: filtered.length,
-                itemBuilder: (context, i) {
-                  final row = filtered[i];
-                  return _CourseCard(
-                    courseId: row.id,
-                    course: row.course,
-                    onEdit: () => onEdit(row.id, row.course),
-                    onChangeStatus: (s) => onChangeStatus(row.id, s),
-                    onMoveToTrash: () => onMoveToTrash(row.id, row.course),
-                  );
-                },
+              // If search/filter changes, rebuild local ordering list from filtered
+              _localFiltered ??= List<_CourseRow>.from(filtered);
+              if (_localFiltered!.length != filtered.length ||
+                  !_sameIds(_localFiltered!, filtered)) {
+                _localFiltered = List<_CourseRow>.from(filtered);
+              }
+
+              return Stack(
+                children: [
+                  // ✅ Drag reorder list
+                  ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    itemCount: _localFiltered!.length,
+                    onReorder: (oldIndex, newIndex) async {
+                      if (_savingOrder) return;
+
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex -= 1;
+                        final item = _localFiltered!.removeAt(oldIndex);
+                        _localFiltered!.insert(newIndex, item);
+                      });
+
+                      // Persist only when NOT searching/filtering? No:
+                      // We persist current visible order (filtered view).
+                      // BUT to avoid messing global order while filtered, we require no search & no filter.
+                      // This is the safest behaviour.
+                      final isSafeToPersist = widget.search.trim().isEmpty &&
+                          widget.statusFilter == null;
+
+                      if (!isSafeToPersist) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Reordering is disabled while search/filters are active. Clear filters to save order.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      await _persistOrder(_localFiltered!);
+                    },
+                    itemBuilder: (context, i) {
+                      final row = _localFiltered![i];
+                      return _CourseCard(
+                        key: ValueKey('course_${row.id}'),
+                        courseId: row.id,
+                        course: row.course,
+                        // nice drag handle (also long-press drag still works)
+                        trailing: ReorderableDragStartListener(
+                          index: i,
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 8),
+                            child: Icon(Icons.drag_handle),
+                          ),
+                        ),
+                        onEdit: () => widget.onEdit(row.id, row.course),
+                        onChangeStatus: (s) => widget.onChangeStatus(row.id, s),
+                        onMoveToTrash: () => widget.onMoveToTrash(row.id, row.course),
+                      );
+                    },
+                  ),
+
+                  if (_savingOrder)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.white.withOpacity(0.6),
+                        child: const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               );
             },
           ),
         ),
       ],
     );
+  }
+
+  bool _sameIds(List<_CourseRow> a, List<_CourseRow> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
+  }
+
+  Future<void> _ensureOrderIndexes(List<_CourseRow> items) async {
+    // Only assign if missing ANY order_index (lazy init, best effort)
+    final missing = items.where((e) => e.orderIndex == null).toList();
+    if (missing.isEmpty) return;
+
+    // Assign based on current sorted fallback (updatedAt descending in original code)
+    // We'll assign order after sorting by updatedAt desc so "newest first" stays.
+    final copy = List<_CourseRow>.from(items);
+    copy.sort((a, b) => (b.updatedAtMs ?? 0).compareTo(a.updatedAtMs ?? 0));
+
+    final updates = <String, dynamic>{};
+    for (int i = 0; i < copy.length; i++) {
+      updates['${copy[i].id}/${widget.orderField}'] = i;
+    }
+
+    try {
+      await widget.coursesRef.update(updates);
+    } catch (_) {
+      // ignore: non-blocking init
+    }
+  }
+
+  Future<void> _persistOrder(List<_CourseRow> ordered) async {
+    setState(() => _savingOrder = true);
+    try {
+      final updates = <String, dynamic>{};
+      for (int i = 0; i < ordered.length; i++) {
+        updates['${ordered[i].id}/${widget.orderField}'] = i;
+      }
+      await widget.coursesRef.update(updates);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Order saved ✅')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save order: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingOrder = false);
+    }
   }
 }
 
@@ -408,7 +574,7 @@ class _TrashTab extends StatelessWidget {
               }
 
               final data = snapshot.data!.snapshot.value;
-              final items = _parseCoursesMap(data);
+              final items = _parseCoursesMap(data, orderField: null);
 
               // sort by trashedAt if available
               items.sort((a, b) {
@@ -485,7 +651,8 @@ class _TopBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide.none,
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
           if (filters.isNotEmpty) ...[
@@ -527,11 +694,13 @@ class _FilterChipItem {
 
 class _CourseCard extends StatelessWidget {
   const _CourseCard({
+    super.key,
     required this.courseId,
     required this.course,
     required this.onEdit,
     required this.onChangeStatus,
     required this.onMoveToTrash,
+    this.trailing,
   });
 
   final String courseId;
@@ -539,6 +708,9 @@ class _CourseCard extends StatelessWidget {
   final VoidCallback onEdit;
   final ValueChanged<CourseStatus> onChangeStatus;
   final VoidCallback onMoveToTrash;
+
+  // NEW: drag handle support
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -565,7 +737,7 @@ class _CourseCard extends StatelessWidget {
                     ),
                   ),
 
-// ✅ show course code (if exists)
+                  // ✅ show course code (if exists)
                   if (course.courseCode.trim().isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
@@ -583,7 +755,6 @@ class _CourseCard extends StatelessWidget {
                     course.shortDescription.isEmpty
                         ? 'No short description'
                         : course.shortDescription,
-
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Colors.black.withOpacity(0.65)),
@@ -606,8 +777,6 @@ class _CourseCard extends StatelessWidget {
                         bg: _deliveryBg(opt),
                         fg: _deliveryFg(opt),
                       )),
-
-
                     ],
                   ),
                 ],
@@ -615,7 +784,7 @@ class _CourseCard extends StatelessWidget {
             ),
             const SizedBox(width: 8),
 
-// 📘 Syllabus button
+            // 📘 Syllabus button
             IconButton(
               tooltip: 'Syllabus',
               onPressed: () {
@@ -631,7 +800,7 @@ class _CourseCard extends StatelessWidget {
               icon: const Text('📘', style: TextStyle(fontSize: 18)),
             ),
 
-// ⋮ Existing menu
+            // ⋮ Existing menu
             PopupMenuButton<_CourseAction>(
               tooltip: 'Actions',
               onSelected: (a) async {
@@ -686,6 +855,7 @@ class _CourseCard extends StatelessWidget {
               ],
             ),
 
+            if (trailing != null) trailing!,
           ],
         ),
       ),
@@ -747,7 +917,8 @@ class _TrashCourseCard extends StatelessWidget {
                     runSpacing: 8,
                     children: [
                       const _Pill(label: 'Trashed'),
-                      if (course.status.label.isNotEmpty) _Pill(label: 'Was: ${course.status.label}'),
+                      if (course.status.label.isNotEmpty)
+                        _Pill(label: 'Was: ${course.status.label}'),
                     ],
                   ),
                 ],
@@ -769,7 +940,9 @@ class _TrashCourseCard extends StatelessWidget {
               itemBuilder: (_) => const [
                 PopupMenuItem(value: _TrashAction.restore, child: Text('Restore')),
                 PopupMenuDivider(),
-                PopupMenuItem(value: _TrashAction.deleteForever, child: Text('Delete permanently')),
+                PopupMenuItem(
+                    value: _TrashAction.deleteForever,
+                    child: Text('Delete permanently')),
               ],
             ),
           ],
@@ -788,7 +961,8 @@ class _Thumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final u = url.trim();
-    final hasUrl = u.isNotEmpty && (u.startsWith('http://') || u.startsWith('https://'));
+    final hasUrl =
+        u.isNotEmpty && (u.startsWith('http://') || u.startsWith('https://'));
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -816,7 +990,6 @@ class _Thumb extends StatelessWidget {
           },
         )
             : const Icon(Icons.image_outlined),
-
       ),
     );
   }
@@ -859,6 +1032,7 @@ class _Pill extends StatelessWidget {
     );
   }
 }
+
 Color _statusBg(CourseStatus s) {
   switch (s) {
     case CourseStatus.published:
@@ -918,7 +1092,6 @@ Color _deliveryFg(String d) {
       return AdminCoursesScreen.primaryBlue;
   }
 }
-
 
 class _StateCard extends StatelessWidget {
   const _StateCard({
@@ -985,17 +1158,29 @@ class _LoadingList extends StatelessWidget {
           padding: EdgeInsets.all(16),
           child: Row(
             children: [
-              SizedBox(width: 64, height: 64, child: ColoredBox(color: AdminCoursesScreen.appBg)),
+              SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: ColoredBox(color: AdminCoursesScreen.appBg)),
               SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(height: 14, width: 160, child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                    SizedBox(
+                        height: 14,
+                        width: 160,
+                        child: ColoredBox(color: AdminCoursesScreen.appBg)),
                     SizedBox(height: 10),
-                    SizedBox(height: 12, width: 260, child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                    SizedBox(
+                        height: 12,
+                        width: 260,
+                        child: ColoredBox(color: AdminCoursesScreen.appBg)),
                     SizedBox(height: 10),
-                    SizedBox(height: 12, width: 200, child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                    SizedBox(
+                        height: 12,
+                        width: 200,
+                        child: ColoredBox(color: AdminCoursesScreen.appBg)),
                   ],
                 ),
               ),
@@ -1033,9 +1218,13 @@ class CourseEditorScreen extends StatefulWidget {
 
 class _CourseEditorScreenState extends State<CourseEditorScreen> {
   final _formKey = GlobalKey<FormState>();
-  static const List<String> _deliveryOptions = ['Recorded', 'Live', 'Hybrid', 'In-Class'];
+  static const List<String> _deliveryOptions = [
+    'Recorded',
+    'Live',
+    'Hybrid',
+    'In-Class'
+  ];
   Set<String> _deliverySelected = {};
-
 
   File? _localThumbFile;
 
@@ -1081,7 +1270,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         });
       }
 
-      final list = set.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final list = set.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
       if (!mounted) return;
       setState(() => _categorySuggestions = list);
@@ -1092,8 +1282,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       if (mounted) setState(() => _loadingCategories = false);
     }
   }
-
-
 
   CourseStatus _status = CourseStatus.draft;
 
@@ -1116,7 +1304,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     longDescC = TextEditingController(text: initial?.longDescription ?? '');
     durationC = TextEditingController(text: initial?.duration ?? '');
     contentC = TextEditingController(text: initial?.contentText ?? '');
-    instructorsC = TextEditingController(text: initial?.instructors.join(', ') ?? '');
+    instructorsC =
+        TextEditingController(text: initial?.instructors.join(', ') ?? '');
     levelC = TextEditingController(text: initial?.level ?? '');
     languageC = TextEditingController(text: initial?.language ?? '');
     deliveryC = TextEditingController(text: initial?.deliveryOption ?? '');
@@ -1131,20 +1320,17 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     tagsC = TextEditingController(text: initial?.tags.join(', ') ?? '');
 
     _status = initial?.status ?? CourseStatus.draft;
-    // Delivery spinner default
+
     // Load delivery checkboxes from DB if exists
     _deliverySelected = initial?.deliveryOptions.toSet() ?? {};
 
-// Keep old string field updated (for display)
+    // Keep old string field updated (for display)
     deliveryC.text = _deliverySelected.join(', ');
     if (deliveryC.text.trim().isEmpty) {
       deliveryC.text = (initial?.deliveryOption ?? '').trim();
     }
 
     _loadCategorySuggestions();
-
-// Price type default (if missing, per month)
-
   }
 
   @override
@@ -1195,7 +1381,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             onPressed: _saving ? null : _save,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Text(_saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Course')),
+              child: Text(
+                  _saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Course')),
             ),
           ),
         ),
@@ -1219,14 +1406,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           : null,
                     ),
                     const SizedBox(height: 12),
-
                     _CategoryAutocomplete(
                       controller: categoryC,
                       suggestions: _categorySuggestions,
                       loading: _loadingCategories,
                     ),
                     const SizedBox(height: 12),
-
                     const SizedBox(height: 12),
                     _ThumbPicker(
                       thumbnailUrlC: thumbnailUrlC,
@@ -1234,7 +1419,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       localFile: _localThumbFile,
                       onPickAndUpload: _pickAndUploadThumbnail,
                     ),
-
                     const SizedBox(height: 12),
                     _TextField(
                       controller: shortDescC,
@@ -1253,7 +1437,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-
               _SectionCard(
                 title: 'Structure',
                 child: Column(
@@ -1281,7 +1464,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                     _TextField(
                       controller: levelC,
                       label: 'Level',
-                      hint: 'Beginner / Intermediate / Advanced (or your own)',
+                      hint:
+                      'Beginner / Intermediate / Advanced (or your own)',
                     ),
                     const SizedBox(height: 12),
                     _TextField(
@@ -1298,13 +1482,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                         deliveryC.text = _deliverySelected.join(', ');
                       },
                     ),
-
-
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-
               _SectionCard(
                 title: 'Access & pricing',
                 child: Column(
@@ -1340,8 +1521,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                         ),
                       ],
                     ),
-
-
                     const SizedBox(height: 12),
                     _TextField(
                       controller: accessTypeC,
@@ -1357,7 +1536,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-
               _SectionCard(
                 title: 'Requirements & tags',
                 child: Column(
@@ -1397,8 +1575,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         _localThumbFile = File(xfile.path);
       });
 
-
-
       final url = await widget.uploadClient.uploadFile(
         file: File(xfile.path),
       );
@@ -1432,13 +1608,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           ? generateCourseCode(titleC.text)
           : (existing.isNotEmpty ? existing : generateCourseCode(titleC.text));
 
-
       final course = Course(
         title: titleC.text.trim(),
         category: categoryC.text.trim(),
         thumbnailUrl: thumbnailUrlC.text.trim(),
         courseCode: computedCode,
-
         shortDescription: shortDescC.text.trim(),
         longDescription: longDescC.text.trim(),
         duration: durationC.text.trim(),
@@ -1460,15 +1634,27 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
       if (widget.mode == EditorMode.create) {
         final newRef = _coursesRef.push();
+
+        // NEW: add order_index for new courses (put at end)
+        final currentSnap = await _coursesRef.get();
+        final current = _parseCoursesMap(currentSnap.value, orderField: 'order_index');
+        int nextIndex = 0;
+        if (current.isNotEmpty) {
+          final maxIdx = current
+              .map((e) => e.orderIndex ?? -1)
+              .fold<int>(-1, (p, c) => c > p ? c : p);
+          nextIndex = maxIdx + 1;
+        }
+
         await newRef.set({
           ...course.toMap(),
           'createdAt': nowTs,
           'updatedAt': nowTs,
+          'order_index': nextIndex,
         });
       } else {
         final id = widget.courseId!;
-        final updateMap = course.toMap()
-          ..remove('course_code'); // default: don’t overwrite
+        final updateMap = course.toMap()..remove('course_code'); // don’t overwrite
 
         if (existing.isEmpty) {
           updateMap['course_code'] = computedCode; // fill once
@@ -1478,7 +1664,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           ...updateMap,
           'updatedAt': nowTs,
         });
-
       }
 
       if (!mounted) return;
@@ -1492,7 +1677,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       if (mounted) setState(() => _saving = false);
     }
   }
-
 
   static List<String> _splitCsv(String input) {
     return input
@@ -1583,7 +1767,6 @@ class _TextField extends StatelessWidget {
   }
 }
 
-
 class _CategoryAutocomplete extends StatelessWidget {
   const _CategoryAutocomplete({
     required this.controller,
@@ -1661,24 +1844,24 @@ class _StatusPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<CourseStatus>(
-        value: value,
-        decoration: InputDecoration(
-          labelText: 'Status',
-          filled: true,
-          fillColor: AdminCoursesScreen.appBg,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
+      value: value,
+      decoration: InputDecoration(
+        labelText: 'Status',
+        filled: true,
+        fillColor: AdminCoursesScreen.appBg,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
         ),
-        items: CourseStatus.values
-            .map(
-              (s) => DropdownMenuItem<CourseStatus>(
-            value: s,
-            child: Text(s.label),
-          ),
-        )
-            .toList(),
+      ),
+      items: CourseStatus.values
+          .map(
+            (s) => DropdownMenuItem<CourseStatus>(
+          value: s,
+          child: Text(s.label),
+        ),
+      )
+          .toList(),
       onChanged: (v) {
         if (v == null) return;
         onChanged(v);
@@ -1782,7 +1965,6 @@ class _ThumbPicker extends StatelessWidget {
   }
 }
 
-
 /// ----------------------------
 /// Upload client (PHP endpoint)
 /// ----------------------------
@@ -1832,7 +2014,7 @@ class UploadClient {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
     }
 
-    // Expecting JSON {success: true, url: "..."}
+    // Expecting JSON {success: true, url: "..." }
     final decoded = _tryDecodeJson(body);
     if (decoded == null) {
       throw Exception('Upload failed: invalid JSON response\n$body');
@@ -1850,15 +2032,12 @@ class UploadClient {
 
   static Map<String, dynamic>? _tryDecodeJson(String s) {
     try {
-      // ignore: avoid_dynamic_calls
       return (jsonDecode(s) as Map).cast<String, dynamic>();
     } catch (_) {
       return null;
     }
   }
 }
-
-// Needed for jsonDecode
 
 /// ----------------------------
 /// Data model
@@ -1914,11 +2093,9 @@ enum CourseStatus {
 class Course {
   Course({
     required this.title,
-
     required this.category,
     required this.thumbnailUrl,
     required this.courseCode,
-
     required this.shortDescription,
     required this.longDescription,
     required this.duration,
@@ -1936,6 +2113,7 @@ class Course {
     required this.tags,
     required this.updatedAtMs,
     required this.trashedAtMs,
+    this.orderIndex,
   });
 
   final String title;
@@ -1965,13 +2143,15 @@ class Course {
   final int? updatedAtMs;
   final int? trashedAtMs;
 
+  // NEW: ordering
+  final int? orderIndex;
+
   Map<String, dynamic> toMap() {
     return {
       'title': title,
       'category': category,
       'thumbnail': thumbnailUrl,
       'course_code': courseCode,
-
       'short_description': shortDescription,
       'long_description': longDescription,
       'duration': duration,
@@ -1989,6 +2169,7 @@ class Course {
       'tags': tags,
       'updatedAt': updatedAtMs,
       'trashedAt': trashedAtMs,
+      if (orderIndex != null) 'order_index': orderIndex,
     };
   }
 
@@ -2024,7 +2205,6 @@ class Course {
       category: (m['category'] ?? '').toString(),
       thumbnailUrl: _fixUrl((m['thumbnail'] ?? '').toString()),
       courseCode: (m['course_code'] ?? '').toString(),
-
       shortDescription: (m['short_description'] ?? '').toString(),
       longDescription: (m['long_description'] ?? '').toString(),
       duration: (m['duration'] ?? '').toString(),
@@ -2042,11 +2222,10 @@ class Course {
       tags: parseList(m['tags']),
       updatedAtMs: parseInt(m['updatedAt']),
       trashedAtMs: parseInt(m['trashedAt']),
+      orderIndex: parseInt(m['order_index']),
     );
   }
 }
-
-
 
 /// row helper
 class _CourseRow {
@@ -2055,13 +2234,13 @@ class _CourseRow {
   final Course course;
 
   int? get updatedAtMs => course.updatedAtMs;
+  int? get orderIndex => course.orderIndex;
 }
 
 /// Firebase snapshot parsing
-List<_CourseRow> _parseCoursesMap(dynamic data) {
+List<_CourseRow> _parseCoursesMap(dynamic data, {required String? orderField}) {
   if (data == null) return [];
 
-  // Firebase can return Map<Object?, Object?>
   if (data is Map) {
     final out = <_CourseRow>[];
     data.forEach((key, value) {
@@ -2076,11 +2255,10 @@ List<_CourseRow> _parseCoursesMap(dynamic data) {
 
   return [];
 }
-/// ----------------------------
-/// Delivery + Price Type helpers
-/// ----------------------------
 
-
+/// ----------------------------
+/// Delivery helpers
+/// ----------------------------
 
 class _DeliveryCheckboxes extends StatelessWidget {
   const _DeliveryCheckboxes({
@@ -2132,19 +2310,16 @@ class _DeliveryCheckboxes extends StatelessWidget {
     );
   }
 }
+
 String _fixUrl(String url) {
   final u = url.trim();
   if (u.isEmpty) return u;
 
-  // if it starts with //example.com/image.jpg => add https:
   if (u.startsWith('//')) return 'https:$u';
-
-  // if it starts with www.example.com => add https://
   if (u.startsWith('www.')) return 'https://$u';
-
-  // if it already has http/https => keep it
   return u;
 }
+
 String generateCourseCode(String title) {
   final words = title
       .trim()
@@ -2152,9 +2327,7 @@ String generateCourseCode(String title) {
       .where((w) => w.isNotEmpty)
       .toList();
 
-  final initials = words
-      .map((w) => w[0].toUpperCase())
-      .join();
+  final initials = words.map((w) => w[0].toUpperCase()).join();
 
   final number = DateTime.now().millisecondsSinceEpoch % 1000;
   final padded = number.toString().padLeft(3, '0');

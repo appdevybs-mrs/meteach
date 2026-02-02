@@ -33,6 +33,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = "";
 
+  static const List<String> _weekDays = <String>[
+    "Sat",
+    "Sun",
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -531,8 +541,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     // Instructor
     final instructors = (selectedCourse["instructors"] as List<String>);
-    String? selectedInstructor =
-    instructors.isNotEmpty ? instructors.first : null;
+    String? selectedInstructor = instructors.isNotEmpty ? instructors.first : null;
     if (isEdit) {
       final exInst = (existingClass["instructor"] ?? "").toString();
       if (exInst.isNotEmpty) selectedInstructor = exInst;
@@ -615,13 +624,25 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
-    await showModalBottomSheet(
+    // IMPORTANT FIX:
+    // Dispose controllers ONLY after the sheet is closed (not inside save finally).
+    final sheetFuture = showModalBottomSheet(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      showDragHandle: true,
+
+      // ✅ FIX: prevents crash when dropdown is open and you drag the sheet down
+      enableDrag: false,
+      isDismissible: false,
+      showDragHandle: false,
+
       builder: (context) {
+
         return StatefulBuilder(builder: (context, setModalState) {
+          bool saving = false;
+
+          void setSaving(bool v) => setModalState(() => saving = v);
+
           final learnersCount = selectedLearnersByUid.length;
           final courseId = selectedCourse["id"].toString();
 
@@ -698,29 +719,38 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             ),
                           );
                         }).toList(),
-                        onChanged: (val) {
+                        onChanged: saving
+                            ? null
+                            : (val) {
                           if (val == null) return;
                           setModalState(() {
                             selectedCourse = val;
+
                             final ins = (val["instructors"] as List<String>);
                             selectedInstructor = ins.isNotEmpty ? ins.first : null;
+
+                            // keep day selections, but course change resets learner selections (optional)
+                            selectedLearnersByUid.clear();
                           });
                         },
                       ),
 
                     const SizedBox(height: 12),
 
+                    // Instructor dropdown (safe when list empty)
                     DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: selectedInstructor,
+                      value: ((selectedCourse["instructors"] as List<String>).contains(selectedInstructor))
+                          ? selectedInstructor
+                          : null,
                       decoration: const InputDecoration(labelText: "Instructor", border: OutlineInputBorder()),
-                      items: ((selectedCourse["instructors"] as List<String>))
+                      items: (selectedCourse["instructors"] as List<String>)
                           .map((name) => DropdownMenuItem(
                         value: name,
                         child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
                       ))
                           .toList(),
-                      onChanged: (val) => setModalState(() => selectedInstructor = val),
+                      onChanged: saving ? null : (val) => setModalState(() => selectedInstructor = val),
                     ),
 
                     const SizedBox(height: 12),
@@ -729,12 +759,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       controller: sessionsCountCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: "Number of sessions", border: OutlineInputBorder()),
+                      enabled: !saving,
                     ),
 
                     const SizedBox(height: 12),
 
                     OutlinedButton.icon(
-                      onPressed: () => pickDate(setModalState),
+                      onPressed: saving ? null : () => pickDate(setModalState),
                       icon: const Icon(Icons.date_range),
                       label: Text(firstSessionDate == null
                           ? "Pick first session date"
@@ -744,7 +775,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                     const SizedBox(height: 12),
 
                     OutlinedButton.icon(
-                      onPressed: () => _openLearnersPickerStrict(
+                      onPressed: saving
+                          ? null
+                          : () => _openLearnersPickerStrict(
                         selectedCourseId: courseId,
                         selectedLearnersByUid: selectedLearnersByUid,
                         setModalState: setModalState,
@@ -760,35 +793,93 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                     ),
 
                     const SizedBox(height: 16),
-                    const Text("Weekly schedule (day / start time / duration)",
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    const Text(
+                      "Weekly schedule (day / start time / duration)",
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                    ),
                     const SizedBox(height: 8),
 
+                    // Dynamic schedule rows (day is editable now)
                     ...scheduleRows.map((row) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Row(
                           children: [
-                            SizedBox(width: 62, child: Text(row.day, style: const TextStyle(fontWeight: FontWeight.w700))),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => pickTime(setModalState, row),
-                                child: Text(row.startTime == null ? "Start time" : row.startTime!),
+                            // ✅ DAY (fixed width + expanded to avoid overflow)
+                            SizedBox(
+                              width: 110,
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: "Day",
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _weekDays.contains(row.day) ? row.day : "Mon",
+                                    isExpanded: true,
+                                    items: _weekDays
+                                        .map((d) => DropdownMenuItem<String>(
+                                      value: d,
+                                      child: Text(
+                                        d,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w800),
+                                      ),
+                                    ))
+                                        .toList(),
+                                    onChanged: saving
+                                        ? null
+                                        : (v) {
+                                      if (v == null) return;
+                                      setModalState(() => row.day = v);
+                                    },
+                                  ),
+                                ),
                               ),
                             ),
+
+
                             const SizedBox(width: 8),
+
+                            // ✅ TIME (takes remaining space safely)
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: saving ? null : () => pickTime(setModalState, row),
+                                child: Text(
+                                  row.startTime == null ? "Start time" : row.startTime!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            // ✅ MINUTES
                             SizedBox(
                               width: 120,
                               child: TextField(
                                 controller: row.durationCtrl,
                                 keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(labelText: "Minutes", border: OutlineInputBorder()),
+                                decoration: const InputDecoration(
+                                  labelText: "Minutes",
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                ),
+                                enabled: !saving,
                               ),
                             ),
+
+                            // ✅ REMOVE
                             IconButton(
                               tooltip: "Remove",
-                              onPressed: () {
+                              onPressed: saving
+                                  ? null
+                                  : () {
                                 if (scheduleRows.length <= 1) return;
                                 setModalState(() => scheduleRows.remove(row));
                               },
@@ -799,8 +890,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       );
                     }),
 
+
                     OutlinedButton.icon(
-                      onPressed: () => setModalState(() => scheduleRows.add(_ScheduleRow(day: "Mon"))),
+                      onPressed: saving
+                          ? null
+                          : () => setModalState(() => scheduleRows.add(_ScheduleRow(day: "Mon"))),
                       icon: const Icon(Icons.add),
                       label: const Text("Add another day"),
                     ),
@@ -810,7 +904,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () async {
+                        onPressed: saving
+                            ? null
+                            : () async {
+                          // validation
                           if (selectedInstructor == null || selectedInstructor!.trim().isEmpty) {
                             return _toast("Pick an instructor.");
                           }
@@ -864,6 +961,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           };
 
                           try {
+                            setSaving(true);
+
                             await _classesRef.child(classId).update(payload);
 
                             await _syncLearnersClassDataStrict(
@@ -877,12 +976,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             Navigator.pop(context);
                             _toast(isEdit ? "Saved: $classId" : "Class created: $classId");
                           } catch (e) {
+                            // NOTE: do NOT dispose controllers here (keeps sheet stable)
                             _toast("Failed: $e");
-                          } finally {
-                            for (final r in scheduleRows) {
-                              r.durationCtrl.dispose();
-                            }
-                            sessionsCountCtrl.dispose();
+                            setSaving(false);
                           }
                         },
                         child: Text(isEdit ? "Save Changes" : "Create Class"),
@@ -896,6 +992,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         });
       },
     );
+
+    await sheetFuture.whenComplete(() {
+      // Dispose safely after sheet closes (fixes your assertion crash)
+      for (final r in scheduleRows) {
+        r.durationCtrl.dispose();
+      }
+      sessionsCountCtrl.dispose();
+    });
   }
 
   // -------------------- Classes List UI --------------------
@@ -914,166 +1018,159 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         ),
         const SizedBox(height: 12),
 
-        StreamBuilder<DatabaseEvent>(
-          stream: _classesRef.onValue,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
+        // FIX: scroll works because ListView is inside Expanded (main page scroll)
+        Expanded(
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _classesRef.onValue,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-            final data = snap.data?.snapshot.value;
-            if (data == null || data is! Map) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: Text("No classes yet.")),
-              );
-            }
+              final data = snap.data?.snapshot.value;
+              if (data == null || data is! Map) {
+                return const Center(child: Text("No classes yet."));
+              }
 
-            final map = Map<dynamic, dynamic>.from(data);
-            final classes = map.values
-                .whereType<dynamic>()
-                .map((e) => Map<String, dynamic>.from(e as Map))
-                .where(_matchesSearch)
-                .toList();
+              final map = Map<dynamic, dynamic>.from(data);
+              final classes = map.values
+                  .whereType<dynamic>()
+                  .map((e) => Map<String, dynamic>.from(e as Map))
+                  .where(_matchesSearch)
+                  .toList();
 
-            classes.sort((a, b) {
-              final aa = (a["created_at"] ?? 0) is int ? (a["created_at"] as int) : 0;
-              final bb = (b["created_at"] ?? 0) is int ? (b["created_at"] as int) : 0;
-              return bb.compareTo(aa);
-            });
+              classes.sort((a, b) {
+                final aa = (a["created_at"] ?? 0) is int ? (a["created_at"] as int) : 0;
+                final bb = (b["created_at"] ?? 0) is int ? (b["created_at"] as int) : 0;
+                return bb.compareTo(aa);
+              });
 
-            if (classes.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: Text("No matching classes.")),
-              );
-            }
+              if (classes.isEmpty) {
+                return const Center(child: Text("No matching classes."));
+              }
 
-            return ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: classes.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, i) {
-                final cls = classes[i];
+              return ListView.separated(
+                padding: const EdgeInsets.only(bottom: 90),
+                itemCount: classes.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, i) {
+                  final cls = classes[i];
 
-                final id = (cls["class_id"] ?? "").toString();
-                final status = (cls["status"] ?? "active").toString();
-                final course = (cls["course_title"] ?? "").toString();
-                final code = (cls["course_code"] ?? "").toString();
-                final instructor = (cls["instructor"] ?? "").toString();
+                  final id = (cls["class_id"] ?? "").toString();
+                  final status = (cls["status"] ?? "active").toString();
+                  final course = (cls["course_title"] ?? "").toString();
+                  final code = (cls["course_code"] ?? "").toString();
+                  final instructor = (cls["instructor"] ?? "").toString();
 
-                final sched = (cls["schedule"] is Map) ? Map<String, dynamic>.from(cls["schedule"]) : {};
-                final firstDate = (sched["first_session_date"] ?? "").toString();
-                final sessionsCount = (sched["sessions_count"] ?? "").toString();
+                  final sched = (cls["schedule"] is Map) ? Map<String, dynamic>.from(cls["schedule"]) : {};
+                  final firstDate = (sched["first_session_date"] ?? "").toString();
+                  final sessionsCount = (sched["sessions_count"] ?? "").toString();
 
-                final learners = (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
-                final learnersCount = learners?.length ?? 0;
+                  final learners = (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
+                  final learnersCount = learners?.length ?? 0;
 
-                return Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.grey.withOpacity(0.25)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                id,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: _statusColor(status).withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: _statusColor(status).withOpacity(0.35)),
-                              ),
-                              child: Text(
-                                status.toUpperCase(),
-                                style: TextStyle(
-                                  color: _statusColor(status),
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 11,
+                  return Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  id,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "$code — $course",
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Instructor: $instructor",
-                          style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Start: ${firstDate.isEmpty ? '-' : firstDate}  •  Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount}  •  Learners: $learnersCount",
-                          style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _prettySessions(cls),
-                          style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () => _openClassEditor(existingClass: cls),
-                              icon: const Icon(Icons.edit, size: 18),
-                              label: const Text("Edit"),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: status == "paused" ? null : () => _setClassStatus(id, "paused"),
-                              icon: const Icon(Icons.pause_circle, size: 18),
-                              label: const Text("Pause"),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: status == "blocked" ? null : () => _setClassStatus(id, "blocked"),
-                              icon: const Icon(Icons.block, size: 18),
-                              label: const Text("Block"),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: status == "active" ? null : () => _setClassStatus(id, "active"),
-                              icon: const Icon(Icons.play_circle, size: 18),
-                              label: const Text("Activate"),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => _deleteClass(id),
-                              icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                              label: const Text("Delete", style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: _statusColor(status).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(color: _statusColor(status).withOpacity(0.35)),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    color: _statusColor(status),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "$code — $course",
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Instructor: $instructor",
+                            style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Start: ${firstDate.isEmpty ? '-' : firstDate}  •  Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount}  •  Learners: $learnersCount",
+                            style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _prettySessions(cls),
+                            style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () => _openClassEditor(existingClass: cls),
+                                icon: const Icon(Icons.edit, size: 18),
+                                label: const Text("Edit"),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: status == "paused" ? null : () => _setClassStatus(id, "paused"),
+                                icon: const Icon(Icons.pause_circle, size: 18),
+                                label: const Text("Pause"),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: status == "blocked" ? null : () => _setClassStatus(id, "blocked"),
+                                icon: const Icon(Icons.block, size: 18),
+                                label: const Text("Block"),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: status == "active" ? null : () => _setClassStatus(id, "active"),
+                                icon: const Icon(Icons.play_circle, size: 18),
+                                label: const Text("Activate"),
+                              ),
+                              TextButton.icon(
+                                onPressed: () => _deleteClass(id),
+                                icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                                label: const Text("Delete", style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            );
-          },
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
@@ -1099,7 +1196,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
 class _ScheduleRow {
   _ScheduleRow({required this.day});
-  final String day;
-  String? startTime; // "HH:mm"
+  String day;
+  String? startTime;
   final TextEditingController durationCtrl = TextEditingController(text: "90");
 }
+
