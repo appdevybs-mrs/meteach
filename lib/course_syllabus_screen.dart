@@ -347,10 +347,31 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
-        title: Text(
-          'Syllabus — ${widget.courseTitle}',
-          style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1A2B48)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Syllabus',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                color: Color(0xFF1A2B48),
+              ),
+            ),
+            Text(
+              widget.courseTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: Colors.black.withOpacity(0.6),
+              ),
+            ),
+          ],
         ),
+
         iconTheme: const IconThemeData(color: Color(0xFF1A2B48)),
         actions: [
           IconButton(
