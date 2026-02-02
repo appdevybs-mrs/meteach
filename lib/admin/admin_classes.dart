@@ -11,16 +11,16 @@ class AdminClassesScreen extends StatefulWidget {
 }
 
 class _AdminClassesScreenState extends State<AdminClassesScreen> {
-  // ====== NODES (adjust if your DB paths differ) ======
+  // ====== NODES ======
   static const String coursesNode = "courses";
   static const String classesNode = "classes";
-  static const String learnersNode = "users"; // 👈 change to "learners" if needed
+  static const String usersNode = "users"; // learners live here
 
   // ===== Firebase refs =====
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _coursesRef = _db.child(coursesNode);
   late final DatabaseReference _classesRef = _db.child(classesNode);
-  late final DatabaseReference _learnersRef = _db.child(learnersNode);
+  late final DatabaseReference _usersRef = _db.child(usersNode);
 
   // ===== Courses cache =====
   bool _loadingCourses = true;
@@ -58,10 +58,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   String _levelShort(String levelRaw) {
     final t = levelRaw.trim();
     if (t.isEmpty) return "CLS";
-    return t.split(RegExp(r'\s+')).first; // "A2 (Elementary)" -> "A2"
+    return t.split(RegExp(r'\s+')).first;
   }
 
-  /// Short Class ID: exactly 5 chars (human-friendly)
+  /// Short Class ID: exactly 5 chars
   String _makeShortClassId() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
     final rnd = Random.secure();
@@ -70,12 +70,18 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Future<String> _generateUniqueClassId() async {
     String id = _makeShortClassId();
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 10; i++) {
       final snap = await _classesRef.child(id).get();
       if (!snap.exists) return id;
       id = _makeShortClassId();
     }
-    return id; // best effort
+    return id;
+  }
+
+  bool _isLearnerRole(dynamic role) {
+    final r = (role ?? "").toString().trim().toLowerCase();
+    return r == "learner" || r == "learners" || r == "learner(s)" || r == "learner ".trim();
+    // ✅ the above covers "LEARNER" as well because we lower-case
   }
 
   // -------------------- Load courses --------------------
@@ -93,7 +99,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final id = entry.key.toString();
         final data = Map<String, dynamic>.from(entry.value as Map);
 
-        // optional: only show published
+        // optional: only published courses
         // if ((data["status"] ?? "") != "published") continue;
 
         final levelRaw = (data["level"] ?? "").toString();
@@ -121,17 +127,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 
   // -------------------- Learners logic --------------------
-  // Learner example:
-  // uid -> { serial, first_name, last_name, role, courses: { course_1: { id, ... } } }
-  //
-  // We pick learners and store:
-  // classes/{classId}/learners/{uid} = { serial, name }
-  //
-  // And inside learners:
-  // users/{uid}/courses/{courseKey}/class = { class_id, course_code, course_title, instructor, status, updatedAt }
+  // users/{uid} with role == LEARNER (case-insensitive)
+  // only those who have courses/*/id == selectedCourseId
 
   Future<List<Map<String, dynamic>>> _loadLearnersForCourse(String courseId) async {
-    final snap = await _learnersRef.get();
+    final snap = await _usersRef.get();
     final List<Map<String, dynamic>> learners = [];
 
     if (!snap.exists || snap.value is! Map) return learners;
@@ -142,8 +142,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       final uid = entry.key.toString();
       final data = Map<String, dynamic>.from(entry.value as Map);
 
-      if ((data["role"] ?? "") != "learner") continue;
-      if ((data["status"] ?? "active") == "deleted") continue;
+      if (!_isLearnerRole(data["role"])) continue;
 
       final courses = (data["courses"] is Map) ? Map<dynamic, dynamic>.from(data["courses"]) : null;
       if (courses == null) continue;
@@ -176,8 +175,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 
   /// Find the learner's courseKey where courses/{courseKey}/id == courseId
-  String? _findCourseKeyForLearner(Map<String, dynamic> learnerData, String courseId) {
-    final courses = (learnerData["courses"] is Map) ? Map<dynamic, dynamic>.from(learnerData["courses"]) : null;
+  String? _findCourseKeyForLearner(Map<String, dynamic> userData, String courseId) {
+    final courses = (userData["courses"] is Map) ? Map<dynamic, dynamic>.from(userData["courses"]) : null;
     if (courses == null) return null;
 
     for (final entry in courses.entries) {
@@ -188,7 +187,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return null;
   }
 
-  /// Apply class details inside each learner's course node
   Future<void> _syncLearnersClassData({
     required String courseId,
     required Map<String, dynamic> classPayload,
@@ -198,27 +196,26 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     final classId = (classPayload["class_id"] ?? "").toString();
     final status = (classPayload["status"] ?? "active").toString();
 
-    // Learners removed => remove class section from their course node
+    // removed learners
     final removedUids = previousLearnersByUid.keys.where((uid) => !selectedLearnersByUid.containsKey(uid)).toList();
-
     for (final uid in removedUids) {
-      final learnerSnap = await _learnersRef.child(uid).get();
-      if (!learnerSnap.exists || learnerSnap.value is! Map) continue;
-      final learnerData = Map<String, dynamic>.from(learnerSnap.value as Map);
+      final userSnap = await _usersRef.child(uid).get();
+      if (!userSnap.exists || userSnap.value is! Map) continue;
+      final userData = Map<String, dynamic>.from(userSnap.value as Map);
 
-      final courseKey = _findCourseKeyForLearner(learnerData, courseId);
+      final courseKey = _findCourseKeyForLearner(userData, courseId);
       if (courseKey == null) continue;
 
-      await _learnersRef.child(uid).child("courses").child(courseKey).child("class").remove();
+      await _usersRef.child(uid).child("courses").child(courseKey).child("class").remove();
     }
 
-    // Learners added/kept => set class section
+    // added/kept learners
     for (final uid in selectedLearnersByUid.keys) {
-      final learnerSnap = await _learnersRef.child(uid).get();
-      if (!learnerSnap.exists || learnerSnap.value is! Map) continue;
-      final learnerData = Map<String, dynamic>.from(learnerSnap.value as Map);
+      final userSnap = await _usersRef.child(uid).get();
+      if (!userSnap.exists || userSnap.value is! Map) continue;
+      final userData = Map<String, dynamic>.from(userSnap.value as Map);
 
-      final courseKey = _findCourseKeyForLearner(learnerData, courseId);
+      final courseKey = _findCourseKeyForLearner(userData, courseId);
       if (courseKey == null) continue;
 
       final clsMini = {
@@ -231,7 +228,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         "updatedAt": ServerValue.timestamp,
       };
 
-      await _learnersRef.child(uid).child("courses").child(courseKey).child("class").set(clsMini);
+      await _usersRef.child(uid).child("courses").child(courseKey).child("class").set(clsMini);
     }
   }
 
@@ -240,7 +237,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   Future<void> _setClassStatus(String classId, String status) async {
     try {
       await _classesRef.child(classId).update({
-        "status": status, // active | paused | blocked
+        "status": status,
         "updated_at": ServerValue.timestamp,
       });
       _toast("Updated: $classId → $status");
@@ -265,12 +262,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (ok != true) return;
 
     try {
-      // Best effort: remove learner class info too
+      // remove learner course->class (best effort)
       final clsSnap = await _classesRef.child(classId).get();
       if (clsSnap.exists && clsSnap.value is Map) {
         final cls = Map<String, dynamic>.from(clsSnap.value as Map);
         final courseId = (cls["course_id"] ?? "").toString();
-
         final prevLearners = (cls["learners"] is Map)
             ? Map<String, dynamic>.from((cls["learners"] as Map).map((k, v) => MapEntry(k.toString(), v)))
             : <String, dynamic>{};
@@ -290,7 +286,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
   }
 
-  // -------------------- Search helpers --------------------
+  // -------------------- Search + UI helpers --------------------
 
   bool _matchesSearch(Map<String, dynamic> cls) {
     if (_searchQuery.isEmpty) return true;
@@ -328,20 +324,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return parts.join(" • ");
   }
 
-  // -------------------- Shared editor bottom sheet --------------------
-  // Used for BOTH create and edit, with full fields.
+  // -------------------- FULL Create/Edit Bottom Sheet --------------------
 
-  Future<void> _openClassEditor({
-    Map<String, dynamic>? existingClass,
-  }) async {
-    if (_loadingCourses) {
-      _toast("Courses are still loading...");
-      return;
-    }
-    if (_courses.isEmpty) {
-      _toast("No courses found.");
-      return;
-    }
+  Future<void> _openClassEditor({Map<String, dynamic>? existingClass}) async {
+    if (_loadingCourses) return _toast("Courses are still loading...");
+    if (_courses.isEmpty) return _toast("No courses found.");
 
     final bool isEdit = existingClass != null;
 
@@ -353,7 +340,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       if (found.isNotEmpty) selectedCourse = found.first;
     }
 
-    // initial instructor
+    // instructor
     final instructors = (selectedCourse["instructors"] as List<String>);
     String? selectedInstructor = instructors.isNotEmpty ? instructors.first : null;
     if (isEdit) {
@@ -361,14 +348,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       if (exInst.isNotEmpty) selectedInstructor = exInst;
     }
 
-    // schedule init
-    final schedule = (isEdit && existingClass["schedule"] is Map)
-        ? Map<String, dynamic>.from(existingClass["schedule"])
-        : <String, dynamic>{};
-
-    final sessionsCountCtrl = TextEditingController(
-      text: isEdit ? (schedule["sessions_count"] ?? "12").toString() : "12",
-    );
+    // schedule
+    final schedule = (isEdit && existingClass["schedule"] is Map) ? Map<String, dynamic>.from(existingClass["schedule"]) : {};
+    final sessionsCountCtrl = TextEditingController(text: isEdit ? (schedule["sessions_count"] ?? "12").toString() : "12");
 
     DateTime? firstSessionDate;
     if (isEdit) {
@@ -385,14 +367,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (isEdit && schedule["sessions"] is List) {
       final list = List<dynamic>.from(schedule["sessions"]);
       for (final item in list) {
-        final m = (item is Map) ? Map<String, dynamic>.from(item) : <String, dynamic>{};
-        final day = (m["day"] ?? "Mon").toString();
-        final start = (m["start_time"] ?? "").toString();
-        final dur = (m["duration_min"] ?? "90").toString();
-
-        final row = _ScheduleRow(day: day);
-        row.startTime = start.isEmpty ? null : start;
-        row.durationCtrl.text = dur;
+        final m = (item is Map) ? Map<String, dynamic>.from(item) : {};
+        final row = _ScheduleRow(day: (m["day"] ?? "Mon").toString());
+        row.startTime = (m["start_time"] ?? "").toString().isEmpty ? null : (m["start_time"] ?? "").toString();
+        row.durationCtrl.text = (m["duration_min"] ?? "90").toString();
         scheduleRows.add(row);
       }
     }
@@ -401,10 +379,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       scheduleRows.add(_ScheduleRow(day: "Tue"));
     }
 
-    // learners
-    Map<String, dynamic> selectedLearnersByUid = {};
+    // learners selected
     Map<String, dynamic> previousLearnersByUid = {};
-
+    Map<String, dynamic> selectedLearnersByUid = {};
     if (isEdit && existingClass["learners"] is Map) {
       previousLearnersByUid = Map<String, dynamic>.from(
         (existingClass["learners"] as Map).map((k, v) => MapEntry(k.toString(), v)),
@@ -482,10 +459,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                               onChanged: (val) {
                                 setDState(() {
                                   if (val == true) {
-                                    selectedLearnersByUid[uid] = {
-                                      "serial": serial,
-                                      "name": name,
-                                    };
+                                    selectedLearnersByUid[uid] = {"serial": serial, "name": name};
                                   } else {
                                     selectedLearnersByUid.remove(uid);
                                   }
@@ -534,20 +508,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        isEdit ? "Edit Class" : "Add Class",
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-                      ),
+                      Text(isEdit ? "Edit Class" : "Add Class",
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 12),
 
                       // Course dropdown
                       DropdownButtonFormField<Map<String, dynamic>>(
                         isExpanded: true,
                         value: selectedCourse,
-                        decoration: const InputDecoration(
-                          labelText: "Course",
-                          border: OutlineInputBorder(),
-                        ),
+                        decoration: const InputDecoration(labelText: "Course", border: OutlineInputBorder()),
                         selectedItemBuilder: (context) {
                           return _courses.map((c) {
                             final label = "${c["course_code"]} — ${c["title"]}";
@@ -567,14 +536,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             ),
                           );
                         }).toList(),
-                        onChanged: (val) async {
+                        onChanged: (val) {
                           if (val == null) return;
                           setModalState(() {
                             selectedCourse = val;
                             final ins = (val["instructors"] as List<String>);
                             selectedInstructor = ins.isNotEmpty ? ins.first : null;
 
-                            // if course changes, reset learners selection (course-based filter)
+                            // changing course resets learners selection
                             selectedLearnersByUid = {};
                             previousLearnersByUid = {};
                           });
@@ -586,10 +555,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         value: selectedInstructor,
-                        decoration: const InputDecoration(
-                          labelText: "Instructor",
-                          border: OutlineInputBorder(),
-                        ),
+                        decoration: const InputDecoration(labelText: "Instructor", border: OutlineInputBorder()),
                         items: ((selectedCourse["instructors"] as List<String>))
                             .map((name) => DropdownMenuItem(
                           value: name,
@@ -604,10 +570,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       TextField(
                         controller: sessionsCountCtrl,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: "Number of sessions",
-                          border: OutlineInputBorder(),
-                        ),
+                        decoration: const InputDecoration(labelText: "Number of sessions", border: OutlineInputBorder()),
                       ),
 
                       const SizedBox(height: 12),
@@ -615,11 +578,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       OutlinedButton.icon(
                         onPressed: () => pickDate(setModalState),
                         icon: const Icon(Icons.date_range),
-                        label: Text(
-                          firstSessionDate == null
-                              ? "Pick first session date"
-                              : "First session: ${_formatDate(firstSessionDate!)}",
-                        ),
+                        label: Text(firstSessionDate == null
+                            ? "Pick first session date"
+                            : "First session: ${_formatDate(firstSessionDate!)}"),
                       ),
 
                       const SizedBox(height: 12),
@@ -631,10 +592,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       ),
 
                       const SizedBox(height: 16),
-                      const Text(
-                        "Weekly schedule (day / start time / duration)",
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                      ),
+                      const Text("Weekly schedule (day / start time / duration)",
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 8),
 
                       ...scheduleRows.map((row) {
@@ -642,10 +601,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Row(
                             children: [
-                              SizedBox(
-                                width: 62,
-                                child: Text(row.day, style: const TextStyle(fontWeight: FontWeight.w700)),
-                              ),
+                              SizedBox(width: 62, child: Text(row.day, style: const TextStyle(fontWeight: FontWeight.w700))),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: OutlinedButton(
@@ -659,10 +615,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 child: TextField(
                                   controller: row.durationCtrl,
                                   keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: "Minutes",
-                                    border: OutlineInputBorder(),
-                                  ),
+                                  decoration: const InputDecoration(labelText: "Minutes", border: OutlineInputBorder()),
                                 ),
                               ),
                               IconButton(
@@ -698,17 +651,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             if (sessionsCount == null || sessionsCount <= 0) return _toast("Sessions count invalid.");
                             if (firstSessionDate == null) return _toast("Pick the first session date.");
 
-                            // validate schedule
                             final sessions = <Map<String, dynamic>>[];
                             for (final row in scheduleRows) {
                               if (row.startTime == null) return _toast("Pick start time for ${row.day}.");
                               final dur = int.tryParse(row.durationCtrl.text.trim());
                               if (dur == null || dur <= 0) return _toast("Duration invalid for ${row.day}.");
-                              sessions.add({
-                                "day": row.day,
-                                "start_time": row.startTime,
-                                "duration_min": dur,
-                              });
+                              sessions.add({"day": row.day, "start_time": row.startTime, "duration_min": dur});
                             }
 
                             final courseId = selectedCourse["id"].toString();
@@ -721,7 +669,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             final classId = isEdit
                                 ? (existingClass!["class_id"] ?? "").toString()
                                 : await _generateUniqueClassId();
-
                             final status = isEdit ? (existingClass!["status"] ?? "active").toString() : "active";
 
                             final payload = <String, dynamic>{
@@ -741,16 +688,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                               },
                               "learners": selectedLearnersByUid, // uid -> {serial,name}
                               "updated_at": ServerValue.timestamp,
+                              if (!isEdit) "created_at": ServerValue.timestamp,
                             };
-
-                            if (!isEdit) {
-                              payload["created_at"] = ServerValue.timestamp;
-                            }
 
                             try {
                               await _classesRef.child(classId).update(payload);
 
-                              // sync learners -> inside learner courses node
                               await _syncLearnersClassData(
                                 courseId: courseId,
                                 classPayload: payload,
@@ -784,7 +727,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
-  // -------------------- UI: Classes List --------------------
+  // -------------------- Classes List UI --------------------
 
   Widget _buildClassesList() {
     return Column(
@@ -799,7 +742,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           ),
         ),
         const SizedBox(height: 12),
-
         StreamBuilder<DatabaseEvent>(
           stream: _classesRef.onValue,
           builder: (context, snap) {
@@ -845,6 +787,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (context, i) {
                 final cls = classes[i];
+
                 final id = (cls["class_id"] ?? "").toString();
                 final status = (cls["status"] ?? "active").toString();
                 final course = (cls["course_title"] ?? "").toString();
@@ -899,7 +842,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           ],
                         ),
                         const SizedBox(height: 6),
-
                         Text(
                           "$code — $course",
                           maxLines: 2,
@@ -907,26 +849,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 4),
-
                         Text(
                           "Instructor: $instructor",
                           style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 4),
-
                         Text(
                           "Start: ${firstDate.isEmpty ? '-' : firstDate}  •  Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount}  •  Learners: $learnersCount",
                           style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
-
                         Text(
                           _prettySessions(cls),
                           style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600),
                         ),
-
                         const SizedBox(height: 12),
-
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -988,12 +925,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 }
 
-// -------------------- Helpers --------------------
-
 class _ScheduleRow {
   _ScheduleRow({required this.day});
-
   final String day;
-  String? startTime; // "HH:mm"
+  String? startTime;
   final TextEditingController durationCtrl = TextEditingController(text: "90");
 }
