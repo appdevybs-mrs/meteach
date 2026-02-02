@@ -62,8 +62,14 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+    // ✅ avoid using a context that is in the middle of dispose/pop
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    });
   }
+
 
   Future<bool> _confirm({
     required String title,
@@ -921,6 +927,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
   @override
   void dispose() {
+    FocusManager.instance.primaryFocus?.unfocus(); // ✅ add this
+
     firstNameC.dispose();
     lastNameC.dispose();
     dobC.dispose();
@@ -1394,6 +1402,21 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
       _initialRole = afterRole;
       _initialTeacherName = afterName;
 
+
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
       Navigator.of(context).pop(staff);
