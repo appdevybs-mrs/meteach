@@ -106,13 +106,26 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         }
       }
 
+      // 1) Read course meta (code/title/duration) from the "courses/{courseId}" node
+      final courseSnap = await _db.ref('courses').child(widget.courseId).get();
+      final courseMap = (courseSnap.value is Map) ? (courseSnap.value as Map) : {};
+
+      final courseCode = (courseMap['course_code'] ?? '').toString();
+      final courseTitle = (courseMap['title'] ?? widget.courseTitle).toString();
+      final courseDuration = (courseMap['duration'] ?? '').toString();
+
+// 2) Save syllabus INCLUDING those fields
       final payload = {
         'courseId': widget.courseId,
+        'courseCode': courseCode,   // <- new
+        'title': courseTitle,       // <- new
+        'duration': courseDuration, // <- new
         'updatedAt': ServerValue.timestamp,
         'units': _units.map((u) => u.toMap()).toList(),
       };
 
       await _syllabusRef.set(payload);
+
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
