@@ -17,9 +17,18 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
 
+  // ===== DB NODES =====
+  static const String usersNode = "users";
+  static const String classesNode = "classes";
+
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  late final DatabaseReference _usersRef = _db.child(usersNode);
+  late final DatabaseReference _classesRef = _db.child(classesNode);
+
   bool _busy = true;
   String? _error;
 
+  String _teacherUid = '';
   String _teacherSerial = '';
   String _teacherName = '';
 
@@ -31,11 +40,20 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     _loadMyClasses();
   }
 
+  String _norm(String s) => s.trim().toLowerCase();
+
+  // ✅ role check: teacher / Teacher / TEACHER / teachers / teacher(s)
+  bool _isTeacherRole(dynamic role) {
+    final r = (role ?? "").toString().trim().toLowerCase();
+    return r == "teacher" || r == "teachers" || r == "teacher(s)";
+  }
+
   Future<void> _loadMyClasses() async {
     setState(() {
       _busy = true;
       _error = null;
       _myClasses = [];
+      _teacherUid = '';
       _teacherSerial = '';
       _teacherName = '';
     });
@@ -44,31 +62,31 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in.');
 
-      // 1) Load teacher data (serial + name) from users/<uid>
-      final userRef = FirebaseDatabase.instance.ref('users/${user.uid}');
-      final userSnap = await userRef.get();
-      if (!userSnap.exists) throw Exception('Teacher user record not found.');
+      _teacherUid = user.uid;
 
-      final u = (userSnap.value as Map?) ?? {};
+      // 1) Load teacher data from users/<uid>
+      final userSnap = await _usersRef.child(_teacherUid).get();
+      if (!userSnap.exists) throw Exception('Teacher user record not found in /users/<uid>.');
 
-      _teacherSerial = (u['instructorserial'] ?? '').toString().trim();
+      final u = (userSnap.value is Map)
+          ? Map<String, dynamic>.from(userSnap.value as Map)
+          : <String, dynamic>{};
+
+      // ✅ IMPORTANT: your DB uses "serial" not "instructorserial"
+      _teacherSerial = (u['serial'] ?? '').toString().trim();
       final fn = (u['first_name'] ?? '').toString().trim();
       final ln = (u['last_name'] ?? '').toString().trim();
       _teacherName = ('$fn $ln').trim();
 
-      if (_teacherSerial.isEmpty && _teacherName.isEmpty) {
-        throw Exception(
-          'Your teacher profile is missing instructorserial and name.\n'
-              'Please set instructorserial in users/<uid>/instructorserial.',
-        );
+      // Optional: ensure this user is really a teacher
+      if (!_isTeacherRole(u['role'])) {
+        throw Exception('Your account role is not "teacher". Found: "${u['role']}"');
       }
 
-      // 2) Load all classes and filter
-      final classesRef = FirebaseDatabase.instance.ref('classes');
-      final classesSnap = await classesRef.get();
+      // 2) Load all classes and filter by instructor_current.uid (NEW NODE)
+      final classesSnap = await _classesRef.get();
 
-      if (!classesSnap.exists) {
-        // No classes at all
+      if (!classesSnap.exists || classesSnap.value == null) {
         setState(() {
           _myClasses = [];
           _busy = false;
@@ -76,22 +94,42 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         return;
       }
 
-      final raw = (classesSnap.value as Map?) ?? {};
+      final raw = (classesSnap.value is Map)
+          ? Map<dynamic, dynamic>.from(classesSnap.value as Map)
+          : <dynamic, dynamic>{};
+
       final List<Map<String, dynamic>> mine = [];
 
       raw.forEach((key, value) {
-        final c = (value as Map?) ?? {};
-        final instructorSerial = (c['instructorserial'] ?? '').toString().trim();
-        final instructorName = (c['instructor'] ?? '').toString().trim();
+        final c = (value is Map)
+            ? Map<String, dynamic>.from(value as Map)
+            : <String, dynamic>{};
 
-        final matchesSerial =
-            _teacherSerial.isNotEmpty && instructorSerial == _teacherSerial;
+        // ✅ NEW: instructor_current.uid
+        String curUid = '';
+        String curName = '';
 
-        // backup match (if serial missing in class)
+        final cur = c['instructor_current'];
+        if (cur is Map) {
+          final curMap = Map<String, dynamic>.from(cur);
+          curUid = (curMap['uid'] ?? '').toString().trim();
+          curName = (curMap['name'] ?? '').toString().trim();
+        }
+
+        // OLD fallback: instructor is string name
+        final legacyInstructorName = (c['instructor'] ?? '').toString().trim();
+
+        final matchesUid = curUid.isNotEmpty && curUid == _teacherUid;
+
+        // backup match by name (in case old classes have no instructor_current)
         final matchesName = _teacherName.isNotEmpty &&
-            instructorName.toLowerCase() == _teacherName.toLowerCase();
+            _norm(legacyInstructorName.isNotEmpty ? legacyInstructorName : curName) == _norm(_teacherName);
 
-        if (matchesSerial || matchesName) {
+        // (Optional) last fallback by serial if you still have older classes with serial stored
+        final legacySerial = (c['instructorserial'] ?? c['serial'] ?? '').toString().trim();
+        final matchesSerial = _teacherSerial.isNotEmpty && legacySerial == _teacherSerial;
+
+        if (matchesUid || matchesName || matchesSerial) {
           mine.add({
             'id': key.toString(),
             ...c.map((k, v) => MapEntry(k.toString(), v)),
@@ -99,13 +137,21 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         }
       });
 
-      // Optional: sort by updated_at desc
+      // Optional: sort by updated_at / updatedAt / created_at desc
       mine.sort((a, b) {
-        final aa = (a['updated_at'] ?? a['updatedAt'] ?? 0);
-        final bb = (b['updated_at'] ?? b['updatedAt'] ?? 0);
-        final aNum = (aa is num) ? aa.toInt() : int.tryParse(aa.toString()) ?? 0;
-        final bNum = (bb is num) ? bb.toInt() : int.tryParse(bb.toString()) ?? 0;
-        return bNum.compareTo(aNum);
+        int numVal(dynamic v) {
+          if (v is num) return v.toInt();
+          return int.tryParse(v?.toString() ?? '') ?? 0;
+        }
+
+        final aU = numVal(a['updated_at'] ?? a['updatedAt'] ?? 0);
+        final bU = numVal(b['updated_at'] ?? b['updatedAt'] ?? 0);
+
+        if (aU != bU) return bU.compareTo(aU);
+
+        final aC = numVal(a['created_at'] ?? a['createdAt'] ?? 0);
+        final bC = numVal(b['created_at'] ?? b['createdAt'] ?? 0);
+        return bC.compareTo(aC);
       });
 
       setState(() {
@@ -144,25 +190,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return '-';
   }
 
-  InputDecoration _searchStyle(String label) {
-    return InputDecoration(
-      labelText: label,
-      border: const OutlineInputBorder(),
-      enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: uiBorder.withOpacity(0.9)),
-      ),
-      focusedBorder: const OutlineInputBorder(
-        borderSide: BorderSide(color: primaryBlue, width: 1.6),
-      ),
-    );
-  }
-
   Future<Map<String, dynamic>> _loadLearner(String uid) async {
-    final ref = FirebaseDatabase.instance.ref('users/$uid');
-    final snap = await ref.get();
+    final snap = await _usersRef.child(uid).get();
     if (!snap.exists) return {'uid': uid};
 
-    final data = (snap.value as Map?) ?? {};
+    final data = (snap.value is Map)
+        ? Map<String, dynamic>.from(snap.value as Map)
+        : <String, dynamic>{};
+
     return {
       'uid': uid,
       'first_name': (data['first_name'] ?? '').toString(),
@@ -199,7 +234,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       ),
       body: Stack(
         children: [
-          // Base background
           Container(color: appBg),
 
           // Watermark
@@ -221,7 +255,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ),
           ),
 
-          // Content
           if (_busy)
             const Center(child: CircularProgressIndicator())
           else if (_error != null)
@@ -277,6 +310,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                           'Serial: ${_teacherSerial.isEmpty ? '-' : _teacherSerial}',
                           style: TextStyle(
                             color: mainText.withOpacity(0.75),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'UID: ${_teacherUid.isEmpty ? '-' : _teacherUid}',
+                          style: TextStyle(
+                            color: mainText.withOpacity(0.55),
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -395,7 +436,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ],
           ),
           const SizedBox(height: 10),
-
           if (learnersUids.isEmpty)
             Text(
               'No learners in this class yet.',
@@ -437,11 +477,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             leading: CircleAvatar(
               backgroundColor: primaryBlue.withOpacity(0.08),
               child: const Icon(Icons.person_rounded, color: primaryBlue),
+
             ),
             title: Text(
-              loading
-                  ? 'Loading...'
-                  : (name.isEmpty ? 'Learner: $uid' : name),
+              loading ? 'Loading...' : (name.isEmpty ? 'Learner: $uid' : name),
               style: const TextStyle(
                 color: mainText,
                 fontWeight: FontWeight.w900,

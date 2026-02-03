@@ -1,10 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-
-import '../teacher/teacher_home.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,14 +11,14 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  void fikraLog(String msg) => print('FIKRA_AUTH | $msg');
+
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
 
-  bool _isLogin = true;
   bool _busy = false;
   String? _error;
 
-  // easy captcha (math)
   late int _a;
   late int _b;
   final _captchaCtrl = TextEditingController();
@@ -30,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _newCaptcha();
+    fikraLog('LoginScreen initState');
   }
 
   void _newCaptcha() {
@@ -37,62 +35,25 @@ class _LoginScreenState extends State<LoginScreen> {
     _a = r.nextInt(9) + 1;
     _b = r.nextInt(9) + 1;
     _captchaCtrl.clear();
+    fikraLog('New captcha: $_a + $_b');
   }
 
   bool _captchaOk() {
     final v = int.tryParse(_captchaCtrl.text.trim());
-    return v == (_a + _b);
+    final ok = v == (_a + _b);
+    fikraLog('Captcha input=$v ok=$ok');
+    return ok;
   }
 
-  Future<void> _ensureUserRecord({required User user}) async {
-    final ref = FirebaseDatabase.instance.ref('users/${user.uid}');
-    final snap = await ref.get();
-
-    if (!snap.exists) {
-      await ref.set({
-        'uid': user.uid,
-        'email': user.email ?? '',
-        'role': 'learner', // default role (you will change to admin/teacher manually)
-        'createdAt': ServerValue.timestamp,
-        'isActive': true,
-      });
-    }
-  }
-
-  bool _isTeacherRole(String role) {
-    final r = role.trim().toLowerCase();
-    return r == 'teacher';
-  }
-
-  Future<String> _getUserRole(String uid) async {
-    final roleRef = FirebaseDatabase.instance.ref('users/$uid/role');
-    final snap = await roleRef.get();
-    final role = (snap.value ?? 'learner').toString();
-    return role;
-  }
-
-  Future<void> _routeUserByRole(User user) async {
-    final role = await _getUserRole(user.uid);
-
-    if (!mounted) return;
-
-    if (_isTeacherRole(role)) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
-      );
-    } else {
-      // For now: do nothing (you can route learners later)
-      // Example later: Navigator.of(context).pushReplacement(...);
-    }
-  }
-
-  Future<void> _emailPasswordSubmit() async {
+  Future<void> _emailPasswordLogin() async {
     setState(() {
       _error = null;
       _busy = true;
     });
 
     try {
+      fikraLog('Email/Pass login pressed');
+
       if (!_captchaOk()) {
         throw Exception('Captcha incorrect. Solve: $_a + $_b');
       }
@@ -100,35 +61,30 @@ class _LoginScreenState extends State<LoginScreen> {
       final email = _emailCtrl.text.trim();
       final pass = _passCtrl.text;
 
-      if (email.isEmpty || pass.isEmpty) {
-        throw Exception('Email and password are required.');
-      }
+      fikraLog('Trying sign-in email=$email passLen=${pass.length}');
 
-      UserCredential cred;
-      if (_isLogin) {
-        cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email,
-          password: pass,
-        );
-      } else {
-        cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email,
-          password: pass,
-        );
-      }
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: pass,
+      );
 
       final user = cred.user;
-      if (user == null) throw Exception('Login failed.');
+      fikraLog('Login success userNull=${user == null}');
+      if (user != null) {
+        fikraLog('AUTH uid=${user.uid} email=${user.email}');
+        fikraLog('AUTH providers=${user.providerData.map((p) => p.providerId).toList()}');
+      }
 
-      await _ensureUserRecord(user: user);
-      await _routeUserByRole(user);
+      if (!mounted) return;
+      Navigator.of(context).pop(); // AuthGate routes
     } catch (e) {
+      fikraLog('Login error: $e');
       setState(() {
         _error = e.toString();
         _newCaptcha();
       });
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -139,11 +95,17 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      fikraLog('Google sign-in start');
+
       final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return; // cancelled
+      if (googleUser == null) {
+        fikraLog('Google sign-in cancelled');
+        return;
+      }
+
+      fikraLog('Google email=${googleUser.email}');
 
       final googleAuth = await googleUser.authentication;
-
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -151,14 +113,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final cred = await FirebaseAuth.instance.signInWithCredential(credential);
       final user = cred.user;
-      if (user == null) throw Exception('Google sign-in failed.');
 
-      await _ensureUserRecord(user: user);
-      await _routeUserByRole(user);
+      fikraLog('Google login success userNull=${user == null}');
+      if (user != null) {
+        fikraLog('AUTH uid=${user.uid} email=${user.email}');
+        fikraLog('AUTH providers=${user.providerData.map((p) => p.providerId).toList()}');
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // AuthGate routes
     } catch (e) {
+      fikraLog('Google sign-in error: $e');
       setState(() => _error = e.toString());
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -173,9 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isLogin ? 'Sign in' : 'Create account'),
-      ),
+      appBar: AppBar(title: const Text('Sign in')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -232,30 +198,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 14),
                 if (_error != null) ...[
-                  Text(
-                    _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
+                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   const SizedBox(height: 10),
                 ],
                 FilledButton(
-                  onPressed: _busy ? null : _emailPasswordSubmit,
-                  child: Text(_busy
-                      ? 'Please wait...'
-                      : (_isLogin ? 'Sign in' : 'Sign up')),
-                ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() {
-                    _isLogin = !_isLogin;
-                    _error = null;
-                    _newCaptcha();
-                  }),
-                  child: Text(_isLogin
-                      ? "Don't have an account? Sign up"
-                      : "Already have an account? Sign in"),
+                  onPressed: _busy ? null : _emailPasswordLogin,
+                  child: Text(_busy ? 'Please wait...' : 'Sign in'),
                 ),
               ],
             ),

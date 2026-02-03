@@ -3,120 +3,115 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../admin/admin_home.dart';
+import '../teacher/teacher_home.dart';
 import 'not_authorized.dart';
 
 class AuthGate extends StatelessWidget {
-  /// The app UI to show when user is NOT logged in.
-  /// (Example: your HomeShell with tabs, where Classroom contains the login form)
   final Widget signedOutHome;
+  const AuthGate({super.key, required this.signedOutHome});
 
-  const AuthGate({
-    super.key,
-    required this.signedOutHome,
-  });
+  void fikraLog(String msg) => print('FIKRA_AUTH | $msg');
 
-  Future<String?> _fetchRole(String uid) async {
-    // Realtime Database path: users/{uid}/role
-    final ref = FirebaseDatabase.instance.ref('users/$uid/role');
+  String normRole(String? role) {
+    final s = (role ?? '').toLowerCase();
+    // remove whitespace + NBSP + zero-width spaces
+    return s.replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '').trim();
+  }
+
+  Future<DataSnapshot> getSnap(String path) async {
+    fikraLog('DB GET: $path');
+    final ref = FirebaseDatabase.instance.ref(path);
     final snap = await ref.get();
-    if (!snap.exists) return null;
-    return snap.value?.toString();
+    fikraLog('DB GOT: $path | exists=${snap.exists} | type=${snap.value.runtimeType} | value=${snap.value}');
+    return snap;
   }
 
   @override
   Widget build(BuildContext context) {
+    fikraLog('AuthGate build()');
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnap) {
+        fikraLog('AUTH stream state=${authSnap.connectionState} hasData=${authSnap.hasData} hasError=${authSnap.hasError}');
+
         if (authSnap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
         if (authSnap.hasError) {
-          return Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline_rounded, size: 42),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Auth error:\n${authSnap.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 14),
-                    FilledButton(
-                      onPressed: () async {
-                        // Try to recover by signing out
-                        await FirebaseAuth.instance.signOut();
-                      },
-                      child: const Text('Sign out'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
+          fikraLog('AUTH ERROR: ${authSnap.error}');
+          return Scaffold(body: Center(child: Text('Auth error:\n${authSnap.error}')));
         }
 
         final user = authSnap.data;
-
-        // ✅ NOT LOGGED IN -> show the main app (HomeShell) where Classroom has login
         if (user == null) {
+          fikraLog('AUTH user=null -> signedOutHome');
           return signedOutHome;
         }
 
-        // ✅ LOGGED IN -> check role
-        return FutureBuilder<String?>(
-          future: _fetchRole(user.uid),
-          builder: (context, roleSnap) {
-            if (roleSnap.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
+        fikraLog('AUTH user present uid=${user.uid} email=${user.email}');
+        fikraLog('AUTH providers=${user.providerData.map((p) => p.providerId).toList()}');
+
+        return FutureBuilder<DataSnapshot>(
+          future: getSnap('users/${user.uid}'),
+          builder: (context, userNodeSnap) {
+            fikraLog('USER NODE future state=${userNodeSnap.connectionState} hasError=${userNodeSnap.hasError} hasData=${userNodeSnap.hasData}');
+
+            if (userNodeSnap.connectionState == ConnectionState.waiting) {
+              return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
 
-            if (roleSnap.hasError) {
-              return Scaffold(
-                body: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.error_outline_rounded, size: 42),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Role fetch error:\n${roleSnap.error}',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 14),
-                        FilledButton(
-                          onPressed: () async {
-                            await FirebaseAuth.instance.signOut();
-                          },
-                          child: const Text('Sign out'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
+            if (userNodeSnap.hasError) {
+              fikraLog('USER NODE ERROR: ${userNodeSnap.error}');
+              return Scaffold(body: Center(child: Text('User fetch error:\n${userNodeSnap.error}')));
             }
 
-            final role = roleSnap.data;
-
-            // ✅ ADMIN -> go to admin panel
-            if (role == 'admin') {
-              return const AdminHome();
+            final userNode = userNodeSnap.data!;
+            if (!userNode.exists) {
+              fikraLog('❌ Missing /users/${user.uid} -> NotAuthorized');
+              return NotAuthorized(role: 'Missing /users/${user.uid}');
             }
 
-            // ✅ Logged in but not admin (or missing role)
-            return NotAuthorized(role: role);
+            return FutureBuilder<DataSnapshot>(
+              future: getSnap('users/${user.uid}/role'),
+              builder: (context, roleSnap) {
+                fikraLog('ROLE future state=${roleSnap.connectionState} hasError=${roleSnap.hasError} hasData=${roleSnap.hasData}');
+
+                if (roleSnap.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                }
+
+                if (roleSnap.hasError) {
+                  fikraLog('ROLE ERROR: ${roleSnap.error}');
+                  return Scaffold(body: Center(child: Text('Role fetch error:\n${roleSnap.error}')));
+                }
+
+                final rawRole = roleSnap.data!.value?.toString();
+                final role = normRole(rawRole);
+
+                fikraLog('RAW ROLE=[$rawRole]');
+                fikraLog('NORM ROLE=[$role]');
+
+                if (role == 'admin') {
+                  fikraLog('✅ ROUTE AdminHome');
+                  return const AdminHome();
+                }
+
+                if (role == 'teacher' || role == 'teachers' || role == 'Teacher' || role == 'teacher(s)') {
+                  fikraLog('✅ ROUTE TeacherHomeScreen');
+                  return const TeacherHomeScreen();
+                }
+
+                if (role == 'learner' || role == 'learners' || role == 'learner(s)') {
+                  fikraLog('✅ ROUTE signedOutHome (learner)');
+                  return signedOutHome;
+                }
+
+                fikraLog('❌ UNKNOWN ROLE -> NotAuthorized rawRole=[$rawRole]');
+                return NotAuthorized(role: rawRole);
+              },
+            );
           },
         );
       },
