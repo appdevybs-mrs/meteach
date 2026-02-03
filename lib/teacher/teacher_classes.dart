@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'take_attendance_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
   const TeacherClassesScreen({super.key});
@@ -20,6 +21,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   // ===== DB NODES =====
   static const String usersNode = "users";
   static const String classesNode = "classes";
+  static const String syllabiNode = "syllabi";
+  static const String attendanceNode = "attendance";
+
+  late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
@@ -435,6 +440,32 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
               ),
             ],
           ),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.fact_check_rounded),
+                  label: const Text("Take Attendance"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: actionOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TakeAttendanceScreen(classData: c),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
           const SizedBox(height: 10),
           if (learnersUids.isEmpty)
             Text(
