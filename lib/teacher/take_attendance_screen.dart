@@ -11,7 +11,6 @@ class TakeAttendanceScreen extends StatefulWidget {
 }
 
 class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
-  // Simple styling (match your app colors if you want)
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
   static const mainText = Color(0xFF2D2D2D);
@@ -30,21 +29,18 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   bool _busy = true;
   String? _error;
 
-  // Session fields
   DateTime _date = DateTime.now();
   int _successRate = 80;
 
-  // Flattened syllabi sessions for dropdown
   List<Map<String, dynamic>> _syllabiSessions = [];
-  Map<String, dynamic>? _selectedSession; // {unitId, sessionId, title, unitTitle, order}
+  Map<String, dynamic>? _selectedSession;
 
-  // Learners attendance map (uid -> present?)
-  final Map<String, bool> _present = {}; // default true later
+  final Map<String, bool> _present = {};
   List<String> _learnerUids = [];
-  final Map<String, Map<String, dynamic>> _learnerInfo = {}; // uid -> {name, serial...}
+  final Map<String, Map<String, dynamic>> _learnerInfo = {};
 
   String get _classId => (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
-  String get _courseId => (widget.classData['course_id'] ?? '').toString(); // used for syllabi key
+  String get _courseId => (widget.classData['course_id'] ?? '').toString();
   String get _courseCode => (widget.classData['course_code'] ?? '').toString();
   String get _courseTitle => (widget.classData['course_title'] ?? '').toString();
 
@@ -66,18 +62,15 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     });
 
     try {
-      // 1) Load learners from class node
       final learnersNode = widget.classData['learners'];
       if (learnersNode is Map) {
         _learnerUids = learnersNode.keys.map((e) => e.toString()).toList();
       }
 
-      // Default: everyone present (teacher can uncheck)
       for (final uid in _learnerUids) {
         _present[uid] = true;
       }
 
-      // Load learner small info (name/serial if exists)
       await Future.wait(_learnerUids.map((uid) async {
         final snap = await _usersRef.child(uid).get();
         if (!snap.exists || snap.value == null) {
@@ -95,7 +88,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         };
       }));
 
-      // 2) Load syllabi using course_id (recommended)
+      // Load syllabi using course_id
       if (_courseId.isNotEmpty) {
         final sSnap = await _syllabiRef.child(_courseId).get();
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
@@ -128,7 +121,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             }
           }
 
-          // Sort by unit order then session order
           flat.sort((a, b) {
             int ai = (a['unitOrder'] is num) ? (a['unitOrder'] as num).toInt() : 0;
             int bi = (b['unitOrder'] is num) ? (b['unitOrder'] as num).toInt() : 0;
@@ -174,7 +166,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
     final courses = Map<String, dynamic>.from(snap.value as Map);
     for (final entry in courses.entries) {
-      final courseKey = entry.key.toString(); // course_1, course_2...
+      final courseKey = entry.key.toString();
       final courseVal = entry.value;
       if (courseVal is! Map) continue;
       final courseMap = Map<String, dynamic>.from(courseVal);
@@ -188,17 +180,51 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     return null;
   }
 
+  Future<String> _loadTeacherName(String uid) async {
+    final snap = await _usersRef.child(uid).get();
+    if (!snap.exists || snap.value == null || snap.value is! Map) return '';
+    final m = Map<String, dynamic>.from(snap.value as Map);
+    final fn = (m['first_name'] ?? '').toString().trim();
+    final ln = (m['last_name'] ?? '').toString().trim();
+    return ('$fn $ln').trim();
+  }
+
+  Future<bool> _hasDuplicateForDate(String classId, String dateStr) async {
+    // This works best if you add an index:
+    // in Firebase rules:  "attendance": { ".indexOn": ["date"] }
+    final q = _classesRef.child(classId).child('attendance').orderByChild('date').equalTo(dateStr);
+    final snap = await q.get();
+    return snap.exists && snap.value != null;
+  }
+
+  Future<bool> _confirmDuplicateDialog() async {
+    return (await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Attendance already exists'),
+        content: const Text('You already took attendance for this class on this date.\n\nSave anyway?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save anyway'),
+          ),
+        ],
+      ),
+    )) ??
+        false;
+  }
+
   Future<void> _saveAttendance() async {
     if (_classId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Missing class_id')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Missing class_id')));
       return;
     }
     if (_selectedSession == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select what was taught')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select what was taught')));
       return;
     }
 
@@ -211,10 +237,22 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception("Not logged in.");
 
-      final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
       final dateStr = _dateStr(_date);
 
-      // Build present/absent maps for class record
+      // ✅ duplicate warn
+      final dup = await _hasDuplicateForDate(_classId, dateStr);
+      if (dup) {
+        final proceed = await _confirmDuplicateDialog();
+        if (!proceed) {
+          setState(() => _busy = false);
+          return;
+        }
+      }
+
+      final teacherName = await _loadTeacherName(user.uid);
+
+      final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+
       final Map<String, bool> presentMap = {};
       final Map<String, bool> absentMap = {};
       for (final uid in _learnerUids) {
@@ -226,13 +264,13 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         }
       }
 
-      // 1) Save class attendance (main record)
       final classAttendancePath = '$classesNode/$_classId/attendance/$sessionId';
       final classRecord = {
         'sessionId': sessionId,
         'date': dateStr,
         'createdAt': ServerValue.timestamp,
         'teacherUid': user.uid,
+        'teacherName': teacherName, // ✅ improvement
         'course_id': _courseId,
         'course_code': _courseCode,
         'course_title': _courseTitle,
@@ -247,15 +285,13 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'absent': absentMap,
       };
 
-      // We will do a multi-location update
       final Map<String, dynamic> updates = {
         classAttendancePath: classRecord,
       };
 
-      // 2) Save into each learner inside users/<uid>/courses/<course_x>/attendance/<sessionId>
       for (final learnerUid in _learnerUids) {
         final courseKey = await _findLearnerCourseKeyForClass(learnerUid, _classId);
-        if (courseKey == null) continue; // skip if learner not mapped correctly
+        if (courseKey == null) continue;
 
         final status = (_present[learnerUid] ?? false) ? 'present' : 'absent';
         final learnerPath = '$usersNode/$learnerUid/courses/$courseKey/attendance/$sessionId';
@@ -282,9 +318,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       await _db.update(updates);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Attendance saved ✅')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Attendance saved ✅')));
       Navigator.pop(context);
     } catch (e) {
       setState(() {
@@ -326,7 +360,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           : ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Session details card
           Card(
             elevation: 0,
             color: Colors.white,
@@ -344,8 +377,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 16),
                   ),
                   const SizedBox(height: 10),
-
-                  // Date
                   Row(
                     children: [
                       Expanded(
@@ -362,8 +393,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-
-                  // What taught dropdown
                   const Text(
                     'What was taught',
                     style: TextStyle(color: mainText, fontWeight: FontWeight.w900),
@@ -381,8 +410,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                         isExpanded: true,
                         value: _selectedSession,
                         items: _syllabiSessions.map((s) {
-                          final label =
-                              '${s['unitTitle']} — ${s['title']}';
+                          final label = '${s['unitTitle']} — ${s['title']}';
                           return DropdownMenuItem(
                             value: s,
                             child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -392,10 +420,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 14),
-
-                  // Success rate
                   Text(
                     'Success Rate: $_successRate%',
                     style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
@@ -412,10 +437,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ),
             ),
           ),
-
           const SizedBox(height: 14),
-
-          // Learners
           Row(
             children: [
               const Icon(Icons.people_alt_rounded, color: primaryBlue, size: 18),
@@ -427,7 +449,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             ],
           ),
           const SizedBox(height: 10),
-
           ..._learnerUids.map((uid) {
             final info = _learnerInfo[uid] ?? {'name': uid, 'serial': ''};
             final name = (info['name'] ?? uid).toString();
@@ -462,7 +483,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ),
             );
           }).toList(),
-
           const SizedBox(height: 6),
           ElevatedButton.icon(
             icon: const Icon(Icons.save_rounded),

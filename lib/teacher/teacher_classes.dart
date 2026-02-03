@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+
 import 'take_attendance_screen.dart';
+import 'attendance_history_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
   const TeacherClassesScreen({super.key});
@@ -21,10 +23,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   // ===== DB NODES =====
   static const String usersNode = "users";
   static const String classesNode = "classes";
-  static const String syllabiNode = "syllabi";
-  static const String attendanceNode = "attendance";
-
-  late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
@@ -77,20 +75,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
           ? Map<String, dynamic>.from(userSnap.value as Map)
           : <String, dynamic>{};
 
-      // ✅ IMPORTANT: your DB uses "serial" not "instructorserial"
       _teacherSerial = (u['serial'] ?? '').toString().trim();
       final fn = (u['first_name'] ?? '').toString().trim();
       final ln = (u['last_name'] ?? '').toString().trim();
       _teacherName = ('$fn $ln').trim();
 
-      // Optional: ensure this user is really a teacher
       if (!_isTeacherRole(u['role'])) {
         throw Exception('Your account role is not "teacher". Found: "${u['role']}"');
       }
 
-      // 2) Load all classes and filter by instructor_current.uid (NEW NODE)
+      // 2) Load all classes and filter by instructor_current.uid
       final classesSnap = await _classesRef.get();
-
       if (!classesSnap.exists || classesSnap.value == null) {
         setState(() {
           _myClasses = [];
@@ -110,7 +105,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ? Map<String, dynamic>.from(value as Map)
             : <String, dynamic>{};
 
-        // ✅ NEW: instructor_current.uid
         String curUid = '';
         String curName = '';
 
@@ -121,16 +115,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
           curName = (curMap['name'] ?? '').toString().trim();
         }
 
-        // OLD fallback: instructor is string name
         final legacyInstructorName = (c['instructor'] ?? '').toString().trim();
 
         final matchesUid = curUid.isNotEmpty && curUid == _teacherUid;
 
-        // backup match by name (in case old classes have no instructor_current)
         final matchesName = _teacherName.isNotEmpty &&
             _norm(legacyInstructorName.isNotEmpty ? legacyInstructorName : curName) == _norm(_teacherName);
 
-        // (Optional) last fallback by serial if you still have older classes with serial stored
         final legacySerial = (c['instructorserial'] ?? c['serial'] ?? '').toString().trim();
         final matchesSerial = _teacherSerial.isNotEmpty && legacySerial == _teacherSerial;
 
@@ -142,7 +133,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         }
       });
 
-      // Optional: sort by updated_at / updatedAt / created_at desc
       mine.sort((a, b) {
         int numVal(dynamic v) {
           if (v is num) return v.toInt();
@@ -210,6 +200,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       'email': (data['email'] ?? '').toString(),
       'phone1': (data['phone1'] ?? '').toString(),
       'status': (data['status'] ?? '').toString(),
+      'serial': (data['serial'] ?? '').toString(),
     };
   }
 
@@ -241,7 +232,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         children: [
           Container(color: appBg),
 
-          // Watermark
           Positioned.fill(
             child: IgnorePointer(
               child: Opacity(
@@ -280,7 +270,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Teacher header info
                 Card(
                   elevation: 0,
                   color: Colors.white,
@@ -427,19 +416,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         ),
         children: [
           const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.people_alt_rounded, color: primaryBlue, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                'Learners ($learnersCount)',
-                style: const TextStyle(
-                  color: mainText,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
+
+          // ✅ Buttons: Take Attendance + History
           Row(
             children: [
               Expanded(
@@ -455,17 +433,47 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => TakeAttendanceScreen(classData: c),
-                      ),
+                      MaterialPageRoute(builder: (_) => TakeAttendanceScreen(classData: c)),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.history_rounded, color: primaryBlue),
+                  label: const Text("History", style: TextStyle(color: primaryBlue)),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => AttendanceHistoryScreen(classData: c)),
                     );
                   },
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
 
+          const SizedBox(height: 14),
+
+          Row(
+            children: [
+              const Icon(Icons.people_alt_rounded, color: primaryBlue, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Learners ($learnersCount)',
+                style: const TextStyle(
+                  color: mainText,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
           if (learnersUids.isEmpty)
             Text(
@@ -494,6 +502,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         final fn = (data['first_name'] ?? '').toString().trim();
         final ln = (data['last_name'] ?? '').toString().trim();
         final name = ('$fn $ln').trim();
+        final serial = (data['serial'] ?? '').toString().trim();
         final email = (data['email'] ?? '').toString().trim();
         final phone = (data['phone1'] ?? '').toString().trim();
 
@@ -508,7 +517,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             leading: CircleAvatar(
               backgroundColor: primaryBlue.withOpacity(0.08),
               child: const Icon(Icons.person_rounded, color: primaryBlue),
-
             ),
             title: Text(
               loading ? 'Loading...' : (name.isEmpty ? 'Learner: $uid' : name),
@@ -519,9 +527,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ),
             subtitle: Text(
               [
+                if (serial.isNotEmpty) 'Serial: $serial',
                 if (email.isNotEmpty) email,
                 if (phone.isNotEmpty) phone,
-                if (email.isEmpty && phone.isEmpty) 'UID: $uid',
+                if (serial.isEmpty && email.isEmpty && phone.isEmpty) 'UID: $uid',
               ].join(' • '),
               style: TextStyle(
                 color: mainText.withOpacity(0.7),

@@ -13,7 +13,7 @@
 
 
   // Keeping your imports (even if not used yet) so nothing breaks in your project
-  import 'LearnerDashboard.dart';
+  import 'learner/LearnerDashboard.dart';
   import 'auth/auth_gate.dart';
 
   final GlobalKey<ScaffoldMessengerState> messengerKey =
