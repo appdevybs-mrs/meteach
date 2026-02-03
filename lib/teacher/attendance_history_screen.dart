@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
+import 'take_attendance_screen.dart';
+
 class AttendanceHistoryScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
   const AttendanceHistoryScreen({super.key, required this.classData});
@@ -56,7 +58,6 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         return {'id': e.key, ...m};
       }).toList();
 
-      // Sort by createdAt desc, fallback date
       int numVal(dynamic v) => (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
       list.sort((a, b) {
         final ac = numVal(a['createdAt']);
@@ -125,23 +126,30 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       )
           : _sessions.isEmpty
           ? const Center(
-        child: Text(
-          'No attendance sessions yet.',
-          style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
-        ),
+        child: Text('No attendance sessions yet.',
+            style: TextStyle(color: mainText, fontWeight: FontWeight.w800)),
       )
           : ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _sessions.length,
         itemBuilder: (context, i) {
           final s = _sessions[i];
+          final sessionId = (s['sessionId'] ?? s['id'] ?? '').toString();
           final date = (s['date'] ?? '').toString();
           final rate = (s['successRate'] ?? '').toString();
           final teacherName = (s['teacherName'] ?? '').toString();
-          final taught = (s['taught'] is Map) ? Map<String, dynamic>.from(s['taught'] as Map) : <String, dynamic>{};
+
+          final taught = (s['taught'] is Map)
+              ? Map<String, dynamic>.from(s['taught'] as Map)
+              : <String, dynamic>{};
           final taughtTitle = (taught['title'] ?? '').toString();
-          final present = (s['present'] is Map) ? Map<String, dynamic>.from(s['present'] as Map) : <String, dynamic>{};
-          final absent = (s['absent'] is Map) ? Map<String, dynamic>.from(s['absent'] as Map) : <String, dynamic>{};
+
+          final present = (s['present'] is Map)
+              ? Map<String, dynamic>.from(s['present'] as Map)
+              : <String, dynamic>{};
+          final absent = (s['absent'] is Map)
+              ? Map<String, dynamic>.from(s['absent'] as Map)
+              : <String, dynamic>{};
 
           return Card(
             elevation: 0,
@@ -152,9 +160,33 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               side: BorderSide(color: uiBorder.withOpacity(0.8)),
             ),
             child: ExpansionTile(
-              title: Text(
-                date.isEmpty ? 'Session' : date,
-                style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      date.isEmpty ? 'Session' : date,
+                      style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Edit session',
+                    icon: const Icon(Icons.edit_rounded, color: primaryBlue),
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TakeAttendanceScreen(
+                            classData: widget.classData,
+                            existingSessionId: sessionId,
+                            existingRecord: s,
+                          ),
+                        ),
+                      );
+                      // reload after edit
+                      _loadHistory();
+                    },
+                  ),
+                ],
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -162,10 +194,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (taughtTitle.isNotEmpty)
-                      Text(
-                        taughtTitle,
-                        style: const TextStyle(color: mainText, fontWeight: FontWeight.w800),
-                      ),
+                      Text(taughtTitle,
+                          style: const TextStyle(color: mainText, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 4),
                     Text(
                       'Success: ${rate.isEmpty ? '-' : '$rate%'} • Present: ${present.length} • Absent: ${absent.length}',
@@ -173,10 +203,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                     ),
                     if (teacherName.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        'Teacher: $teacherName',
-                        style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
-                      ),
+                      Text('Teacher: $teacherName',
+                          style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700)),
                     ],
                   ],
                 ),

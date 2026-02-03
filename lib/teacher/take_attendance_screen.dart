@@ -4,7 +4,17 @@ import 'package:firebase_database/firebase_database.dart';
 
 class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
-  const TakeAttendanceScreen({super.key, required this.classData});
+
+  // ✅ Edit support:
+  final String? existingSessionId;
+  final Map<String, dynamic>? existingRecord;
+
+  const TakeAttendanceScreen({
+    super.key,
+    required this.classData,
+    this.existingSessionId,
+    this.existingRecord,
+  });
 
   @override
   State<TakeAttendanceScreen> createState() => _TakeAttendanceScreenState();
@@ -29,6 +39,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   bool _busy = true;
   String? _error;
 
+  bool get _isEdit => widget.existingSessionId != null && widget.existingSessionId!.isNotEmpty;
+
   DateTime _date = DateTime.now();
   int _successRate = 80;
 
@@ -50,6 +62,19 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     _init();
   }
 
+  DateTime? _parseDate(String s) {
+    try {
+      final parts = s.split('-');
+      if (parts.length != 3) return null;
+      final y = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      final d = int.parse(parts[2]);
+      return DateTime(y, m, d);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _init() async {
     setState(() {
       _busy = true;
@@ -62,15 +87,53 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     });
 
     try {
+      // learners from class node
       final learnersNode = widget.classData['learners'];
+      final Set<String> learnerSet = {};
       if (learnersNode is Map) {
-        _learnerUids = learnersNode.keys.map((e) => e.toString()).toList();
+        learnerSet.addAll(learnersNode.keys.map((e) => e.toString()));
       }
 
-      for (final uid in _learnerUids) {
-        _present[uid] = true;
+      // If editing, include union of old present+absent too
+      if (_isEdit && widget.existingRecord != null) {
+        final rec = widget.existingRecord!;
+        final p = (rec['present'] is Map) ? Map<String, dynamic>.from(rec['present'] as Map) : <String, dynamic>{};
+        final a = (rec['absent'] is Map) ? Map<String, dynamic>.from(rec['absent'] as Map) : <String, dynamic>{};
+        learnerSet.addAll(p.keys.map((e) => e.toString()));
+        learnerSet.addAll(a.keys.map((e) => e.toString()));
+
+        final dateStr = (rec['date'] ?? '').toString();
+        final parsed = _parseDate(dateStr);
+        if (parsed != null) _date = parsed;
+
+        final sr = rec['successRate'];
+        if (sr is num) _successRate = sr.toInt();
+
+        // prefill present map
+        for (final uid in learnerSet) {
+          _present[uid] = false; // default absent
+        }
+        for (final uid in p.keys) {
+          _present[uid.toString()] = true;
+        }
+
+        // prefill taught selection (we'll match after loading syllabi list)
+        final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
+        final taughtUnitId = (taught['unitId'] ?? '').toString();
+        final taughtSessionId = (taught['sessionId'] ?? '').toString();
+        // We'll use these later to match
+        _pendingTaughtUnitId = taughtUnitId;
+        _pendingTaughtSessionId = taughtSessionId;
+      } else {
+        // create mode: default everyone present
+        for (final uid in learnerSet) {
+          _present[uid] = true;
+        }
       }
 
+      _learnerUids = learnerSet.toList()..sort();
+
+      // Load learner small info
       await Future.wait(_learnerUids.map((uid) async {
         final snap = await _usersRef.child(uid).get();
         if (!snap.exists || snap.value == null) {
@@ -131,7 +194,18 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           });
 
           _syllabiSessions = flat;
-          if (_syllabiSessions.isNotEmpty) _selectedSession = _syllabiSessions.first;
+
+          // ✅ Edit: match old taught
+          if (_isEdit && _pendingTaughtUnitId.isNotEmpty && _pendingTaughtSessionId.isNotEmpty) {
+            final match = _syllabiSessions.where((x) =>
+            (x['unitId'] ?? '').toString() == _pendingTaughtUnitId &&
+                (x['sessionId'] ?? '').toString() == _pendingTaughtSessionId
+            );
+            if (match.isNotEmpty) _selectedSession = match.first;
+          }
+
+          // fallback
+          _selectedSession ??= _syllabiSessions.isNotEmpty ? _syllabiSessions.first : null;
         }
       }
 
@@ -143,6 +217,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       });
     }
   }
+
+  // used for edit prefill
+  String _pendingTaughtUnitId = '';
+  String _pendingTaughtSessionId = '';
 
   String _dateStr(DateTime d) {
     final mm = d.month.toString().padLeft(2, '0');
@@ -190,8 +268,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   }
 
   Future<bool> _hasDuplicateForDate(String classId, String dateStr) async {
-    // This works best if you add an index:
-    // in Firebase rules:  "attendance": { ".indexOn": ["date"] }
     final q = _classesRef.child(classId).child('attendance').orderByChild('date').equalTo(dateStr);
     final snap = await q.get();
     return snap.exists && snap.value != null;
@@ -204,14 +280,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         title: const Text('Attendance already exists'),
         content: const Text('You already took attendance for this class on this date.\n\nSave anyway?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save anyway'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save anyway')),
         ],
       ),
     )) ??
@@ -239,19 +309,23 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       final dateStr = _dateStr(_date);
 
-      // ✅ duplicate warn
-      final dup = await _hasDuplicateForDate(_classId, dateStr);
-      if (dup) {
-        final proceed = await _confirmDuplicateDialog();
-        if (!proceed) {
-          setState(() => _busy = false);
-          return;
+      // ✅ duplicate warning only in CREATE mode
+      if (!_isEdit) {
+        final dup = await _hasDuplicateForDate(_classId, dateStr);
+        if (dup) {
+          final proceed = await _confirmDuplicateDialog();
+          if (!proceed) {
+            setState(() => _busy = false);
+            return;
+          }
         }
       }
 
       final teacherName = await _loadTeacherName(user.uid);
 
-      final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+      final sessionId = _isEdit
+          ? widget.existingSessionId!
+          : DateTime.now().millisecondsSinceEpoch.toString();
 
       final Map<String, bool> presentMap = {};
       final Map<String, bool> absentMap = {};
@@ -265,12 +339,14 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }
 
       final classAttendancePath = '$classesNode/$_classId/attendance/$sessionId';
+
       final classRecord = {
         'sessionId': sessionId,
         'date': dateStr,
-        'createdAt': ServerValue.timestamp,
+        'updatedAt': ServerValue.timestamp,
+        'createdAt': widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
         'teacherUid': user.uid,
-        'teacherName': teacherName, // ✅ improvement
+        'teacherName': teacherName,
         'course_id': _courseId,
         'course_code': _courseCode,
         'course_title': _courseTitle,
@@ -285,11 +361,13 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'absent': absentMap,
       };
 
-      final Map<String, dynamic> updates = {
-        classAttendancePath: classRecord,
-      };
+      // Multi-location update (class + learners)
+      final Map<String, dynamic> updates = {classAttendancePath: classRecord};
 
-      for (final learnerUid in _learnerUids) {
+      // ✅ Update learners for ALL UIDs in this session
+      final sessionUids = {...presentMap.keys, ...absentMap.keys}.toList();
+
+      for (final learnerUid in sessionUids) {
         final courseKey = await _findLearnerCourseKeyForClass(learnerUid, _classId);
         if (courseKey == null) continue;
 
@@ -311,14 +389,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             'sessionId': _selectedSession!['sessionId'],
             'title': _selectedSession!['title'],
           },
-          'createdAt': ServerValue.timestamp,
+          'updatedAt': ServerValue.timestamp,
+          'createdAt': widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
         };
       }
 
       await _db.update(updates);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Attendance saved ✅')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_isEdit ? 'Attendance updated ✅' : 'Attendance saved ✅'),
+      ));
       Navigator.pop(context);
     } catch (e) {
       setState(() {
@@ -339,9 +420,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text(
-          'Take Attendance',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        title: Text(
+          _isEdit ? 'Edit Attendance' : 'Take Attendance',
+          style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
       ),
       body: _busy
@@ -380,10 +461,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          'Date: ${_dateStr(_date)}',
-                          style: const TextStyle(color: mainText, fontWeight: FontWeight.w800),
-                        ),
+                        child: Text('Date: ${_dateStr(_date)}',
+                            style: const TextStyle(color: mainText, fontWeight: FontWeight.w800)),
                       ),
                       TextButton.icon(
                         onPressed: _pickDate,
@@ -393,10 +472,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Text(
-                    'What was taught',
-                    style: TextStyle(color: mainText, fontWeight: FontWeight.w900),
-                  ),
+                  const Text('What was taught',
+                      style: TextStyle(color: mainText, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -421,10 +498,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  Text(
-                    'Success Rate: $_successRate%',
-                    style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
-                  ),
+                  Text('Success Rate: $_successRate%',
+                      style: const TextStyle(color: mainText, fontWeight: FontWeight.w900)),
                   Slider(
                     value: _successRate.toDouble(),
                     min: 0,
@@ -442,10 +517,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             children: [
               const Icon(Icons.people_alt_rounded, color: primaryBlue, size: 18),
               const SizedBox(width: 8),
-              Text(
-                'Learners (${_learnerUids.length})',
-                style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
-              ),
+              Text('Learners (${_learnerUids.length})',
+                  style: const TextStyle(color: mainText, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 10),
@@ -465,20 +538,14 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               child: SwitchListTile(
                 value: isPresent,
                 onChanged: (v) => setState(() => _present[uid] = v),
-                title: Text(
-                  name,
-                  style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
-                ),
+                title: Text(name, style: const TextStyle(color: mainText, fontWeight: FontWeight.w900)),
                 subtitle: Text(
                   serial.isEmpty ? 'UID: $uid' : 'Serial: $serial',
                   style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
                 ),
                 secondary: CircleAvatar(
                   backgroundColor: primaryBlue.withOpacity(0.08),
-                  child: Icon(
-                    isPresent ? Icons.check_rounded : Icons.close_rounded,
-                    color: primaryBlue,
-                  ),
+                  child: Icon(isPresent ? Icons.check_rounded : Icons.close_rounded, color: primaryBlue),
                 ),
               ),
             );
@@ -486,7 +553,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           const SizedBox(height: 6),
           ElevatedButton.icon(
             icon: const Icon(Icons.save_rounded),
-            label: const Text('Save Attendance'),
+            label: Text(_isEdit ? 'Update Attendance' : 'Save Attendance'),
             style: ElevatedButton.styleFrom(
               backgroundColor: actionOrange,
               foregroundColor: Colors.white,
