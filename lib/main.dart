@@ -14,6 +14,8 @@
 
   // Keeping your imports (even if not used yet) so nothing breaks in your project
   import 'learner/LearnerDashboard.dart';
+  import 'learner/learner_home.dart';
+
   import 'auth/auth_gate.dart';
 
   final GlobalKey<ScaffoldMessengerState> messengerKey =
@@ -771,7 +773,7 @@
           setState(() => loading = false);
 
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LearnerDashboard()),
+            MaterialPageRoute(builder: (_) => const LearnerHome()),
           );
           return;
         }
