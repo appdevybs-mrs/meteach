@@ -9,6 +9,7 @@
   import 'package:firebase_database/firebase_database.dart';
   import 'admin/admin_home.dart';
   import 'enroll_screen.dart';
+  import 'teacher/teacher_home.dart';
 
 
   // Keeping your imports (even if not used yet) so nothing breaks in your project
@@ -736,7 +737,11 @@
 
         final ref = FirebaseDatabase.instance.ref('users/$uid/role');
         final snap = await ref.get();
-        final role = (snap.value ?? '').toString().trim().toLowerCase();
+        final role = (snap.value ?? '')
+            .toString()
+            .toLowerCase()
+            .replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '')
+            .trim();
         if (role == 'admin') {
           if (rememberMe) {
             final p = await SharedPreferences.getInstance();
@@ -770,8 +775,25 @@
           );
           return;
         }
+        if (role == 'teacher' || role == 'teachers' || role == 'teacher(s)') {
+          if (rememberMe) {
+            final p = await SharedPreferences.getInstance();
+            await p.setBool('rememberMe', true);
+            await p.setString('rememberEmail', email);
+            await p.setString('rememberPass', pass);
+          }
 
-  // If role is missing or something else
+          if (!mounted) return;
+          setState(() => loading = false);
+
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          );
+          return;
+        }
+
+
+        // If role is missing or something else
         await FirebaseAuth.instance.signOut();
         setState(() {
           loading = false;
