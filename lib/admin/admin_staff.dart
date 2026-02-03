@@ -865,6 +865,7 @@ class StaffEditorScreen extends StatefulWidget {
 
 class _StaffEditorScreenState extends State<StaffEditorScreen> {
   final _formKey = GlobalKey<FormState>();
+  String _serial = '';
 
   final _db = FirebaseDatabase.instance;
   DatabaseReference get _usersRef => _db.ref('users');
@@ -900,6 +901,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     super.initState();
 
     final initial = widget.initial;
+    _serial = initial?.serial ?? '';
 
     firstNameC = TextEditingController(text: initial?.firstName ?? '');
     lastNameC = TextEditingController(text: initial?.lastName ?? '');
@@ -999,6 +1001,33 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
       _snack('Failed to load courses: $e');
     }
   }
+
+  Future<String> _generateNextSerial() async {
+    final snap = await _usersRef.get();
+    final v = snap.value;
+
+    int max = 0;
+
+    if (v is Map) {
+      v.forEach((_, userVal) {
+        if (userVal is Map) {
+          final m = userVal.map((k, vv) => MapEntry(k.toString(), vv));
+          final s = (m['serial'] ?? '').toString().trim(); // ✅ NOW serial
+
+          if (s.contains('-')) {
+            final parts = s.split('-');
+            final n = int.tryParse(parts.last.trim());
+            if (n != null && n > max) max = n;
+          }
+        }
+      });
+    }
+
+    final next = max + 1;
+    return '000-$next';
+  }
+
+
 
   Future<void> _pickDob() async {
     FocusScope.of(context).unfocus();
@@ -1321,6 +1350,10 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
     try {
       final isCreate = widget.mode == EditorMode.create;
+// ✅ Serial: create only (teacher), keep same on edit
+      if (isCreate && _role == StaffRole.teacher && _serial.trim().isEmpty) {
+        _serial = await _generateNextSerial();
+      }
 
       final first = firstNameC.text.trim();
       final last = lastNameC.text.trim();
@@ -1348,6 +1381,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         phone1: phone1,
         phone2: phone2,
         email: email,
+        serial: (_role == StaffRole.teacher) ? _serial : '',
+
         role: _role,
         status: _status,
         updatedAtMs: null,
@@ -1595,20 +1630,52 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       items: StaffRole.values
                           .map((r) => DropdownMenuItem(value: r, child: Text(r.label)))
                           .toList(),
-                      onChanged: (v) {
+                      onChanged: (v) async {
                         if (v == null) return;
+
                         setState(() {
                           _role = v;
 
                           // ✅ only teacher can keep courses
                           if (_role != StaffRole.teacher) {
                             _selectedCourseIds.clear();
+                            _serial = ''; // ✅ clear serial if not teacher
                           }
                         });
-                      },
 
+                        // ✅ if switched to teacher in CREATE mode, generate serial now (so it shows before saving)
+                        final isCreate = widget.mode == EditorMode.create;
+                        if (isCreate && _role == StaffRole.teacher && _serial.trim().isEmpty) {
+                          final s = await _generateNextSerial();
+                          if (!mounted) return;
+                          setState(() => _serial = s);
+                        }
+                      },
                     ),
+
                     const SizedBox(height: 12),
+
+                    // ✅ Show serial for teachers
+                    if (_role == StaffRole.teacher) ...[
+                      TextFormField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _serial.trim().isEmpty ? '(auto on save)' : _serial,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Serial',
+                          filled: true,
+                          fillColor: AdminStaffScreen.appBg,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          prefixIcon: const Icon(Icons.confirmation_number_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     DropdownButtonFormField<StaffStatus>(
                       value: _status,
                       decoration: InputDecoration(
@@ -1631,6 +1698,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 12),
               _SectionCard(
                 title: 'Assign Courses',
@@ -1867,6 +1935,7 @@ class Staff {
     required this.phone1,
     required this.phone2,
     required this.email,
+    required this.serial,
     required this.role,
     required this.status,
     required this.updatedAtMs,
@@ -1879,6 +1948,8 @@ class Staff {
   final String phone1;
   final String phone2;
   final String email;
+  final String serial; // ✅ serial
+
   final StaffRole role;
   final StaffStatus status;
   final int? updatedAtMs;
@@ -1887,13 +1958,14 @@ class Staff {
 
   Map<String, dynamic> toMap() {
     return {
-      'role': role.value, // admin/teacher/other stored in /users/{uid}
+      'role': role.value,
       'first_name': firstName,
       'last_name': lastName,
       'dob': dob,
       'phone1': phone1,
       'phone2': phone2,
       'email': email,
+      'serial': serial, // ✅ saved in DB as serial
       'status': status.value,
       'updatedAt': updatedAtMs,
     };
@@ -1918,11 +1990,13 @@ class Staff {
       phone1: (m['phone1'] ?? '').toString(),
       phone2: (m['phone2'] ?? '').toString(),
       email: (m['email'] ?? '').toString(),
+      serial: (m['serial'] ?? '').toString(), // ✅ read from DB
       status: StaffStatus.fromValue(m['status']?.toString()),
       updatedAtMs: parseInt(m['updatedAt']),
     );
   }
 }
+
 
 class _StaffRow {
   _StaffRow({required this.uid, required this.staff});

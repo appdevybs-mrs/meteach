@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../teacher/teacher_home.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -50,10 +52,37 @@ class _LoginScreenState extends State<LoginScreen> {
       await ref.set({
         'uid': user.uid,
         'email': user.email ?? '',
-        'role': 'learner', // default role (you will change to admin manually)
+        'role': 'learner', // default role (you will change to admin/teacher manually)
         'createdAt': ServerValue.timestamp,
         'isActive': true,
       });
+    }
+  }
+
+  bool _isTeacherRole(String role) {
+    final r = role.trim().toLowerCase();
+    return r == 'teacher';
+  }
+
+  Future<String> _getUserRole(String uid) async {
+    final roleRef = FirebaseDatabase.instance.ref('users/$uid/role');
+    final snap = await roleRef.get();
+    final role = (snap.value ?? 'learner').toString();
+    return role;
+  }
+
+  Future<void> _routeUserByRole(User user) async {
+    final role = await _getUserRole(user.uid);
+
+    if (!mounted) return;
+
+    if (_isTeacherRole(role)) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+      );
+    } else {
+      // For now: do nothing (you can route learners later)
+      // Example later: Navigator.of(context).pushReplacement(...);
     }
   }
 
@@ -92,6 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user == null) throw Exception('Login failed.');
 
       await _ensureUserRecord(user: user);
+      await _routeUserByRole(user);
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -124,6 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user == null) throw Exception('Google sign-in failed.');
 
       await _ensureUserRecord(user: user);
+      await _routeUserByRole(user);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
