@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-
 import 'take_attendance_screen.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
@@ -14,23 +13,18 @@ class AttendanceHistoryScreen extends StatefulWidget {
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   static const primaryBlue = Color(0xFF1A2B48);
   static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  static const String classesNode = "classes";
-  static const String usersNode = "users";
+  static const secondaryText = Color(0xFF636E72);
+  static const appBg = Color(0xFFF8FAFC);
+  static const presentGreen = Color(0xFF27AE60);
+  static const absentRed = Color(0xFFEB5757);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  late final DatabaseReference _classesRef = _db.child(classesNode);
-  late final DatabaseReference _usersRef = _db.child(usersNode);
-
   bool _busy = true;
   String? _error;
-
   List<Map<String, dynamic>> _sessions = [];
 
   String get _classId => (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
-  String get _courseTitle => (widget.classData['course_title'] ?? '').toString();
+  String get _courseTitle => (widget.classData['course_title'] ?? 'Course History').toString();
 
   @override
   void initState() {
@@ -39,55 +33,83 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Future<void> _loadHistory() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _sessions = [];
-    });
-
+    setState(() { _busy = true; _error = null; });
     try {
-      final snap = await _classesRef.child(_classId).child('attendance').get();
-      if (!snap.exists || snap.value == null) {
-        setState(() => _busy = false);
-        return;
-      }
+      final snap = await _db.child("classes").child(_classId).child('attendance').get();
+      if (!snap.exists) { setState(() => _busy = false); return; }
 
       final raw = Map<String, dynamic>.from(snap.value as Map);
-      final list = raw.entries.map((e) {
-        final m = (e.value is Map) ? Map<String, dynamic>.from(e.value as Map) : <String, dynamic>{};
-        return {'id': e.key, ...m};
-      }).toList();
+      final list = raw.entries.map((e) => {'id': e.key, ...Map<String, dynamic>.from(e.value as Map)}).toList();
 
-      int numVal(dynamic v) => (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+      // ✅ 1. Sort based on Date string (Descending: Newest Date first)
       list.sort((a, b) {
-        final ac = numVal(a['createdAt']);
-        final bc = numVal(b['createdAt']);
-        if (ac != bc) return bc.compareTo(ac);
-        final ad = (a['date'] ?? '').toString();
-        final bd = (b['date'] ?? '').toString();
-        return bd.compareTo(ad);
+        String dateA = (a['date'] ?? '0000-00-00').toString();
+        String dateB = (b['date'] ?? '0000-00-00').toString();
+        return dateB.compareTo(dateA);
       });
 
-      setState(() {
-        _sessions = list;
-        _busy = false;
-      });
+      setState(() { _sessions = list; _busy = false; });
+    } catch (e) { setState(() { _error = e.toString(); _busy = false; }); }
+  }
+
+  // ✅ 2. Delete Logic (Multi-location)
+  Future<void> _deleteSession(Map<String, dynamic> session) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Record?'),
+        content: const Text('This will remove attendance for the teacher and all learners. This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete', style: TextStyle(color: absentRed, fontWeight: FontWeight.bold))
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final sId = (session['sessionId'] ?? session['id']).toString();
+      final Map<String, dynamic> updates = {};
+
+      // Path 1: Remove from Class node
+      updates['classes/$_classId/attendance/$sId'] = null;
+
+      // Path 2: Remove from all Learners' course history
+      final allUids = <String>{
+        ...Map<String, dynamic>.from(session['present'] ?? {}).keys.map((e) => e.toString()),
+        ...Map<String, dynamic>.from(session['absent'] ?? {}).keys.map((e) => e.toString()),
+      };
+
+      for (var uid in allUids) {
+        final uSnap = await _db.child('users').child(uid).child('courses').get();
+        if (uSnap.exists) {
+          final courses = Map<String, dynamic>.from(uSnap.value as Map);
+          for (var entry in courses.entries) {
+            if (entry.value['class']?['class_id']?.toString() == _classId) {
+              updates['users/$uid/courses/${entry.key}/attendance/$sId'] = null;
+            }
+          }
+        }
+      }
+
+      await _db.update(updates);
+      _loadHistory();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Record deleted successfully")));
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _busy = false;
-      });
+      setState(() { _error = "Delete failed: $e"; _busy = false; });
     }
   }
 
   Future<String> _nameOf(String uid) async {
-    final snap = await _usersRef.child(uid).get();
-    if (!snap.exists || snap.value == null || snap.value is! Map) return uid;
+    final snap = await _db.child("users").child(uid).get();
+    if (!snap.exists) return uid;
     final m = Map<String, dynamic>.from(snap.value as Map);
-    final fn = (m['first_name'] ?? '').toString().trim();
-    final ln = (m['last_name'] ?? '').toString().trim();
-    final name = ('$fn $ln').trim();
-    return name.isEmpty ? uid : name;
+    return "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim().isEmpty ? uid : "${m['first_name']} ${m['last_name']}";
   }
 
   @override
@@ -95,153 +117,135 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
+        centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: Text(
-          _courseTitle.isEmpty ? 'Attendance History' : '$_courseTitle - History',
-          style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        title: Column(
+          children: [
+            const Text('Attendance History', style: TextStyle(color: primaryBlue, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(_courseTitle, style: const TextStyle(color: secondaryText, fontSize: 12)),
+          ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
-            onPressed: _busy ? null : _loadHistory,
-          )
+          IconButton(icon: const Icon(Icons.refresh_rounded, color: primaryBlue), onPressed: _busy ? null : _loadHistory),
         ],
       ),
       body: _busy
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
-          : _sessions.isEmpty
-          ? const Center(
-        child: Text('No attendance sessions yet.',
-            style: TextStyle(color: mainText, fontWeight: FontWeight.w800)),
-      )
-          : ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _sessions.length,
-        itemBuilder: (context, i) {
-          final s = _sessions[i];
-          final sessionId = (s['sessionId'] ?? s['id'] ?? '').toString();
-          final date = (s['date'] ?? '').toString();
-          final rate = (s['successRate'] ?? '').toString();
-          final teacherName = (s['teacherName'] ?? '').toString();
+          ? const Center(child: CircularProgressIndicator(color: primaryBlue))
+          : _error != null ? _buildError() : _sessions.isEmpty ? _buildEmpty() : _buildList(),
+    );
+  }
 
-          final taught = (s['taught'] is Map)
-              ? Map<String, dynamic>.from(s['taught'] as Map)
-              : <String, dynamic>{};
-          final taughtTitle = (taught['title'] ?? '').toString();
+  Widget _buildList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      itemCount: _sessions.length,
+      itemBuilder: (context, i) {
+        final s = _sessions[i];
+        final taughtTitle = (s['taught']?['title'] ?? 'Regular Session').toString();
+        final presentCount = (s['present'] as Map? ?? {}).length;
+        final absentCount = (s['absent'] as Map? ?? {}).length;
 
-          final present = (s['present'] is Map)
-              ? Map<String, dynamic>.from(s['present'] as Map)
-              : <String, dynamic>{};
-          final absent = (s['absent'] is Map)
-              ? Map<String, dynamic>.from(s['absent'] as Map)
-              : <String, dynamic>{};
-
-          return Card(
-            elevation: 0,
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
             color: Colors.white,
-            margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-              side: BorderSide(color: uiBorder.withOpacity(0.8)),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            title: Text(s['date'] ?? 'No Date', style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w800, fontSize: 17)),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(taughtTitle, style: const TextStyle(color: mainText, fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _statBadge('${s['successRate']}%', Colors.blueGrey, Icons.insights),
+                    const SizedBox(width: 8),
+                    _statBadge('$presentCount', presentGreen, Icons.check_circle_outline),
+                    const SizedBox(width: 8),
+                    _statBadge('$absentCount', absentRed, Icons.highlight_off),
+                  ],
+                ),
+              ],
             ),
-            child: ExpansionTile(
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      date.isEmpty ? 'Session' : date,
-                      style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Edit session',
-                    icon: const Icon(Icons.edit_rounded, color: primaryBlue),
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => TakeAttendanceScreen(
-                            classData: widget.classData,
-                            existingSessionId: sessionId,
-                            existingRecord: s,
-                          ),
-                        ),
-                      );
-                      // reload after edit
-                      _loadHistory();
-                    },
-                  ),
-                ],
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Column(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit_note_rounded, color: primaryBlue, size: 26),
+                  onPressed: () => _editSession(s),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: absentRed, size: 22),
+                  onPressed: () => _deleteSession(s),
+                ),
+              ],
+            ),
+            children: [
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (taughtTitle.isNotEmpty)
-                      Text(taughtTitle,
-                          style: const TextStyle(color: mainText, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Success: ${rate.isEmpty ? '-' : '$rate%'} • Present: ${present.length} • Absent: ${absent.length}',
-                      style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700),
-                    ),
-                    if (teacherName.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text('Teacher: $teacherName',
-                          style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700)),
-                    ],
+                    Expanded(child: _studentList('PRESENT', (s['present'] as Map? ?? {}).keys.toList(), presentGreen)),
+                    Container(width: 1, height: 80, color: Colors.grey.withOpacity(0.2)),
+                    Expanded(child: _studentList('ABSENT', (s['absent'] as Map? ?? {}).keys.toList(), absentRed)),
                   ],
                 ),
               ),
-              childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              children: [
-                const SizedBox(height: 8),
-                const Text('Present', style: TextStyle(color: mainText, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                if (present.isEmpty)
-                  Text('—', style: TextStyle(color: mainText.withOpacity(0.6), fontWeight: FontWeight.w700))
-                else
-                  ...present.keys.map((uid) => FutureBuilder<String>(
-                    future: _nameOf(uid.toString()),
-                    builder: (_, snap) => Text(
-                      '• ${snap.data ?? uid}',
-                      style: TextStyle(color: mainText.withOpacity(0.85), fontWeight: FontWeight.w700),
-                    ),
-                  )),
-                const SizedBox(height: 10),
-                const Text('Absent', style: TextStyle(color: mainText, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                if (absent.isEmpty)
-                  Text('—', style: TextStyle(color: mainText.withOpacity(0.6), fontWeight: FontWeight.w700))
-                else
-                  ...absent.keys.map((uid) => FutureBuilder<String>(
-                    future: _nameOf(uid.toString()),
-                    builder: (_, snap) => Text(
-                      '• ${snap.data ?? uid}',
-                      style: TextStyle(color: mainText.withOpacity(0.85), fontWeight: FontWeight.w700),
-                    ),
-                  )),
-              ],
-            ),
-          );
-        },
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _statBadge(String label, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+      child: Row(
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11)),
+        ],
       ),
     );
   }
+
+  Widget _studentList(String title, List<dynamic> uids, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+        const SizedBox(height: 8),
+        if (uids.isEmpty) const Text('—', style: TextStyle(color: secondaryText))
+        else ...uids.map((uid) => FutureBuilder<String>(
+          future: _nameOf(uid.toString()),
+          builder: (context, snap) => Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text(snap.data ?? '...', style: const TextStyle(fontSize: 12, color: mainText)),
+          ),
+        )),
+      ],
+    );
+  }
+
+  void _editSession(Map<String, dynamic> session) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => TakeAttendanceScreen(
+      classData: widget.classData,
+      existingSessionId: (session['sessionId'] ?? session['id']).toString(),
+      existingRecord: session,
+    )));
+    _loadHistory();
+  }
+
+  Widget _buildEmpty() => const Center(child: Text('No attendance records found.', style: TextStyle(color: secondaryText)));
+  Widget _buildError() => Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Error: $_error', textAlign: TextAlign.center, style: const TextStyle(color: absentRed))));
 }

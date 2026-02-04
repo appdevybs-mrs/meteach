@@ -10,28 +10,26 @@ class AttendanceStatsScreen extends StatefulWidget {
 }
 
 class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
+  // Brand Colors
   static const primaryBlue = Color(0xFF1A2B48);
   static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
+  static const secondaryText = Color(0xFF636E72);
+  static const appBg = Color(0xFFF8FAFC);
+  static const uiBorder = Color(0xFFE2E8F0);
 
-  static const String classesNode = "classes";
-  static const String usersNode = "users";
+  // Status Colors
+  static const successGreen = Color(0xFF10B981);
+  static const warningOrange = Color(0xFFF59E0B);
+  static const dangerRed = Color(0xFFEF4444);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  late final DatabaseReference _classesRef = _db.child(classesNode);
-  late final DatabaseReference _usersRef = _db.child(usersNode);
-
   bool _busy = true;
   String? _error;
-
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month, 1);
-
-  // uid -> {present, total, name, serial}
   final Map<String, Map<String, dynamic>> _stats = {};
 
   String get _classId => (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
-  String get _courseTitle => (widget.classData['course_title'] ?? '').toString();
+  String get _courseTitle => (widget.classData['course_title'] ?? 'Course Stats').toString();
 
   @override
   void initState() {
@@ -39,18 +37,18 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
     _load();
   }
 
-  String _monthKey(DateTime d) {
-    final mm = d.month.toString().padLeft(2, '0');
-    return '${d.year}-$mm';
-  }
+  // ... (Keeping your existing logic functions: _monthKey, _pickMonth, _userMini, _load) ...
+  // Note: Just ensure they call setState as you originally had them.
+
+  String _monthKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}';
 
   Future<void> _pickMonth() async {
-    // Using normal date picker; we only use year+month
     final picked = await showDatePicker(
       context: context,
       initialDate: _month,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
+      helpText: "Select Month for Stats",
     );
     if (picked != null) {
       setState(() => _month = DateTime(picked.year, picked.month, 1));
@@ -58,168 +56,186 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _userMini(String uid) async {
-    final snap = await _usersRef.child(uid).get();
-    if (!snap.exists || snap.value == null || snap.value is! Map) {
-      return {'name': uid, 'serial': ''};
-    }
-    final m = Map<String, dynamic>.from(snap.value as Map);
-    final fn = (m['first_name'] ?? '').toString().trim();
-    final ln = (m['last_name'] ?? '').toString().trim();
-    final serial = (m['serial'] ?? '').toString().trim();
-    final name = ('$fn $ln').trim();
-    return {'name': name.isEmpty ? uid : name, 'serial': serial};
-  }
-
   Future<void> _load() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _stats.clear();
-    });
-
+    setState(() { _busy = true; _error = null; _stats.clear(); });
     try {
-      final snap = await _classesRef.child(_classId).child('attendance').get();
-      if (!snap.exists || snap.value == null || snap.value is! Map) {
-        setState(() => _busy = false);
-        return;
-      }
-
+      final snap = await _db.child("classes").child(_classId).child('attendance').get();
+      if (!snap.exists) { setState(() => _busy = false); return; }
       final monthKey = _monthKey(_month);
-
       final raw = Map<String, dynamic>.from(snap.value as Map);
 
-      // Pass 1: count totals and presents
       for (final entry in raw.entries) {
-        final rec = (entry.value is Map) ? Map<String, dynamic>.from(entry.value as Map) : <String, dynamic>{};
-        final date = (rec['date'] ?? '').toString();
-        if (!date.startsWith(monthKey)) continue;
+        final rec = Map<String, dynamic>.from(entry.value as Map);
+        if (!(rec['date'] ?? '').toString().startsWith(monthKey)) continue;
 
-        final present = (rec['present'] is Map) ? Map<String, dynamic>.from(rec['present'] as Map) : <String, dynamic>{};
-        final absent = (rec['absent'] is Map) ? Map<String, dynamic>.from(rec['absent'] as Map) : <String, dynamic>{};
+        final present = Map<String, dynamic>.from(rec['present'] ?? {});
+        final absent = Map<String, dynamic>.from(rec['absent'] ?? {});
+        final all = <String>{...present.keys.map((e)=>e.toString()), ...absent.keys.map((e)=>e.toString())};
 
-        final allUids = <String>{...present.keys.map((e) => e.toString()), ...absent.keys.map((e) => e.toString())};
-
-        for (final uid in allUids) {
+        for (final uid in all) {
           _stats.putIfAbsent(uid, () => {'present': 0, 'total': 0, 'name': uid, 'serial': ''});
           _stats[uid]!['total'] = (_stats[uid]!['total'] as int) + 1;
         }
-        for (final uid in present.keys.map((e) => e.toString())) {
-          _stats.putIfAbsent(uid, () => {'present': 0, 'total': 0, 'name': uid, 'serial': ''});
+        for (final uid in present.keys) {
           _stats[uid]!['present'] = (_stats[uid]!['present'] as int) + 1;
         }
       }
 
-      // Pass 2: load names/serials
-      await Future.wait(_stats.keys.map((uid) async {
-        final mini = await _userMini(uid);
-        _stats[uid]!['name'] = mini['name'];
-        _stats[uid]!['serial'] = mini['serial'];
-      }));
-
+      for (var uid in _stats.keys) {
+        final snapU = await _db.child("users").child(uid).get();
+        if (snapU.exists) {
+          final m = Map<String, dynamic>.from(snapU.value as Map);
+          _stats[uid]!['name'] = "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim();
+          _stats[uid]!['serial'] = m['serial'] ?? '';
+        }
+      }
       setState(() => _busy = false);
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _busy = false;
-      });
-    }
+    } catch (e) { setState(() { _error = e.toString(); _busy = false; }); }
+  }
+
+  Color _getHealthColor(int pct) {
+    if (pct >= 80) return successGreen;
+    if (pct >= 50) return warningOrange;
+    return dangerRed;
   }
 
   @override
   Widget build(BuildContext context) {
-    final monthLabel = _monthKey(_month);
-
-    // Convert to list sorted by % desc
     final rows = _stats.entries.map((e) {
-      final uid = e.key;
       final m = e.value;
-      final present = (m['present'] as int?) ?? 0;
-      final total = (m['total'] as int?) ?? 0;
-      final pct = total == 0 ? 0 : ((present / total) * 100).round();
-      return {
-        'uid': uid,
-        'name': (m['name'] ?? uid).toString(),
-        'serial': (m['serial'] ?? '').toString(),
-        'present': present,
-        'total': total,
-        'pct': pct,
-      };
-    }).toList()
-      ..sort((a, b) => (b['pct'] as int).compareTo(a['pct'] as int));
+      final p = m['present'] as int;
+      final t = m['total'] as int;
+      final pct = t == 0 ? 0 : ((p / t) * 100).round();
+      return {...m, 'pct': pct};
+    }).toList()..sort((a, b) => (b['pct'] as int).compareTo(a['pct'] as int));
 
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: Text(
-          _courseTitle.isEmpty ? 'Attendance Stats' : '$_courseTitle - Stats',
-          style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        centerTitle: true,
+        title: Column(
+          children: [
+            const Text('Performance Stats', style: TextStyle(color: primaryBlue, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(_courseTitle, style: const TextStyle(color: secondaryText, fontSize: 12)),
+          ],
         ),
-        actions: [
-          TextButton.icon(
-            onPressed: _pickMonth,
-            icon: const Icon(Icons.calendar_month_rounded, color: primaryBlue),
-            label: Text(monthLabel, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w800)),
-          )
+      ),
+      body: Column(
+        children: [
+          _buildFilterHeader(),
+          Expanded(
+            child: _busy
+                ? const Center(child: CircularProgressIndicator(color: primaryBlue))
+                : _error != null
+                ? Center(child: Text(_error!))
+                : rows.isEmpty
+                ? _buildEmptyState()
+                : _buildStatsList(rows),
+          ),
         ],
       ),
-      body: _busy
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
-            textAlign: TextAlign.center,
+    );
+  }
+
+  Widget _buildFilterHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      color: Colors.white,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text("Monthly Overview", style: TextStyle(fontWeight: FontWeight.w700, color: mainText)),
+          InkWell(
+            onTap: _pickMonth,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                border: Border.all(color: primaryBlue.withOpacity(0.2)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today_rounded, size: 14, color: primaryBlue),
+                  const SizedBox(width: 8),
+                  Text(_monthKey(_month), style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
           ),
-        ),
-      )
-          : rows.isEmpty
-          ? Center(
-        child: Text(
-          'No attendance records for $monthLabel.',
-          style: const TextStyle(color: mainText, fontWeight: FontWeight.w800),
-        ),
-      )
-          : ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: rows.length,
-        itemBuilder: (_, i) {
-          final r = rows[i];
-          return Card(
-            elevation: 0,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsList(List<Map<String, dynamic>> rows) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: rows.length,
+      itemBuilder: (context, i) {
+        final r = rows[i];
+        final pct = r['pct'] as int;
+        final color = _getHealthColor(pct);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
             color: Colors.white,
-            margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-              side: BorderSide(color: uiBorder.withOpacity(0.8)),
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: primaryBlue.withOpacity(0.08),
-                child: Text('${r['pct']}%',
-                    style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: uiBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(r['name'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: mainText)),
+                        if (r['serial'].toString().isNotEmpty)
+                          Text("ID: ${r['serial']}", style: const TextStyle(color: secondaryText, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Text("$pct%", style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 18)),
+                ],
               ),
-              title: Text(
-                r['name'].toString(),
-                style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: pct / 100,
+                  minHeight: 8,
+                  backgroundColor: color.withOpacity(0.1),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
               ),
-              subtitle: Text(
-                [
-                  if ((r['serial'] as String).isNotEmpty) 'Serial: ${r['serial']}',
-                  'Present: ${r['present']}/${r['total']}',
-                ].join(' • '),
-                style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
+              const SizedBox(height: 8),
+              Text(
+                "Attended ${r['present']} out of ${r['total']} sessions",
+                style: const TextStyle(color: secondaryText, fontSize: 12, fontWeight: FontWeight.w500),
               ),
-            ),
-          );
-        },
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.analytics_outlined, size: 64, color: primaryBlue.withOpacity(0.1)),
+          const SizedBox(height: 16),
+          const Text("No data for this month", style: TextStyle(color: secondaryText, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }

@@ -39,6 +39,10 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
   Future<void> _boot() async {
     await NotificationService.I.init();
+
+    // ADD THIS LINE - This triggers the "Allow Notifications?" popup
+    await NotificationService.I.requestPermissions();
+
     _prefs = await SharedPreferences.getInstance();
     setState(() {
       _dailyEnabled = _prefs.getBool('reminders_daily_enabled') ?? false;

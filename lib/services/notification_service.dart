@@ -46,8 +46,9 @@ class NotificationService {
         'class_reminders_channel',
         'Class Reminders',
         channelDescription: 'Reminders for classes',
-        importance: Importance.max,
-        priority: Priority.high,
+        importance: Importance.max, // Required for heads-up
+        priority: Priority.high,    // Required for heads-up
+        fullScreenIntent: true,     // Helps show on lock screen
       ),
     );
   }
@@ -87,8 +88,18 @@ class NotificationService {
     required DateTime sessionStart,
     required int minutesBefore,
   }) async {
-    final scheduledAt = sessionStart.subtract(Duration(minutes: minutesBefore));
-    if (scheduledAt.isBefore(DateTime.now())) return;
+    var scheduledAt = sessionStart.subtract(Duration(minutes: minutesBefore));
+    final now = DateTime.now();
+
+    // If 15 mins before has passed, but the class hasn't started yet...
+    if (scheduledAt.isBefore(now) && sessionStart.isAfter(now)) {
+      // Fire it in 2 seconds so you get the alert immediately
+      scheduledAt = now.add(const Duration(seconds: 2));
+    }
+    // If the class already started, don't notify
+    else if (sessionStart.isBefore(now)) {
+      return;
+    }
 
     final tzTime = tz.TZDateTime.from(scheduledAt, tz.local);
     final id = _makeNotifId(classId, sessionStart);
@@ -100,6 +111,7 @@ class NotificationService {
       scheduledDate: tzTime,
       notificationDetails: _details(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      // THE LINE WAS REMOVED HERE TO FIX THE COMPILER ERROR
     );
   }
 
