@@ -31,8 +31,8 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
   DateTime? _selectedDay;
 
   // Reminder settings (global)
-  bool _dailyEnabled = false;
-  bool _sessionEnabled = false;
+  bool _dailyEnabled = false;   // "You have classes today"
+  bool _sessionEnabled = false; // 15-min before each session
 
   // Fixed per your request
   int _minutesBefore = 15;
@@ -40,10 +40,6 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
   // Daily reminder time (recommended)
   int _dailyHour = 8;
   int _dailyMinute = 0;
-
-  // Safety limits
-  static const int _daysAhead = 30;
-  static const int _maxNotifications = 40;
 
   // Pref keys
   static const _prefsDailyEnabled = 'reminders_daily_enabled';
@@ -55,7 +51,6 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
   // Per-class toggle key prefix
   static const _classRemindPrefix = 'remind_class_'; // + classId
 
-  // Cached prefs
   SharedPreferences? _prefs;
 
   @override
@@ -85,8 +80,8 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
   // ---------- Per-class reminders ----------
   bool _classRemindEnabled(String classId) {
     final p = _prefs;
-    if (p == null) return true;
-    return p.getBool('$_classRemindPrefix$classId') ?? true; // default ON
+    if (p == null) return true; // default ON until prefs loaded
+    return p.getBool('$_classRemindPrefix$classId') ?? true;
   }
 
   Future<void> _setClassRemindEnabled(String classId, bool value) async {
@@ -148,7 +143,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     return int.tryParse((c ?? '').toString()) ?? 0;
   }
 
-  List<_Occ> _generateOccurrences(Map<String, dynamic> cls, {int daysAhead = _daysAhead}) {
+  List<_Occ> _generateOccurrences(Map<String, dynamic> cls, {int daysAhead = 45}) {
     final status = (cls['status'] ?? 'active').toString();
     if (status != 'active') return [];
 
@@ -165,7 +160,6 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     final occ = <_Occ>[];
     int generated = 0;
 
-    // Start at week of firstDate
     DateTime cursor = DateTime(firstDate.year, firstDate.month, firstDate.day);
 
     for (int week = 0; week < 220; week++) {
@@ -179,12 +173,10 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
         if (dayShort.isEmpty || startTime.isEmpty || durMin <= 0) continue;
 
         final targetWeekday = _weekdayFromShort(dayShort);
-
-        final base = cursor;
-        final baseWeekday = base.weekday;
+        final baseWeekday = cursor.weekday;
         int diff = targetWeekday - baseWeekday;
         if (diff < 0) diff += 7;
-        final sessionDate = base.add(Duration(days: diff));
+        final sessionDate = cursor.add(Duration(days: diff));
 
         final parts = startTime.split(':');
         if (parts.length != 2) continue;
@@ -212,7 +204,6 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
       if (generated >= countLimit) break;
       cursor = cursor.add(const Duration(days: 7));
-
       if (cursor.isAfter(endWindow.add(const Duration(days: 7)))) break;
     }
 
@@ -221,9 +212,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
   }
 
   // ---------- Reminders ----------
-  Future<void> _applyAllReminders({
-    required List<_Occ> upcoming,
-  }) async {
+  Future<void> _applyAllReminders({required List<_Occ> upcoming}) async {
     final granted = await NotificationService.I.requestPermissions();
     if (!granted) {
       if (!mounted) return;
@@ -233,10 +222,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
       return;
     }
 
-    // Rebuild scheduling:
-    // - cancel everything
-    // - schedule daily if enabled
-    // - schedule session reminders (filtered by per-class toggle)
+    // Rebuild safely
     await NotificationService.I.cancelAll();
 
     if (_dailyEnabled) {
@@ -251,22 +237,22 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     if (_sessionEnabled) {
       final now = DateTime.now();
 
-      final filtered = upcoming
-          .where((o) => o.start.isAfter(now))
-          .where((o) => _classRemindEnabled(o.classId))
-          .toList();
+      // Only schedule sessions for classes toggled ON
+      final filtered = upcoming.where((o) => _classRemindEnabled(o.classId)).toList();
 
       // Limit to avoid spam
-      final items = filtered.take(_maxNotifications).toList();
+      final items = filtered.take(40).toList();
 
       for (final o in items) {
+        if (o.start.isBefore(now)) continue;
+
         await NotificationService.I.scheduleSessionReminder(
           classId: o.classId,
           title: 'Class starts soon',
           body:
           '${o.courseCode} — ${o.courseTitle} at ${_fmtTime(o.start)} (Instructor: ${o.instructor})',
           sessionStart: o.start,
-          minutesBefore: _minutesBefore,
+          minutesBefore: _minutesBefore, // 15
         );
       }
     }
@@ -282,9 +268,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_dailyEnabled ? 'Daily reminder enabled' : 'Daily reminder disabled'),
-      ),
+      SnackBar(content: Text(_dailyEnabled ? 'Daily reminder enabled' : 'Daily reminder disabled')),
     );
   }
 
@@ -298,11 +282,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_sessionEnabled
-            ? '15-min session reminders enabled'
-            : '15-min session reminders disabled'),
-      ),
+      SnackBar(content: Text(_sessionEnabled ? '15-min reminders enabled' : '15-min reminders disabled')),
     );
   }
 
@@ -316,7 +296,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prefsReady = _prefs != null;
+    final prefsLoaded = _prefs != null;
 
     return Scaffold(
       backgroundColor: appBg,
@@ -339,12 +319,10 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: !prefsReady
-            ? const Center(child: CircularProgressIndicator())
-            : StreamBuilder<DatabaseEvent>(
+        child: StreamBuilder<DatabaseEvent>(
           stream: _classesRef.onValue,
           builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
+            if (snap.connectionState == ConnectionState.waiting || !prefsLoaded) {
               return const Center(child: CircularProgressIndicator());
             }
 
@@ -359,10 +337,10 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                 .map((e) => Map<String, dynamic>.from(e as Map))
                 .toList();
 
-            // Build occurrences (ALL classes) for next 30 days
+            // Build occurrences
             final allOcc = <_Occ>[];
             for (final cls in classes) {
-              allOcc.addAll(_generateOccurrences(cls, daysAhead: _daysAhead));
+              allOcc.addAll(_generateOccurrences(cls, daysAhead: 45));
             }
             allOcc.sort((a, b) => a.start.compareTo(b.start));
 
@@ -379,13 +357,13 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
             final selected = _selectedDay ?? _focusedDay;
             final selectedKey = _fmtDay(selected);
-            final selectedEvents = (byDay[selectedKey] ?? [])
-              ..sort((a, b) => a.start.compareTo(b.start));
+            final selectedEvents =
+            (byDay[selectedKey] ?? [])..sort((a, b) => a.start.compareTo(b.start));
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Mode selector
+                // Mode switch
                 Row(
                   children: [
                     Expanded(
@@ -403,8 +381,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                           ),
                         ],
                         selected: {_mode},
-                        onSelectionChanged: (s) =>
-                            setState(() => _mode = s.first),
+                        onSelectionChanged: (s) => setState(() => _mode = s.first),
                       ),
                     ),
                   ],
@@ -412,7 +389,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
                 const SizedBox(height: 12),
 
-                // Reminders box (ALL features)
+                // Reminders box
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -424,16 +401,12 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.notifications_active_rounded,
-                              color: primaryBlue),
+                          const Icon(Icons.notifications_active_rounded, color: primaryBlue),
                           const SizedBox(width: 10),
                           const Expanded(
                             child: Text(
                               'Reminders',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: mainText,
-                              ),
+                              style: TextStyle(fontWeight: FontWeight.w900, color: mainText),
                             ),
                           ),
                           Text(
@@ -449,9 +422,9 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
 
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'Daily reminder (${_dailyHour.toString().padLeft(2, '0')}:${_dailyMinute.toString().padLeft(2, '0')})',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        title: const Text(
+                          'Daily reminder (8:00)',
+                          style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         subtitle: const Text('“You have classes today”'),
                         value: _dailyEnabled,
@@ -461,7 +434,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const Text(
-                          'Before each session',
+                          '15-min before each session',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         subtitle: const Text('Only for classes with “Remind me” ON'),
@@ -488,13 +461,10 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                 if (_mode == 0) ...[
                   Expanded(
                     child: upcoming.isEmpty
-                        ? const Center(
-                      child: Text('No upcoming sessions in the next 30 days.'),
-                    )
+                        ? const Center(child: Text('No upcoming sessions in the next 45 days.'))
                         : ListView.separated(
                       itemCount: upcoming.length,
-                      separatorBuilder: (_, __) =>
-                      const SizedBox(height: 10),
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (_, i) {
                         final o = upcoming[i];
                         final enabled = _classRemindEnabled(o.classId);
@@ -521,28 +491,22 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                   ),
                 ] else ...[
                   TableCalendar(
-                    firstDay:
-                    DateTime.now().subtract(const Duration(days: 365)),
+                    firstDay: DateTime.now().subtract(const Duration(days: 365)),
                     lastDay: DateTime.now().add(const Duration(days: 365)),
                     focusedDay: _focusedDay,
-                    selectedDayPredicate: (day) =>
-                        isSameDay(_selectedDay, day),
+                    selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
                     onDaySelected: (selectedDay, focusedDay) {
                       setState(() {
                         _selectedDay = selectedDay;
                         _focusedDay = focusedDay;
                       });
                     },
-                    eventLoader: (day) {
-                      final key = _fmtDay(day);
-                      return byDay[key] ?? [];
-                    },
+                    eventLoader: (day) => byDay[_fmtDay(day)] ?? [],
                     calendarStyle: CalendarStyle(
                       todayDecoration: BoxDecoration(
                         color: actionOrange.withOpacity(0.18),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                            color: actionOrange.withOpacity(0.45)),
+                        border: Border.all(color: actionOrange.withOpacity(0.45)),
                       ),
                       selectedDecoration: const BoxDecoration(
                         color: primaryBlue,
@@ -556,8 +520,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                     headerStyle: const HeaderStyle(
                       formatButtonVisible: false,
                       titleCentered: true,
-                      titleTextStyle:
-                      TextStyle(fontWeight: FontWeight.w900),
+                      titleTextStyle: TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -566,8 +529,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                         ? const Center(child: Text('No sessions on this day.'))
                         : ListView.separated(
                       itemCount: selectedEvents.length,
-                      separatorBuilder: (_, __) =>
-                      const SizedBox(height: 10),
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (_, i) {
                         final o = selectedEvents[i];
                         final enabled = _classRemindEnabled(o.classId);
@@ -582,7 +544,6 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                           remindEnabled: enabled,
                           onToggleRemind: (v) async {
                             await _setClassRemindEnabled(o.classId, v);
-
                             if (_sessionEnabled || _dailyEnabled) {
                               await _applyAllReminders(upcoming: upcoming);
                             }

@@ -12,26 +12,44 @@ class NotificationService {
 
   bool _inited = false;
 
-  // Fixed ID for daily reminder
   static const int dailyReminderId = 900001;
+
+  // Android channel (must be stable)
+  static const String _channelId = 'class_reminders_channel';
+  static const String _channelName = 'Class Reminders';
+  static const String _channelDesc = 'Reminders for classes';
 
   Future<void> init() async {
     if (_inited) return;
 
+    // Timezone init
     tz.initializeTimeZones();
-    final String tzName = await FlutterTimezone.getLocalTimezone();
+    final tzInfo = await FlutterTimezone.getLocalTimezone(); // TimezoneInfo
+    final tzName = tzInfo.name;
     tz.setLocalLocation(tz.getLocation(tzName));
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidInit);
 
-    await _plugin.initialize(initSettings);
+    const initSettings = InitializationSettings(
+      android: androidInit,
+    );
+
+    // NEW API: named parameter
+    await _plugin.initialize(
+      initializationSettings: initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse resp) {
+        // optional: handle taps
+      },
+    );
+
     _inited = true;
   }
 
   Future<bool> requestPermissions() async {
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+
+    // Android 13+ requires notification permission
     final granted = await android?.requestNotificationsPermission();
     return granted ?? true;
   }
@@ -39,9 +57,9 @@ class NotificationService {
   NotificationDetails _details() {
     return const NotificationDetails(
       android: AndroidNotificationDetails(
-        'class_reminders_channel',
-        'Class Reminders',
-        channelDescription: 'Reminders for classes',
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
         importance: Importance.max,
         priority: Priority.high,
       ),
@@ -52,7 +70,7 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
-  /// Schedules a daily reminder that repeats every day at [hour]:[minute].
+  /// Daily reminder: repeats every day at [hour]:[minute]
   Future<void> scheduleDailyReminder({
     required int hour,
     required int minute,
@@ -75,11 +93,11 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
       UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
+      matchDateTimeComponents: DateTimeComponents.time, // repeat daily
     );
   }
 
-  /// Schedules a one-time reminder [minutesBefore] a class session.
+  /// Session reminder: one notification at (sessionStart - minutesBefore)
   Future<void> scheduleSessionReminder({
     required String classId,
     required String title,
@@ -105,7 +123,7 @@ class NotificationService {
     );
   }
 
-  // (Optional) Compatibility alias in case you used scheduleReminder() somewhere.
+  /// Compatibility for your older screen (if any code still calls scheduleReminder)
   Future<void> scheduleReminder({
     required String classId,
     required String title,
@@ -123,7 +141,6 @@ class NotificationService {
   }
 
   int _makeNotifId(String classId, DateTime sessionStart) {
-    // Stable(ish) unique int per class + session
     final raw = '$classId|${sessionStart.toIso8601String()}';
     return raw.hashCode.abs() % 2147483647;
   }
