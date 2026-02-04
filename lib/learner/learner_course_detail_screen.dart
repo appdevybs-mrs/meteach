@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'learner_homework_screen.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
@@ -195,11 +196,27 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         title: Text(_courseTitle, style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
         actions: [
           IconButton(
+            tooltip: 'Homework',
+            icon: const Icon(Icons.assignment_rounded, color: UiK.actionOrange),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LearnerHomeworkScreen(
+                    courseKey: widget.courseKey,
+                    courseTitle: _courseTitle,
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded, color: UiK.actionOrange),
             onPressed: _busy ? null : _load,
           ),
         ],
+
         bottom: TabBar(
           controller: _tab,
           labelColor: UiK.primaryBlue,
@@ -286,9 +303,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final status = (a['status'] ?? '').toString().toLowerCase();
     final rate = (a['successRate'] ?? '').toString();
 
-    final taught = (a['taught'] is Map) ? Map<String, dynamic>.from(a['taught'] as Map) : <String, dynamic>{};
+    final taught = (a['taught'] is Map)
+        ? Map<String, dynamic>.from(a['taught'] as Map)
+        : <String, dynamic>{};
     final taughtTitle = (taught['title'] ?? '').toString();
     final unitTitle = (taught['unitTitle'] ?? '').toString();
+
+    // ✅ Homework (safe if missing)
+    final hw = (a['homework'] is Map)
+        ? Map<String, dynamic>.from(a['homework'] as Map)
+        : <String, dynamic>{};
+    final hwText = (hw['text'] ?? '').toString().trim();
+    final hwDue = (hw['dueDate'] ?? '').toString().trim();
 
     final isPresent = status == 'present';
 
@@ -315,17 +341,53 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                   Text(date.isEmpty ? 'Session' : date, style: UiK.titleText(size: 15)),
                   const SizedBox(height: 6),
                   Text(
-                    'Status: ${isPresent ? 'Present' : 'Absent'}'
-                        '${rate.isEmpty ? '' : ' • Success: $rate%'}',
+                    'Status: ${isPresent ? 'Present' : 'Absent'}${rate.isEmpty ? '' : ' • Success: $rate%'}',
                     style: UiK.subtleText(),
                   ),
+
                   if (taughtTitle.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text('Taught: $taughtTitle', style: UiK.subtleText()),
                   ],
                   if (unitTitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text('Unit: $unitTitle', style: TextStyle(color: UiK.mainText.withOpacity(0.6), fontWeight: FontWeight.w700)),
+                    Text(
+                      'Unit: $unitTitle',
+                      style: TextStyle(color: UiK.mainText.withOpacity(0.6), fontWeight: FontWeight.w700),
+                    ),
+                  ],
+
+                  // ✅ Homework display
+                  if (hwText.isNotEmpty || hwDue.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                        color: UiK.primaryBlue.withOpacity(0.04),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.assignment_rounded, size: 18, color: UiK.actionOrange),
+                              SizedBox(width: 8),
+                              Text('Homework', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                            ],
+                          ),
+                          if (hwDue.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text('Due: $hwDue', style: UiK.subtleText()),
+                          ],
+                          if (hwText.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(hwText, style: UiK.subtleText()),
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -335,6 +397,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       ),
     );
   }
+
 
   Widget _progressTab({required int progPct, required int covered, required int totalS}) {
     return ListView(

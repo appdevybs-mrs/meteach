@@ -51,6 +51,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   List<String> _learnerUids = [];
   final Map<String, Map<String, dynamic>> _learnerInfo = {};
 
+  // ✅ Homework fields
+  final TextEditingController _homeworkCtrl = TextEditingController();
+  String _homeworkDueDate = ''; // optional YYYY-MM-DD
+
   String get _classId => (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
   String get _courseId => (widget.classData['course_id'] ?? '').toString();
   String get _courseCode => (widget.classData['course_code'] ?? '').toString();
@@ -60,6 +64,12 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   void initState() {
     super.initState();
     _init();
+  }
+
+  @override
+  void dispose() {
+    _homeworkCtrl.dispose();
+    super.dispose();
   }
 
   DateTime? _parseDate(String s) {
@@ -75,6 +85,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     }
   }
 
+  // used for edit prefill
+  String _pendingTaughtUnitId = '';
+  String _pendingTaughtSessionId = '';
+
   Future<void> _init() async {
     setState(() {
       _busy = true;
@@ -84,6 +98,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       _learnerUids = [];
       _present.clear();
       _learnerInfo.clear();
+      _homeworkCtrl.text = '';
+      _homeworkDueDate = '';
     });
 
     try {
@@ -109,6 +125,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         final sr = rec['successRate'];
         if (sr is num) _successRate = sr.toInt();
 
+        // ✅ Homework prefill (safe if missing)
+        final hw = (rec['homework'] is Map) ? Map<String, dynamic>.from(rec['homework'] as Map) : <String, dynamic>{};
+        _homeworkCtrl.text = (hw['text'] ?? '').toString();
+        _homeworkDueDate = (hw['dueDate'] ?? '').toString();
+
         // prefill present map
         for (final uid in learnerSet) {
           _present[uid] = false; // default absent
@@ -117,13 +138,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           _present[uid.toString()] = true;
         }
 
-        // prefill taught selection (we'll match after loading syllabi list)
+        // prefill taught selection (match after loading syllabi list)
         final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
-        final taughtUnitId = (taught['unitId'] ?? '').toString();
-        final taughtSessionId = (taught['sessionId'] ?? '').toString();
-        // We'll use these later to match
-        _pendingTaughtUnitId = taughtUnitId;
-        _pendingTaughtSessionId = taughtSessionId;
+        _pendingTaughtUnitId = (taught['unitId'] ?? '').toString();
+        _pendingTaughtSessionId = (taught['sessionId'] ?? '').toString();
       } else {
         // create mode: default everyone present
         for (final uid in learnerSet) {
@@ -199,12 +217,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           if (_isEdit && _pendingTaughtUnitId.isNotEmpty && _pendingTaughtSessionId.isNotEmpty) {
             final match = _syllabiSessions.where((x) =>
             (x['unitId'] ?? '').toString() == _pendingTaughtUnitId &&
-                (x['sessionId'] ?? '').toString() == _pendingTaughtSessionId
-            );
+                (x['sessionId'] ?? '').toString() == _pendingTaughtSessionId);
             if (match.isNotEmpty) _selectedSession = match.first;
           }
 
-          // fallback
           _selectedSession ??= _syllabiSessions.isNotEmpty ? _syllabiSessions.first : null;
         }
       }
@@ -217,10 +233,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       });
     }
   }
-
-  // used for edit prefill
-  String _pendingTaughtUnitId = '';
-  String _pendingTaughtSessionId = '';
 
   String _dateStr(DateTime d) {
     final mm = d.month.toString().padLeft(2, '0');
@@ -238,11 +250,27 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  Future<String?> _findLearnerCourseKeyForClass(String learnerUid, String classId) async {
+  Future<void> _pickHomeworkDueDate() async {
+    final init = _parseDate(_homeworkDueDate) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: init,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _homeworkDueDate = _dateStr(picked));
+  }
+
+  Future<Map<String, dynamic>?> _loadCoursesMap(String learnerUid) async {
     final snap = await _usersRef.child(learnerUid).child('courses').get();
     if (!snap.exists || snap.value == null || snap.value is! Map) return null;
+    return Map<String, dynamic>.from(snap.value as Map);
+  }
 
-    final courses = Map<String, dynamic>.from(snap.value as Map);
+  Future<String?> _findLearnerCourseKeyForClass(String learnerUid, String classId) async {
+    final courses = await _loadCoursesMap(learnerUid);
+    if (courses == null) return null;
+
     for (final entry in courses.entries) {
       final courseKey = entry.key.toString();
       final courseVal = entry.value;
@@ -323,9 +351,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       final teacherName = await _loadTeacherName(user.uid);
 
-      final sessionId = _isEdit
-          ? widget.existingSessionId!
-          : DateTime.now().millisecondsSinceEpoch.toString();
+      final sessionId = _isEdit ? widget.existingSessionId! : DateTime.now().millisecondsSinceEpoch.toString();
 
       final Map<String, bool> presentMap = {};
       final Map<String, bool> absentMap = {};
@@ -337,6 +363,25 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           absentMap[uid] = true;
         }
       }
+
+      final String hwText = _homeworkCtrl.text.trim();
+      final String hwDue = _homeworkDueDate.trim();
+
+      // Keep homework createdAt stable on edit (if existed)
+      final prevHw = (widget.existingRecord?['homework'] is Map)
+          ? Map<String, dynamic>.from(widget.existingRecord!['homework'] as Map)
+          : <String, dynamic>{};
+
+      final hwCreatedAt = prevHw['createdAt'] ?? (widget.existingRecord?['createdAt'] ?? ServerValue.timestamp);
+
+      final Map<String, dynamic>? homeworkObj = (hwText.isEmpty && hwDue.isEmpty)
+          ? null
+          : {
+        'text': hwText,
+        if (hwDue.isNotEmpty) 'dueDate': hwDue,
+        'createdAt': hwCreatedAt,
+        'updatedAt': ServerValue.timestamp,
+      };
 
       final classAttendancePath = '$classesNode/$_classId/attendance/$sessionId';
 
@@ -357,6 +402,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           'sessionId': _selectedSession!['sessionId'],
           'title': _selectedSession!['title'],
         },
+        if (homeworkObj != null) 'homework': homeworkObj, // ✅ add homework
         'present': presentMap,
         'absent': absentMap,
       };
@@ -389,6 +435,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             'sessionId': _selectedSession!['sessionId'],
             'title': _selectedSession!['title'],
           },
+          if (homeworkObj != null)
+            'homework': {
+              'text': hwText,
+              if (hwDue.isNotEmpty) 'dueDate': hwDue,
+            }, // ✅ copy to learner (lighter object)
           'updatedAt': ServerValue.timestamp,
           'createdAt': widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
         };
@@ -458,6 +509,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 16),
                   ),
                   const SizedBox(height: 10),
+
                   Row(
                     children: [
                       Expanded(
@@ -472,6 +524,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
+
                   const Text('What was taught',
                       style: TextStyle(color: mainText, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
@@ -497,6 +550,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 14),
                   Text('Success Rate: $_successRate%',
                       style: const TextStyle(color: mainText, fontWeight: FontWeight.w900)),
@@ -508,10 +562,60 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     label: '$_successRate%',
                     onChanged: (v) => setState(() => _successRate = v.round()),
                   ),
+
+                  const SizedBox(height: 10),
+
+                  // ✅ Homework section
+                  const Text('Homework',
+                      style: TextStyle(color: mainText, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _homeworkCtrl,
+                    minLines: 3,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      hintText: 'Write homework for learners...',
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: uiBorder.withOpacity(0.85)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: actionOrange, width: 1.2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Due date: ${_homeworkDueDate.isEmpty ? '-' : _homeworkDueDate}',
+                          style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _pickHomeworkDueDate,
+                        icon: const Icon(Icons.event_available_rounded),
+                        label: const Text('Set due date'),
+                      ),
+                      if (_homeworkDueDate.isNotEmpty)
+                        IconButton(
+                          tooltip: 'Clear due date',
+                          onPressed: () => setState(() => _homeworkDueDate = ''),
+                          icon: const Icon(Icons.clear_rounded),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
+
           const SizedBox(height: 14),
           Row(
             children: [
@@ -522,6 +626,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             ],
           ),
           const SizedBox(height: 10),
+
           ..._learnerUids.map((uid) {
             final info = _learnerInfo[uid] ?? {'name': uid, 'serial': ''};
             final name = (info['name'] ?? uid).toString();
@@ -550,6 +655,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ),
             );
           }).toList(),
+
           const SizedBox(height: 6),
           ElevatedButton.icon(
             icon: const Icon(Icons.save_rounded),

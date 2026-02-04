@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'admin_schedule.dart';
 
 class AdminClassesScreen extends StatefulWidget {
   const AdminClassesScreen({super.key});
@@ -1440,11 +1441,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Classes')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _buildClassesList(),
+      appBar: AppBar(
+        title: const Text('Classes'),
+        actions: [
+          IconButton(
+            tooltip: 'Schedule',
+            icon: const Icon(Icons.calendar_month_rounded),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminScheduleScreen()),
+              );
+            },
+          ),
+        ],
       ),
+
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openClassEditor(existingClass: null),
         child: const Icon(Icons.add),
