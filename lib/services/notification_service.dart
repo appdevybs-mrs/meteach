@@ -14,32 +14,20 @@ class NotificationService {
 
   static const int dailyReminderId = 900001;
 
-  // Android channel (must be stable)
-  static const String _channelId = 'class_reminders_channel';
-  static const String _channelName = 'Class Reminders';
-  static const String _channelDesc = 'Reminders for classes';
-
   Future<void> init() async {
     if (_inited) return;
 
     // Timezone init
     tz.initializeTimeZones();
     final tzInfo = await FlutterTimezone.getLocalTimezone(); // TimezoneInfo
-    final tzName = tzInfo.name;
-    tz.setLocalLocation(tz.getLocation(tzName));
+    tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
 
+    // Init notifications
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidInit);
 
-    const initSettings = InitializationSettings(
-      android: androidInit,
-    );
-
-    // NEW API: named parameter
     await _plugin.initialize(
-      initializationSettings: initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse resp) {
-        // optional: handle taps
-      },
+      settings: initSettings, // ✅ v20 uses "settings"
     );
 
     _inited = true;
@@ -48,8 +36,6 @@ class NotificationService {
   Future<bool> requestPermissions() async {
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-
-    // Android 13+ requires notification permission
     final granted = await android?.requestNotificationsPermission();
     return granted ?? true;
   }
@@ -57,9 +43,9 @@ class NotificationService {
   NotificationDetails _details() {
     return const NotificationDetails(
       android: AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: _channelDesc,
+        'class_reminders_channel',
+        'Class Reminders',
+        channelDescription: 'Reminders for classes',
         importance: Importance.max,
         priority: Priority.high,
       ),
@@ -70,7 +56,6 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
-  /// Daily reminder: repeats every day at [hour]:[minute]
   Future<void> scheduleDailyReminder({
     required int hour,
     required int minute,
@@ -85,19 +70,16 @@ class NotificationService {
     }
 
     await _plugin.zonedSchedule(
-      dailyReminderId,
-      title,
-      body,
-      next,
-      _details(),
+      id: dailyReminderId,
+      title: title,
+      body: body,
+      scheduledDate: next,
+      notificationDetails: _details(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-      UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // repeat daily
+      matchDateTimeComponents: DateTimeComponents.time, // ✅ repeats daily
     );
   }
 
-  /// Session reminder: one notification at (sessionStart - minutesBefore)
   Future<void> scheduleSessionReminder({
     required String classId,
     required String title,
@@ -112,31 +94,12 @@ class NotificationService {
     final id = _makeNotifId(classId, sessionStart);
 
     await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      tzTime,
-      _details(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-      UILocalNotificationDateInterpretation.absoluteTime,
-    );
-  }
-
-  /// Compatibility for your older screen (if any code still calls scheduleReminder)
-  Future<void> scheduleReminder({
-    required String classId,
-    required String title,
-    required String body,
-    required DateTime sessionStart,
-    required int minutesBefore,
-  }) async {
-    return scheduleSessionReminder(
-      classId: classId,
+      id: id,
       title: title,
       body: body,
-      sessionStart: sessionStart,
-      minutesBefore: minutesBefore,
+      scheduledDate: tzTime,
+      notificationDetails: _details(),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
     );
   }
 
