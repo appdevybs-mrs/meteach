@@ -89,7 +89,9 @@
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
-        home: const HomeShell(), // ✅ uses your existing tabs (Assistant / Classroom / Stories)
+        home: const AuthGate(
+          signedOutHome: HomeShell(),
+        ),
       );
     }
   }
@@ -695,14 +697,13 @@
     void initState() {
       super.initState();
       _refreshCaptcha();
-      _loadRememberedLoginAndAutoSignIn();
+      _loadRememberedEmail();
     }
-    Future<void> _loadRememberedLoginAndAutoSignIn() async {
+    Future<void> _loadRememberedEmail() async {
       final p = await SharedPreferences.getInstance();
 
       final savedRemember = p.getBool('rememberMe') ?? false;
       final savedEmail = p.getString('rememberEmail') ?? '';
-      final savedPass = p.getString('rememberPass') ?? '';
 
       if (!mounted) return;
 
@@ -711,17 +712,12 @@
         if (savedRemember && savedEmail.isNotEmpty) {
           emailCtrl.text = savedEmail;
         }
-        if (savedRemember && savedPass.isNotEmpty) {
-          passCtrl.text = savedPass;
-        }
       });
 
-      // ✅ Auto-login ONLY if remember me is on and credentials exist
-      if (savedRemember && savedEmail.isNotEmpty && savedPass.isNotEmpty) {
-        // Skip captcha for auto-login (better UX)
-        await _signInWithFirebase(savedEmail, savedPass, fromAutoLogin: true);
-      }
+      // ✅ No auto-login here.
+      // Firebase auto-login happens via AuthGate at app start.
     }
+
     Future<void> _signInWithFirebase(String email, String pass, {bool fromAutoLogin = false}) async {
       setState(() {
         loading = true;
@@ -745,12 +741,16 @@
             .replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '')
             .trim();
         if (role == 'admin') {
+          final p = await SharedPreferences.getInstance();
+
           if (rememberMe) {
-            final p = await SharedPreferences.getInstance();
             await p.setBool('rememberMe', true);
             await p.setString('rememberEmail', email);
-            await p.setString('rememberPass', pass);
+          } else {
+            await p.setBool('rememberMe', false);
+            await p.remove('rememberEmail');
           }
+
 
           if (!mounted) return;
           setState(() => loading = false);
@@ -762,12 +762,16 @@
         }
 
         if (role == 'learner') {
+          final p = await SharedPreferences.getInstance();
+
           if (rememberMe) {
-            final p = await SharedPreferences.getInstance();
             await p.setBool('rememberMe', true);
             await p.setString('rememberEmail', email);
-            await p.setString('rememberPass', pass);
+          } else {
+            await p.setBool('rememberMe', false);
+            await p.remove('rememberEmail');
           }
+
 
           if (!mounted) return;
           setState(() => loading = false);
@@ -778,12 +782,16 @@
           return;
         }
         if (role == 'teacher' || role == 'teachers' || role == 'teacher(s)') {
+          final p = await SharedPreferences.getInstance();
+
           if (rememberMe) {
-            final p = await SharedPreferences.getInstance();
             await p.setBool('rememberMe', true);
             await p.setString('rememberEmail', email);
-            await p.setString('rememberPass', pass);
+          } else {
+            await p.setBool('rememberMe', false);
+            await p.remove('rememberEmail');
           }
+
 
           if (!mounted) return;
           setState(() => loading = false);

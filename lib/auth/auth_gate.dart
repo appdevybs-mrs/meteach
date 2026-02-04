@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../learner/learner_home.dart';
 
 import '../admin/admin_home.dart';
 import '../teacher/teacher_home.dart';
@@ -104,9 +105,10 @@ class AuthGate extends StatelessWidget {
                 }
 
                 if (role == 'learner' || role == 'learners' || role == 'learner(s)') {
-                  fikraLog('✅ ROUTE signedOutHome (learner)');
-                  return signedOutHome;
+                  fikraLog('✅ ROUTE LearnerHome');
+                  return const LearnerHome();
                 }
+
 
                 fikraLog('❌ UNKNOWN ROLE -> NotAuthorized rawRole=[$rawRole]');
                 return NotAuthorized(role: rawRole);

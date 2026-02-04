@@ -25,8 +25,10 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   bool _busy = true;
   String? _error;
-  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime? _month; // null = all months
   final Map<String, Map<String, dynamic>> _stats = {};
+  final List<String> _availableMonths = []; // months that exist in DB like "2026-02"
+
 
   String get _classId => (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
   String get _courseTitle => (widget.classData['course_title'] ?? 'Course Stats').toString();
@@ -43,30 +45,76 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   String _monthKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}';
 
   Future<void> _pickMonth() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _month,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      helpText: "Select Month for Stats",
-    );
-    if (picked != null) {
-      setState(() => _month = DateTime(picked.year, picked.month, 1));
-      _load();
+    final now = DateTime.now();
+    final months = <DateTime>[];
+
+    // last 24 months including current
+    for (int i = 0; i < 24; i++) {
+      final dt = DateTime(now.year, now.month - i, 1);
+      months.add(dt);
     }
+
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: SizedBox(
+            height: 420, // you can change height
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text("All months"),
+                  leading: const Icon(Icons.all_inclusive),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _month = null);
+                    _load();
+                  },
+                ),
+                const Divider(height: 0),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: months.length,
+                    itemBuilder: (context, index) {
+                      final m = months[index];
+                      final label = _monthKey(m);
+                      return ListTile(
+                        title: Text(label),
+                        leading: const Icon(Icons.calendar_month),
+                        onTap: () {
+                          Navigator.pop(context);
+                          setState(() => _month = m);
+                          _load();
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      },
+    );
   }
+
 
   Future<void> _load() async {
     setState(() { _busy = true; _error = null; _stats.clear(); });
     try {
       final snap = await _db.child("classes").child(_classId).child('attendance').get();
       if (!snap.exists) { setState(() => _busy = false); return; }
-      final monthKey = _monthKey(_month);
+      final selectedMonthKey = _month == null ? null : _monthKey(_month!);
       final raw = Map<String, dynamic>.from(snap.value as Map);
 
       for (final entry in raw.entries) {
         final rec = Map<String, dynamic>.from(entry.value as Map);
-        if (!(rec['date'] ?? '').toString().startsWith(monthKey)) continue;
+        final dateStr = (rec['date'] ?? '').toString();
+        if (selectedMonthKey != null && !dateStr.startsWith(selectedMonthKey)) continue;
 
         final present = Map<String, dynamic>.from(rec['present'] ?? {});
         final absent = Map<String, dynamic>.from(rec['absent'] ?? {});
@@ -122,20 +170,28 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           ],
         ),
       ),
-      body: Column(
-        children: [
-          _buildFilterHeader(),
-          Expanded(
-            child: _busy
-                ? const Center(child: CircularProgressIndicator(color: primaryBlue))
-                : _error != null
-                ? Center(child: Text(_error!))
-                : rows.isEmpty
-                ? _buildEmptyState()
-                : _buildStatsList(rows),
-          ),
-        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildFilterHeader(),
+            Expanded(
+              child: _busy
+                  ? const Center(child: CircularProgressIndicator(color: primaryBlue))
+                  : _error != null
+                  ? SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(child: Text(_error!)),
+              )
+                  : rows.isEmpty
+                  ? SingleChildScrollView(
+                child: _buildEmptyState(),
+              )
+                  : _buildStatsList(rows),
+            ),
+          ],
+        ),
       ),
+
     );
   }
 
@@ -159,7 +215,10 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                 children: [
                   const Icon(Icons.calendar_today_rounded, size: 14, color: primaryBlue),
                   const SizedBox(width: 8),
-                  Text(_monthKey(_month), style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.bold)),
+                  Text(
+                    _month == null ? "All months" : _monthKey(_month!),
+                    style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
             ),
@@ -229,14 +288,23 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.analytics_outlined, size: 64, color: primaryBlue.withOpacity(0.1)),
-          const SizedBox(height: 16),
-          const Text("No data for this month", style: TextStyle(color: secondaryText, fontWeight: FontWeight.w600)),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.analytics_outlined, size: 64, color: primaryBlue.withOpacity(0.1)),
+            const SizedBox(height: 16),
+            const Text(
+              "No data for this month",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: secondaryText, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
       ),
     );
   }
+
 }
