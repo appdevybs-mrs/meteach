@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
-import '../teacher/teacher_schedule.dart';
 
 class AdminClassesScreen extends StatefulWidget {
   const AdminClassesScreen({super.key});
@@ -90,7 +89,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return r == "learner" || r == "learners" || r == "learner(s)";
   }
 
-  // ✅ Teacher role: NOT case sensitive (Teacher/TEACHER/teacher)
+  // Ô£à Teacher role: NOT case sensitive (Teacher/TEACHER/teacher)
   bool _isTeacherRole(dynamic role) {
     final r = (role ?? "").toString().trim().toLowerCase();
     return r == "teacher" || r == "teachers" || r == "teacher(s)";
@@ -184,8 +183,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
         final levelRaw = (data["level"] ?? "").toString();
 
-        // ✅ instructors can be LIST (old) or MAP (new)
-        // ✅ but keep ONLY teachers
+        // Ô£à instructors can be LIST (old) or MAP (new)
+        // Ô£à but keep ONLY teachers
         final insRaw = data["instructors"];
         final List<Map<String, String>> instructorsList = [];
 
@@ -196,7 +195,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             if (name.isEmpty) continue;
 
             final uid = _teacherUidByName[_norm(name)];
-            if (uid == null) continue; // ✅ keep ONLY if it matches a teacher
+            if (uid == null) continue; // Ô£à keep ONLY if it matches a teacher
 
             final t = _teachersByUid[uid];
             if (t == null) continue;
@@ -213,7 +212,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           m.forEach((k, v) {
             final uid = k.toString();
 
-            // ✅ keep ONLY if uid is a teacher
+            // Ô£à keep ONLY if uid is a teacher
             final t = _teachersByUid[uid];
             if (t == null) return;
 
@@ -234,7 +233,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           "duration": data["duration"] ?? "",
           "category": data["category"] ?? "",
           "level": _levelShort(levelRaw),
-          "instructors": instructorsList, // ✅ normalized & teacher-only
+          "instructors": instructorsList, // Ô£à normalized & teacher-only
         });
       }
 
@@ -403,7 +402,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         "status": status,
         "updated_at": ServerValue.timestamp,
       });
-      _toast("Updated: $classId → $status");
+      _toast("Updated: $classId ÔåÆ $status");
     } catch (e) {
       _toast("Failed: $e");
     }
@@ -500,7 +499,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       return "$day $time (${dur}m)";
     }).toList();
 
-    return parts.join(" • ");
+    return parts.join(" ÔÇó ");
   }
 
   // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
@@ -628,7 +627,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (_loadingCourses) return _toast("Courses are still loading...");
     if (_courses.isEmpty) return _toast("No courses found.");
 
-    // ✅ teachers must be loaded from /users
+    // Ô£à teachers must be loaded from /users
     if (_loadingTeachers) return _toast("Teachers are still loading...");
     if (_teachers.isEmpty) return _toast("No teachers found.");
 
@@ -646,7 +645,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     }
 
     // =========================================================
-    // ✅ INSTRUCTORS (TEACHERS) come from _teachers (users role teacher)
+    // Ô£à INSTRUCTORS (TEACHERS) come from _teachers (users role teacher)
     // =========================================================
     List<Map<String, String>> instructors =
     List<Map<String, String>>.from(_teachers);
@@ -837,7 +836,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           color: Colors.grey.withOpacity(0.06),
                         ),
                         child: Text(
-                          "Course: ${selectedCourse["course_code"]} — ${selectedCourse["title"]}",
+                          "Course: ${selectedCourse["course_code"]} ÔÇö ${selectedCourse["title"]}",
                           style: const TextStyle(fontWeight: FontWeight.w800),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -852,7 +851,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         selectedItemBuilder: (context) {
                           return _courses.map((c) {
                             final label =
-                                "${c["course_code"]} — ${c["title"]}";
+                                "${c["course_code"]} ÔÇö ${c["title"]}";
                             return Align(
                               alignment: Alignment.centerLeft,
                               child: Text(label,
@@ -862,7 +861,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           }).toList();
                         },
                         items: _courses.map((c) {
-                          final label = "${c["course_code"]} — ${c["title"]}";
+                          final label = "${c["course_code"]} ÔÇö ${c["title"]}";
                           return DropdownMenuItem<Map<String, dynamic>>(
                             value: c,
                             child: SizedBox(
@@ -880,7 +879,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           setModalState(() {
                             selectedCourse = val;
 
-                            // ✅ instructors DO NOT depend on course anymore
+                            // Ô£à instructors DO NOT depend on course anymore
                             instructors = List<Map<String, String>>.from(_teachers);
                             selectedInstructorObj = instructors.isNotEmpty ? instructors.first : null;
 
@@ -891,7 +890,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                     const SizedBox(height: 12),
 
-                    // ✅ Instructor dropdown from USERS teachers list
+                    // Ô£à Instructor dropdown from USERS teachers list
                     DropdownButtonFormField<String>(
                       isExpanded: true,
                       value: selectedInstructorObj == null
@@ -1181,7 +1180,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             "course_level": courseLevel,
                             "category": courseCategory,
 
-                            "instructor": pickedName, // ✅ keep for UI/search
+                            "instructor": pickedName, // Ô£à keep for UI/search
                             "instructor_current": newCurrent,
 
                             "schedule": {
@@ -1208,7 +1207,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   .toString()
                                   .trim();
 
-                              // ✅ compare by UID (stronger than name)
+                              // Ô£à compare by UID (stronger than name)
                               if (oldUid.isNotEmpty && oldUid != newUid) {
                                 final histRef = _classesRef
                                     .child(classId)
@@ -1373,7 +1372,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            "$code — $course",
+                            "$code ÔÇö $course",
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w800),
@@ -1385,7 +1384,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            "Start: ${firstDate.isEmpty ? '-' : firstDate}  •  Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount}  •  Learners: $learnersCount",
+                            "Start: ${firstDate.isEmpty ? '-' : firstDate}  ÔÇó  Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount}  ÔÇó  Learners: $learnersCount",
                             style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 8),
@@ -1441,21 +1440,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Classes'),
-        actions: [
-          IconButton(
-            tooltip: 'Schedule',
-            icon: const Icon(Icons.calendar_month_rounded),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminScheduleScreen()),
-              );
-            },
-          ),
-        ],
+      appBar: AppBar(title: const Text('Classes')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _buildClassesList(),
       ),
-
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openClassEditor(existingClass: null),
         child: const Icon(Icons.add),
