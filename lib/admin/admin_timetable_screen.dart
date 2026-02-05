@@ -377,51 +377,81 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                       fontSize: 12,
                       height: 1.1,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min, // ✅ VERY IMPORTANT
-                      children: [
-                        Text(
-                          title.isEmpty ? "Untitled course" : title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                    child: LayoutBuilder(
+                      builder: (context, c) {
+                        final bool compact = c.maxHeight <= 58; // ✅ blocks that are 30min/short
 
-                        const SizedBox(height: 4),
-
-                        Text(
-                          instructor.isEmpty ? "No teacher" : instructor,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
-                        ),
-
-                        const SizedBox(height: 4),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(999),
-                            color: Colors.black.withOpacity(0.06),
+                        return DefaultTextStyle(
+                          style: TextStyle(
+                            color: isOpen ? Colors.green.shade900 : Colors.black,
+                            fontWeight: FontWeight.w800,
+                            fontSize: compact ? 10.5 : 12, // smaller when tight
+                            height: 1.05,
                           ),
-                          child: Text(
-                            "$learnersCount learners",
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                          child: ClipRect( // ✅ prevents RenderFlex overflow warning
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Title
+                                Text(
+                                  title.isEmpty ? "Untitled course" : title,
+                                  maxLines: compact ? 1 : 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+
+                                const SizedBox(height: 2),
+
+                                // ✅ Teacher + Learners always shown
+                                if (compact)
+                                  Text(
+                                    "${instructor.isEmpty ? "No teacher" : instructor} • $learnersCount",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                  )
+                                else ...[
+                                  Text(
+                                    instructor.isEmpty ? "No teacher" : instructor,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(999),
+                                      color: Colors.black.withOpacity(0.06),
+                                    ),
+                                    child: Text(
+                                      "$learnersCount learners",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                                    ),
+                                  ),
+                                ],
+
+                                const SizedBox(height: 2),
+
+                                // Start time (always shown)
+                                Text(
+                                  start,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: compact ? 10.5 : 11,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-
-                        const SizedBox(height: 4),
-
-                        Text(
-                          start,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-                        ),
-                      ],
+                        );
+                      },
                     ),
+
                   ),
 
                 ),
