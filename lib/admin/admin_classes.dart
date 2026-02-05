@@ -4,11 +4,13 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 
 class AdminClassesScreen extends StatefulWidget {
-  const AdminClassesScreen({super.key});
+  final String? openClassId; // <-- add this
+  const AdminClassesScreen({super.key, this.openClassId});
 
   @override
   State<AdminClassesScreen> createState() => _AdminClassesScreenState();
 }
+
 
 class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ====== DB NODES ======
@@ -29,6 +31,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ===== Courses cache =====
   bool _loadingCourses = true;
   List<Map<String, dynamic>> _courses = [];
+  late final Future<void> _bootFuture;
 
   // ===== Learners cache (ALL learners) =====
   bool _loadingLearners = true;
@@ -56,9 +59,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeOpenFromTimetable();
+    });
 
     // IMPORTANT: load teachers first, then courses (so we can filter instructors correctly)
-    _loadTeachers().then((_) => _loadCourses());
+    _bootFuture = _loadTeachers().then((_) => _loadCourses());
 
     _loadAllLearners();
 
@@ -79,6 +85,30 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
+
+  Future<void> _maybeOpenFromTimetable() async {
+    final id = widget.openClassId?.trim();
+    if (id == null || id.isEmpty) return;
+
+    try {
+      // ✅ wait until teachers + courses are loaded
+      await _bootFuture;
+
+      final snap = await _classesRef.child(id).get();
+      if (!snap.exists || snap.value is! Map) {
+        _toast("Class not found: $id");
+        return;
+      }
+
+      final cls = Map<String, dynamic>.from(snap.value as Map);
+      cls["class_id"] = id;
+
+      await _openClassEditor(existingClass: cls);
+    } catch (e) {
+      _toast("Failed to open class: $e");
+    }
+  }
+
 
   String _formatDate(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 
@@ -644,6 +674,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       if (found.isNotEmpty) selectedCourse = found.first;
     }
 
+    bool isOpen = true;
+    if (isEdit) {
+      isOpen = (existingClass?["is_open"] ?? true) == true;
+    }
+
+
+
     // =========================================================
     // Ô£à INSTRUCTORS (TEACHERS) come from _teachers (users role teacher)
     // =========================================================
@@ -745,6 +782,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       selectedLearnersByUid = Map<String, dynamic>.from(previousLearnersByUid);
     }
 
+
+
+
     Future<void> pickDate(StateSetter setModalState) async {
       final now = DateTime.now();
       final picked = await showDatePicker(
@@ -817,9 +857,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             borderRadius: BorderRadius.circular(999),
                             color: Colors.black.withOpacity(0.06),
                           ),
-                          child: Text("ID: $classId",
-                              style:
-                              const TextStyle(fontWeight: FontWeight.w900)),
+                          child: Text(
+                            "ID: $classId",
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
                         ),
                       ],
                     ),
@@ -831,12 +872,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          border:
-                          Border.all(color: Colors.grey.withOpacity(0.35)),
+                          border: Border.all(color: Colors.grey.withOpacity(0.35)),
                           color: Colors.grey.withOpacity(0.06),
                         ),
                         child: Text(
-                          "Course: ${selectedCourse["course_code"]} ÔÇö ${selectedCourse["title"]}",
+                          "Course: ${selectedCourse["course_code"]} — ${selectedCourse["title"]}",
                           style: const TextStyle(fontWeight: FontWeight.w800),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -847,28 +887,33 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         isExpanded: true,
                         value: selectedCourse,
                         decoration: const InputDecoration(
-                            labelText: "Course", border: OutlineInputBorder()),
+                          labelText: "Course",
+                          border: OutlineInputBorder(),
+                        ),
                         selectedItemBuilder: (context) {
                           return _courses.map((c) {
-                            final label =
-                                "${c["course_code"]} ÔÇö ${c["title"]}";
+                            final label = "${c["course_code"]} — ${c["title"]}";
                             return Align(
                               alignment: Alignment.centerLeft,
-                              child: Text(label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
+                              child: Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             );
                           }).toList();
                         },
                         items: _courses.map((c) {
-                          final label = "${c["course_code"]} ÔÇö ${c["title"]}";
+                          final label = "${c["course_code"]} — ${c["title"]}";
                           return DropdownMenuItem<Map<String, dynamic>>(
                             value: c,
                             child: SizedBox(
                               width: double.infinity,
-                              child: Text(label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
+                              child: Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           );
                         }).toList(),
@@ -879,9 +924,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           setModalState(() {
                             selectedCourse = val;
 
-                            // Ô£à instructors DO NOT depend on course anymore
-                            instructors = List<Map<String, String>>.from(_teachers);
-                            selectedInstructorObj = instructors.isNotEmpty ? instructors.first : null;
+                            // ✅ instructors DO NOT depend on course anymore
+                            instructors =
+                            List<Map<String, String>>.from(_teachers);
+                            selectedInstructorObj = instructors.isNotEmpty
+                                ? instructors.first
+                                : null;
 
                             selectedLearnersByUid.clear();
                           });
@@ -890,15 +938,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                     const SizedBox(height: 12),
 
-                    // Ô£à Instructor dropdown from USERS teachers list
+                    // ✅ Instructor dropdown from USERS teachers list
                     DropdownButtonFormField<String>(
                       isExpanded: true,
                       value: selectedInstructorObj == null
                           ? null
                           : instKey(selectedInstructorObj!),
                       decoration: const InputDecoration(
-                          labelText: "Instructor",
-                          border: OutlineInputBorder()),
+                        labelText: "Instructor",
+                        border: OutlineInputBorder(),
+                      ),
                       items: instructors.map((t) {
                         final uid = (t["uid"] ?? "").toString();
                         final name = (t["name"] ?? "").toString();
@@ -917,10 +966,41 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           : (uid) {
                         final t = instructors.firstWhere(
                               (x) => (x["uid"] ?? "") == (uid ?? ""),
-                          orElse: () => {"uid": "", "name": "", "serial": ""},
+                          orElse: () =>
+                          {"uid": "", "name": "", "serial": ""},
                         );
                         setModalState(() => selectedInstructorObj = t);
                       },
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // ✅ OPEN/CLOSED TOGGLE
+                    Container(
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.withOpacity(0.35)),
+                        color: Colors.grey.withOpacity(0.06),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              isOpen
+                                  ? "Class is OPEN (can add learners)"
+                                  : "Class is CLOSED (no new learners)",
+                              style: const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          Switch(
+                            value: isOpen,
+                            onChanged:
+                            saving ? null : (v) => setModalState(() => isOpen = v),
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 12),
@@ -929,46 +1009,45 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                       controller: sessionsCountCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                          labelText: "Number of sessions",
-                          border: OutlineInputBorder()),
+                        labelText: "Number of sessions",
+                        border: OutlineInputBorder(),
+                      ),
                       enabled: !saving,
                     ),
 
                     const SizedBox(height: 12),
 
-                    OutlinedButton.icon(
-                      onPressed: saving ? null : () => pickDate(setModalState),
-                      icon: const Icon(Icons.date_range),
-                      label: Text(firstSessionDate == null
-                          ? "Pick first session date"
-                          : "First session: ${_formatDate(firstSessionDate!)}"),
-                    ),
-
-                    const SizedBox(height: 12),
-
+                    // ✅ Learners button (blocked when CLOSED)
+// ✅ Learners button (blocked when CLOSED)
                     OutlinedButton.icon(
                       onPressed: saving
                           ? null
+                          : (!isOpen
+                          ? null // closed => disable opening picker
                           : () => _openLearnersPickerStrict(
                         selectedCourseId: courseId,
                         selectedLearnersByUid: selectedLearnersByUid,
                         setModalState: setModalState,
-                      ),
+                      )),
                       icon: const Icon(Icons.people_alt_rounded),
                       label: Text(
                         _loadingLearners
                             ? "Loading learners..."
-                            : learnersCount == 0
+                            : isOpen
+                            ? (learnersCount == 0
                             ? "Pick learners"
-                            : "Learners selected: $learnersCount",
+                            : "Learners selected: $learnersCount")
+                            : (learnersCount == 0
+                            ? "Learners (Closed)"
+                            : "Learners: $learnersCount (Closed)"),
                       ),
                     ),
+
 
                     const SizedBox(height: 16),
                     const Text(
                       "Weekly schedule (day / start time / duration)",
-                      style:
-                      TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),
 
@@ -1018,12 +1097,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: OutlinedButton(
-                                onPressed:
-                                saving ? null : () => pickTime(setModalState, row),
+                                onPressed: saving
+                                    ? null
+                                    : () => pickTime(setModalState, row),
                                 child: Text(
-                                  row.startTime == null
-                                      ? "Start time"
-                                      : row.startTime!,
+                                  row.startTime == null ? "Start time" : row.startTime!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1098,14 +1176,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           final sessions = <Map<String, dynamic>>[];
                           for (final row in scheduleRows) {
                             if (row.startTime == null) {
-                              return _toast(
-                                  "Pick start time for ${row.day}.");
+                              return _toast("Pick start time for ${row.day}.");
                             }
-                            final dur = int.tryParse(
-                                row.durationCtrl.text.trim());
+                            final dur =
+                            int.tryParse(row.durationCtrl.text.trim());
                             if (dur == null || dur <= 0) {
-                              return _toast(
-                                  "Duration invalid for ${row.day}.");
+                              return _toast("Duration invalid for ${row.day}.");
                             }
                             sessions.add({
                               "day": row.day,
@@ -1115,10 +1191,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           }
 
                           final enrolledUids = _uidsWhoHaveCourse(courseId);
-                          final notEnrolledSelected =
-                          selectedLearnersByUid.keys
-                              .where((uid) =>
-                          !enrolledUids.contains(uid))
+                          final notEnrolledSelected = selectedLearnersByUid.keys
+                              .where((uid) => !enrolledUids.contains(uid))
                               .toList();
 
                           if (notEnrolledSelected.isNotEmpty) {
@@ -1128,36 +1202,28 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           }
 
                           final courseCode =
-                          (selectedCourse["course_code"] ?? "")
-                              .toString();
+                          (selectedCourse["course_code"] ?? "").toString();
                           final courseTitle =
                           (selectedCourse["title"] ?? "").toString();
                           final courseDuration =
-                          (selectedCourse["duration"] ?? "")
-                              .toString();
+                          (selectedCourse["duration"] ?? "").toString();
                           final courseLevel =
                           (selectedCourse["level"] ?? "").toString();
                           final courseCategory =
-                          (selectedCourse["category"] ?? "")
-                              .toString();
+                          (selectedCourse["category"] ?? "").toString();
 
-                          final oldCurrent =
-                          (isEdit && existingClass != null)
-                              ? (existingClass!["instructor_current"]
-                          is Map
+                          final oldCurrent = (isEdit && existingClass != null)
+                              ? (existingClass!["instructor_current"] is Map
                               ? Map<String, dynamic>.from(
-                              existingClass![
-                              "instructor_current"])
+                              existingClass!["instructor_current"])
                               : {
                             "uid": "",
-                            "name": (existingClass![
-                            "instructor"] ??
-                                "")
+                            "name":
+                            (existingClass!["instructor"] ?? "")
                                 .toString(),
                             "serial": "",
                             "assignedAt":
-                            (existingClass!["updated_at"] ??
-                                null),
+                            (existingClass!["updated_at"] ?? null),
                           })
                               : null;
 
@@ -1165,14 +1231,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             "uid": pickedUid,
                             "name": pickedName,
                             "serial":
-                            (selectedInstructorObj?["serial"] ?? "")
-                                .toString(),
+                            (selectedInstructorObj?["serial"] ?? "").toString(),
                             "assignedAt": ServerValue.timestamp,
                           };
 
                           final payload = <String, dynamic>{
                             "class_id": classId,
                             "status": status,
+                            "is_open": isOpen,
+
                             "course_id": courseId,
                             "course_code": courseCode,
                             "course_title": courseTitle,
@@ -1180,12 +1247,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             "course_level": courseLevel,
                             "category": courseCategory,
 
-                            "instructor": pickedName, // Ô£à keep for UI/search
+                            "instructor": pickedName, // keep for UI/search
                             "instructor_current": newCurrent,
 
                             "schedule": {
-                              "first_session_date":
-                              _formatDate(firstSessionDate!),
+                              "first_session_date": _formatDate(firstSessionDate!),
                               "sessions_count": sessionsCount,
                               "sessions": sessions,
                             },
@@ -1200,14 +1266,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             await _classesRef.child(classId).update(payload);
 
                             if (isEdit && oldCurrent != null) {
-                              final oldUid = (oldCurrent["uid"] ?? "")
-                                  .toString()
-                                  .trim();
-                              final newUid = (newCurrent["uid"] ?? "")
-                                  .toString()
-                                  .trim();
+                              final oldUid =
+                              (oldCurrent["uid"] ?? "").toString().trim();
+                              final newUid =
+                              (newCurrent["uid"] ?? "").toString().trim();
 
-                              // Ô£à compare by UID (stronger than name)
+                              // compare by UID (stronger than name)
                               if (oldUid.isNotEmpty && oldUid != newUid) {
                                 final histRef = _classesRef
                                     .child(classId)
@@ -1254,6 +1318,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         });
       },
     );
+
 
     await sheetFuture.whenComplete(() {
       for (final r in scheduleRows) {
@@ -1319,6 +1384,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
                   final id = (cls["class_id"] ?? "").toString();
                   final status = (cls["status"] ?? "active").toString();
+                  final bool isOpen = (cls["is_open"] ?? true) == true;
+
                   final course = (cls["course_title"] ?? "").toString();
                   final code = (cls["course_code"] ?? "").toString();
                   final instructor = (cls["instructor"] ?? "").toString();
@@ -1368,6 +1435,26 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: (isOpen ? Colors.blue : Colors.grey).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: (isOpen ? Colors.blue : Colors.grey).withOpacity(0.35),
+                                  ),
+                                ),
+                                child: Text(
+                                  isOpen ? "OPEN" : "CLOSED",
+                                  style: TextStyle(
+                                    color: isOpen ? Colors.blue : Colors.grey,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+
                             ],
                           ),
                           const SizedBox(height: 6),

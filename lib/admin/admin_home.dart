@@ -1,474 +1,310 @@
 import 'package:flutter/material.dart';
-
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'admin_courses.dart';
-
 import '../admin_learners.dart';
-
 import 'admin_staff.dart';
-
 import 'admin_classes.dart';
 
-
+// ✅ ADD THIS import (your new screen file)
+import 'admin_timetable_screen.dart';
 
 class AdminHome extends StatelessWidget {
-
   const AdminHome({super.key});
 
-
-
-// ===== Brand colors (same as main.dart) =====
-
+  // ===== Brand colors (same as main.dart) =====
   static const primaryBlue = Color(0xFF1A2B48);
-
   static const actionOrange = Color(0xFFF98D28);
-
   static const mainText = Color(0xFF2D2D2D);
-
   static const appBg = Color(0xFFF4F7F9);
-
   static const uiBorder = Color(0xFFD1D9E0);
 
-
-
   Future<void> _logout(BuildContext context) async {
-
     await FirebaseAuth.instance.signOut();
-
     if (!context.mounted) return;
 
-
-
-// ✅ Clear ALL screens and go back to the app root
-
+    // Clear ALL screens and go back to the app root
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-
   }
-
-
-
-
 
   @override
-
   Widget build(BuildContext context) {
-
     final user = FirebaseAuth.instance.currentUser;
 
-
+    // Responsive columns
+    final width = MediaQuery.of(context).size.width;
+    final crossAxisCount = width >= 900 ? 4 : (width >= 600 ? 3 : 2);
 
     return Scaffold(
-
       backgroundColor: appBg,
 
-
-
-// ✅ Transparent watermark logo background
+      // ✅ AppBar (no hamburger)
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        automaticallyImplyLeading: false, // removes hamburger
+        title: const Text(
+          'Admin Dashboard',
+          style: TextStyle(
+            color: primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Logout',
+            icon: const Icon(Icons.logout, color: actionOrange),
+            onPressed: () => _logout(context),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ),
 
       body: Stack(
-
         children: [
-
-// Base background
-
+          // Base background
           Container(color: appBg),
 
-
-
-// Watermark logo
-
+          // Watermark logo
           Positioned.fill(
-
             child: IgnorePointer(
-
               child: Opacity(
-
-                opacity: 0.05, // subtle
-
+                opacity: 0.05,
                 child: Center(
-
                   child: FractionallySizedBox(
-
                     widthFactor: 0.75,
-
                     child: Image.asset(
-
                       'assets/images/ybs_logo.png',
-
                       fit: BoxFit.contain,
-
                       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-
                     ),
-
                   ),
-
                 ),
-
               ),
-
             ),
-
           ),
 
-
-
-// ✅ Screen content (EMPTY as requested)
-
-          const SizedBox.expand(),
-
-        ],
-
-      ),
-
-
-
-// ✅ Drawer (hamburger) with Courses only
-
-      drawer: Drawer(
-
-        backgroundColor: Colors.white,
-
-        child: SafeArea(
-
-          child: Column(
-
-            children: [
-
-              Container(
-
-                width: double.infinity,
-
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-
-                decoration: BoxDecoration(
-
-                  color: primaryBlue,
-
-                  border: Border(
-
-                    bottom: BorderSide(color: uiBorder.withOpacity(0.7)),
-
+          // Content
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header card
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: uiBorder.withOpacity(0.7)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: primaryBlue.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                          ),
+                          child: Image.asset(
+                            'assets/images/ybs_logo.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.school_rounded, color: primaryBlue),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Welcome',
+                                style: TextStyle(
+                                  color: primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                user?.email ?? 'Admin',
+                                style: TextStyle(
+                                  color: mainText.withOpacity(0.75),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
-                ),
+                  const SizedBox(height: 14),
 
-                child: Row(
-
-                  children: [
-
-                    Container(
-
-                      width: 52,
-
-                      height: 52,
-
-                      padding: const EdgeInsets.all(8),
-
-                      decoration: BoxDecoration(
-
-                        color: Colors.white.withOpacity(0.12),
-
-                        borderRadius: BorderRadius.circular(16),
-
-                        border: Border.all(color: Colors.white.withOpacity(0.18)),
-
-                      ),
-
-                      child: Image.asset(
-
-                        'assets/images/ybs_logo.png',
-
-                        fit: BoxFit.contain,
-
-                        errorBuilder: (_, __, ___) => const Icon(
-
-                          Icons.school_rounded,
-
-                          color: Colors.white,
-
+                  // Grid
+                  Expanded(
+                    child: GridView.count(
+                      crossAxisCount: crossAxisCount,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 1.05,
+                      children: [
+                        _DashCard(
+                          title: 'Courses',
+                          subtitle: 'Manage courses',
+                          icon: Icons.menu_book_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
+                          ),
+                        ),
+                        _DashCard(
+                          title: 'Classes',
+                          subtitle: 'Manage classes',
+                          icon: Icons.class_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+                          ),
                         ),
 
-                      ),
-
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    Expanded(
-
-                      child: Column(
-
-                        crossAxisAlignment: CrossAxisAlignment.start,
-
-                        children: [
-
-                          const Text(
-
-                            'Admin Panel',
-
-                            style: TextStyle(
-
-                              color: Colors.white,
-
-                              fontWeight: FontWeight.w900,
-
-                              fontSize: 16,
-
-                            ),
-
+                        // ✅ NEW CARD: Weekly timetable grid
+                        _DashCard(
+                          title: 'Schedule',
+                          subtitle: 'Weekly timetable',
+                          icon: Icons.calendar_view_week_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
                           ),
+                        ),
 
-                          const SizedBox(height: 4),
-
-                          Text(
-
-                            user?.email ?? 'Admin',
-
-                            style: TextStyle(
-
-                              color: Colors.white.withOpacity(0.85),
-
-                              fontWeight: FontWeight.w600,
-
-                              fontSize: 12,
-
-                            ),
-
-                            overflow: TextOverflow.ellipsis,
-
+                        _DashCard(
+                          title: 'Learners',
+                          subtitle: 'Students list',
+                          icon: Icons.people_alt_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
                           ),
-
-                        ],
-
-                      ),
-
+                        ),
+                        _DashCard(
+                          title: 'Staff',
+                          subtitle: 'Teachers & staff',
+                          icon: Icons.badge_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
+                          ),
+                        ),
+                      ],
                     ),
-
-                  ],
-
-                ),
-
-              ),
-
-
-
-              const SizedBox(height: 6),
-
-
-
-              ListTile(
-
-                leading: const Icon(Icons.menu_book_rounded, color: primaryBlue),
-
-                title: const Text(
-
-                  'Courses',
-
-                  style: TextStyle(
-
-                    color: mainText,
-
-                    fontWeight: FontWeight.w800,
-
                   ),
 
-                ),
+                  const SizedBox(height: 6),
 
-                onTap: () {
-
-                  Navigator.pop(context);
-
-                  Navigator.of(context).push(
-
-                    MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
-
-                  );
-
-                },
-
-              ),
-
-              ListTile(
-
-                leading: const Icon(Icons.class_rounded, color: primaryBlue),
-
-                title: const Text(
-
-                  'Classes',
-
-                  style: TextStyle(
-
-                    color: mainText,
-
-                    fontWeight: FontWeight.w800,
-
+                  Center(
+                    child: Text(
+                      'Dream English Academy',
+                      style: TextStyle(
+                        color: mainText.withOpacity(0.55),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
-
-                ),
-
-                onTap: () {
-
-                  Navigator.pop(context);
-
-                  Navigator.of(context).push(
-
-                    MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-
-                  );
-
-                },
-
+                ],
               ),
-
-
-
-
-
-              ListTile(
-
-                leading: const Icon(Icons.people_alt_rounded, color: primaryBlue),
-
-                title: const Text(
-
-                  'Learners',
-
-                  style: TextStyle(
-
-                    color: mainText,
-
-                    fontWeight: FontWeight.w800,
-
-                  ),
-
-                ),
-
-                onTap: () {
-
-                  Navigator.pop(context);
-
-                  Navigator.of(context).push(
-
-                    MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-
-                  );
-
-                },
-
-              ),
-
-              ListTile(
-
-                leading: const Icon(Icons.badge_rounded, color: primaryBlue),
-
-                title: const Text(
-
-                  'Staff',
-
-                  style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
-
-                ),
-
-                onTap: () {
-
-                  Navigator.pop(context);
-
-                  Navigator.of(context).push(
-
-                    MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
-
-                  );
-
-                },
-
-              ),
-
-
-
-
-
-              const Spacer(),
-
-
-
-              Padding(
-
-                padding: const EdgeInsets.all(14),
-
-                child: Text(
-
-                  'Dream English Academy',
-
-                  style: TextStyle(
-
-                    color: mainText.withOpacity(0.55),
-
-                    fontWeight: FontWeight.w700,
-
-                    fontSize: 12,
-
-                  ),
-
-                ),
-
-              ),
-
-            ],
-
+            ),
           ),
-
-        ),
-
-      ),
-
-
-
-// ✅ AppBar
-
-      appBar: AppBar(
-
-        backgroundColor: Colors.white,
-
-        elevation: 0,
-
-        surfaceTintColor: Colors.white,
-
-        title: const Text(
-
-          'Admin Dashboard',
-
-          style: TextStyle(
-
-            color: primaryBlue,
-
-            fontWeight: FontWeight.w900,
-
-          ),
-
-        ),
-
-        iconTheme: const IconThemeData(color: primaryBlue),
-
-        actions: [
-
-          IconButton(
-
-            tooltip: 'Logout',
-
-            icon: const Icon(Icons.logout, color: actionOrange), // ✅ logout icon
-
-            onPressed: () => _logout(context),
-
-          )
-
         ],
-
       ),
-
     );
-
   }
-
 }
 
+class _DashCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _DashCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const uiBorder = Color(0xFFD1D9E0);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: uiBorder.withOpacity(0.8)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            )
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withOpacity(0.12)),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                  color: Color(0xFF1A2B48),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

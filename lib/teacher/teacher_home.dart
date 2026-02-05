@@ -96,7 +96,7 @@ class TeacherHomeScreen extends StatelessWidget {
                     mainAxisSpacing: 16,
                     childAspectRatio: 1.1, // Adjusts the height/width ratio of cards
                     children: [
-                      _buildQuickCard(context, 'Schedule', Icons.calendar_today_rounded, const AdminScheduleScreen()),
+                      _buildQuickCard(context, 'Schedule', Icons.calendar_today_rounded, const TeacherSchedule()),
                       _buildQuickCard(context, 'My Classes', Icons.school_rounded, const TeacherClassesScreen()),
                       _buildQuickCard(context, 'Profile', Icons.person_rounded, const TeacherProfileScreen()),
                       _buildQuickCard(context, 'Mail', Icons.email_rounded, const TeacherMailScreen()),
