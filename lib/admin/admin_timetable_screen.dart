@@ -339,10 +339,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         final width = _dayColW - 8;
         final height = (span * _slotH) - 4;
 
-        final code = (cls["course_code"] ?? "").toString();
         final title = (cls["course_title"] ?? "").toString();
         final instructor = (cls["instructor"] ?? "").toString();
-        final id = (cls["class_id"] ?? "").toString();
+
 
         blocks.add(
           Positioned(
@@ -372,13 +371,27 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(code.isEmpty ? title : code, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Text(start, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                      Text(
+                        title.isEmpty ? "Untitled course" : title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        instructor.isEmpty ? "No teacher" : instructor,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                      ),
                       const Spacer(),
-                      Text(instructor, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-                      Text(id, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10)),
+                      Text(
+                        start,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                      ),
                     ],
+
                   ),
                 ),
               ),
