@@ -341,6 +341,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
         final title = (cls["course_title"] ?? "").toString();
         final instructor = (cls["instructor"] ?? "").toString();
+        final learners = (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
+        final learnersCount = learners?.length ?? 0;
 
 
         blocks.add(
@@ -353,7 +355,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
               borderRadius: BorderRadius.circular(10),
               onTap: () => _openClassPopup(cls),
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   color: (isOpen ? Colors.green : Colors.black).withOpacity(isOpen ? 0.12 : 0.10),
@@ -368,31 +370,60 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                     fontSize: 12,
                     height: 1.1,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title.isEmpty ? "Untitled course" : title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        instructor.isEmpty ? "No teacher" : instructor,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
-                      ),
-                      const Spacer(),
-                      Text(
-                        start,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-                      ),
-                    ],
+                  child: DefaultTextStyle(
+                    style: TextStyle(
+                      color: isOpen ? Colors.green.shade900 : Colors.black,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      height: 1.1,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min, // ✅ VERY IMPORTANT
+                      children: [
+                        Text(
+                          title.isEmpty ? "Untitled course" : title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
 
+                        const SizedBox(height: 4),
+
+                        Text(
+                          instructor.isEmpty ? "No teacher" : instructor,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            color: Colors.black.withOpacity(0.06),
+                          ),
+                          child: Text(
+                            "$learnersCount learners",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          start,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
                   ),
+
                 ),
               ),
             ),
