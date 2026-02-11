@@ -6,24 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Teacher side reminders:
-/// 1) Lists reminders from RTDB: /reminders/{teacherUid}
-/// 2) Tap a reminder -> expands (collapse/expand)
-///    - On FIRST expand, auto marks as READ (status=read, readAt=timestamp)
-/// 3) Inside expanded view:
-///    - Attachment preview (image) OR Play/Open buttons
-///    - "Open / Download" always available for any file
-///    - "Mark done" button (status=done, doneAt=timestamp)
+/// - Reads from: /reminders/{teacherUid}
+/// - Tap -> expands
+///   - on FIRST expand: mark READ (status=read, readAt=ServerValue.timestamp)
+/// - Inside expanded:
+///   - Image preview if image
+///   - Otherwise Open/Download (external browser)
+///   - Mark done (status=done, doneAt=timestamp)
 ///
-/// FIXED:
-/// - Your urls can be like "//www.yourbridgeschool.com/....png" -> we normalize to "https://..."
-/// - url_launcher sometimes throws:
-///   PlatformException(channel-error, Unable to establish connection on channel dev.flutter.pigeon...)
-///   This usually means the plugin isn't registered / needs clean rebuild.
-///   So we do:
-///     (1) launchUrl + externalApplication
-///     (2) fallback launchUrl + platformDefault
-///     (3) fallback launchUrlString (legacy)
-///     (4) if all fail -> show dialog with copyable link
+/// Fixes:
+/// - Normalize urls like "//www...." => "https://www...."
+/// - Defensive open: try externalApplication then platformDefault, else show dialog with copyable link
 class TeacherReminderScreen extends StatefulWidget {
   const TeacherReminderScreen({super.key});
 
@@ -158,9 +151,6 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
     );
   }
 
-  /// Super defensive opener:
-  /// - tries multiple modes
-  /// - if plugin channel is broken, this may STILL fail, but we show a dialog with selectable url.
   Future<void> _openInBrowser(String rawUrl) async {
     final normalized = _normalizeUrl(rawUrl);
     if (normalized.isEmpty) return;
@@ -171,34 +161,23 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
       return;
     }
 
+    // 1) external browser (Chrome)
     try {
-      // 1) Best: open in external browser (Chrome)
       final ok1 = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (ok1) return;
-    } catch (_) {
-      // continue to fallbacks
-    }
+    } catch (_) {}
 
+    // 2) platform default
     try {
-      // 2) Fallback: platform default
       final ok2 = await launchUrl(uri, mode: LaunchMode.platformDefault);
       if (ok2) return;
-    } catch (_) {
-      // continue
-    }
-
-    try {
-      // 3) Legacy fallback (sometimes works when launchUrl has issues)
-      final ok3 = await launchUrlString(normalized, mode: LaunchMode.externalApplication);
-      if (ok3) return;
     } catch (e) {
-      // This is the common one you got: PlatformException(channel-error, ...)
       _snack('Could not open link (plugin error). Showing link…');
       await _showOpenLinkDialog(normalized);
       return;
     }
 
-    // If none returned true:
+    // 3) if both returned false
     _snack('Could not open link. Showing link…');
     await _showOpenLinkDialog(normalized);
   }
@@ -282,16 +261,13 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => _openInBrowser(normalized),
-                      icon: const Icon(Icons.open_in_new),
-                      label: const Text('Open in browser'),
-                    ),
-                  ),
-                ],
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _openInBrowser(normalized),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Open in browser'),
+                ),
               ),
             ),
           ],
@@ -304,22 +280,16 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
   Widget build(BuildContext context) {
     if (_uid == null) {
       return const Scaffold(
-        body: SafeArea(
-          child: Center(child: Text('Not logged in')),
-        ),
+        body: SafeArea(child: Center(child: Text('Not logged in'))),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My reminders'),
-      ),
+      appBar: AppBar(title: const Text('My reminders')),
       body: StreamBuilder<DatabaseEvent>(
         stream: _stream,
         builder: (context, snap) {
-          if (snap.hasError) {
-            return const Center(child: Text('Could not load reminders.'));
-          }
+          if (snap.hasError) return const Center(child: Text('Could not load reminders.'));
           if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -327,11 +297,8 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
           final data = snap.data?.snapshot.value;
           final rows = _parse(data);
 
-          if (rows.isEmpty) {
-            return const Center(child: Text('No reminders yet.'));
-          }
+          if (rows.isEmpty) return const Center(child: Text('No reminders yet.'));
 
-          // Sort: soonest due date first, fallback to createdAt desc
           rows.sort((a, b) {
             final ad = a.r.dueAtMs ?? (1 << 62);
             final bd = b.r.dueAtMs ?? (1 << 62);
@@ -369,7 +336,6 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                       }
                     });
 
-                    // ✅ Mark as read automatically when teacher opens (expands)
                     if (!isExpanded) {
                       await _markReadIfNeeded(row.id, r);
                     }
@@ -377,10 +343,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                   child: Column(
                     children: [
                       ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: _statusColor(r.status),
-                          radius: 10,
-                        ),
+                        leading: CircleAvatar(backgroundColor: _statusColor(r.status), radius: 10),
                         title: Text(r.title.isEmpty ? '(No title)' : r.title),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,11 +352,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                             Text('Due: ${_fmtDate(r.dueAtMs)}'),
                             if (!isExpanded && r.description.trim().isNotEmpty) ...[
                               const SizedBox(height: 6),
-                              Text(
-                                r.description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              Text(r.description, maxLines: 2, overflow: TextOverflow.ellipsis),
                             ],
                             if (!isExpanded && hasAttachment) ...[
                               const SizedBox(height: 6),
@@ -407,7 +366,6 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                         ),
                         trailing: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
                       ),
-
                       if (isExpanded)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -415,18 +373,12 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Divider(height: 18),
-
                               if (r.description.trim().isNotEmpty)
                                 Text(r.description)
                               else
-                                Text(
-                                  'No description',
-                                  style: TextStyle(color: Colors.black.withOpacity(0.6)),
-                                ),
-
+                                Text('No description', style: TextStyle(color: Colors.black.withOpacity(0.6))),
                               const SizedBox(height: 12),
 
-                              // ✅ Attachment section (preview/play/open)
                               if (hasAttachment) ...[
                                 Row(
                                   children: [
@@ -520,17 +472,11 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                 const SizedBox(height: 12),
                               ],
 
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Status: ${r.status.toUpperCase()}'
-                                          '${r.readAtMs != null ? ' • Read: ${_fmtDate(r.readAtMs)}' : ''}'
-                                          '${r.doneAtMs != null ? ' • Done: ${_fmtDate(r.doneAtMs)}' : ''}',
-                                      style: TextStyle(color: Colors.black.withOpacity(0.65), fontSize: 12),
-                                    ),
-                                  ),
-                                ],
+                              Text(
+                                'Status: ${r.status.toUpperCase()}'
+                                    '${r.readAtMs != null ? ' • Read: ${_fmtDate(r.readAtMs)}' : ''}'
+                                    '${r.doneAtMs != null ? ' • Done: ${_fmtDate(r.doneAtMs)}' : ''}',
+                                style: TextStyle(color: Colors.black.withOpacity(0.65), fontSize: 12),
                               ),
 
                               const SizedBox(height: 12),
@@ -542,11 +488,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                       ? null
                                       : () => _markDone(row.id),
                                   icon: _markingDone.contains(row.id)
-                                      ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                                       : const Icon(Icons.check_circle),
                                   label: Text(
                                     r.status.toLowerCase().trim() == 'done'
