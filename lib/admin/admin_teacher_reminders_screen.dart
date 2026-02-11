@@ -42,6 +42,57 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // ---- URL helpers (FIX for "//domain/..." urls) ----
+
+  String _normalizeUrl(String raw) {
+    final u = raw.trim();
+    if (u.isEmpty) return '';
+    if (u.startsWith('//')) return 'https:$u';
+    if (u.startsWith('http://') || u.startsWith('https://')) return u;
+    if (u.startsWith('www.')) return 'https://$u';
+    return 'https://$u';
+  }
+
+  String _lowerExt(String nameOrUrl) {
+    final s = nameOrUrl.trim().split('?').first;
+    final dot = s.lastIndexOf('.');
+    if (dot == -1) return '';
+    return s.substring(dot + 1).toLowerCase().trim();
+  }
+
+  bool _isImageExt(String ext) => {
+    'png',
+    'jpg',
+    'jpeg',
+    'webp',
+    'gif',
+    'bmp',
+  }.contains(ext);
+
+  bool _isAudioExt(String ext) => {
+    'mp3',
+    'wav',
+    'm4a',
+    'aac',
+    'ogg',
+    'opus',
+  }.contains(ext);
+
+  Future<void> _openUrlExternal(String rawUrl) async {
+    final url = _normalizeUrl(rawUrl);
+    final u = Uri.tryParse(url);
+    if (u == null) {
+      _snack('Invalid URL');
+      return;
+    }
+    try {
+      final ok = await launchUrl(u, mode: LaunchMode.externalApplication);
+      if (!ok) _snack('Could not open link');
+    } catch (e) {
+      _snack('Could not open link: $e');
+    }
+  }
+
   Future<void> _openAddDialog() async {
     final created = await showDialog<_TeacherReminderDraft?>(
       context: context,
@@ -103,7 +154,7 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
   Color _statusColor(TeacherReminder r) {
     final s = r.status.toLowerCase().trim();
     if (s == 'done') return Colors.green;
-    if (s == 'read') return Colors.orange; // yellow-ish
+    if (s == 'read') return Colors.orange;
     return Colors.red;
   }
 
@@ -113,63 +164,107 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
-  String _lowerExt(String nameOrUrl) {
-    final s = nameOrUrl.trim();
-    final dot = s.lastIndexOf('.');
-    if (dot == -1) return '';
-    return s.substring(dot + 1).toLowerCase();
-  }
-
-  bool _isImageExt(String ext) => {
-    'png',
-    'jpg',
-    'jpeg',
-    'webp',
-    'gif',
-    'bmp',
-  }.contains(ext);
-
-  bool _isAudioExt(String ext) => {
-    'mp3',
-    'wav',
-    'm4a',
-    'aac',
-    'ogg',
-    'opus',
-  }.contains(ext);
-
-  Future<void> _openUrl(String url) async {
-    final u = Uri.tryParse(url.trim());
-    if (u == null) {
-      _snack('Invalid URL');
+  Future<void> _showImageDialog({
+    required String title,
+    required String rawUrl,
+  }) async {
+    final url = _normalizeUrl(rawUrl);
+    if (url.isEmpty) {
+      _snack('No URL');
       return;
     }
-    final ok = await launchUrl(u, mode: LaunchMode.externalApplication);
-    if (!ok) _snack('Could not open link');
-  }
 
-  void _openImagePreview({required String title, required String url}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _ImagePreviewScreen(title: title, imageUrl: url),
+    await showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.black.withOpacity(0.08))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title.isEmpty ? 'Image' : title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Open in browser',
+                    onPressed: () => _openUrlExternal(url),
+                    icon: const Icon(Icons.open_in_new),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Could not load image.',
+                          style: TextStyle(color: Colors.black.withOpacity(0.7), fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () => _openUrlExternal(url),
+                            icon: const Icon(Icons.open_in_new),
+                            label: const Text('Open in browser (fallback)'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
 
   Widget _attachmentSection(TeacherReminder r) {
-    final url = (r.attachmentUrl ?? '').trim();
-    final name = (r.attachmentName ?? '').trim();
+    final rawUrl = (r.attachmentUrl ?? '').trim();
+    final rawName = (r.attachmentName ?? '').trim();
 
-    if (url.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    final url = _normalizeUrl(rawUrl);
+    if (url.isEmpty) return const SizedBox.shrink();
 
-    final ext = _lowerExt(name.isNotEmpty ? name : url);
+    final ext = _lowerExt(rawName.isNotEmpty ? rawName : url);
     final isImg = _isImageExt(ext);
     final isAudio = _isAudioExt(ext);
 
-    final label = name.isNotEmpty ? name : 'Attachment';
-    final typeLabel = ext.isEmpty ? 'file' : ext.toUpperCase();
+    final label = rawName.isNotEmpty ? rawName : 'Attachment';
+    final typeLabel = ext.isEmpty ? 'FILE' : ext.toUpperCase();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,34 +272,34 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
         const SizedBox(height: 10),
         Text(
           'Attachment: $label',
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             Chip(label: Text(typeLabel)),
-            const SizedBox(width: 8),
             if (isImg)
               FilledButton.icon(
-                onPressed: () => _openImagePreview(title: label, url: url),
+                onPressed: () => _showImageDialog(title: label, rawUrl: url),
                 icon: const Icon(Icons.visibility),
                 label: const Text('View'),
               )
             else if (isAudio)
               FilledButton.icon(
-                onPressed: () => _openUrl(url),
+                onPressed: () => _openUrlExternal(url),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Play'),
               )
             else
               FilledButton.icon(
-                onPressed: () => _openUrl(url),
+                onPressed: () => _openUrlExternal(url),
                 icon: const Icon(Icons.open_in_new),
                 label: const Text('Open'),
               ),
-            const SizedBox(width: 8),
             OutlinedButton.icon(
-              onPressed: () => _openUrl(url),
+              onPressed: () => _openUrlExternal(url),
               icon: const Icon(Icons.download),
               label: const Text('Download'),
             ),
@@ -213,7 +308,7 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
         const SizedBox(height: 6),
         Text(
           url,
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: Colors.black.withOpacity(0.55), fontSize: 12),
         ),
@@ -303,7 +398,6 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
 
           if (rows.isEmpty) return const Center(child: Text('No reminders yet.'));
 
-          // Sort: soonest due date first, fallback to createdAt desc
           rows.sort((a, b) {
             final ad = a.reminder.dueAtMs ?? (1 << 62);
             final bd = b.reminder.dueAtMs ?? (1 << 62);
@@ -320,7 +414,7 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
               final r = row.reminder;
 
               final isExpanded = _expanded.contains(row.id);
-              final hasAttachment = (r.attachmentUrl ?? '').trim().isNotEmpty;
+              final hasAttachment = _normalizeUrl((r.attachmentUrl ?? '').trim()).isNotEmpty;
 
               return Card(
                 child: InkWell(
@@ -703,55 +797,6 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
           child: const Text('Add'),
         ),
       ],
-    );
-  }
-}
-
-/// ----------------------------
-/// Full-screen image preview
-/// ----------------------------
-class _ImagePreviewScreen extends StatelessWidget {
-  const _ImagePreviewScreen({
-    required this.title,
-    required this.imageUrl,
-  });
-
-  final String title;
-  final String imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title.isEmpty ? 'Image' : title),
-        actions: [
-          IconButton(
-            tooltip: 'Open in browser',
-            icon: const Icon(Icons.open_in_new),
-            onPressed: () async {
-              final u = Uri.tryParse(imageUrl.trim());
-              if (u == null) return;
-              await launchUrl(u, mode: LaunchMode.externalApplication);
-            },
-          ),
-        ],
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          child: Image.network(
-            imageUrl,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Could not load image.'),
-            ),
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const CircularProgressIndicator();
-            },
-          ),
-        ),
-      ),
     );
   }
 }
