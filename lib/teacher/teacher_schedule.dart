@@ -35,6 +35,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   bool _sessionEnabled = false;
   late SharedPreferences _prefs;
   bool _prefsReady = false;
+  bool _didAutoApply = false;
 
   @override
   void initState() {
@@ -173,6 +174,14 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             final now = DateTime.now();
             final twoDaysAgo = now.subtract(const Duration(days: 2));
             final recentAndUpcoming = allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
+// ✅ Auto re-schedule reminders once when data is loaded
+            if (_prefsReady && !_didAutoApply) {
+              _didAutoApply = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                if (!mounted) return;
+                await _applyAllReminders(upcoming: recentAndUpcoming, allOcc: allOcc);
+              });
+            }
 
             return TabBarView(
               children: [
@@ -441,12 +450,18 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Future<void> _applyAllReminders({
+
     required List<_Occ> upcoming,
     required List<_Occ> allOcc,
   }) async {
+    debugPrint('APPLY reminders: daily=$_dailyEnabled session=$_sessionEnabled upcoming=${upcoming.length}');
+
     await NotificationService.I.cancelAll();
+    debugPrint('Canceled all notifications');
 
     if (_dailyEnabled) {
+      debugPrint('Scheduling daily reminder 08:00');
+
       await NotificationService.I.scheduleDailyReminder(
         hour: 8,
         minute: 0,
@@ -456,6 +471,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     }
 
     if (_sessionEnabled) {
+      debugPrint('Scheduling session reminders...');
+
       for (var o in upcoming
           .where((e) => _isClassEnabled(e.classId))
           .where((e) => _isDayEnabled(e.start))

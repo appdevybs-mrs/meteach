@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'admin_teacher_reminders_screen.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key});
@@ -617,16 +618,20 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            backgroundColor: AdminStaffScreen.appBg.withOpacity(1),
-                            child: Text(
-                              u.firstName.isNotEmpty ? u.firstName[0].toUpperCase() : 'S',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: AdminStaffScreen.primaryBlue,
+                          GestureDetector(
+                            onTap: () => _openTeacherQuickActions(context, row.uid, u),
+                            child: CircleAvatar(
+                              backgroundColor: AdminStaffScreen.appBg.withOpacity(1),
+                              child: Text(
+                                u.firstName.isNotEmpty ? u.firstName[0].toUpperCase() : 'S',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: AdminStaffScreen.primaryBlue,
+                                ),
                               ),
                             ),
                           ),
+
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -759,6 +764,65 @@ class _Pill extends StatelessWidget {
     );
   }
 }
+
+void _snackHere(BuildContext context, String msg) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+}
+
+Future<void> _openTeacherQuickActions(BuildContext context, String teacherUid, Staff staff) async {
+  // Only for teachers (safe)
+  if (staff.role != StaffRole.teacher) {
+    _snackHere(context, 'Only teachers have reminders.');
+    return;
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.mail_outline),
+              title: const Text('Mail'),
+              subtitle: Text(staff.email.trim().isEmpty ? '(No email)' : staff.email),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final email = staff.email.trim();
+                if (email.isEmpty) {
+                  _snackHere(context, 'No email for this teacher.');
+                  return;
+                }
+                // No extra plugins: just copy email (won’t break builds)
+                await Clipboard.setData(ClipboardData(text: email));
+                _snackHere(context, 'Email copied ✅');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications_active_outlined),
+              title: const Text('Reminder'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AdminTeacherRemindersScreen(
+                      teacherUid: teacherUid,
+                      teacher: staff,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+}
+
 
 class _StateCard extends StatelessWidget {
   const _StateCard({required this.title, required this.message, required this.icon});
