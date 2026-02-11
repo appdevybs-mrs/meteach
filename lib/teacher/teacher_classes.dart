@@ -171,6 +171,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return [];
   }
 
+  // NEW: only what we need for the collapsed card
+  String _firstSessionDate(Map<String, dynamic> classData) {
+    final schedule = classData['schedule'];
+    if (schedule is Map) {
+      final firstDate = (schedule['first_session_date'] ?? '').toString().trim();
+      return firstDate.isEmpty ? '-' : firstDate;
+    }
+    return '-';
+  }
+
+  // Kept (still used? you can remove later if you want)
   String _scheduleSummary(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
     if (schedule is Map) {
@@ -270,22 +281,29 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Teacher',
-                            style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
+                        const Text(
+                          'Teacher',
+                          style: TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
                         const SizedBox(height: 6),
-                        Text(_teacherName.isEmpty ? '-' : _teacherName,
-                            style: const TextStyle(color: mainText, fontWeight: FontWeight.w900, fontSize: 16)),
-                        const SizedBox(height: 4),
-                        Text('Serial: ${_teacherSerial.isEmpty ? '-' : _teacherSerial}',
-                            style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 4),
-                        Text('UID: ${_teacherUid.isEmpty ? '-' : _teacherUid}',
-                            style: TextStyle(color: mainText.withOpacity(0.55), fontWeight: FontWeight.w700)),
+                        Text(
+                          _teacherName.isEmpty ? '-' : _teacherName,
+                          style: const TextStyle(
+                            color: mainText,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 14),
+
                 if (_myClasses.isEmpty)
                   const Center(
                     child: Padding(
@@ -305,11 +323,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 
   Widget _classCard(Map<String, dynamic> c) {
     final title = (c['course_title'] ?? 'Class').toString();
-    final code = (c['course_code'] ?? '').toString();
-    final level = (c['course_level'] ?? '').toString();
     final duration = (c['course_duration'] ?? '').toString();
-    final status = (c['status'] ?? '').toString();
-    final classId = (c['class_id'] ?? c['id'] ?? '').toString();
 
     final learnersCount = _learnersCount(c);
     final learnersUids = _learnerUids(c);
@@ -328,21 +342,26 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         collapsedIconColor: primaryBlue,
         iconColor: primaryBlue,
         title: Text(title, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        // UPDATED: collapsed card shows only Duration + First session + Learners count
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Code: ${code.isEmpty ? '-' : code}  •  Level: ${level.isEmpty ? '-' : level}',
-                  style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
+              Text(
+                'Duration: ${duration.isEmpty ? '-' : duration}',
+                style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 4),
-              Text('Duration: ${duration.isEmpty ? '-' : duration}  •  Status: ${status.isEmpty ? '-' : status}',
-                  style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
+              Text(
+                'First session: ${_firstSessionDate(c)}',
+                style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 4),
-              Text(_scheduleSummary(c), style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text('Class ID: ${classId.isEmpty ? '-' : classId}',
-                  style: TextStyle(color: mainText.withOpacity(0.6), fontWeight: FontWeight.w700)),
+              Text(
+                'Learners: $learnersCount',
+                style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
+              ),
             ],
           ),
         ),

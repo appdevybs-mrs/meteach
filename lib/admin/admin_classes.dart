@@ -69,8 +69,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     _loadAllLearners();
 
     _searchCtrl.addListener(() {
+      if (!mounted) return;
       setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
     });
+
   }
 
   @override
@@ -151,9 +153,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // -------------------- Load ALL teachers --------------------
 
   Future<void> _loadTeachers() async {
-    setState(() => _loadingTeachers = true);
+    if (mounted) setState(() => _loadingTeachers = true);
 
     final snap = await _usersRef.get();
+    if (!mounted) return;
 
     final Map<String, Map<String, String>> byUid = {};
     final Map<String, String> uidByName = {};
@@ -189,6 +192,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
+    if (!mounted) return;
     setState(() {
       _teachersByUid = byUid;
       _teacherUidByName = uidByName;
@@ -199,9 +203,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // -------------------- Load courses --------------------
 
   Future<void> _loadCourses() async {
-    setState(() => _loadingCourses = true);
+    if (mounted) setState(() => _loadingCourses = true);
 
     final snap = await _coursesRef.get();
+    if (!mounted) return;
+
     final List<Map<String, dynamic>> list = [];
 
     if (snap.exists && snap.value is Map) {
@@ -209,12 +215,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
       for (final entry in map.entries) {
         final id = entry.key.toString();
-        final data = Map<String, dynamic>.from(entry.value as Map);
+
+        final raw = entry.value;
+        if (raw is! Map) continue; // safety
+
+        final data = Map<String, dynamic>.from(raw);
 
         final levelRaw = (data["level"] ?? "").toString();
 
-        // Ô£à instructors can be LIST (old) or MAP (new)
-        // Ô£à but keep ONLY teachers
+        // instructors can be LIST (old) or MAP (new) — keep ONLY teachers
         final insRaw = data["instructors"];
         final List<Map<String, String>> instructorsList = [];
 
@@ -225,7 +234,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             if (name.isEmpty) continue;
 
             final uid = _teacherUidByName[_norm(name)];
-            if (uid == null) continue; // Ô£à keep ONLY if it matches a teacher
+            if (uid == null) continue; // keep ONLY if it matches a teacher
 
             final t = _teachersByUid[uid];
             if (t == null) continue;
@@ -242,7 +251,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           m.forEach((k, v) {
             final uid = k.toString();
 
-            // Ô£à keep ONLY if uid is a teacher
+            // keep ONLY if uid is a teacher
             final t = _teachersByUid[uid];
             if (t == null) return;
 
@@ -254,35 +263,41 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           });
         }
 
-        instructorsList.sort((a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""));
+        instructorsList.sort(
+              (a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""),
+        );
 
         list.add({
           "id": id,
-          "title": data["title"] ?? "",
-          "course_code": data["course_code"] ?? "",
-          "duration": data["duration"] ?? "",
-          "category": data["category"] ?? "",
+          "title": (data["title"] ?? "").toString(),
+          "course_code": (data["course_code"] ?? "").toString(),
+          "duration": (data["duration"] ?? "").toString(),
+          "category": (data["category"] ?? "").toString(),
           "level": _levelShort(levelRaw),
-          "instructors": instructorsList, // Ô£à normalized & teacher-only
+          "instructors": instructorsList, // normalized & teacher-only
         });
       }
 
-      list.sort((a, b) =>
-          (a["course_code"] as String).compareTo(b["course_code"] as String));
+      list.sort((a, b) => (a["course_code"] as String)
+          .compareTo(b["course_code"] as String));
     }
 
+    if (!mounted) return;
     setState(() {
       _courses = list;
       _loadingCourses = false;
     });
   }
 
+
   // -------------------- Load ALL learners --------------------
 
   Future<void> _loadAllLearners() async {
-    setState(() => _loadingLearners = true);
+    if (mounted) setState(() => _loadingLearners = true);
 
     final snap = await _usersRef.get();
+    if (!mounted) return;
+
     final List<Map<String, dynamic>> list = [];
 
     if (snap.exists && snap.value is Map) {
@@ -290,7 +305,11 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
       for (final entry in all.entries) {
         final uid = entry.key.toString();
-        final data = Map<String, dynamic>.from(entry.value as Map);
+
+        final raw = entry.value;
+        if (raw is! Map) continue; // safety
+
+        final data = Map<String, dynamic>.from(raw);
 
         if (!_isLearnerRole(data["role"])) continue;
 
@@ -300,12 +319,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         final name = "$first $last".trim();
 
         final coursesMap = (data["courses"] is Map)
-            ? Map<String, dynamic>.from((data["courses"] as Map).map(
-              (k, v) => MapEntry(
-            k.toString(),
-            v is Map ? Map<String, dynamic>.from(v) : v,
+            ? Map<String, dynamic>.from(
+          (data["courses"] as Map).map(
+                (k, v) => MapEntry(
+              k.toString(),
+              v is Map ? Map<String, dynamic>.from(v) : v,
+            ),
           ),
-        ))
+        )
             : <String, dynamic>{};
 
         list.add({
@@ -317,13 +338,17 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       }
     }
 
-    list.sort((a, b) => (a["name"] as String).compareTo(b["name"] as String));
+    list.sort(
+          (a, b) => (a["name"] as String).compareTo(b["name"] as String),
+    );
 
+    if (!mounted) return;
     setState(() {
       _allLearners = list;
       _loadingLearners = false;
     });
   }
+
 
   // -------------------- Learner / course helpers --------------------
 
@@ -1016,6 +1041,20 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                     ),
 
                     const SizedBox(height: 12),
+// ✅ First session date picker (was missing)
+                    OutlinedButton.icon(
+                      onPressed: saving ? null : () => pickDate(setModalState),
+                      icon: const Icon(Icons.event),
+                      label: Text(
+                        firstSessionDate == null
+                            ? "Pick first session date"
+                            : "First session: ${_formatDate(firstSessionDate!)}",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
 
                     // ✅ Learners button (blocked when CLOSED)
 // ✅ Learners button (blocked when CLOSED)
@@ -1319,13 +1358,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       },
     );
 
+    await sheetFuture;
+// ✅ Do not dispose controllers here (prevents "used after dispose" on rebuild/hot-reload)
 
-    await sheetFuture.whenComplete(() {
-      for (final r in scheduleRows) {
-        r.durationCtrl.dispose();
-      }
-      sessionsCountCtrl.dispose();
-    });
   }
 
 

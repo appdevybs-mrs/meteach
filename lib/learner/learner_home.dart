@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 
@@ -13,27 +15,57 @@ class LearnerHome extends StatefulWidget {
 }
 
 class _LearnerHomeState extends State<LearnerHome> {
+  // ✅ Courses is the first tab now
   int _index = 0;
+
+  Future<void> _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    if (!context.mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Order changed: Courses first
     final pages = [
-      const _LearnerDashboardLite(),
       const LearnerCoursesScreen(),
+      const _LearnerDashboardLite(),
       const LearnerProfileScreen(),
     ];
 
     return Scaffold(
       backgroundColor: UiK.appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        centerTitle: true,
+        title: Text(
+          _index == 0
+              ? 'My Courses'
+              : _index == 1
+              ? 'Learner Dashboard'
+              : 'Profile',
+          style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Logout',
+            icon: const Icon(Icons.logout, color: UiK.actionOrange),
+            onPressed: () => _logout(context),
+          ),
+        ],
+      ),
       body: WatermarkBackground(child: pages[_index]),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _index,
         selectedItemColor: UiK.actionOrange,
         unselectedItemColor: UiK.primaryBlue.withOpacity(0.65),
         onTap: (i) => setState(() => _index = i),
+        // ✅ Items order changed: Courses first
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.school_rounded), label: 'Courses'),
+          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
         ],
       ),
