@@ -21,6 +21,7 @@
 
   final GlobalKey<ScaffoldMessengerState> messengerKey =
   GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 
   Future<void> main() async {
@@ -63,6 +64,7 @@
       );
 
       return MaterialApp(
+        navigatorKey: appNavigatorKey, // ✅ ADD THIS
         scaffoldMessengerKey: messengerKey,
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
@@ -96,6 +98,7 @@
           signedOutHome: HomeShell(),
         ),
       );
+
     }
   }
 

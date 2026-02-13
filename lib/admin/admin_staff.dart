@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'admin_teacher_reminders_screen.dart';
+import '../calls/audio_call_screen.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key});
@@ -71,6 +72,27 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     });
   }
 
+  // ✅ NEW: get my caller display name from RTDB (best-effort)
+  Future<String> _getMyCallerName() async {
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) return 'Caller';
+
+    try {
+      final snap = await _db.ref('users/${me.uid}').get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+        final full = ('$first $last').trim();
+        if (full.isNotEmpty) return full;
+      }
+    } catch (_) {}
+
+    // fallback
+    final email = (me.email ?? '').trim();
+    return email.isNotEmpty ? email : 'Caller';
+  }
 
   Future<bool> _confirm({
     required String title,
@@ -165,7 +187,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
             });
           }
 
-          list.removeWhere((x) => x.toLowerCase().trim() == teacherName.toLowerCase().trim());
+          list.removeWhere((x) =>
+          x.toLowerCase().trim() == teacherName.toLowerCase().trim());
 
           if (list.isEmpty) {
             await instrRef.remove();
@@ -200,7 +223,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
   Future<void> _moveToBlocked(String uid, Staff staff) async {
     final ok = await _confirm(
       title: 'Block staff?',
-      message: 'This will move the staff member to "blocked".\n\nYou can restore later.',
+      message:
+      'This will move the staff member to "blocked".\n\nYou can restore later.',
       confirmText: 'Block',
       danger: true,
     );
@@ -311,7 +335,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
                 onPressed: () async {
                   final created = await Navigator.of(context).push<Staff?>(
                     MaterialPageRoute(
-                      builder: (_) => const StaffEditorScreen(mode: EditorMode.create),
+                      builder: (_) =>
+                      const StaffEditorScreen(mode: EditorMode.create),
                     ),
                   );
                   if (created != null) _snack('Staff created ✅');
@@ -482,8 +507,10 @@ class _StaffList extends StatefulWidget {
   final ValueChanged<StaffStatus?> onStatusFilterChanged;
   final ValueChanged<StaffRole?> onRoleFilterChanged;
 
-  final List<PopupMenuEntry<_RowAction>> Function(String uid, Staff staff) actionsBuilder;
-  final Future<void> Function(String uid, Staff staff, _RowAction action) onAction;
+  final List<PopupMenuEntry<_RowAction>> Function(String uid, Staff staff)
+  actionsBuilder;
+  final Future<void> Function(String uid, Staff staff, _RowAction action)
+  onAction;
 
   final Future<void> Function(String uid, Staff staff)? onEdit;
 
@@ -491,7 +518,8 @@ class _StaffList extends StatefulWidget {
   State<_StaffList> createState() => _StaffListState();
 }
 
-class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMixin {
+class _StaffListState extends State<_StaffList>
+    with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -562,7 +590,8 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                 );
               }
 
-              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
                 return const _LoadingList();
               }
 
@@ -586,10 +615,13 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                     u.phone1.toLowerCase().contains(s) ||
                     u.phone2.toLowerCase().contains(s);
 
-                final matchesStatus = widget.statusFilter == null ? true : (u.status == widget.statusFilter);
+                final matchesStatus = widget.statusFilter == null
+                    ? true
+                    : (u.status == widget.statusFilter);
                 final matchesRole = widget.roleFilter == null
                     ? true
-                    : u.role.value.toLowerCase().trim() == widget.roleFilter!.value.toLowerCase().trim();
+                    : u.role.value.toLowerCase().trim() ==
+                    widget.roleFilter!.value.toLowerCase().trim();
 
                 return matchesSearch && matchesStatus && matchesRole;
               }).toList();
@@ -613,17 +645,43 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                     margin: const EdgeInsets.only(bottom: 10),
                     elevation: 0,
                     color: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
                           GestureDetector(
-                            onTap: () => _openTeacherQuickActions(context, row.uid, u),
+                            onTap: () =>
+                                _openTeacherQuickActions(context, row.uid, u),
+                            onLongPress: () async {
+                              final callerName =
+                              await (context.findAncestorStateOfType<_AdminStaffScreenState>()
+                                  ?._getMyCallerName() ??
+                                  Future.value('Caller'));
+
+                              if (!context.mounted) return;
+
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AudioCallScreen(
+                                    peerUid: row.uid,
+                                    peerName: u.fullName.isEmpty ? 'User' : u.fullName,
+                                    isCaller: true,
+                                    callerName: callerName, // ✅ add this (Step 2)
+                                  ),
+                                ),
+                              );
+                            },
+
+
                             child: CircleAvatar(
-                              backgroundColor: AdminStaffScreen.appBg.withOpacity(1),
+                              backgroundColor:
+                              AdminStaffScreen.appBg.withOpacity(1),
                               child: Text(
-                                u.firstName.isNotEmpty ? u.firstName[0].toUpperCase() : 'S',
+                                u.firstName.isNotEmpty
+                                    ? u.firstName[0].toUpperCase()
+                                    : 'S',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w900,
                                   color: AdminStaffScreen.primaryBlue,
@@ -631,7 +689,6 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                               ),
                             ),
                           ),
-
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -664,8 +721,10 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                                       bg: _statusBg(u.status),
                                       fg: _statusFg(u.status),
                                     ),
-                                    if (u.phone1.trim().isNotEmpty) _Pill(label: '📞 ${u.phone1}'),
-                                    if (u.dob.trim().isNotEmpty) _Pill(label: '🎂 ${u.dob}'),
+                                    if (u.phone1.trim().isNotEmpty)
+                                      _Pill(label: '📞 ${u.phone1}'),
+                                    if (u.dob.trim().isNotEmpty)
+                                      _Pill(label: '🎂 ${u.dob}'),
                                   ],
                                 ),
                               ],
@@ -676,7 +735,8 @@ class _StaffListState extends State<_StaffList> with AutomaticKeepAliveClientMix
                             tooltip: 'Actions',
                             onSelected: (a) async {
                               if (a == _RowAction.edit) {
-                                if (widget.onEdit != null) await widget.onEdit!(row.uid, u);
+                                if (widget.onEdit != null)
+                                  await widget.onEdit!(row.uid, u);
                                 return;
                               }
                               await widget.onAction(row.uid, u, a);
@@ -735,7 +795,8 @@ class _TopBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
       ),
     );
@@ -756,7 +817,8 @@ class _Pill extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(999)),
+      decoration:
+      BoxDecoration(color: background, borderRadius: BorderRadius.circular(999)),
       child: Text(
         label,
         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: foreground),
@@ -769,7 +831,8 @@ void _snackHere(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }
 
-Future<void> _openTeacherQuickActions(BuildContext context, String teacherUid, Staff staff) async {
+Future<void> _openTeacherQuickActions(
+    BuildContext context, String teacherUid, Staff staff) async {
   // Only for teachers (safe)
   if (staff.role != StaffRole.teacher) {
     _snackHere(context, 'Only teachers have reminders.');
@@ -795,7 +858,6 @@ Future<void> _openTeacherQuickActions(BuildContext context, String teacherUid, S
                   _snackHere(context, 'No email for this teacher.');
                   return;
                 }
-                // No extra plugins: just copy email (won’t break builds)
                 await Clipboard.setData(ClipboardData(text: email));
                 _snackHere(context, 'Email copied ✅');
               },
@@ -822,6 +884,8 @@ Future<void> _openTeacherQuickActions(BuildContext context, String teacherUid, S
     },
   );
 }
+
+
 
 
 class _StateCard extends StatelessWidget {

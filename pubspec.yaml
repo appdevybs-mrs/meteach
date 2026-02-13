@@ -39,6 +39,8 @@ dependencies:
   firebase_auth: ^6.1.4
   firebase_messaging: ^16.1.1
 
+  # 📞 In-app audio call (WebRTC)
+  flutter_webrtc: ^1.3.0
 
   # 📸 Image picker (thumbnail upload)
   image_picker: ^1.1.2

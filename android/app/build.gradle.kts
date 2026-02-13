@@ -33,7 +33,10 @@ android {
 
     defaultConfig {
         applicationId = "com.dreamenglish.academy.dream_english_academy"
-        minSdk = flutter.minSdkVersion // Note: Desugaring usually requires minSdk 21+ for best results
+
+        // ✅ WebRTC requires minSdk 21+
+        minSdk = flutter.minSdkVersion
+
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -48,7 +51,7 @@ android {
 }
 
 dependencies {
-    // ✅ UPDATED from 2.0.4 to 2.1.4 to fix the Build Failure
+    // ✅ keep desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 

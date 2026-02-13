@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../main.dart'; // appNavigatorKey
+import '../calls/audio_call_screen.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -22,12 +26,15 @@ class FCMService {
   static final FCMService I = FCMService._();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _local =
+  FlutterLocalNotificationsPlugin();
+
   bool _localInited = false;
 
   static const String chMessages = 'ch_messages';
   static const String chReminders = 'ch_reminders';
   static const String chMail = 'ch_mail';
+  static const String chCalls = 'ch_calls';
   static const String chDefault = 'ch_default';
 
   /// Call once in main()
@@ -37,40 +44,46 @@ class FCMService {
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    // Token may exist BEFORE login, so we still print it.
-    final token = await _messaging.getToken();
-    print("🔥 FCM TOKEN (startup): $token");
+    // If app was opened from a SYSTEM notification (terminated state)
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial != null) {
+      _handleNotificationTapPayload(jsonEncode(initial.data));
+    }
 
-    // Try saving (may skip if not logged in yet)
+    // Token may exist BEFORE login
+    final token = await _messaging.getToken();
+    debugPrint("🔥 FCM TOKEN (startup): $token");
+
     if (token != null && token.isNotEmpty) {
       await saveTokenToDatabase(token);
     }
 
-    // Save again whenever token refreshes
     _messaging.onTokenRefresh.listen((newToken) async {
-      print("🔄 FCM TOKEN REFRESH: $newToken");
+      debugPrint("🔄 FCM TOKEN REFRESH: $newToken");
       await saveTokenToDatabase(newToken);
     });
 
+    // Foreground push
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       await _showFromRemoteMessage(message);
     });
 
+    // Background -> user tapped system notification
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      // navigation later
+      _handleNotificationTapPayload(jsonEncode(message.data));
     });
   }
 
-  /// ✅ IMPORTANT: call this after login (AuthGate)
+  /// IMPORTANT: call this after login (AuthGate)
   static Future<void> syncTokenAfterLogin() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      print('⚠️ syncTokenAfterLogin: user is null');
+      debugPrint('⚠️ syncTokenAfterLogin: user is null');
       return;
     }
 
     final token = await FirebaseMessaging.instance.getToken();
-    print('✅ syncTokenAfterLogin uid=$uid token=$token');
+    debugPrint('✅ syncTokenAfterLogin uid=$uid token=$token');
 
     if (token != null && token.isNotEmpty) {
       await saveTokenToDatabase(token);
@@ -85,11 +98,11 @@ class FCMService {
     }
   }
 
-  /// ✅ Save token under /fcm_tokens/{uid}
+  /// Save token under /fcm_tokens/{uid}
   static Future<void> saveTokenToDatabase(String token) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      print('⚠️ saveTokenToDatabase skipped: user not logged in');
+      debugPrint('⚠️ saveTokenToDatabase skipped: user not logged in');
       return;
     }
 
@@ -99,9 +112,9 @@ class FCMService {
         'platform': Platform.isAndroid ? 'android' : 'other',
         'updatedAt': ServerValue.timestamp,
       });
-      print('✅ Token saved to RTDB: fcm_tokens/$uid');
+      debugPrint('✅ Token saved to RTDB: fcm_tokens/$uid');
     } catch (e) {
-      print('❌ Token save failed: $e');
+      debugPrint('❌ Token save failed: $e');
     }
   }
 
@@ -111,10 +124,25 @@ class FCMService {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidInit);
 
-    await _local.initialize(settings: initSettings);
+    // ✅ v20+: initialize uses named params and the param name is `settings`
+    await _local.initialize(
+      settings: initSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty) return;
+        _handleNotificationTapPayload(payload);
+      },
+    );
 
-    final androidPlugin =
-    _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    // If app was opened from a LOCAL notification (terminated state)
+    final launch = await _local.getNotificationAppLaunchDetails();
+    final payload = launch?.notificationResponse?.payload;
+    if (payload != null && payload.isNotEmpty) {
+      Future.microtask(() => _handleNotificationTapPayload(payload));
+    }
+
+    final androidPlugin = _local.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
 
     if (androidPlugin != null) {
       await androidPlugin.createNotificationChannel(
@@ -143,6 +171,14 @@ class FCMService {
       );
       await androidPlugin.createNotificationChannel(
         const AndroidNotificationChannel(
+          chCalls,
+          'Calls',
+          description: 'Incoming call notifications',
+          importance: Importance.max,
+        ),
+      );
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
           chDefault,
           'General',
           description: 'General notifications',
@@ -155,10 +191,12 @@ class FCMService {
   }
 
   Future<void> _showFromRemoteMessage(RemoteMessage message) async {
-    final data = message.data;
+    final data = Map<String, dynamic>.from(message.data);
     final type = (data['type'] ?? '').toString().toLowerCase();
 
-    final title = (data['title'] ?? message.notification?.title ?? 'Notification').toString();
+    final title =
+    (data['title'] ?? message.notification?.title ?? 'Notification')
+        .toString();
     final body = (data['body'] ?? message.notification?.body ?? '').toString();
 
     String channelId = chDefault;
@@ -173,8 +211,12 @@ class FCMService {
     } else if (type == 'mail' || type == 'email') {
       channelId = chMail;
       channelName = 'Mail';
+    } else if (type == 'incoming_call') {
+      channelId = chCalls;
+      channelName = 'Calls';
     }
 
+    // ✅ v20+: show uses named params
     await _local.show(
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title: title,
@@ -185,9 +227,42 @@ class FCMService {
           channelName,
           importance: Importance.max,
           priority: Priority.high,
+          category: type == 'incoming_call'
+              ? AndroidNotificationCategory.call
+              : null,
+          fullScreenIntent: type == 'incoming_call',
         ),
       ),
-      payload: data.isEmpty ? null : data.toString(),
+      payload: data.isEmpty ? null : jsonEncode(data),
     );
   }
+}
+
+void _handleNotificationTapPayload(String payload) {
+  Map<String, dynamic> data;
+  try {
+    data = jsonDecode(payload) as Map<String, dynamic>;
+  } catch (_) {
+    return;
+  }
+
+  final type = (data['type'] ?? '').toString().toLowerCase();
+  if (type != 'incoming_call') return;
+
+  final callId = (data['callId'] ?? '').toString().trim();
+  final peerUid = (data['peerUid'] ?? '').toString().trim();
+  final peerName = (data['peerName'] ?? 'Caller').toString().trim();
+
+  if (callId.isEmpty) return;
+
+  appNavigatorKey.currentState?.push(
+    MaterialPageRoute(
+      builder: (_) => AudioCallScreen(
+        peerUid: peerUid,
+        peerName: peerName,
+        isCaller: false,
+        incomingCallId: callId,
+      ),
+    ),
+  );
 }
