@@ -1,8 +1,16 @@
+// learner_course_detail_screen.dart
+// ✅ Drop-in replacement for your current LearnerCourseDetailScreen
+// What’s added (without breaking your working logic):
+// - NEW "Payment" tab (smart + clean)
+// - Red banner when payment is due / due soon
+// - Uses existing DB structure: users/<uid>/courses/<courseKey>/payment_summary + attendance count
+// - Keeps your Attendance + Progress logic intact
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'learner_homework_screen.dart';
 
+import 'learner_homework_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 
@@ -43,7 +51,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    // ✅ NEW: 3 tabs now (Payment + Attendance + Progress)
+    _tab = TabController(length: 3, vsync: this);
     _load();
   }
 
@@ -53,6 +62,23 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     super.dispose();
   }
 
+  // -------------------- Safe helpers --------------------
+
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static String _fmtDateFromMs(dynamic ms) {
+    final t = _asInt(ms);
+    if (t <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(t);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
   Map<String, dynamic> get _cls =>
       (_course['class'] is Map) ? Map<String, dynamic>.from(_course['class'] as Map) : <String, dynamic>{};
 
@@ -60,6 +86,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   String get _courseCode => (_course['course_code'] ?? '').toString();
   String get _classId => (_cls['class_id'] ?? '').toString();
   String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString(); // syllabi key
+
+  DatabaseReference get _paymentSummaryRef =>
+      _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
+
+  // -------------------- Load (keeps your working logic) --------------------
 
   Future<void> _load() async {
     setState(() {
@@ -76,7 +107,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
 
-      // Reload course live (so it reflects new attendance)
+      // Reload course live (so it reflects new attendance/payment_summary)
       final snap = await _usersRef.child(_uid).child('courses').child(widget.courseKey).get();
       if (!snap.exists || snap.value == null || snap.value is! Map) throw Exception('Course not found.');
       _course = Map<String, dynamic>.from(snap.value as Map);
@@ -92,6 +123,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           final sessionId = entry.key.toString();
           if (entry.value is! Map) continue;
           final rec = Map<String, dynamic>.from(entry.value as Map);
+
           final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
           final taughtSessionId = (taught['sessionId'] ?? '').toString().trim();
           if (taughtSessionId.isNotEmpty) covered.add(taughtSessionId);
@@ -216,12 +248,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             onPressed: _busy ? null : _load,
           ),
         ],
-
         bottom: TabBar(
           controller: _tab,
           labelColor: UiK.primaryBlue,
           indicatorColor: UiK.actionOrange,
           tabs: const [
+            Tab(icon: Icon(Icons.payments_rounded), text: 'Payment'),
             Tab(icon: Icon(Icons.how_to_reg_rounded), text: 'Attendance'),
             Tab(icon: Icon(Icons.insights_rounded), text: 'Progress'),
           ],
@@ -244,6 +276,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             : TabBarView(
           controller: _tab,
           children: [
+            _paymentTab(sessionsDone: total), // ✅ NEW
             _attendanceTab(attPct: attPct, present: present, total: total),
             _progressTab(progPct: progPct, covered: covered, totalS: totalS),
           ],
@@ -251,6 +284,170 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       ),
     );
   }
+
+  // -------------------- PAYMENT TAB (NEW) --------------------
+
+  Widget _paymentTab({required int sessionsDone}) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: UiK.cardShape(),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Course', style: UiK.titleText()),
+                const SizedBox(height: 8),
+                Text(
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
+                  style: UiK.subtleText(),
+                ),
+                const SizedBox(height: 12),
+
+                // ✅ Live payment summary (from users/<uid>/courses/<courseKey>/payment_summary)
+                StreamBuilder<DatabaseEvent>(
+                  stream: _paymentSummaryRef.onValue,
+                  builder: (context, snap) {
+                    final raw = snap.data?.snapshot.value;
+                    final sum = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+
+                    final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
+                    final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+                    final totalPaid = _asInt(sum['totalPaid']);
+                    final lastPaymentAt = _fmtDateFromMs(sum['lastPaymentAt']); // might be ServerValue.timestamp
+
+                    // ✅ Simple & robust reminder logic:
+                    // - if remindBeforeSession exists -> warn when sessionsDone >= sessionsPaidTotal - remindBeforeSession
+                    // - else -> warn when sessionsDone >= sessionsPaidTotal - 1
+                    final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
+
+                    final bool hasPayments = sessionsPaidTotal > 0;
+                    final bool dueSoon = hasPayments && sessionsDone >= (sessionsPaidTotal - warnBefore);
+                    final bool overdue = hasPayments && sessionsDone >= sessionsPaidTotal;
+
+                    final int left = hasPayments ? (sessionsPaidTotal - sessionsDone) : 0;
+                    final int leftSafe = left < 0 ? 0 : left;
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
+
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _kpi(
+                              icon: Icons.confirmation_number_rounded,
+                              label: 'Sessions used',
+                              value: '$sessionsDone',
+                            ),
+                            _kpi(
+                              icon: Icons.event_available_rounded,
+                              label: 'Paid sessions',
+                              value: hasPayments ? '$sessionsPaidTotal' : '—',
+                            ),
+                            _kpi(
+                              icon: Icons.timelapse_rounded,
+                              label: 'Sessions left',
+                              value: hasPayments ? '$leftSafe' : '—',
+                            ),
+                            _kpi(
+                              icon: Icons.payments_rounded,
+                              label: 'Total paid',
+                              value: hasPayments ? '$totalPaid' : '—',
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                            color: UiK.primaryBlue.withOpacity(0.04),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                                  SizedBox(width: 8),
+                                  Text('Recommendation', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                !hasPayments
+                                    ? 'Your payment info is not available yet. If you already paid, contact the academy to sync it.'
+                                    : overdue
+                                    ? 'Payment is due now. Please contact the academy to renew your sessions.'
+                                    : dueSoon
+                                    ? 'You are close to the last paid session. It’s a good time to renew soon.'
+                                    : 'Everything looks good. Keep attending and track your progress.',
+                                style: UiK.subtleText(),
+                              ),
+                              if (lastPaymentAt.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text('Last payment update: $lastPaymentAt', style: UiK.subtleText()),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dueBanner({required bool overdue, required int left}) {
+    final title = overdue ? 'Payment is due' : 'Payment due soon';
+    final msg = overdue
+        ? 'You have reached the last paid session. Please renew your payment.'
+        : 'You have $left session(s) left before payment is due.';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.red.withOpacity(0.35)),
+        color: Colors.red.withOpacity(0.08),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_rounded, color: Colors.red),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.mainText)),
+                const SizedBox(height: 4),
+                Text(msg, style: TextStyle(color: UiK.mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // -------------------- ATTENDANCE TAB (your logic kept) --------------------
 
   Widget _attendanceTab({required int attPct, required int present, required int total}) {
     return ListView(
@@ -267,8 +464,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               children: [
                 Text('Course Summary', style: UiK.titleText()),
                 const SizedBox(height: 8),
-                Text('Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
-                    style: UiK.subtleText()),
+                Text(
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
+                  style: UiK.subtleText(),
+                ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
@@ -283,13 +482,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           ),
         ),
         const SizedBox(height: 14),
-
         if (_attendance.isEmpty)
           const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
-              child: Text('No attendance records yet.',
-                  style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800)),
+              child: Text(
+                'No attendance records yet.',
+                style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800),
+              ),
             ),
           )
         else
@@ -303,16 +503,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final status = (a['status'] ?? '').toString().toLowerCase();
     final rate = (a['successRate'] ?? '').toString();
 
-    final taught = (a['taught'] is Map)
-        ? Map<String, dynamic>.from(a['taught'] as Map)
-        : <String, dynamic>{};
+    final taught = (a['taught'] is Map) ? Map<String, dynamic>.from(a['taught'] as Map) : <String, dynamic>{};
     final taughtTitle = (taught['title'] ?? '').toString();
     final unitTitle = (taught['unitTitle'] ?? '').toString();
 
     // ✅ Homework (safe if missing)
-    final hw = (a['homework'] is Map)
-        ? Map<String, dynamic>.from(a['homework'] as Map)
-        : <String, dynamic>{};
+    final hw = (a['homework'] is Map) ? Map<String, dynamic>.from(a['homework'] as Map) : <String, dynamic>{};
     final hwText = (hw['text'] ?? '').toString().trim();
     final hwDue = (hw['dueDate'] ?? '').toString().trim();
 
@@ -330,8 +526,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           children: [
             CircleAvatar(
               backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red).withOpacity(0.08),
-              child: Icon(isPresent ? Icons.check_rounded : Icons.close_rounded,
-                  color: isPresent ? UiK.primaryBlue : Colors.red),
+              child: Icon(isPresent ? Icons.check_rounded : Icons.close_rounded, color: isPresent ? UiK.primaryBlue : Colors.red),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -344,7 +539,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     'Status: ${isPresent ? 'Present' : 'Absent'}${rate.isEmpty ? '' : ' • Success: $rate%'}',
                     style: UiK.subtleText(),
                   ),
-
                   if (taughtTitle.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text('Taught: $taughtTitle', style: UiK.subtleText()),
@@ -398,6 +592,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
+  // -------------------- PROGRESS TAB (your logic kept) --------------------
 
   Widget _progressTab({required int progPct, required int covered, required int totalS}) {
     return ListView(
@@ -432,13 +627,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           ),
         ),
         const SizedBox(height: 14),
-
         if (_syllabiFlat.isEmpty)
           const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
-              child: Text('Syllabus not found for this course.',
-                  style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800)),
+              child: Text(
+                'Syllabus not found for this course.',
+                style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800),
+              ),
             ),
           )
         else
@@ -465,8 +661,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: (covered ? UiK.primaryBlue : UiK.uiBorder).withOpacity(0.10),
-          child: Icon(covered ? Icons.check_circle_rounded : Icons.lock_outline_rounded,
-              color: covered ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.55)),
+          child: Icon(
+            covered ? Icons.check_circle_rounded : Icons.lock_outline_rounded,
+            color: covered ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.55),
+          ),
         ),
         title: Text(
           title.isEmpty ? 'Session' : title,
@@ -483,6 +681,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       ),
     );
   }
+
+  // -------------------- UI helper --------------------
 
   Widget _kpi({required IconData icon, required String label, required String value}) {
     return Container(
