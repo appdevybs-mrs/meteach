@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'admin_payments_log.dart';
 import 'payment_dialog_shared.dart';
+import 'admin_payments.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key});
@@ -22,8 +22,7 @@ class AdminLearnersScreen extends StatefulWidget {
   State<AdminLearnersScreen> createState() => _AdminLearnersScreenState();
 }
 
-class _AdminLearnersScreenState extends State<AdminLearnersScreen>
-    with SingleTickerProviderStateMixin {
+class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
   final _db = FirebaseDatabase.instance;
@@ -236,12 +235,13 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
           ],
         ),
         actions: [
+          // ✅ changed: now goes to Payments screen (not Payments Log)
           IconButton(
-            tooltip: 'Payments log',
+            tooltip: 'Payments',
             icon: const Icon(Icons.payments_rounded, color: AdminLearnersScreen.primaryBlue),
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminPaymentsLogScreen()),
+                MaterialPageRoute(builder: (_) => AdminPaymentsScreen()),
               );
             },
           ),
@@ -252,8 +252,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
               if (!isUsersTab) return const SizedBox.shrink();
               return IconButton(
                 tooltip: 'Add learner',
-                icon: const Icon(Icons.person_add_alt_1_rounded,
-                    color: AdminLearnersScreen.actionOrange),
+                icon: const Icon(Icons.person_add_alt_1_rounded, color: AdminLearnersScreen.actionOrange),
                 onPressed: () async {
                   final created = await Navigator.of(context).push<Learner?>(
                     MaterialPageRoute(
@@ -427,24 +426,24 @@ class _LearnersList extends StatefulWidget {
 class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveClientMixin {
   String? _expandedUid;
 
+  final _db = FirebaseDatabase.instance;
+
+  static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
 
   // --- Due helpers (UI only) ---
-  static const Color _dueBg = Color(0xFFFFF3D6); // soft yellow
-  static const Color _dueBorder = Color(0xFFF0C36D);
-
   bool _isDue({
     required int sessionsPaidTotal,
     required int sessionsDone,
   }) {
-    // same logic you already used for reminder:
-    // "due" when learner is near last paid session
+    // unchanged logic (same as reminder logic)
     return sessionsPaidTotal > 0 && sessionsDone >= (sessionsPaidTotal - 1);
   }
 
-  // Watches users/{uid}/courses and checks if ANY course is due.
-  Widget _wrapLearnerCardDueUI({
+  // ✅ CHANGE #1: we no longer paint the whole learner card yellow.
+  // We only compute `due` here and pass it to the card builder (so the avatar can become red).
+  Widget _withLearnerDueFlag({
     required String uid,
-    required Widget child,
+    required Widget Function(bool due) builder,
   }) {
     final coursesRef = _db.ref('users/$uid/courses');
 
@@ -466,32 +465,16 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
 
             final sum = courseMap['payment_summary'];
             final sumMap = sum is Map ? sum.map((k, vv) => MapEntry(k.toString(), vv)) : <String, dynamic>{};
-
             final sp = _LearnerExpandedTabsState._asInt(sumMap['sessionsPaidTotal']);
 
-            if (_isDue(sessionsPaidTotal: sp, sessionsDone: sessionsDone)) {
-              due = true;
-            }
+            if (_isDue(sessionsPaidTotal: sp, sessionsDone: sessionsDone)) due = true;
           });
         }
 
-        // Add border always, yellow bg only if due
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          decoration: BoxDecoration(
-            color: due ? _dueBg : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: child,
-        );
+        return builder(due);
       },
     );
   }
-
-
-  final _db = FirebaseDatabase.instance;
-
-  static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
 
   @override
   bool get wantKeepAlive => true;
@@ -593,131 +576,163 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                   final l = row.learner;
                   final isExpanded = _expandedUid == row.uid;
 
-                  return _wrapLearnerCardDueUI(
+                  return _withLearnerDueFlag(
                     uid: row.uid,
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AdminLearnersScreen.uiBorders),
-                      ),
-                      child: Column(
-                        children: [
-                          InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () {
-                              setState(() {
-                                _expandedUid = isExpanded ? null : row.uid;
-                              });
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundColor: AdminLearnersScreen.appBg.withOpacity(1),
-                                    child: Text(
-                                      l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: AdminLearnersScreen.primaryBlue,
+                    builder: (due) {
+                      // ✅ CHANGE #2: compact card layout (same data, same logic)
+                      final avatarBg = due ? Colors.red : AdminLearnersScreen.appBg;
+                      final avatarFg = due ? Colors.white : AdminLearnersScreen.primaryBlue;
+
+                      String compactLine2() {
+                        final parts = <String>[];
+                        if (l.phone1.trim().isNotEmpty) parts.add('📞 ${l.phone1}');
+                        if (l.dob.trim().isNotEmpty) parts.add('🎂 ${l.dob}');
+                        if (l.serial.trim().isNotEmpty) parts.add(l.serial);
+                        return parts.join('  •  ');
+                      }
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AdminLearnersScreen.uiBorders),
+                        ),
+                        child: Column(
+                          children: [
+                            InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                setState(() {
+                                  _expandedUid = isExpanded ? null : row.uid;
+                                });
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: avatarBg,
+                                      child: Text(
+                                        l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: avatarFg,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          l.fullName.isEmpty ? '(No name)' : l.fullName,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: AdminLearnersScreen.primaryBlue,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          // Line 1: Name + Email + Status (same line)
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  l.fullName.isEmpty ? '(No name)' : l.fullName,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                    color: AdminLearnersScreen.primaryBlue,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              if (l.email.trim().isNotEmpty)
+                                                Expanded(
+                                                  child: Text(
+                                                    l.email,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Colors.black.withOpacity(0.6),
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    textAlign: TextAlign.right,
+                                                  ),
+                                                ),
+                                              const SizedBox(width: 10),
+                                              _Pill(
+                                                label: l.status.label,
+                                                bg: _statusBg(l.status),
+                                                fg: _statusFg(l.status),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          l.email.isEmpty ? '(No email)' : l.email,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.black.withOpacity(0.55),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: [
-                                            _Pill(
-                                              label: l.status.label,
-                                              bg: _statusBg(l.status),
-                                              fg: _statusFg(l.status),
+                                          const SizedBox(height: 6),
+                                          // Line 2: phone + dob + serial
+                                          if (compactLine2().isNotEmpty)
+                                            Text(
+                                              compactLine2(),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black.withOpacity(0.65),
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                            if (l.serial.trim().isNotEmpty) _Pill(label: l.serial),
-                                            if (l.phone1.trim().isNotEmpty) _Pill(label: '📞 ${l.phone1}'),
-                                            if (l.dob.trim().isNotEmpty) _Pill(label: '🎂 ${l.dob}'),
-                                          ],
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                                    color: AdminLearnersScreen.primaryBlue.withOpacity(0.7),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  PopupMenuButton<_RowAction>(
-                                    tooltip: 'Actions',
-                                    onSelected: (a) async {
-                                      if (a == _RowAction.edit) {
-                                        if (widget.onEdit != null) {
-                                          await widget.onEdit!(row.uid, l);
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                      color: AdminLearnersScreen.primaryBlue.withOpacity(0.7),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    PopupMenuButton<_RowAction>(
+                                      tooltip: 'Actions',
+                                      onSelected: (a) async {
+                                        if (a == _RowAction.edit) {
+                                          if (widget.onEdit != null) {
+                                            await widget.onEdit!(row.uid, l);
+                                          }
+                                          return;
                                         }
-                                        return;
-                                      }
-                                      await widget.onAction(row.uid, l, a);
-                                    },
-                                    itemBuilder: (_) {
-                                      final items = <PopupMenuEntry<_RowAction>>[];
-                                      if (widget.onEdit != null) {
-                                        items.add(
-                                          const PopupMenuItem(
-                                            value: _RowAction.edit,
-                                            child: Text('Edit'),
-                                          ),
-                                        );
-                                        items.add(const PopupMenuDivider());
-                                      }
-                                      items.addAll(widget.actionsBuilder(row.uid, l));
-                                      return items;
-                                    },
-                                  ),
-                                ],
+                                        await widget.onAction(row.uid, l, a);
+                                      },
+                                      itemBuilder: (_) {
+                                        final items = <PopupMenuEntry<_RowAction>>[];
+                                        if (widget.onEdit != null) {
+                                          items.add(
+                                            const PopupMenuItem(
+                                              value: _RowAction.edit,
+                                              child: Text('Edit'),
+                                            ),
+                                          );
+                                          items.add(const PopupMenuDivider());
+                                        }
+                                        items.addAll(widget.actionsBuilder(row.uid, l));
+                                        return items;
+                                      },
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          AnimatedCrossFade(
-                            firstChild: const SizedBox.shrink(),
-                            secondChild: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                              child: _LearnerExpandedTabs(
-                                uid: row.uid,
-                                db: _db,
-                                methods: _methods,
+                            AnimatedCrossFade(
+                              firstChild: const SizedBox.shrink(),
+                              secondChild: Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                child: _LearnerExpandedTabs(
+                                  uid: row.uid,
+                                  db: _db,
+                                  methods: _methods,
+                                ),
                               ),
+                              crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                              duration: const Duration(milliseconds: 200),
                             ),
-                            crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                            duration: const Duration(milliseconds: 200),
-                          ),
-                        ],
-                      ),
-                    ),
+                          ],
+                        ),
+                      );
+                    },
                   );
-
                 },
               );
             },
@@ -1047,8 +1062,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         if (userCoursesVal is Map) {
           userCoursesVal.forEach((k, v) {
             if (k == null) return;
-            // NOTE: existing data structure uses course_1 keys. Here we don't auto-convert.
-            // Keeping your existing behavior.
             _selectedCourseIds.add(k.toString());
           });
         }
@@ -1943,6 +1956,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     );
   }
 
+  static String _fmtDateMs(int ms) {
+    if (ms <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
   Widget _paymentPanel(BuildContext context) {
     final courseKey = _selectedCourseKey!;
     final courseNode = (_userCourses[courseKey] ?? {}) as Map;
@@ -1950,6 +1970,26 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     if (courseId.trim().isEmpty) {
       return const _MiniState(text: 'This course has no "id" saved on learner node.');
+    }
+
+    // Build attendance date list (yyyy-mm-dd strings) to compute "sessions left for that fee"
+    final attendance = courseNode['attendance'];
+    final attendanceDates = <String>[];
+    if (attendance is Map) {
+      attendance.forEach((_, val) {
+        if (val is Map) {
+          final m = val.map((k, v) => MapEntry(k.toString(), v));
+          final d = (m['date'] ?? '').toString().trim();
+          if (d.isNotEmpty) attendanceDates.add(d);
+        }
+      });
+    }
+    attendanceDates.sort();
+
+    int usedSince(String startDate) {
+      if (startDate.trim().isEmpty) return 0;
+      // yyyy-mm-dd compares lexicographically correctly
+      return attendanceDates.where((d) => d.compareTo(startDate) >= 0).length;
     }
 
     return FutureBuilder<DataSnapshot>(
@@ -1963,15 +2003,12 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         }
 
         final courseMapRaw = snap.data!.value;
-        final courseMap = courseMapRaw is Map
-            ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v))
-            : <String, dynamic>{};
+        final courseMap = courseMapRaw is Map ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
         final totalSessions = _parseTotalSessions(courseMap['duration']?.toString() ?? '');
         final pricePerLevel = _asInt(courseMap['price_per_level']);
         final pricePerMonth = _asInt(courseMap['price_per_month']);
 
-        final attendance = courseNode['attendance'];
         final sessionsDone = attendance is Map ? attendance.length : 0;
 
         return FutureBuilder<DataSnapshot>(
@@ -1980,7 +2017,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
             final sumRaw = sumSnap.data?.value;
             final sum = sumRaw is Map ? sumRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
-            // keep logic (DO NOT REMOVE) – only remove UI display
+            // keep logic (DO NOT REMOVE) – only UI changes
             final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
             final remindBeforeSession = _asInt(sum['remindBeforeSession']);
 
@@ -1988,12 +2025,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
             final sessionsLabel = totalSessions > 0 ? '$sessionsDone / $totalSessions' : '$sessionsDone';
 
             return _miniCard(
-              bg: due ? const Color(0xFFFFF3D6) : Colors.white,
-              borderColor: due ? const Color(0xFFF0C36D) : AdminLearnersScreen.uiBorders,
+              bg: Colors.white,
+              borderColor: AdminLearnersScreen.uiBorders,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1) Session xxx/outxxx + level fee/month fee
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -2003,10 +2039,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                       if (pricePerLevel > 0) _miniPill('Level fee: $pricePerLevel'),
                     ],
                   ),
-
                   const SizedBox(height: 10),
 
-                  // 2) Add payment button
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -2031,7 +2065,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
                   const SizedBox(height: 12),
 
-                  // 3) Summary of payment (WITHOUT showing total paid sessions or total paid income)
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -2046,8 +2079,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                         const Text('Payment summary', style: TextStyle(fontWeight: FontWeight.w900)),
                         const SizedBox(height: 6),
                         Text(
-                          'Paid sessions cover until session '
-                              '${remindBeforeSession > 0 ? remindBeforeSession : sessionsPaidTotal}.',
+                          'Reminder before session: ${remindBeforeSession > 0 ? remindBeforeSession : sessionsPaidTotal}.',
                           style: TextStyle(
                             color: Colors.black.withOpacity(0.75),
                             fontWeight: FontWeight.w700,
@@ -2066,7 +2098,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
                   const SizedBox(height: 12),
 
-                  // History (keep as is)
+                  // ✅ CHANGE #3 (payments table layout)
                   const Text('History', style: TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   SizedBox(
@@ -2096,46 +2128,48 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                           itemCount: items.length,
                           itemBuilder: (context, i) {
                             final p = items[i];
-                            final idx = i + 1;
                             final fee = _asInt(p['amount']);
                             final sp = _asInt(p['sessionsPaid']);
                             final method = (p['method'] ?? '').toString();
                             final notes = (p['notes'] ?? '').toString();
+
+                            final paidAt = _fmtDateMs(_asInt(p['paidAt']));
+                            final startDate = (p['startDate'] ?? '').toString().trim();
+
+                            final used = usedSince(startDate);
+                            final left = (sp - used) < 0 ? 0 : (sp - used);
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: _miniCard(
                                 bg: Colors.white,
                                 borderColor: AdminLearnersScreen.uiBorders,
-                                child: Row(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _miniPill('#$idx'),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Fee: $fee — Sessions: $sp',
-                                            style: const TextStyle(fontWeight: FontWeight.w900),
-                                          ),
-                                          if (method.trim().isNotEmpty || notes.trim().isNotEmpty) ...[
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              [if (method.trim().isNotEmpty) method, if (notes.trim().isNotEmpty) notes]
-                                                  .join(' • '),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: Colors.black.withOpacity(0.65),
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        _miniPill('Fee: $fee'),
+                                        _miniPill('Paid: ${paidAt.isEmpty ? '-' : paidAt}'),
+                                        _miniPill('Start: ${startDate.isEmpty ? '-' : startDate}'),
+                                        _miniPill('Left: $left'),
+                                      ],
                                     ),
+                                    if (method.trim().isNotEmpty || notes.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        [if (method.trim().isNotEmpty) method, if (notes.trim().isNotEmpty) notes].join(' • '),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.black.withOpacity(0.65),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -2153,9 +2187,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       },
     );
   }
-
-
-
 
   // ---------------- ATTENDANCE TAB ----------------
 
@@ -2179,7 +2210,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       });
     }
 
-    // sort by date
     items.sort((a, b) => (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()));
 
     return FutureBuilder<DataSnapshot>(
@@ -2217,20 +2247,26 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                 final taughtTitle = taught == null ? '' : (taught['title'] ?? '').toString();
 
                 Color bar;
+                Color tint;
                 if (status == 'present') {
                   bar = const Color(0xFF157A3D);
+                  tint = const Color(0xFF157A3D).withOpacity(0.08);
                 } else if (status == 'absent') {
                   bar = Colors.red;
+                  tint = Colors.red.withOpacity(0.08);
                 } else {
                   bar = const Color(0xFFF98D28);
+                  tint = const Color(0xFFF98D28).withOpacity(0.10);
                 }
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: Card(
-                    elevation: 0,
-                    color: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: tint, // ✅ CHANGE #3b: add colour tint for present/absent
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AdminLearnersScreen.uiBorders),
+                    ),
                     child: Row(
                       children: [
                         Container(
@@ -2312,7 +2348,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     );
   }
 
-
   static Widget _miniPill(String t) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -2362,4 +2397,3 @@ class _MiniState extends StatelessWidget {
     );
   }
 }
-
