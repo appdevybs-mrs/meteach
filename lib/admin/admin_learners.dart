@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'admin_payments_log.dart';
+import 'payment_dialog_shared.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key});
@@ -29,12 +31,10 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   late final Stream<DatabaseEvent> _deletedStream;
   late final Stream<DatabaseEvent> _blockedStream;
 
-  // Nodes (as you requested)
-// Nodes (match your DB)
-  static const _usersPath   = 'users';
-  static const _deletedPath = 'users_deleted';   // <-- was 'deleted'
-  static const _blockedPath = 'users_blocked';   // <-- only if this is your real node name
-
+  // Nodes (match your DB)
+  static const _usersPath = 'users';
+  static const _deletedPath = 'users_deleted';
+  static const _blockedPath = 'users_blocked';
 
   // UI state
   String _search = '';
@@ -49,8 +49,8 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     super.initState();
     _tab = TabController(length: 3, vsync: this);
 
-    // ✅ Make them broadcast ONCE here
-    _usersStream   = _usersRef.onValue.asBroadcastStream();
+    // broadcast streams once
+    _usersStream = _usersRef.onValue.asBroadcastStream();
     _deletedStream = _deletedRef.onValue.asBroadcastStream();
     _blockedStream = _blockedRef.onValue.asBroadcastStream();
   }
@@ -116,8 +116,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   Future<void> _moveToDeleted(String uid, Learner learner) async {
     final ok = await _confirm(
       title: 'Delete learner?',
-      message:
-      'This will move the learner to "deleted".\n\nYou can restore later.',
+      message: 'This will move the learner to "deleted".\n\nYou can restore later.',
       confirmText: 'Move to deleted',
       danger: true,
     );
@@ -138,8 +137,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   Future<void> _moveToBlocked(String uid, Learner learner) async {
     final ok = await _confirm(
       title: 'Block learner?',
-      message:
-      'This will move the learner to "blocked".\n\nYou can restore later.',
+      message: 'This will move the learner to "blocked".\n\nYou can restore later.',
       confirmText: 'Block',
       danger: true,
     );
@@ -229,8 +227,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,
-          unselectedLabelColor:
-          AdminLearnersScreen.primaryBlue.withOpacity(0.55),
+          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withOpacity(0.55),
           indicatorColor: AdminLearnersScreen.primaryBlue,
           tabs: const [
             Tab(text: 'Users'),
@@ -239,6 +236,15 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Payments log',
+            icon: const Icon(Icons.payments_rounded, color: AdminLearnersScreen.primaryBlue),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminPaymentsLogScreen()),
+              );
+            },
+          ),
           AnimatedBuilder(
             animation: _tab,
             builder: (_, __) {
@@ -268,7 +274,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
         children: [
           _LearnersList(
             titleHint: 'Search learners…',
-            stream: _usersStream, // ✅ use the stream created in initState
+            stream: _usersStream,
             search: _search,
             statusFilter: _statusFilter,
             onSearchChanged: (v) => setState(() => _search = v),
@@ -322,10 +328,9 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
               }
             },
           ),
-
           _LearnersList(
             titleHint: 'Search deleted…',
-            stream: _deletedStream, // ✅
+            stream: _deletedStream,
             search: _search,
             statusFilter: null,
             onSearchChanged: (v) => setState(() => _search = v),
@@ -351,10 +356,9 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
               }
             },
           ),
-
           _LearnersList(
             titleHint: 'Search blocked…',
-            stream: _blockedStream, // ✅
+            stream: _blockedStream,
             search: _search,
             statusFilter: null,
             onSearchChanged: (v) => setState(() => _search = v),
@@ -382,7 +386,6 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
           ),
         ],
       ),
-
     );
   }
 }
@@ -411,11 +414,9 @@ class _LearnersList extends StatefulWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<LearnerStatus?> onStatusFilterChanged;
 
-  final List<PopupMenuEntry<_RowAction>> Function(String uid, Learner learner)
-  actionsBuilder;
+  final List<PopupMenuEntry<_RowAction>> Function(String uid, Learner learner) actionsBuilder;
 
-  final Future<void> Function(String uid, Learner learner, _RowAction action)
-  onAction;
+  final Future<void> Function(String uid, Learner learner, _RowAction action) onAction;
 
   final Future<void> Function(String uid, Learner learner)? onEdit;
 
@@ -423,14 +424,81 @@ class _LearnersList extends StatefulWidget {
   State<_LearnersList> createState() => _LearnersListState();
 }
 
-class _LearnersListState extends State<_LearnersList>
-    with AutomaticKeepAliveClientMixin {
+class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveClientMixin {
+  String? _expandedUid;
+
+
+  // --- Due helpers (UI only) ---
+  static const Color _dueBg = Color(0xFFFFF3D6); // soft yellow
+  static const Color _dueBorder = Color(0xFFF0C36D);
+
+  bool _isDue({
+    required int sessionsPaidTotal,
+    required int sessionsDone,
+  }) {
+    // same logic you already used for reminder:
+    // "due" when learner is near last paid session
+    return sessionsPaidTotal > 0 && sessionsDone >= (sessionsPaidTotal - 1);
+  }
+
+  // Watches users/{uid}/courses and checks if ANY course is due.
+  Widget _wrapLearnerCardDueUI({
+    required String uid,
+    required Widget child,
+  }) {
+    final coursesRef = _db.ref('users/$uid/courses');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: coursesRef.onValue,
+      builder: (context, snap) {
+        bool due = false;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          v.forEach((courseKey, courseVal) {
+            if (courseKey == null || courseVal == null) return;
+            if (courseVal is! Map) return;
+
+            final courseMap = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
+
+            final attendance = courseMap['attendance'];
+            final sessionsDone = attendance is Map ? attendance.length : 0;
+
+            final sum = courseMap['payment_summary'];
+            final sumMap = sum is Map ? sum.map((k, vv) => MapEntry(k.toString(), vv)) : <String, dynamic>{};
+
+            final sp = _LearnerExpandedTabsState._asInt(sumMap['sessionsPaidTotal']);
+
+            if (_isDue(sessionsPaidTotal: sp, sessionsDone: sessionsDone)) {
+              due = true;
+            }
+          });
+        }
+
+        // Add border always, yellow bg only if due
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: due ? _dueBg : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+
+  final _db = FirebaseDatabase.instance;
+
+  static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
+
   @override
   bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // IMPORTANT for keep-alive
+    super.build(context);
 
     return Column(
       children: [
@@ -438,15 +506,7 @@ class _LearnersListState extends State<_LearnersList>
           hint: widget.titleHint,
           value: widget.search,
           onChanged: widget.onSearchChanged,
-          filters: widget.statusFilter == null
-              ? const []
-              : [
-            _FilterChipItem(
-              label: 'All',
-              selected: widget.statusFilter == null,
-              onTap: () => widget.onStatusFilterChanged(null),
-            ),
-          ],
+          filters: widget.statusFilter == null ? const [] : const [],
         ),
         if (widget.statusFilter != null)
           Padding(
@@ -487,9 +547,7 @@ class _LearnersListState extends State<_LearnersList>
                 );
               }
 
-              // ✅ Important: only show loading the very first time
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  !snapshot.hasData) {
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return const _LoadingList();
               }
 
@@ -514,9 +572,7 @@ class _LearnersListState extends State<_LearnersList>
                     l.phone1.toLowerCase().contains(s) ||
                     l.phone2.toLowerCase().contains(s);
 
-                final matchesStatus = widget.statusFilter == null
-                    ? true
-                    : (l.status == widget.statusFilter);
+                final matchesStatus = widget.statusFilter == null ? true : (l.status == widget.statusFilter);
 
                 return matchesSearch && matchesStatus;
               }).toList();
@@ -535,104 +591,133 @@ class _LearnersListState extends State<_LearnersList>
                 itemBuilder: (context, i) {
                   final row = filtered[i];
                   final l = row.learner;
+                  final isExpanded = _expandedUid == row.uid;
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    elevation: 0,
-                    color: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
+                  return _wrapLearnerCardDueUI(
+                    uid: row.uid,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AdminLearnersScreen.uiBorders),
+                      ),
+                      child: Column(
                         children: [
-                          CircleAvatar(
-                            backgroundColor:
-                            AdminLearnersScreen.appBg.withOpacity(1),
-                            child: Text(
-                              l.firstName.isNotEmpty
-                                  ? l.firstName[0].toUpperCase()
-                                  : 'L',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: AdminLearnersScreen.primaryBlue,
+                          InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () {
+                              setState(() {
+                                _expandedUid = isExpanded ? null : row.uid;
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: AdminLearnersScreen.appBg.withOpacity(1),
+                                    child: Text(
+                                      l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: AdminLearnersScreen.primaryBlue,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          l.fullName.isEmpty ? '(No name)' : l.fullName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: AdminLearnersScreen.primaryBlue,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          l.email.isEmpty ? '(No email)' : l.email,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.black.withOpacity(0.55),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            _Pill(
+                                              label: l.status.label,
+                                              bg: _statusBg(l.status),
+                                              fg: _statusFg(l.status),
+                                            ),
+                                            if (l.serial.trim().isNotEmpty) _Pill(label: l.serial),
+                                            if (l.phone1.trim().isNotEmpty) _Pill(label: '📞 ${l.phone1}'),
+                                            if (l.dob.trim().isNotEmpty) _Pill(label: '🎂 ${l.dob}'),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                    color: AdminLearnersScreen.primaryBlue.withOpacity(0.7),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  PopupMenuButton<_RowAction>(
+                                    tooltip: 'Actions',
+                                    onSelected: (a) async {
+                                      if (a == _RowAction.edit) {
+                                        if (widget.onEdit != null) {
+                                          await widget.onEdit!(row.uid, l);
+                                        }
+                                        return;
+                                      }
+                                      await widget.onAction(row.uid, l, a);
+                                    },
+                                    itemBuilder: (_) {
+                                      final items = <PopupMenuEntry<_RowAction>>[];
+                                      if (widget.onEdit != null) {
+                                        items.add(
+                                          const PopupMenuItem(
+                                            value: _RowAction.edit,
+                                            child: Text('Edit'),
+                                          ),
+                                        );
+                                        items.add(const PopupMenuDivider());
+                                      }
+                                      items.addAll(widget.actionsBuilder(row.uid, l));
+                                      return items;
+                                    },
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  l.fullName.isEmpty ? '(No name)' : l.fullName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: AdminLearnersScreen.primaryBlue,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  l.email.isEmpty ? '(No email)' : l.email,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.black.withOpacity(0.55),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _Pill(
-                                      label: l.status.label,
-                                      bg: _statusBg(l.status),
-                                      fg: _statusFg(l.status),
-                                    ),
-                                    if (l.serial.trim().isNotEmpty)
-                                      _Pill(label: l.serial),
-                                    if (l.phone1.trim().isNotEmpty)
-                                      _Pill(label: '📞 ${l.phone1}'),
-                                    if (l.dob.trim().isNotEmpty)
-                                      _Pill(label: '🎂 ${l.dob}'),
-                                  ],
-                                ),
-                              ],
+                          AnimatedCrossFade(
+                            firstChild: const SizedBox.shrink(),
+                            secondChild: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              child: _LearnerExpandedTabs(
+                                uid: row.uid,
+                                db: _db,
+                                methods: _methods,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          PopupMenuButton<_RowAction>(
-                            tooltip: 'Actions',
-                            onSelected: (a) async {
-                              if (a == _RowAction.edit) {
-                                if (widget.onEdit != null) {
-                                  await widget.onEdit!(row.uid, l);
-                                }
-                                return;
-                              }
-                              await widget.onAction(row.uid, l, a);
-                            },
-                            itemBuilder: (_) {
-                              final items = <PopupMenuEntry<_RowAction>>[];
-                              if (widget.onEdit != null) {
-                                items.add(
-                                  const PopupMenuItem(
-                                    value: _RowAction.edit,
-                                    child: Text('Edit'),
-                                  ),
-                                );
-                                items.add(const PopupMenuDivider());
-                              }
-                              items.addAll(widget.actionsBuilder(row.uid, l));
-                              return items;
-                            },
+                            crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                            duration: const Duration(milliseconds: 200),
                           ),
                         ],
                       ),
                     ),
                   );
+
                 },
               );
             },
@@ -642,7 +727,6 @@ class _LearnersListState extends State<_LearnersList>
     );
   }
 }
-
 
 class _TopBar extends StatelessWidget {
   const _TopBar({
@@ -675,8 +759,7 @@ class _TopBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide.none,
               ),
-              contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
           if (filters.isNotEmpty) ...[
@@ -815,24 +898,15 @@ class _LoadingList extends StatelessWidget {
           padding: EdgeInsets.all(16),
           child: Row(
             children: [
-              SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: ColoredBox(color: AdminLearnersScreen.appBg)),
+              SizedBox(width: 44, height: 44, child: ColoredBox(color: AdminLearnersScreen.appBg)),
               SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(
-                        height: 14,
-                        width: 160,
-                        child: ColoredBox(color: AdminLearnersScreen.appBg)),
+                    SizedBox(height: 14, width: 160, child: ColoredBox(color: AdminLearnersScreen.appBg)),
                     SizedBox(height: 10),
-                    SizedBox(
-                        height: 12,
-                        width: 260,
-                        child: ColoredBox(color: AdminLearnersScreen.appBg)),
+                    SizedBox(height: 12, width: 260, child: ColoredBox(color: AdminLearnersScreen.appBg)),
                   ],
                 ),
               ),
@@ -874,7 +948,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   DatabaseReference get _usersRef => _db.ref('users');
   DatabaseReference get _coursesRef => _db.ref('courses');
 
-  // fields
   late final TextEditingController firstNameC;
   late final TextEditingController lastNameC;
   late final TextEditingController dobC;
@@ -884,16 +957,14 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   late final TextEditingController passwordC;
   late final TextEditingController serialC;
 
-
   DateTime? _dob;
 
   LearnerStatus _status = LearnerStatus.active;
 
   bool _saving = false;
-  Map<String, Map<String, dynamic>> _allCourses = {}; // all courses from DB
-  final Set<String> _selectedCourseIds = {}; // selected course IDs
-  bool _loadingCourses = true; // loading indicator
-
+  Map<String, Map<String, dynamic>> _allCourses = {};
+  final Set<String> _selectedCourseIds = {};
+  bool _loadingCourses = true;
 
   @override
   void initState() {
@@ -907,12 +978,11 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     phone1C = TextEditingController(text: initial?.phone1 ?? '');
     phone2C = TextEditingController(text: initial?.phone2 ?? '');
     emailC = TextEditingController(text: initial?.email ?? '');
-    passwordC = TextEditingController(); // only used on create
+    passwordC = TextEditingController();
     serialC = TextEditingController(text: initial?.serial ?? '');
 
     _status = initial?.status ?? LearnerStatus.active;
 
-    // Parse DOB if present (yyyy-mm-dd)
     if (dobC.text.trim().isNotEmpty) {
       final parts = dobC.text.trim().split('-');
       if (parts.length == 3) {
@@ -925,15 +995,14 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       }
     }
 
-    // Auto serial for create
     if (widget.mode == EditorMode.create) {
       _nextSerial().then((s) {
         if (!mounted) return;
         if (serialC.text.trim().isEmpty) serialC.text = s;
       });
     }
-    _loadCoursesAndSelection();
 
+    _loadCoursesAndSelection();
   }
 
   @override
@@ -956,7 +1025,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 
   Future<void> _loadCoursesAndSelection() async {
     try {
-      // Load all courses from /courses
       final coursesSnap = await _coursesRef.get();
       final coursesVal = coursesSnap.value;
 
@@ -965,16 +1033,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         coursesVal.forEach((key, value) {
           if (key == null || value == null) return;
           if (value is Map) {
-            coursesOut[key.toString()] =
-                value.map((k, v) => MapEntry(k.toString(), v));
+            coursesOut[key.toString()] = value.map((k, v) => MapEntry(k.toString(), v));
           }
         });
       }
 
-      // If editing, load learner's existing courses from /users/{uid}/courses
       if (widget.mode == EditorMode.edit && widget.uid != null) {
-        final userCoursesSnap =
-        await _usersRef.child(widget.uid!).child('courses').get();
+        final userCoursesSnap = await _usersRef.child(widget.uid!).child('courses').get();
         final userCoursesVal = userCoursesSnap.value;
 
         _selectedCourseIds.clear();
@@ -982,6 +1047,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         if (userCoursesVal is Map) {
           userCoursesVal.forEach((k, v) {
             if (k == null) return;
+            // NOTE: existing data structure uses course_1 keys. Here we don't auto-convert.
+            // Keeping your existing behavior.
             _selectedCourseIds.add(k.toString());
           });
         }
@@ -998,7 +1065,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       _snack('Failed to load courses: $e');
     }
   }
-
 
   Future<void> _pickDob() async {
     FocusScope.of(context).unfocus();
@@ -1044,14 +1110,12 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     return '🎓-$padded';
   }
 
-  // Create auth user WITHOUT cloud functions by using a SECONDARY Firebase app
   Future<String> _createAuthUserAndGetUid({
     required String email,
     required String password,
   }) async {
     final options = Firebase.app().options;
 
-    // Unique name every time (safe)
     final name = 'secondary_${DateTime.now().microsecondsSinceEpoch}';
     final secondary = await Firebase.initializeApp(name: name, options: options);
 
@@ -1094,17 +1158,12 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                 final titleText = (data['title'] ?? data['name'] ?? '').toString().trim();
                 final category = (data['category'] ?? '').toString().trim();
 
-// What we show to admin:
                 final display = [
                   if (code.isNotEmpty) code,
                   if (titleText.isNotEmpty) titleText,
                 ].join(' — ');
 
-// Fallback if DB doesn't have title/name:
-                final finalTitle = display.isNotEmpty
-                    ? display
-                    : (category.isNotEmpty ? category : id);
-
+                final finalTitle = display.isNotEmpty ? display : (category.isNotEmpty ? category : id);
 
                 return CheckboxListTile(
                   value: tempSelected.contains(id),
@@ -1152,21 +1211,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     );
   }
 
-  String _courseLabelFor(String courseId) {
-    final c = _allCourses[courseId];
-    final code = (c?['course_code'] ?? '').toString().trim();
-    final title = (c?['title'] ?? c?['name'] ?? '').toString().trim();
-    final category = (c?['category'] ?? '').toString().trim();
-
-    final label = [
-      if (code.isNotEmpty) code,
-      if (title.isNotEmpty) title,
-    ].join(' — ');
-
-    return label.isNotEmpty ? label : (category.isNotEmpty ? category : courseId);
-  }
-
-  /// Reads existing /users/{uid}/courses and returns the largest N in course_N keys
   int _maxCourseIndexFromExisting(dynamic v) {
     if (v is! Map) return 0;
     int maxI = 0;
@@ -1181,21 +1225,17 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     return maxI;
   }
 
-
   Future<void> _saveUserCourses(String uid) async {
     final coursesRef = _usersRef.child(uid).child('courses');
 
-    // If nothing selected => remove node
     if (_selectedCourseIds.isEmpty) {
       await coursesRef.remove();
       return;
     }
 
-    // Read current courses to avoid losing progress later
     final existingSnap = await coursesRef.get();
     final existingVal = existingSnap.value;
 
-    // Build a map: courseId -> courseNodeKey (course_1, course_2, ...)
     final Map<String, String> idToKey = {};
 
     if (existingVal is Map) {
@@ -1213,28 +1253,24 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 
     int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
 
-    // We will update existing + add new, and delete removed
     final Map<String, dynamic> updates = {};
 
-    // 1) Remove courses that are no longer selected (delete whole node)
     if (existingVal is Map) {
       existingVal.forEach((k, v) {
         if (k == null) return;
         if (k.toString().startsWith('course_')) {
-          // check if its id is still selected
           String existingId = '';
           if (v is Map) {
             final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
             existingId = (mm['id'] ?? '').toString();
           }
           if (existingId.isNotEmpty && !_selectedCourseIds.contains(existingId)) {
-            updates[k.toString()] = null; // delete
+            updates[k.toString()] = null;
           }
         }
       });
     }
 
-    // 2) Upsert selected courses (keep existing course_N keys if already there)
     for (final courseId in _selectedCourseIds) {
       final key = idToKey[courseId] ?? 'course_${nextIndex++}';
 
@@ -1243,8 +1279,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       final title = (c?['title'] ?? c?['name'] ?? '').toString().trim();
       final category = (c?['category'] ?? '').toString().trim();
 
-      // IMPORTANT: we set basic info, but DO NOT overwrite future progress/attendance nodes
-      // We update only these fields.
       updates['$key/id'] = courseId;
       updates['$key/course_code'] = code;
       updates['$key/title'] = title;
@@ -1254,7 +1288,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 
     await coursesRef.update(updates);
   }
-
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -1305,14 +1338,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
           'updatedAt': nowTs,
         });
       } else {
-        // For edit: do not touch password / auth
         await _usersRef.child(uid).update({
           ...learner.toMap(),
           'updatedAt': nowTs,
         });
       }
-      await _saveUserCourses(uid);
 
+      await _saveUserCourses(uid);
 
       if (!mounted) return;
       Navigator.of(context).pop(learner);
@@ -1355,9 +1387,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
             onPressed: _saving ? null : _save,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Text(_saving
-                  ? 'Saving…'
-                  : (isEdit ? 'Save Changes' : 'Create Learner')),
+              child: Text(_saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Learner')),
             ),
           ),
         ),
@@ -1376,20 +1406,16 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       controller: firstNameC,
                       label: 'First name *',
                       hint: 'First name',
-                      validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
                     _TextField(
                       controller: lastNameC,
                       label: 'Last name *',
                       hint: 'Last name',
-                      validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
-
-                    // DOB: calendar picker
                     TextFormField(
                       controller: dobC,
                       readOnly: true,
@@ -1403,14 +1429,10 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide.none,
                         ),
-                        prefixIcon:
-                        const Icon(Icons.calendar_month_rounded),
+                        prefixIcon: const Icon(Icons.calendar_month_rounded),
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Serial
                     _TextField(
                       controller: serialC,
                       label: 'Serial number',
@@ -1427,10 +1449,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                     TextFormField(
                       controller: phone1C,
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[\d+\s-]')),
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))],
                       decoration: InputDecoration(
                         labelText: 'Phone 1',
                         hintText: 'Example: 0550 00 00 00',
@@ -1447,10 +1466,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                     TextFormField(
                       controller: phone2C,
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[\d+\s-]')),
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))],
                       decoration: InputDecoration(
                         labelText: 'Phone 2',
                         hintText: 'Optional',
@@ -1475,7 +1491,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         if (!t.contains('@')) return 'Invalid email';
                         return null;
                       },
-                      enabled: !isEdit, // don't allow changing email in edit
+                      enabled: !isEdit,
                     ),
                     const SizedBox(height: 12),
                     if (!isEdit)
@@ -1495,7 +1511,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-
               _SectionCard(
                 title: 'Status',
                 child: DropdownButtonFormField<LearnerStatus>(
@@ -1510,12 +1525,10 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                     ),
                   ),
                   items: LearnerStatus.values
-                      .map(
-                        (s) => DropdownMenuItem(
-                      value: s,
-                      child: Text(s.label),
-                    ),
-                  )
+                      .map((s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(s.label),
+                  ))
                       .toList(),
                   onChanged: (v) {
                     if (v == null) return;
@@ -1523,19 +1536,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   },
                 ),
               ),
-
               const SizedBox(height: 12),
-
               _SectionCard(
                 title: 'Assign Courses',
                 child: _loadingCourses
                     ? const Row(
                   children: [
-                    SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                     SizedBox(width: 10),
                     Text('Loading courses...'),
                   ],
@@ -1547,37 +1554,12 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       onPressed: _allCourses.isEmpty ? null : _openCoursesPicker,
                       icon: const Icon(Icons.school_rounded),
                       label: Text(
-                        _selectedCourseIds.isEmpty
-                            ? 'Select courses'
-                            : 'Selected: ${_selectedCourseIds.length}',
+                        _selectedCourseIds.isEmpty ? 'Select courses' : 'Selected: ${_selectedCourseIds.length}',
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    if (_selectedCourseIds.isNotEmpty)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _selectedCourseIds.map((id) {
-                          final c = _allCourses[id];
-                          final code = (c?['course_code'] ?? '').toString().trim();
-                          final titleText = (c?['title'] ?? c?['name'] ?? '').toString().trim();
-                          final category = (c?['category'] ?? '').toString().trim();
-
-                          final label = [
-                            if (code.isNotEmpty) code,
-                            if (titleText.isNotEmpty) titleText,
-                          ].join(' — ');
-
-                          return _Pill(
-                            label: label.isNotEmpty ? label : (category.isNotEmpty ? category : id),
-                          );
-
-                        }).toList(),
-                      ),
                   ],
                 ),
               ),
-
             ],
           ),
         ),
@@ -1585,8 +1567,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     );
   }
 }
-
-
 
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
@@ -1748,7 +1728,7 @@ class Learner {
   final String phone2;
   final String email;
   final String serial;
-  final String role; // 'learner'
+  final String role;
   final LearnerStatus status;
   final int? updatedAtMs;
 
@@ -1811,7 +1791,6 @@ List<_LearnerRow> _parseLearnersMap(dynamic data) {
       if (value is Map) {
         final uid = key.toString();
         final learner = Learner.fromMap(uid, value);
-        // Only show learners (role == learner) to avoid admins in list
         final role = learner.role.toLowerCase().trim();
         if (role == 'learner') {
           out.add(_LearnerRow(uid: uid, learner: learner));
@@ -1823,3 +1802,564 @@ List<_LearnerRow> _parseLearnersMap(dynamic data) {
 
   return [];
 }
+
+// ----------------------------
+// Expanded Tabs inside learner card
+// ----------------------------
+
+class _LearnerExpandedTabs extends StatefulWidget {
+  const _LearnerExpandedTabs({
+    required this.uid,
+    required this.db,
+    required this.methods,
+  });
+
+  final String uid;
+  final FirebaseDatabase db;
+  final List<String> methods;
+
+  @override
+  State<_LearnerExpandedTabs> createState() => _LearnerExpandedTabsState();
+}
+
+class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleTickerProviderStateMixin {
+  late final TabController _tab;
+
+  String? _selectedCourseKey; // like "course_1"
+  Map<String, dynamic> _userCourses = {}; // courseKey -> node data
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
+  DatabaseReference get _userCoursesRef => widget.db.ref('users/${widget.uid}/courses');
+  DatabaseReference get _coursesRef => widget.db.ref('courses');
+  DatabaseReference get _paymentsRef => widget.db.ref('payments');
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TabBar(
+          controller: _tab,
+          labelColor: AdminLearnersScreen.primaryBlue,
+          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withOpacity(0.55),
+          indicatorColor: AdminLearnersScreen.primaryBlue,
+          tabs: const [
+            Tab(text: 'Payment'),
+            Tab(text: 'Attendance'),
+            Tab(text: 'Report'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 320,
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _userCoursesRef.onValue,
+            builder: (context, snap) {
+              final v = snap.data?.snapshot.value;
+
+              _userCourses = {};
+              if (v is Map) {
+                v.forEach((k, val) {
+                  if (k == null || val == null) return;
+                  if (val is Map) {
+                    _userCourses[k.toString()] = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+                  }
+                });
+              }
+
+              final keys = _userCourses.keys.toList()..sort();
+              if ((_selectedCourseKey == null || !_userCourses.containsKey(_selectedCourseKey)) && keys.isNotEmpty) {
+                _selectedCourseKey = keys.first;
+              }
+
+              return TabBarView(
+                controller: _tab,
+                children: [
+                  _paymentTab(context, keys),
+                  _attendanceTab(context, keys),
+                  _reportTab(context),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _coursePicker(List<String> keys) {
+    if (keys.isEmpty) {
+      return const _MiniState(text: 'No courses assigned to this learner.');
+    }
+
+    String labelFor(String courseKey) {
+      final m = (_userCourses[courseKey] ?? {}) as Map;
+      final code = (m['course_code'] ?? '').toString().trim();
+      final title = (m['title'] ?? '').toString().trim();
+      final s = [
+        if (code.isNotEmpty) code,
+        if (title.isNotEmpty) title,
+      ].join(' — ');
+      return s.isNotEmpty ? s : courseKey;
+    }
+
+    return DropdownButtonFormField<String>(
+      value: _selectedCourseKey,
+      decoration: InputDecoration(
+        labelText: 'Course',
+        filled: true,
+        fillColor: AdminLearnersScreen.appBg,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+      items: keys.map((k) => DropdownMenuItem(value: k, child: Text(labelFor(k)))).toList(),
+      onChanged: (v) => setState(() => _selectedCourseKey = v),
+    );
+  }
+
+  // ---------------- PAYMENT TAB ----------------
+
+  Widget _paymentTab(BuildContext context, List<String> keys) {
+    return ListView(
+      padding: const EdgeInsets.only(top: 0),
+      children: [
+        _coursePicker(keys),
+        const SizedBox(height: 8),
+        if (_selectedCourseKey == null) const SizedBox.shrink() else _paymentPanel(context),
+      ],
+    );
+  }
+
+  Widget _paymentPanel(BuildContext context) {
+    final courseKey = _selectedCourseKey!;
+    final courseNode = (_userCourses[courseKey] ?? {}) as Map;
+    final courseId = (courseNode['id'] ?? '').toString();
+
+    if (courseId.trim().isEmpty) {
+      return const _MiniState(text: 'This course has no "id" saved on learner node.');
+    }
+
+    return FutureBuilder<DataSnapshot>(
+      future: _coursesRef.child(courseId).get(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+
+        final courseMapRaw = snap.data!.value;
+        final courseMap = courseMapRaw is Map
+            ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
+
+        final totalSessions = _parseTotalSessions(courseMap['duration']?.toString() ?? '');
+        final pricePerLevel = _asInt(courseMap['price_per_level']);
+        final pricePerMonth = _asInt(courseMap['price_per_month']);
+
+        final attendance = courseNode['attendance'];
+        final sessionsDone = attendance is Map ? attendance.length : 0;
+
+        return FutureBuilder<DataSnapshot>(
+          future: widget.db.ref('users/${widget.uid}/courses/$courseKey/payment_summary').get(),
+          builder: (context, sumSnap) {
+            final sumRaw = sumSnap.data?.value;
+            final sum = sumRaw is Map ? sumRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+
+            // keep logic (DO NOT REMOVE) – only remove UI display
+            final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
+            final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+
+            final bool due = sessionsPaidTotal > 0 && sessionsDone >= (sessionsPaidTotal - 1);
+            final sessionsLabel = totalSessions > 0 ? '$sessionsDone / $totalSessions' : '$sessionsDone';
+
+            return _miniCard(
+              bg: due ? const Color(0xFFFFF3D6) : Colors.white,
+              borderColor: due ? const Color(0xFFF0C36D) : AdminLearnersScreen.uiBorders,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1) Session xxx/outxxx + level fee/month fee
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _miniPill('Sessions: $sessionsLabel'),
+                      if (pricePerMonth > 0) _miniPill('Month fee: $pricePerMonth'),
+                      if (pricePerLevel > 0) _miniPill('Level fee: $pricePerLevel'),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // 2) Add payment button
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        final ck = _selectedCourseKey!;
+                        final node = (_userCourses[ck] ?? {}) as Map;
+                        final cid = (node['id'] ?? '').toString();
+                        if (cid.trim().isEmpty) return;
+
+                        await PaymentDialogShared.showAddFromLearnerTab(
+                          context: context,
+                          db: widget.db,
+                          uid: widget.uid,
+                          courseKey: ck,
+                          courseId: cid,
+                        );
+                      },
+                      icon: const Icon(Icons.add_card_rounded),
+                      label: const Text('Add payment'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // 3) Summary of payment (WITHOUT showing total paid sessions or total paid income)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AdminLearnersScreen.appBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AdminLearnersScreen.uiBorders),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Payment summary', style: TextStyle(fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Paid sessions cover until session '
+                              '${remindBeforeSession > 0 ? remindBeforeSession : sessionsPaidTotal}.',
+                          style: TextStyle(
+                            color: Colors.black.withOpacity(0.75),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (due) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            '⚠️ Payment is due (near last paid session).',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // History (keep as is)
+                  const Text('History', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 160,
+                    child: StreamBuilder<DatabaseEvent>(
+                      stream: _paymentsRef.orderByChild('uid').equalTo(widget.uid).onValue,
+                      builder: (context, snap) {
+                        final v = snap.data?.snapshot.value;
+                        final items = <Map<String, dynamic>>[];
+
+                        if (v is Map) {
+                          v.forEach((k, val) {
+                            if (val is Map) {
+                              final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+                              if ((m['courseKey'] ?? '').toString() != courseKey) return;
+                              items.add({'paymentId': k.toString(), ...m});
+                            }
+                          });
+                        }
+
+                        items.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+
+                        if (items.isEmpty) return const _MiniState(text: 'No payments yet.');
+
+                        return ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: items.length,
+                          itemBuilder: (context, i) {
+                            final p = items[i];
+                            final idx = i + 1;
+                            final fee = _asInt(p['amount']);
+                            final sp = _asInt(p['sessionsPaid']);
+                            final method = (p['method'] ?? '').toString();
+                            final notes = (p['notes'] ?? '').toString();
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: _miniCard(
+                                bg: Colors.white,
+                                borderColor: AdminLearnersScreen.uiBorders,
+                                child: Row(
+                                  children: [
+                                    _miniPill('#$idx'),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Fee: $fee — Sessions: $sp',
+                                            style: const TextStyle(fontWeight: FontWeight.w900),
+                                          ),
+                                          if (method.trim().isNotEmpty || notes.trim().isNotEmpty) ...[
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              [if (method.trim().isNotEmpty) method, if (notes.trim().isNotEmpty) notes]
+                                                  .join(' • '),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.black.withOpacity(0.65),
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+
+
+
+  // ---------------- ATTENDANCE TAB ----------------
+
+  Widget _attendanceTab(BuildContext context, List<String> keys) {
+    if (keys.isEmpty) return const _MiniState(text: 'No courses.');
+
+    final courseKey = _selectedCourseKey;
+    if (courseKey == null) return const _MiniState(text: 'Pick a course.');
+
+    final courseNode = (_userCourses[courseKey] ?? {}) as Map;
+    final attendance = courseNode['attendance'];
+    final courseId = (courseNode['id'] ?? '').toString();
+
+    final items = <Map<String, dynamic>>[];
+    if (attendance is Map) {
+      attendance.forEach((k, v) {
+        if (v is Map) {
+          final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          items.add(m.cast<String, dynamic>());
+        }
+      });
+    }
+
+    // sort by date
+    items.sort((a, b) => (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()));
+
+    return FutureBuilder<DataSnapshot>(
+      future: courseId.trim().isEmpty ? null : _coursesRef.child(courseId).get(),
+      builder: (context, cs) {
+        final cRaw = cs.data?.value;
+        final cMap = cRaw is Map ? cRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+        final totalSessions = _parseTotalSessions(cMap['duration']?.toString() ?? '');
+        final label = totalSessions > 0 ? '${items.length} / $totalSessions' : '${items.length}';
+
+        return ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            _coursePicker(keys),
+            const SizedBox(height: 8),
+            _miniCard(
+              child: Text(
+                'Attendance: $label',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (items.isEmpty)
+              const _MiniState(text: 'No attendance yet.')
+            else
+              ...items.asMap().entries.map((entry) {
+                final i = entry.key;
+                final s = entry.value;
+
+                final date = (s['date'] ?? '').toString();
+                final statusRaw = (s['status'] ?? '').toString();
+                final status = statusRaw.toLowerCase().trim();
+                final teacher = (s['teacherName'] ?? '').toString();
+                final taught = s['taught'] is Map ? (s['taught'] as Map) : null;
+                final taughtTitle = taught == null ? '' : (taught['title'] ?? '').toString();
+
+                Color bar;
+                if (status == 'present') {
+                  bar = const Color(0xFF157A3D);
+                } else if (status == 'absent') {
+                  bar = Colors.red;
+                } else {
+                  bar = const Color(0xFFF98D28);
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Card(
+                    elevation: 0,
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            color: bar,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(16),
+                              bottomLeft: Radius.circular(16),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '#${i + 1}  $date — $statusRaw',
+                                  style: const TextStyle(fontWeight: FontWeight.w900),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  [
+                                    if (taughtTitle.trim().isNotEmpty) taughtTitle,
+                                    if (teacher.trim().isNotEmpty) teacher,
+                                  ].join(' • '),
+                                  style: TextStyle(
+                                    color: Colors.black.withOpacity(0.65),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+          ],
+        );
+      },
+    );
+  }
+
+  // ---------------- REPORT TAB (later) ----------------
+
+  Widget _reportTab(BuildContext context) {
+    return const _MiniState(text: 'Report tab is ready (we will build it later).');
+  }
+
+  // ---------------- UI helpers ----------------
+
+  static Widget _miniCard({
+    required Widget child,
+    Color bg = Colors.white,
+    Color borderColor = AdminLearnersScreen.uiBorders,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: child,
+      ),
+    );
+  }
+
+
+  static Widget _miniPill(String t) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AdminLearnersScreen.appBg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        t,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AdminLearnersScreen.primaryBlue,
+        ),
+      ),
+    );
+  }
+
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static int _parseTotalSessions(String duration) {
+    final m = RegExp(r'(\d+)\s*sessions', caseSensitive: false).firstMatch(duration);
+    if (m == null) return 0;
+    return int.tryParse(m.group(1) ?? '') ?? 0;
+  }
+}
+
+class _MiniState extends StatelessWidget {
+  const _MiniState({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
+      ),
+    );
+  }
+}
+

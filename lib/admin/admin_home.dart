@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'admin_payments.dart';
 
 import 'admin_courses.dart';
-import '../admin_learners.dart';
+import 'admin_learners.dart';
 import 'admin_staff.dart';
 import 'admin_classes.dart';
 
@@ -188,6 +189,17 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
                           ),
                         ),
+
+                        _DashCard(
+                          title: 'Payments',
+                          subtitle: 'All payments',
+                          icon: Icons.payments_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+                          ),
+                        ),
+
 
                         _DashCard(
                           title: 'Learners',
