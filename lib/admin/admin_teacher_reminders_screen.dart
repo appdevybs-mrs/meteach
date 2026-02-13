@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import '../services/push_client.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
   const AdminTeacherRemindersScreen({
@@ -24,6 +25,18 @@ class AdminTeacherRemindersScreen extends StatefulWidget {
 
 class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScreen> {
   final _db = FirebaseDatabase.instance;
+
+
+  Future<String?> _getTeacherFcmToken() async {
+    final snap = await FirebaseDatabase.instance
+        .ref('fcm_tokens/${widget.teacherUid}/token')
+        .get();
+
+    final token = snap.value?.toString().trim();
+    if (token == null || token.isEmpty) return null;
+    return token;
+  }
+
 
   DatabaseReference get _remindersRef => _db.ref('reminders/${widget.teacherUid}');
   late final Stream<DatabaseEvent> _stream;
@@ -128,6 +141,28 @@ class _AdminTeacherRemindersScreenState extends State<AdminTeacherRemindersScree
           'phone2': (created.teacherPhone2 ?? '').trim(),
         },
       });
+// ✅ Send push notification to teacher
+      try {
+        final token = await _getTeacherFcmToken();
+        if (token == null) {
+          _snack('Reminder saved ✅ but teacher has no FCM token');
+        } else {
+          await PushClient.sendToToken(
+            token: token,
+            title: created.title.trim(),
+            message: created.description.trim().isEmpty
+                ? 'You have a new reminder'
+                : created.description.trim(),
+            data: {
+              'type': 'reminder',
+              'route': 'teacher_reminders', // we will use this when handling tap
+              'teacherUid': widget.teacherUid,
+            },
+          );
+        }
+      } catch (e) {
+        _snack('Reminder saved ✅ but push failed: $e');
+      }
 
       _snack('Reminder added ✅');
     } catch (e) {

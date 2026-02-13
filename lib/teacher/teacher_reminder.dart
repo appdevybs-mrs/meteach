@@ -5,6 +5,9 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+// ✅ add this (update path if needed)
+import '../services/push_client.dart';
+
 /// Teacher side reminders:
 /// - Reads from: /reminders/{teacherUid}
 /// - Tap -> expands
@@ -14,9 +17,8 @@ import 'package:url_launcher/url_launcher.dart';
 ///   - Otherwise Open/Download (external browser)
 ///   - Mark done (status=done, doneAt=timestamp)
 ///
-/// Fixes:
-/// - Normalize urls like "//www...." => "https://www...."
-/// - Defensive open: try externalApplication then platformDefault, else show dialog with copyable link
+/// ✅ NEW:
+/// - After READ/DONE, send push notification to topic: "admins"
 class TeacherReminderScreen extends StatefulWidget {
   const TeacherReminderScreen({super.key});
 
@@ -34,6 +36,9 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
   final Set<String> _expanded = <String>{};
   final Set<String> _markingRead = <String>{};
   final Set<String> _markingDone = <String>{};
+
+  // ✅ optional: prevent duplicate push spam if user taps fast
+  final Set<String> _notifying = <String>{};
 
   @override
   void initState() {
@@ -79,6 +84,48 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
     return out;
   }
 
+  // ✅ Send notification to admins topic
+  Future<void> _notifyAdmins({
+    required String action, // "read" or "done"
+    required String reminderId,
+    required _TeacherReminder r,
+  }) async {
+    final key = '$action:$reminderId';
+    if (_notifying.contains(key)) return;
+
+    _notifying.add(key);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final teacherLabel = (user?.email ?? user?.uid ?? 'Teacher').toString();
+
+      final title = (action == 'done')
+          ? 'Reminder done ✅'
+          : 'Reminder opened 👀';
+
+      final message = (action == 'done')
+          ? '$teacherLabel completed: ${r.title}'
+          : '$teacherLabel opened: ${r.title}';
+
+      await PushClient.sendToTopic(
+        topic: 'admins',
+        title: title,
+        message: message,
+        data: {
+          'type': 'reminder',
+          'action': action,
+          'reminderId': reminderId,
+          'teacherUid': _uid ?? '',
+          'title': r.title,
+        },
+      );
+    } catch (e) {
+      // Don’t block UI if push fails
+      _snack('Admin notify failed: $e');
+    } finally {
+      _notifying.remove(key);
+    }
+  }
+
   Future<void> _markReadIfNeeded(String reminderId, _TeacherReminder r) async {
     final status = r.status.toLowerCase().trim();
     if (status != 'new') return;
@@ -90,6 +137,9 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
         'status': 'read',
         'readAt': ServerValue.timestamp,
       });
+
+      // ✅ notify admins
+      await _notifyAdmins(action: 'read', reminderId: reminderId, r: r);
     } catch (e) {
       _snack('Failed to mark read: $e');
     } finally {
@@ -97,7 +147,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
     }
   }
 
-  Future<void> _markDone(String reminderId) async {
+  Future<void> _markDone(String reminderId, _TeacherReminder r) async {
     if (_markingDone.contains(reminderId)) return;
 
     setState(() => _markingDone.add(reminderId));
@@ -106,7 +156,11 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
         'status': 'done',
         'doneAt': ServerValue.timestamp,
       });
+
       _snack('Marked done ✅');
+
+      // ✅ notify admins
+      await _notifyAdmins(action: 'done', reminderId: reminderId, r: r);
     } catch (e) {
       _snack('Failed to mark done: $e');
     } finally {
@@ -161,13 +215,11 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
       return;
     }
 
-    // 1) external browser (Chrome)
     try {
       final ok1 = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (ok1) return;
     } catch (_) {}
 
-    // 2) platform default
     try {
       final ok2 = await launchUrl(uri, mode: LaunchMode.platformDefault);
       if (ok2) return;
@@ -177,7 +229,6 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
       return;
     }
 
-    // 3) if both returned false
     _snack('Could not open link. Showing link…');
     await _showOpenLinkDialog(normalized);
   }
@@ -486,7 +537,7 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                 child: FilledButton.icon(
                                   onPressed: (r.status.toLowerCase().trim() == 'done' || _markingDone.contains(row.id))
                                       ? null
-                                      : () => _markDone(row.id),
+                                      : () => _markDone(row.id, r),
                                   icon: _markingDone.contains(row.id)
                                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                                       : const Icon(Icons.check_circle),

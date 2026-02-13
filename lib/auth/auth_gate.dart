@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import '../learner/learner_home.dart';
 
+import '../learner/learner_home.dart';
 import '../admin/admin_home.dart';
 import '../teacher/teacher_home.dart';
 import 'not_authorized.dart';
+import '../services/topic_service.dart';
+
+// ✅ ADD THIS
+import '../services/fcm_service.dart';
 
 class AuthGate extends StatelessWidget {
   final Widget signedOutHome;
@@ -94,6 +98,10 @@ class AuthGate extends StatelessWidget {
                 fikraLog('RAW ROLE=[$rawRole]');
                 fikraLog('NORM ROLE=[$role]');
 
+                // ✅ STEP 7: subscribe topics based on role (no await needed)
+                TopicService.subscribeForRole(role: role);
+                FCMService.syncTokenAfterLogin();
+
                 if (role == 'admin') {
                   fikraLog('✅ ROUTE AdminHome');
                   return const AdminHome();
@@ -108,7 +116,6 @@ class AuthGate extends StatelessWidget {
                   fikraLog('✅ ROUTE LearnerHome');
                   return const LearnerHome();
                 }
-
 
                 fikraLog('❌ UNKNOWN ROLE -> NotAuthorized rawRole=[$rawRole]');
                 return NotAuthorized(role: rawRole);

@@ -10,6 +10,7 @@
   import 'admin/admin_home.dart';
   import 'enroll_screen.dart';
   import 'teacher/teacher_home.dart';
+  import 'services/fcm_service.dart';
 
 
   // Keeping your imports (even if not used yet) so nothing breaks in your project
@@ -25,6 +26,8 @@
   Future<void> main() async {
     WidgetsFlutterBinding.ensureInitialized();
     await Firebase.initializeApp(); // uses google-services.json on Android
+    await FCMService.I.init();
+
     runApp(const DreamEnglishAcademyApp());
   }
 
