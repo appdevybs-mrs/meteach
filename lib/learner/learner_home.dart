@@ -18,6 +18,18 @@ class _LearnerHomeState extends State<LearnerHome> {
   // ✅ Courses is the first tab now
   int _index = 0;
 
+  static const _pages = <Widget>[
+    LearnerCoursesScreen(),
+    _LearnerDashboardLite(),
+    LearnerProfileScreen(),
+  ];
+
+  static const _titles = <String>[
+    'My Courses',
+    'Learner Dashboard',
+    'Profile',
+  ];
+
   Future<void> _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
     if (!context.mounted) return;
@@ -26,12 +38,7 @@ class _LearnerHomeState extends State<LearnerHome> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Order changed: Courses first
-    final pages = [
-      const LearnerCoursesScreen(),
-      const _LearnerDashboardLite(),
-      const LearnerProfileScreen(),
-    ];
+    final safeIndex = _index.clamp(0, _pages.length - 1);
 
     return Scaffold(
       backgroundColor: UiK.appBg,
@@ -41,12 +48,11 @@ class _LearnerHomeState extends State<LearnerHome> {
         surfaceTintColor: Colors.white,
         centerTitle: true,
         title: Text(
-          _index == 0
-              ? 'My Courses'
-              : _index == 1
-              ? 'Learner Dashboard'
-              : 'Profile',
-          style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+          _titles[safeIndex],
+          style: const TextStyle(
+            color: UiK.primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
         ),
         actions: [
           IconButton(
@@ -56,9 +62,9 @@ class _LearnerHomeState extends State<LearnerHome> {
           ),
         ],
       ),
-      body: WatermarkBackground(child: pages[_index]),
+      body: WatermarkBackground(child: _pages[safeIndex]),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
+        currentIndex: safeIndex,
         selectedItemColor: UiK.actionOrange,
         unselectedItemColor: UiK.primaryBlue.withOpacity(0.65),
         onTap: (i) => setState(() => _index = i),
@@ -113,7 +119,8 @@ class _LearnerDashboardLite extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Attendance is saved per course inside your profile.\nProgress is calculated from the syllabus sessions that were taught.',
+                            'Attendance is saved per course inside your profile.\n'
+                                'Progress is calculated from the syllabus sessions that were taught.',
                             style: UiK.subtleText(),
                           ),
                         ),

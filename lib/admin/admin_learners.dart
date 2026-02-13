@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
+import '../services/push_client.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key});
@@ -390,6 +391,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
 }
 
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
+enum _QuickLearnerReminder { payment, absence, empty }
 
 class _LearnersList extends StatefulWidget {
   const _LearnersList({
@@ -425,6 +427,117 @@ class _LearnersList extends StatefulWidget {
 
 class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveClientMixin {
   String? _expandedUid;
+
+  Future<String?> _getLearnerFcmToken(String learnerUid) async {
+    final snap = await FirebaseDatabase.instance.ref('fcm_tokens/$learnerUid/token').get();
+    final token = snap.value?.toString().trim();
+    if (token == null || token.isEmpty) return null;
+    return token;
+  }
+
+  Future<void> _sendLearnerQuickReminder({
+    required String uid,
+    required Learner learner,
+    required _QuickLearnerReminder type,
+  }) async {
+    final token = await _getLearnerFcmToken(uid);
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This learner has no FCM token')),
+      );
+      return;
+    }
+
+    // Message templates (edit text if you want)
+    String title;
+    String message;
+
+    switch (type) {
+      case _QuickLearnerReminder.payment:
+        title = 'Payment Reminder';
+        message = 'Your payment is due. Please contact the academy.';
+        break;
+
+      case _QuickLearnerReminder.absence:
+        title = 'Absence Reminder';
+        message = 'We noticed an absence. Please confirm with the academy.';
+        break;
+
+      case _QuickLearnerReminder.empty:
+        title = 'Reminder';
+        message = ''; // empty message as you requested
+        break;
+    }
+
+    // Some Android devices may not show notification if body is truly empty.
+    // If you want "title only" but always show, uncomment next line:
+    // if (message.trim().isEmpty) message = ' ';
+
+    await PushClient.sendToToken(
+      token: token,
+      title: title,
+      message: message,
+      data: {
+        'type': 'reminder',          // your FCMService maps this to chReminders
+        'route': 'learner',          // optional (for later tap handling)
+        'learnerUid': uid,
+        'kind': type.name,           // payment / absence / empty
+      },
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sent ✅ to ${learner.fullName.isEmpty ? 'learner' : learner.fullName}')),
+    );
+  }
+
+  Future<void> _showQuickReminderSheet({
+    required String uid,
+    required Learner learner,
+  }) async {
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<_QuickLearnerReminder>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.payments_rounded),
+              title: const Text('Payment'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.payment),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_busy_rounded),
+              title: const Text('Absence'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
+            ),
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline_rounded),
+              title: const Text('Empty message'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null) return;
+
+    try {
+      await _sendLearnerQuickReminder(uid: uid, learner: learner, type: picked);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Push failed: $e')),
+      );
+    }
+  }
 
   final _db = FirebaseDatabase.instance;
 
@@ -489,7 +602,7 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
           hint: widget.titleHint,
           value: widget.search,
           onChanged: widget.onSearchChanged,
-          filters: widget.statusFilter == null ? const [] : const [],
+          filters: const <_FilterChipItem>[],
         ),
         if (widget.statusFilter != null)
           Padding(
@@ -611,16 +724,20 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                 padding: const EdgeInsets.all(12),
                                 child: Row(
                                   children: [
-                                    CircleAvatar(
-                                      backgroundColor: avatarBg,
-                                      child: Text(
-                                        l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: avatarFg,
+                                    GestureDetector(
+                                      onLongPress: () => _showQuickReminderSheet(uid: row.uid, learner: l),
+                                      child: CircleAvatar(
+                                        backgroundColor: avatarBg,
+                                        child: Text(
+                                          l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: avatarFg,
+                                          ),
                                         ),
                                       ),
                                     ),
+
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
