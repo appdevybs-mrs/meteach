@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import 'learner_mail_screen.dart'; // ✅ ADD
 
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
@@ -104,6 +105,9 @@ class _LearnerDashboardLite extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _HomeCardsGrid(),
+          const SizedBox(height: 12),
+
           Card(
             elevation: 0,
             color: Colors.white,
@@ -116,36 +120,118 @@ class _LearnerDashboardLite extends StatelessWidget {
                   Text('Learner Dashboard', style: UiK.titleText(size: 18)),
                   const SizedBox(height: 10),
                   Text(
-                    'Go to Courses to see your classes, attendance, and progress.',
+                    'Use the cards above to access your tools. Courses stay in the Courses tab.',
                     style: UiK.subtleText(),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                      color: UiK.primaryBlue.withOpacity(0.04),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.lightbulb_rounded, color: UiK.actionOrange),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Attendance is saved per course inside your profile.\n'
-                                'Progress is calculated from the syllabus sessions that were taught.',
-                            style: UiK.subtleText(),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),
             ),
           ),
         ],
+
+      ),
+    );
+  }
+}
+class _HomeCardsGrid extends StatelessWidget {
+  const _HomeCardsGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 1.25,
+      children: const [
+        _HomeCard(
+          icon: Icons.mail_rounded,
+          title: 'Mail',
+          subtitle: 'Read & reply',
+          routeType: _HomeCardRoute.mail,
+        ),
+        _HomeCard(
+          icon: Icons.assignment_rounded,
+          title: 'Homework',
+          subtitle: 'Coming soon',
+          routeType: _HomeCardRoute.homework,
+        ),
+        _HomeCard(
+          icon: Icons.notifications_active_rounded,
+          title: 'Reminders',
+          subtitle: 'Coming soon',
+          routeType: _HomeCardRoute.reminders,
+        ),
+        _HomeCard(
+          icon: Icons.group_rounded,
+          title: 'Friends',
+          subtitle: 'Coming soon',
+          routeType: _HomeCardRoute.friends,
+        ),
+      ],
+    );
+  }
+}
+
+enum _HomeCardRoute { mail, homework, reminders, friends }
+
+class _HomeCard extends StatelessWidget {
+  const _HomeCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.routeType,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final _HomeCardRoute routeType;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        if (routeType == _HomeCardRoute.mail) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$title is not ready yet.')),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: UiK.primaryBlue.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+              ),
+              child: Icon(icon, color: UiK.primaryBlue),
+            ),
+            const Spacer(),
+            Text(title, style: UiK.titleText(size: 16)),
+            const SizedBox(height: 4),
+            Text(subtitle, style: UiK.subtleText()),
+          ],
+        ),
       ),
     );
   }

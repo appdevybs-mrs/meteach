@@ -7,6 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
+import 'admin_learner_mail_topics_screen.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key});
@@ -465,9 +466,10 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
         break;
 
       case _QuickLearnerReminder.empty:
-        title = 'Reminder';
-        message = ''; // empty message as you requested
-        break;
+      // we don't send push here. mail is opened from the sheet.
+        return;
+
+
     }
 
     // Some Android devices may not show notification if body is truly empty.
@@ -491,6 +493,9 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
       SnackBar(content: Text('Sent ✅ to ${learner.fullName.isEmpty ? 'learner' : learner.fullName}')),
     );
   }
+
+
+
 
   Future<void> _showQuickReminderSheet({
     required String uid,
@@ -517,10 +522,11 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
               onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.absence),
             ),
             ListTile(
-              leading: const Icon(Icons.chat_bubble_outline_rounded),
-              title: const Text('Empty message'),
-              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty),
+              leading: const Icon(Icons.mail_rounded),
+              title: const Text('Mail'),
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty), // (we reuse the same enum)
             ),
+
             const SizedBox(height: 10),
           ],
         ),
@@ -530,7 +536,19 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     if (picked == null) return;
 
     try {
-      await _sendLearnerQuickReminder(uid: uid, learner: learner, type: picked);
+      if (picked == _QuickLearnerReminder.empty) {
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AdminLearnerMailTopicsScreen(
+              learnerUid: uid,
+              learnerName: learner.fullName.isEmpty ? 'Learner' : learner.fullName,
+            ),
+          ),
+        );
+      } else {
+        await _sendLearnerQuickReminder(uid: uid, learner: learner, type: picked);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2513,4 +2531,14 @@ class _MiniState extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MinimalStaff {
+  _MinimalStaff({required this.firstName, required this.lastName, required this.email});
+
+  final String firstName;
+  final String lastName;
+  final String email;
+
+  String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 }
