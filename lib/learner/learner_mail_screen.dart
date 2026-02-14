@@ -91,11 +91,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   }
 
   // -------------------------
-  // NEW: Compose mail (choose admin)
+  // Compose mail (admins + my teachers + my classmates)
   // -------------------------
   Future<void> _composeNewMail() async {
     try {
-      final picked = await showModalBottomSheet<_AdminPickResult>(
+      final picked = await showModalBottomSheet<_RecipientPickResult>(
         context: context,
         showDragHandle: true,
         isScrollControlled: true,
@@ -133,29 +133,29 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         'id': msgId,
         'text': text,
         'senderUid': _meUid,
-        'senderName': picked.learnerName,
+        'senderName': picked.senderName,
         'createdAt': now,
       });
 
-      // 3) index (learner sender) unread 0
+      // 3) index (sender) unread 0
       await _db.ref('mail_index/$_meUid/$threadId').set({
         'subject': subject,
         'updatedAt': now,
         'lastMessage': text,
         'unreadCount': 0,
-        'peerUid': picked.adminUid,
-        'peerName': picked.adminName,
+        'peerUid': picked.receiverUid,
+        'peerName': picked.receiverName,
         'deletedAt': null,
       });
 
-      // 4) index (admin receiver) unread 1
-      await _db.ref('mail_index/${picked.adminUid}/$threadId').set({
+      // 4) index (receiver) unread 1
+      await _db.ref('mail_index/${picked.receiverUid}/$threadId').set({
         'subject': subject,
         'updatedAt': now,
         'lastMessage': text,
         'unreadCount': 1,
         'peerUid': _meUid,
-        'peerName': picked.learnerName,
+        'peerName': picked.senderName,
         'deletedAt': null,
       });
 
@@ -166,8 +166,8 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           settings: RouteSettings(name: '/mail/thread/$threadId'),
           builder: (_) => LearnerMailThreadScreen(
             threadId: threadId,
-            peerUid: picked.adminUid,
-            peerName: picked.adminName.isEmpty ? 'Admin' : picked.adminName,
+            peerUid: picked.receiverUid,
+            peerName: picked.receiverName.isEmpty ? 'Staff' : picked.receiverName,
             subject: subject,
           ),
         ),
@@ -290,16 +290,19 @@ class _ComposeMailSheet extends StatefulWidget {
 
 class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   bool _loading = true;
-  List<_AdminRow> _admins = [];
-  _AdminRow? _picked;
+
   final _subjectC = TextEditingController();
-  String _learnerName = 'Learner';
   final _messageC = TextEditingController();
+
+  String _senderName = 'Learner';
+
+  List<_RecipientRow> _recipients = [];
+  _RecipientRow? _picked;
 
   @override
   void initState() {
     super.initState();
-    _loadAdminsAndMe();
+    _loadRecipients();
   }
 
   @override
@@ -309,10 +312,9 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
     super.dispose();
   }
 
-
-  Future<void> _loadAdminsAndMe() async {
+  Future<void> _loadRecipients() async {
     try {
-      // get my name (optional, but helps admin index peerName)
+      // ---------- my name ----------
       final meSnap = await widget.db.ref('users/${widget.meUid}').get();
       final meVal = meSnap.value;
       if (meVal is Map) {
@@ -320,40 +322,112 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
         final fn = (mm['first_name'] ?? mm['firstName'] ?? '').toString().trim();
         final ln = (mm['last_name'] ?? mm['lastName'] ?? '').toString().trim();
         final full = '$fn $ln'.trim();
-        if (full.isNotEmpty) _learnerName = full;
+        if (full.isNotEmpty) _senderName = full;
       }
 
-      // load admins from users (client-side filter)
-      final snap = await widget.db.ref('users').get();
-      final v = snap.value;
+      // ---------- load users once (names + admins) ----------
+      final usersSnap = await widget.db.ref('users').get();
+      final usersVal = usersSnap.value;
 
-      final out = <_AdminRow>[];
-      if (v is Map) {
-        v.forEach((uid, vv) {
-          if (uid == null || vv == null) return;
-          if (vv is! Map) return;
+      final userNameByUid = <String, String>{};
+      final admins = <_RecipientRow>[];
 
+      if (usersVal is Map) {
+        usersVal.forEach((uid, vv) {
+          if (uid == null || vv == null || vv is! Map) return;
           final m = vv.map((k, v) => MapEntry(k.toString(), v));
-          final role = (m['role'] ?? '').toString().toLowerCase().trim();
-          if (role != 'admin') return;
 
+          final role = (m['role'] ?? '').toString().toLowerCase().trim();
           final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
           final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
           final email = (m['email'] ?? '').toString().trim();
 
-          final name = ('${fn} ${ln}').trim();
-          final display = name.isNotEmpty ? name : (email.isNotEmpty ? email : 'Admin');
+          final name = ('$fn $ln').trim();
+          final display = name.isNotEmpty ? name : (email.isNotEmpty ? email : uid.toString());
 
-          out.add(_AdminRow(uid: uid.toString(), name: display));
+          final u = uid.toString();
+          userNameByUid[u] = display;
+
+          if (role == 'admin') {
+            admins.add(_RecipientRow(uid: u, name: display, type: _RecipientType.admin));
+          }
         });
       }
 
-      out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      // ---------- teachers + classmates from my classes ----------
+      final classesSnap = await widget.db.ref('classes').get();
+      final classesVal = classesSnap.value;
+
+      final teacherUids = <String>{};
+      final classmateUids = <String>{};
+
+      if (classesVal is Map) {
+        classesVal.forEach((classId, classVal) {
+          if (classId == null || classVal == null || classVal is! Map) return;
+          final c = classVal.map((k, v) => MapEntry(k.toString(), v));
+
+          final learners = c['learners'];
+          if (learners is! Map) return;
+
+          final hasMe = learners.keys.any((k) => k.toString() == widget.meUid);
+          if (!hasMe) return;
+
+          // teacher uid from instructor_current.uid
+          final cur = c['instructor_current'];
+          if (cur is Map) {
+            final curM = cur.map((k, v) => MapEntry(k.toString(), v));
+            final tUid = (curM['uid'] ?? '').toString().trim();
+            if (tUid.isNotEmpty) teacherUids.add(tUid);
+          }
+
+          // classmates
+          learners.forEach((uid, _) {
+            final u = uid.toString().trim();
+            if (u.isEmpty) return;
+            if (u == widget.meUid) return;
+            classmateUids.add(u);
+          });
+        });
+      }
+
+      final teachers = teacherUids.map((tUid) {
+        final name = userNameByUid[tUid] ?? 'Teacher';
+        return _RecipientRow(uid: tUid, name: name, type: _RecipientType.teacher);
+      }).toList();
+
+      final classmates = classmateUids.map((u) {
+        final name = userNameByUid[u] ?? 'Learner';
+        return _RecipientRow(uid: u, name: name, type: _RecipientType.learner);
+      }).toList();
+
+      // ---------- merge + sort ----------
+      final all = <_RecipientRow>[
+        ...teachers,
+        ...admins,
+        ...classmates,
+      ];
+
+      int rank(_RecipientType t) {
+        switch (t) {
+          case _RecipientType.teacher:
+            return 0;
+          case _RecipientType.admin:
+            return 1;
+          case _RecipientType.learner:
+            return 2;
+        }
+      }
+
+      all.sort((a, b) {
+        final r = rank(a.type).compareTo(rank(b.type));
+        if (r != 0) return r;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
 
       if (!mounted) return;
       setState(() {
-        _admins = out;
-        _picked = out.isNotEmpty ? out.first : null;
+        _recipients = all;
+        _picked = all.isNotEmpty ? all.first : null;
         _loading = false;
       });
     } catch (_) {
@@ -363,27 +437,35 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   }
 
   void _submit() {
-    if (_picked == null) return;
+    final r = _picked;
+    if (r == null) return;
+
     final subject = _subjectC.text.trim();
     final msg = _messageC.text.trim();
+
     if (subject.isEmpty || msg.isEmpty) return;
 
     Navigator.pop(
       context,
-      _AdminPickResult(
-        adminUid: _picked!.uid,
-        adminName: _picked!.name,
+      _RecipientPickResult(
+        receiverUid: r.uid,
+        receiverName: r.name,
         subject: subject,
-        learnerName: _learnerName,
+        senderName: _senderName,
         firstMessage: msg,
       ),
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    String prefixFor(_RecipientType t) {
+      if (t == _RecipientType.teacher) return '👩‍🏫 ';
+      if (t == _RecipientType.admin) return '🛡️ ';
+      return '🎓 ';
+    }
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
@@ -391,10 +473,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 6),
-          const Text(
-            'New mail',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-          ),
+          const Text('New mail', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           const SizedBox(height: 12),
 
           if (_loading)
@@ -404,24 +483,24 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
                 children: [
                   SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                   SizedBox(width: 10),
-                  Text('Loading admins...'),
+                  Text('Loading recipients...'),
                 ],
               ),
             )
-          else if (_admins.isEmpty)
+          else if (_recipients.isEmpty)
             const Padding(
               padding: EdgeInsets.all(12),
-              child: Text('No admins found (users where role = admin).'),
+              child: Text('No teachers, admins, or classmates found for you.'),
             )
           else
-            DropdownButtonFormField<_AdminRow>(
+            DropdownButtonFormField<_RecipientRow>(
               value: _picked,
-              items: _admins
-                  .map((a) => DropdownMenuItem<_AdminRow>(
-                value: a,
-                child: Text(a.name),
-              ))
-                  .toList(),
+              items: _recipients.map((r) {
+                return DropdownMenuItem<_RecipientRow>(
+                  value: r,
+                  child: Text('${prefixFor(r.type)}${r.name}'),
+                );
+              }).toList(),
               onChanged: (v) => setState(() => _picked = v),
               decoration: const InputDecoration(
                 labelText: 'Send to',
@@ -432,16 +511,24 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
           const SizedBox(height: 12),
 
           TextFormField(
+            controller: _subjectC,
+            decoration: const InputDecoration(
+              labelText: 'Topic / Subject',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          TextFormField(
             controller: _messageC,
             minLines: 3,
             maxLines: 6,
             decoration: const InputDecoration(
               labelText: 'First message',
-              hintText: 'Write your message…',
               border: OutlineInputBorder(),
             ),
           ),
-
 
           const SizedBox(height: 12),
 
@@ -459,32 +546,39 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   }
 }
 
-class _AdminRow {
-  _AdminRow({required this.uid, required this.name});
-  final String uid;
-  final String name;
-}
+// ----------------------------
+// Models
+// ----------------------------
 
-class _AdminPickResult {
-  _AdminPickResult({
-    required this.adminUid,
-    required this.adminName,
+class _RecipientPickResult {
+  _RecipientPickResult({
+    required this.receiverUid,
+    required this.receiverName,
     required this.subject,
-    required this.learnerName,
+    required this.senderName,
     required this.firstMessage,
   });
 
-  final String adminUid;
-  final String adminName;
+  final String receiverUid;
+  final String receiverName;
   final String subject;
-  final String learnerName;
+  final String senderName;
   final String firstMessage;
 }
 
+enum _RecipientType { admin, teacher, learner }
 
-// ----------------------------
-// Topic Row model
-// ----------------------------
+class _RecipientRow {
+  _RecipientRow({
+    required this.uid,
+    required this.name,
+    required this.type,
+  });
+
+  final String uid;
+  final String name;
+  final _RecipientType type;
+}
 
 class _TopicRow {
   _TopicRow({
