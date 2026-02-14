@@ -99,15 +99,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         context: context,
         showDragHandle: true,
         isScrollControlled: true,
-        builder: (ctx) => _ComposeMailSheet(
-          db: _db,
-          meUid: _meUid,
-        ),
+        builder: (ctx) => _ComposeMailSheet(db: _db, meUid: _meUid),
       );
 
       if (picked == null) return;
 
-      // Create new thread + index for both
       final now = DateTime.now().millisecondsSinceEpoch;
       final threadId = _db.ref('mail_threads').push().key;
       if (threadId == null) {
@@ -115,33 +111,49 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         return;
       }
 
-      final subject = picked.subject.trim();
+      final msgId = _db.ref('mail_threads/$threadId/messages').push().key;
+      if (msgId == null) {
+        _snack('Failed to create message id.');
+        return;
+      }
 
-      // thread meta
+      final subject = picked.subject.trim();
+      final text = picked.firstMessage.trim();
+
+      // 1) thread meta
       await _db.ref('mail_threads/$threadId').set({
         'subject': subject,
         'createdAt': now,
         'updatedAt': now,
-        'lastMessage': '',
+        'lastMessage': text,
       });
 
-      // index (learner side)
+      // 2) first message
+      await _db.ref('mail_threads/$threadId/messages/$msgId').set({
+        'id': msgId,
+        'text': text,
+        'senderUid': _meUid,
+        'senderName': picked.learnerName,
+        'createdAt': now,
+      });
+
+      // 3) index (learner sender) unread 0
       await _db.ref('mail_index/$_meUid/$threadId').set({
         'subject': subject,
         'updatedAt': now,
-        'lastMessage': '',
+        'lastMessage': text,
         'unreadCount': 0,
         'peerUid': picked.adminUid,
         'peerName': picked.adminName,
         'deletedAt': null,
       });
 
-      // index (admin side)
+      // 4) index (admin receiver) unread 1
       await _db.ref('mail_index/${picked.adminUid}/$threadId').set({
         'subject': subject,
         'updatedAt': now,
-        'lastMessage': '',
-        'unreadCount': 0,
+        'lastMessage': text,
+        'unreadCount': 1,
         'peerUid': _meUid,
         'peerName': picked.learnerName,
         'deletedAt': null,
@@ -149,7 +161,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
       if (!mounted) return;
 
-      // Open thread screen
       await Navigator.of(context).push(
         MaterialPageRoute(
           settings: RouteSettings(name: '/mail/thread/$threadId'),
@@ -283,6 +294,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   _AdminRow? _picked;
   final _subjectC = TextEditingController();
   String _learnerName = 'Learner';
+  final _messageC = TextEditingController();
 
   @override
   void initState() {
@@ -293,8 +305,10 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   @override
   void dispose() {
     _subjectC.dispose();
+    _messageC.dispose();
     super.dispose();
   }
+
 
   Future<void> _loadAdminsAndMe() async {
     try {
@@ -351,7 +365,8 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   void _submit() {
     if (_picked == null) return;
     final subject = _subjectC.text.trim();
-    if (subject.isEmpty) return;
+    final msg = _messageC.text.trim();
+    if (subject.isEmpty || msg.isEmpty) return;
 
     Navigator.pop(
       context,
@@ -360,9 +375,11 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
         adminName: _picked!.name,
         subject: subject,
         learnerName: _learnerName,
+        firstMessage: msg,
       ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -415,15 +432,16 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
           const SizedBox(height: 12),
 
           TextFormField(
-            controller: _subjectC,
-            textInputAction: TextInputAction.done,
+            controller: _messageC,
+            minLines: 3,
+            maxLines: 6,
             decoration: const InputDecoration(
-              labelText: 'Topic / Subject',
-              hintText: 'Example: Homework question',
+              labelText: 'First message',
+              hintText: 'Write your message…',
               border: OutlineInputBorder(),
             ),
-            onFieldSubmitted: (_) => _submit(),
           ),
+
 
           const SizedBox(height: 12),
 
@@ -453,13 +471,16 @@ class _AdminPickResult {
     required this.adminName,
     required this.subject,
     required this.learnerName,
+    required this.firstMessage,
   });
 
   final String adminUid;
   final String adminName;
   final String subject;
   final String learnerName;
+  final String firstMessage;
 }
+
 
 // ----------------------------
 // Topic Row model
