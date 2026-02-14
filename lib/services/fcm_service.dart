@@ -7,9 +7,13 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../admin/admin_teacher_mail_thread_screen.dart';
 
 import '../main.dart'; // appNavigatorKey
 import '../calls/audio_call_screen.dart';
+
+// ✅ ADD: open mail thread from notification
+import 'mail_thread_by_id_screen.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -288,42 +292,77 @@ class FCMService {
     }
 
     final type = (data['type'] ?? '').toString().toLowerCase();
-    if (type != 'incoming_call') return;
 
-    final callId = (data['callId'] ?? '').toString().trim();
-    final peerUid = (data['peerUid'] ?? '').toString().trim();
-    final peerName = (data['peerName'] ?? 'Caller').toString().trim();
+    // ✅ 1) KEEP existing working call logic untouched
+    if (type == 'incoming_call') {
+      final callId = (data['callId'] ?? '').toString().trim();
+      final peerUid = (data['peerUid'] ?? '').toString().trim();
+      final peerName = (data['peerName'] ?? 'Caller').toString().trim();
 
-    if (callId.isEmpty) return;
+      if (callId.isEmpty) return;
 
-    // ✅ Block duplicate opens for the same callId
-    final now = DateTime.now();
-    if (_lastIncomingCallIdHandled == callId &&
-        _lastIncomingCallHandledAt != null &&
-        now.difference(_lastIncomingCallHandledAt!).inSeconds < 10) {
+      // ✅ Block duplicate opens for the same callId
+      final now = DateTime.now();
+      if (_lastIncomingCallIdHandled == callId &&
+          _lastIncomingCallHandledAt != null &&
+          now.difference(_lastIncomingCallHandledAt!).inSeconds < 10) {
+        return;
+      }
+      _lastIncomingCallIdHandled = callId;
+      _lastIncomingCallHandledAt = now;
+
+      void go() {
+        final nav = appNavigatorKey.currentState;
+        if (nav == null) return;
+
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => AudioCallScreen(
+              peerUid: peerUid,
+              peerName: peerName,
+              isCaller: false,
+              incomingCallId: callId,
+            ),
+          ),
+        );
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        go();
+      });
+
       return;
     }
-    _lastIncomingCallIdHandled = callId;
-    _lastIncomingCallHandledAt = now;
 
-    void go() {
-      final nav = appNavigatorKey.currentState;
-      if (nav == null) return;
+    // ✅ 2) ADD mail open (does not affect calls)
+    if (type == 'mail' || type == 'email') {
+      final threadId = (data['threadId'] ?? '').toString().trim();
+      final peerUid = (data['peerUid'] ?? '').toString().trim();
 
-      nav.push(
-        MaterialPageRoute(
-          builder: (_) => AudioCallScreen(
-            peerUid: peerUid,
-            peerName: peerName,
-            isCaller: false,
-            incomingCallId: callId,
+      if (threadId.isEmpty || peerUid.isEmpty) return;
+
+      void go() {
+        final nav = appNavigatorKey.currentState;
+        if (nav == null) return;
+
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => MailThreadByIdScreen(
+              threadId: threadId,
+              peerUid: peerUid,
+            ),
           ),
-        ),
-      );
+        );
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        go();
+      });
+
+      return;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      go();
-    });
+    // ✅ ignore other types safely
+    return;
   }
 }

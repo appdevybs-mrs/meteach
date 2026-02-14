@@ -8,6 +8,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'admin_teacher_reminders_screen.dart';
 import '../calls/audio_call_screen.dart';
 import '../calls/audio_call_screen.dart';
+import 'admin_teacher_mail_thread_screen.dart';
+import 'admin_teacher_mail_topics_screen.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key});
@@ -854,15 +856,20 @@ Future<void> _openTeacherQuickActions(
               subtitle: Text(staff.email.trim().isEmpty ? '(No email)' : staff.email),
               onTap: () async {
                 Navigator.pop(ctx);
-                final email = staff.email.trim();
-                if (email.isEmpty) {
-                  _snackHere(context, 'No email for this teacher.');
-                  return;
-                }
-                await Clipboard.setData(ClipboardData(text: email));
-                _snackHere(context, 'Email copied ✅');
+
+                // ✅ Open in-app mail thread
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AdminTeacherMailTopicsScreen(
+                      teacherUid: teacherUid,
+                      teacher: staff,
+                    ),
+
+                  ),
+                );
               },
             ),
+
             ListTile(
               leading: const Icon(Icons.notifications_active_outlined),
               title: const Text('Reminder'),
