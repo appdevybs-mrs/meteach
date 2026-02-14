@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/push_client.dart';
+import '../services/route_state.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -121,6 +123,8 @@ class _AdminTeacherMailThreadScreenState
     super.initState();
 
     _threadId = _pairThreadId(_meUid, widget.teacherUid);
+    RouteState.enterMailThread(_threadId);
+
     _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
 
     _loadOrInitThread();
@@ -128,13 +132,15 @@ class _AdminTeacherMailThreadScreenState
     _ensureIndexForMe(); // so it appears in inbox even if empty
   }
 
+
   @override
   void dispose() {
+    RouteState.exitMailThread(_threadId);
     _bodyC.dispose();
     super.dispose();
   }
 
-  /// ✅ FIX: must be INSIDE State class (so widget exists)
+  /// teacher display name
   String _teacherDisplayName() {
     final t = widget.teacher;
 
@@ -177,7 +183,8 @@ class _AdminTeacherMailThreadScreenState
   }
 
   Future<String?> _getFcmToken(String uid) async {
-    final snap = await FirebaseDatabase.instance.ref('fcm_tokens/$uid/token').get();
+    final snap =
+    await FirebaseDatabase.instance.ref('fcm_tokens/$uid/token').get();
     final token = snap.value?.toString().trim();
     if (token == null || token.isEmpty) return null;
     return token;
@@ -210,7 +217,6 @@ class _AdminTeacherMailThreadScreenState
   }
 
   Future<void> _ensureIndexForMe() async {
-    // ensures the thread appears in inbox even before first message
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
       final teacherName = _teacherDisplayName();
@@ -222,7 +228,7 @@ class _AdminTeacherMailThreadScreenState
         'unreadCount': 0,
         'peerUid': widget.teacherUid,
         'peerName': teacherName.isEmpty ? 'Teacher' : teacherName,
-        'deletedAt': null, // if user undeletes later
+        'deletedAt': null,
       });
     } catch (_) {}
   }
@@ -312,22 +318,36 @@ class _AdminTeacherMailThreadScreenState
       await _threadRef.update({'subject': s.trim()});
       setState(() => _subject = s.trim());
 
-      // update subject in both indexes
       await _indexRef.child(_meUid).child(_threadId).update({'subject': s.trim()});
-      await _indexRef.child(widget.teacherUid).child(_threadId).update({'subject': s.trim()});
+      await _indexRef
+          .child(widget.teacherUid)
+          .child(_threadId)
+          .update({'subject': s.trim()});
     } catch (e) {
       _snack('Failed to set subject: $e');
     }
   }
 
+  /// ✅ Fast send: clear input instantly + restore on failure
   Future<void> _send() async {
+    if (_sending) return;
+
     final body = _bodyC.text.trim();
     if (body.isEmpty && _attachments.isEmpty) {
       _snack('Write something or attach a file.');
       return;
     }
 
-    setState(() => _sending = true);
+    // backup so we can restore if something fails
+    final bodyBackup = body;
+    final attachmentsBackup = List<Map<String, String>>.from(_attachments);
+
+    // ✅ clear immediately (feels instant)
+    _bodyC.clear();
+    setState(() {
+      _sending = true;
+      _attachments.clear();
+    });
 
     try {
       await _setSubjectIfNeeded();
@@ -335,23 +355,23 @@ class _AdminTeacherMailThreadScreenState
       final now = DateTime.now().millisecondsSinceEpoch;
       final msgRef = _msgsRef.push();
 
-      final msg = {
+      final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
+      final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
+
+      await msgRef.set({
         'fromUid': _meUid,
-        'body': body,
+        'body': bodyBackup,
         'toUids': {widget.teacherUid: true},
         'ccUids': {},
         'bccUids': {},
-        'attachments': _attachments,
+        'attachments': attachmentsBackup,
         'createdAt': now,
-        'deletedFor': {}, // per-user delete
-      };
+        'deletedFor': {},
+      });
 
-      await msgRef.set(msg);
-
-      final preview = body.isEmpty ? '📎 Attachment' : body;
       await _threadRef.update({
         'updatedAt': now,
-        'lastMessage': preview.length > 80 ? preview.substring(0, 80) : preview,
+        'lastMessage': preview80,
       });
 
       final teacherName = _teacherDisplayName();
@@ -360,55 +380,62 @@ class _AdminTeacherMailThreadScreenState
       await _indexRef.child(_meUid).child(_threadId).update({
         'subject': _subject,
         'updatedAt': now,
-        'lastMessage': preview,
+        'lastMessage': preview80,
         'unreadCount': 0,
         'peerUid': widget.teacherUid,
         'peerName': teacherName.isEmpty ? 'Teacher' : teacherName,
         'deletedAt': null,
       });
 
-      // For teacher: unread + 1 (and re-appear if deleted)
-      final teacherIndexNode = _indexRef.child(widget.teacherUid).child(_threadId);
+      // For teacher: unread + 1 (transaction avoids race)
+      await _indexRef
+          .child(widget.teacherUid)
+          .child(_threadId)
+          .runTransaction((cur) {
+        final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+        final oldUnread =
+        (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
 
-      final currentUnreadSnap = await teacherIndexNode.child('unreadCount').get();
-      int currentUnread = 0;
-      final v = currentUnreadSnap.value;
-      if (v is int) currentUnread = v;
-      if (v is num) currentUnread = v.toInt();
-      if (v is String) currentUnread = int.tryParse(v) ?? 0;
+        m['subject'] = _subject;
+        m['updatedAt'] = now;
+        m['lastMessage'] = preview80;
+        m['unreadCount'] = oldUnread + 1;
+        m['peerUid'] = _meUid;
+        m['peerName'] = _meName;
+        m['deletedAt'] = null;
 
-      await teacherIndexNode.update({
-        'subject': _subject,
-        'updatedAt': now,
-        'lastMessage': preview,
-        'unreadCount': currentUnread + 1,
-        'peerUid': _meUid,
-        'peerName': _meName,
-        'deletedAt': null,
+        return Transaction.success(m);
       });
 
-      // notify teacher
-      try {
-        final token = await _getFcmToken(widget.teacherUid);
-        if (token != null) {
-          await PushClient.sendToToken(
-            token: token,
-            title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
-            message: preview.isEmpty ? 'You received new mail' : preview,
-            data: {
-              'type': 'mail',
-              'route': 'mail_thread',
-              'threadId': _threadId,
-              'peerUid': _meUid,
-            },
-          );
-        }
-      } catch (_) {}
+      unawaited(_markRead());
 
-      _bodyC.clear();
-      setState(() => _attachments.clear());
-      await _markRead();
+      // notify teacher (do not block UI)
+      unawaited(() async {
+        try {
+          final token = await _getFcmToken(widget.teacherUid);
+          if (token != null) {
+            await PushClient.sendToToken(
+              token: token,
+              title: _subject.trim().isEmpty ? 'New mail' : _subject.trim(),
+              message: preview80.isEmpty ? 'You received new mail' : preview80,
+              data: {
+                'type': 'mail',
+                'route': 'mail_thread',
+                'threadId': _threadId,
+                'peerUid': _meUid,
+              },
+            );
+          }
+        } catch (_) {}
+      }());
     } catch (e) {
+      // ✅ restore user input if failed
+      _bodyC.text = bodyBackup;
+      setState(() {
+        _attachments
+          ..clear()
+          ..addAll(attachmentsBackup);
+      });
       _snack('Send failed: $e');
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -443,12 +470,10 @@ class _AdminTeacherMailThreadScreenState
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
 
-      // Hide from inbox for me
       await _indexRef.child(_meUid).child(_threadId).update({
         'deletedAt': now,
       });
 
-      // Optional: keep state clean
       await _stateRef.child(_meUid).child(_threadId).remove();
 
       if (mounted) Navigator.pop(context);
@@ -533,7 +558,8 @@ class _AdminTeacherMailThreadScreenState
                     final mine = m.fromUid == _meUid;
 
                     return Align(
-                      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment:
+                      mine ? Alignment.centerRight : Alignment.centerLeft,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 340),
                         child: Card(
@@ -544,18 +570,23 @@ class _AdminTeacherMailThreadScreenState
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
-                              crossAxisAlignment:
-                              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(
-                                      mine ? 'Me' : 'Teacher',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.black.withOpacity(0.6),
-                                        fontSize: 12,
+                                    Flexible(
+                                      child: Text(
+                                        mine ? 'Me' : 'Teacher',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.black.withOpacity(0.6),
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -566,20 +597,25 @@ class _AdminTeacherMailThreadScreenState
                                         color: Colors.black.withOpacity(0.55),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    PopupMenuButton<String>(
-                                      tooltip: 'Message actions',
-                                      onSelected: (v) async {
-                                        if (v == 'delete_for_me') {
-                                          await _deleteMessageForMe(m);
-                                        }
-                                      },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem(
-                                          value: 'delete_for_me',
-                                          child: Text('Delete (for me)'),
-                                        ),
-                                      ],
+                                    const SizedBox(width: 6),
+                                    SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: PopupMenuButton<String>(
+                                        padding: EdgeInsets.zero,
+                                        tooltip: 'Message actions',
+                                        onSelected: (v) async {
+                                          if (v == 'delete_for_me') {
+                                            await _deleteMessageForMe(m);
+                                          }
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(
+                                            value: 'delete_for_me',
+                                            child: Text('Delete (for me)'),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -600,7 +636,8 @@ class _AdminTeacherMailThreadScreenState
                                           '📎 $name',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
-                                            decoration: TextDecoration.underline,
+                                            decoration:
+                                            TextDecoration.underline,
                                           ),
                                         ),
                                       ),
@@ -618,6 +655,7 @@ class _AdminTeacherMailThreadScreenState
               },
             ),
           ),
+
           // composer
           SafeArea(
             top: false,
@@ -711,7 +749,8 @@ class _MailMsg {
     if (rawAtt is List) {
       for (final item in rawAtt) {
         if (item is Map) {
-          final mm = item.map((k, v) => MapEntry(k.toString(), v.toString()));
+          final mm =
+          item.map((k, v) => MapEntry(k.toString(), v.toString()));
           atts.add(mm);
         }
       }

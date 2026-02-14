@@ -8,6 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../admin/admin_teacher_mail_thread_screen.dart';
+import 'route_state.dart'; // if same folder
 
 import '../main.dart'; // appNavigatorKey
 import '../calls/audio_call_screen.dart';
@@ -85,22 +86,29 @@ class FCMService {
 
     // ✅ Foreground push (APP OPEN)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      final type = (message.data['type'] ?? '').toString().toLowerCase();
+      final data = Map<String, dynamic>.from(message.data);
+      final type = (data['type'] ?? '').toString().toLowerCase();
 
-      // ✅ Fix #2: If incoming call arrives while app is open, OPEN call screen.
+      // ✅ If already inside THIS mail thread, don't show notification
+      if (type == 'mail' || type == 'email') {
+        final threadId = (data['threadId'] ?? '').toString().trim();
+        if (threadId.isNotEmpty && RouteState.currentMailThreadId == threadId) {
+          return; // UI will update via RTDB stream
+        }
+      }
+
+      // ✅ Calls: open immediately + show notif
       if (type == 'incoming_call') {
         _handleNotificationTapPayload(jsonEncode(message.data));
-
-        // Optional: show a local heads-up notification too, but with a STABLE id (no spam).
-        // If you prefer ZERO notifications while app is open, comment this line.
         await _showFromRemoteMessage(message);
-
         return;
       }
 
-      // Non-call notifications: show local
+      // ✅ Others (mail included): just show local notification
       await _showFromRemoteMessage(message);
     });
+
+
 
     // Background -> user tapped system notification
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
@@ -341,12 +349,31 @@ class FCMService {
 
       if (threadId.isEmpty || peerUid.isEmpty) return;
 
+      // ✅ If already inside this exact thread, do nothing
+      if (RouteState.currentMailThreadId == threadId) return;
+
       void go() {
         final nav = appNavigatorKey.currentState;
         if (nav == null) return;
 
+        final targetName = '/mail/thread/$threadId';
+
+        // ✅ If this thread screen is already in the stack, POP back to it (no duplicate push)
+        bool found = false;
+        nav.popUntil((route) {
+          if (route.settings.name == targetName) {
+            found = true;
+            return true;
+          }
+          return route.isFirst;
+        });
+
+        if (found) return;
+
+        // ✅ Otherwise, open it once
         nav.push(
           MaterialPageRoute(
+            settings: RouteSettings(name: targetName),
             builder: (_) => MailThreadByIdScreen(
               threadId: threadId,
               peerUid: peerUid,
@@ -355,12 +382,11 @@ class FCMService {
         );
       }
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        go();
-      });
-
+      WidgetsBinding.instance.addPostFrameCallback((_) => go());
       return;
     }
+
+
 
     // ✅ ignore other types safely
     return;

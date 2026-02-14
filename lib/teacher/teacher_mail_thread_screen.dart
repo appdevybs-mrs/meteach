@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../services/route_state.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,94 +9,33 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:async';
-import '../services/route_state.dart'; // ✅ ADD THIS
 
 import '../services/push_client.dart';
 
-class MailUploadClient {
-  MailUploadClient({
-    required this.endpoint,
-    required this.appId,
-    required this.key,
-    http.Client? httpClient,
-  }) : _http = httpClient ?? http.Client();
-
-  final String endpoint;
-  final String appId;
-  final String key;
-  final http.Client _http;
-
-  factory MailUploadClient.defaultClient() {
-    return MailUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/upload.php',
-      appId: 'dreamenglishacademy',
-      key: 'a7a995d9c499128351d827eaad7285bcc891919b',
-    );
-  }
-
-  Future<String> uploadFile({required File file}) async {
-    final uri = Uri.parse(endpoint);
-
-    final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
-      ..fields['app_id'] = appId
-      ..files.add(await http.MultipartFile.fromPath('file', file.path));
-
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
-
-    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-      throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
-    }
-
-    final decoded = _tryDecodeJson(body);
-    if (decoded == null) {
-      throw Exception('Upload failed: invalid JSON\n$body');
-    }
-
-    final success = decoded['success'] == true;
-    final url = (decoded['url'] ?? '').toString();
-
-    if (!success || url.trim().isEmpty) {
-      throw Exception('Upload failed: $decoded');
-    }
-
-    return url;
-  }
-
-  static Map<String, dynamic>? _tryDecodeJson(String s) {
-    try {
-      return (jsonDecode(s) as Map).cast<String, dynamic>();
-    } catch (_) {
-      return null;
-    }
-  }
-}
-
-class MailTopicThreadScreen extends StatefulWidget {
-  const MailTopicThreadScreen({
+class TeacherMailThreadScreen extends StatefulWidget {
+  const TeacherMailThreadScreen({
     super.key,
     required this.threadId,
     required this.peerUid,
     required this.peerName,
+    required this.subject,
   });
 
   final String threadId;
   final String peerUid;
   final String peerName;
+  final String subject;
 
   @override
-  State<MailTopicThreadScreen> createState() => _MailTopicThreadScreenState();
+  State<TeacherMailThreadScreen> createState() => _TeacherMailThreadScreenState();
 }
 
-class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
+class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
-  String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+  String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Teacher').trim();
 
   DatabaseReference get _threadRef => _db.ref('mail_threads/${widget.threadId}');
   DatabaseReference get _msgsRef => _db.ref('mail_messages/${widget.threadId}');
@@ -103,10 +44,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   late final Stream<DatabaseEvent> _msgStream;
 
-  String _subject = '';
   bool _sending = false;
 
-  final List<Map<String, String>> _attachments = [];
+  final List<Map<String, String>> _attachments = []; // {name,url}
 
   @override
   void initState() {
@@ -114,10 +54,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     RouteState.enterMailThread(widget.threadId);
 
     _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
-    _loadSubject();
     _markRead();
   }
-
 
   @override
   void dispose() {
@@ -130,17 +68,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Future<void> _loadSubject() async {
-    try {
-      final snap = await _threadRef.get();
-      final v = snap.value;
-      if (v is Map) {
-        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-        setState(() => _subject = (m['subject'] ?? '').toString().trim());
-      }
-    } catch (_) {}
   }
 
   Future<String?> _getFcmToken(String uid) async {
@@ -165,7 +92,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     data.forEach((k, v) {
       if (k == null || v == null) return;
       if (v is! Map) return;
-
       final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
       final msg = _MailMsg.fromMap(k.toString(), m);
 
@@ -203,45 +129,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     } catch (_) {}
   }
 
-  Future<void> _deleteThreadForMe() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete topic?'),
-        content: const Text('This deletes only for you.\nThe other user still sees it.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    ) ??
-        false;
-
-    if (!ok) return;
-
-    try {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      await _indexRef.child(_meUid).child(widget.threadId).update({'deletedAt': now});
-      await _stateRef.child(_meUid).child(widget.threadId).remove();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      _snack('Delete failed: $e');
-    }
-  }
-
-  Future<void> _deleteMessageForMe(_MailMsg m) async {
-    try {
-      await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
-      _snack('Deleted for you ✅');
-    } catch (e) {
-      _snack('Delete failed: $e');
-    }
-  }
-
+  // ✅ Fast send: clears input instantly + uses transaction for unread
   Future<void> _send() async {
     if (_sending) return;
 
@@ -251,7 +139,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       return;
     }
 
-    // ✅ Optimistic clear (instant UX)
     final bodyBackup = body;
     final attachmentsBackup = List<Map<String, String>>.from(_attachments);
 
@@ -268,7 +155,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
       final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
 
-      // ✅ 1) write message
       await msgRef.set({
         'fromUid': _meUid,
         'body': bodyBackup,
@@ -280,15 +166,14 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         'deletedFor': {},
       });
 
-      // ✅ 2) update thread meta
       await _threadRef.update({
         'updatedAt': now,
         'lastMessage': preview80,
       });
 
-      // ✅ 3) update BOTH indexes (no unreadCount read needed)
+      // Me
       await _indexRef.child(_meUid).child(widget.threadId).update({
-        'subject': _subject,
+        'subject': widget.subject,
         'updatedAt': now,
         'lastMessage': preview80,
         'unreadCount': 0,
@@ -297,12 +182,12 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         'deletedAt': null,
       });
 
-      // ✅ Increment peer unread using transaction (fast + safe)
+      // Peer unread increment (transaction)
       await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
         final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
         final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
 
-        m['subject'] = _subject;
+        m['subject'] = widget.subject;
         m['updatedAt'] = now;
         m['lastMessage'] = preview80;
         m['unreadCount'] = oldUnread + 1;
@@ -313,17 +198,16 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         return Transaction.success(m);
       });
 
-      // ✅ 4) mark read for me (don’t block UI if slow)
       unawaited(_markRead());
 
-      // ✅ 5) push notify (don’t block UI)
+      // Push (non-blocking)
       unawaited(() async {
         try {
           final token = await _getFcmToken(widget.peerUid);
           if (token != null) {
             await PushClient.sendToToken(
               token: token,
-              title: _subject.isEmpty ? 'New mail' : _subject,
+              title: widget.subject.isEmpty ? 'New mail' : widget.subject,
               message: preview80.isEmpty ? 'You received new mail' : preview80,
               data: {
                 'type': 'mail',
@@ -336,7 +220,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         } catch (_) {}
       }());
     } catch (e) {
-      // ✅ restore input on failure
       _bodyC.text = bodyBackup;
       setState(() {
         _attachments
@@ -349,24 +232,35 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     }
   }
 
+  Future<void> _deleteMessageForMe(_MailMsg m) async {
+    try {
+      await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
+      _snack('Deleted for you ✅');
+    } catch (e) {
+      _snack('Delete failed: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final title = _subject.trim().isEmpty ? 'Topic' : _subject.trim();
+    final title = widget.peerName.isEmpty ? 'Mail' : 'Mail — ${widget.peerName}';
 
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              if (v == 'delete_topic') await _deleteThreadForMe();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'delete_topic', child: Text('Delete topic (for me)')),
-            ],
+        bottom: (widget.subject.trim().isEmpty)
+            ? null
+            : PreferredSize(
+          preferredSize: const Size.fromHeight(34),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Topic: ${widget.subject}',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
           ),
-        ],
+        ),
       ),
       body: Column(
         children: [
@@ -375,7 +269,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               stream: _msgStream,
               builder: (_, snap) {
                 final msgs = _parseMessages(snap.data?.snapshot.value);
-                if (msgs.isEmpty) return const Center(child: Text('No messages yet.'));
+                if (msgs.isEmpty) return const Center(child: Text('No mail yet.'));
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(12),
@@ -390,37 +284,55 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                         constraints: const BoxConstraints(maxWidth: 340),
                         child: Card(
                           elevation: 0,
-                          color: mine ? Colors.blue.withOpacity(0.12) : Colors.black.withOpacity(0.05),
+                          color: mine
+                              ? Colors.blue.withOpacity(0.12)
+                              : Colors.black.withOpacity(0.05),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
-                              crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(
-                                      mine ? 'Me' : widget.peerName,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.black.withOpacity(0.6),
-                                        fontSize: 12,
+                                    Flexible(
+                                      child: Text(
+                                        mine ? 'Me' : widget.peerName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.black.withOpacity(0.6),
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
                                       _fmt(m.createdAtMs),
-                                      style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.55)),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black.withOpacity(0.55),
+                                      ),
                                     ),
                                     const SizedBox(width: 6),
-                                    PopupMenuButton<String>(
-                                      tooltip: 'Message actions',
-                                      onSelected: (v) async {
-                                        if (v == 'delete_for_me') await _deleteMessageForMe(m);
-                                      },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
-                                      ],
+                                    SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: PopupMenuButton<String>(
+                                        padding: EdgeInsets.zero,
+                                        tooltip: 'Message actions',
+                                        onSelected: (v) async {
+                                          if (v == 'delete_for_me') await _deleteMessageForMe(m);
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(
+                                            value: 'delete_for_me',
+                                            child: Text('Delete (for me)'),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -459,7 +371,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               },
             ),
           ),
-
           SafeArea(
             top: false,
             child: Padding(
@@ -493,7 +404,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                           minLines: 1,
                           maxLines: 4,
                           decoration: const InputDecoration(
-                            hintText: 'Write…',
+                            hintText: 'Write mail…',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -572,5 +483,62 @@ class _MailMsg {
       createdAtMs: parseMs(m['createdAt']),
       deletedFor: del,
     );
+  }
+}
+
+/// Upload client (same endpoint you already use)
+class MailUploadClient {
+  MailUploadClient({
+    required this.endpoint,
+    required this.appId,
+    required this.key,
+    http.Client? httpClient,
+  }) : _http = httpClient ?? http.Client();
+
+  final String endpoint;
+  final String appId;
+  final String key;
+  final http.Client _http;
+
+  factory MailUploadClient.defaultClient() {
+    return MailUploadClient(
+      endpoint: 'https://www.yourbridgeschool.com/app/upload.php',
+      appId: 'dreamenglishacademy',
+      key: 'a7a995d9c499128351d827eaad7285bcc891919b',
+    );
+  }
+
+  Future<String> uploadFile({required File file}) async {
+    final uri = Uri.parse(endpoint);
+
+    final req = http.MultipartRequest('POST', uri)
+      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
+      ..fields['key'] = key
+      ..fields['app_id'] = appId
+      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
+    }
+
+    final decoded = _tryDecodeJson(body);
+    if (decoded == null) throw Exception('Upload failed: invalid JSON\n$body');
+
+    final ok = decoded['success'] == true;
+    final url = (decoded['url'] ?? '').toString();
+    if (!ok || url.trim().isEmpty) throw Exception('Upload failed: $decoded');
+
+    return url;
+  }
+
+  static Map<String, dynamic>? _tryDecodeJson(String s) {
+    try {
+      return (jsonDecode(s) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
   }
 }
