@@ -14,6 +14,9 @@ import 'teacher_schedule.dart';
 // ✅ Call logs
 import '../calls/call_logs_screen.dart';
 
+// ✅ Call screen
+import '../calls/audio_call_screen.dart';
+
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
 
@@ -67,6 +70,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   bool _isTeacherRole(dynamic role) {
     final r = (role ?? "").toString().trim().toLowerCase();
     return r == "teacher" || r == "teachers" || r == "teacher(s)";
+  }
+
+  bool _isAdminRole(dynamic role) {
+    final r = (role ?? "").toString().trim().toLowerCase();
+    return r == "admin" || r == "administrator";
   }
 
   int _learnersCount(Map<String, dynamic> classData) {
@@ -183,6 +191,414 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  // -----------------------
+  // Support FAB helpers
+  // -----------------------
+
+  Future<String> _myDisplayName() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return 'Teacher';
+
+    try {
+      final snap = await _db.child('users/$uid').get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final full = ('$first $last').trim();
+        if (full.isNotEmpty) return full;
+        final email = (m['email'] ?? '').toString().trim();
+        if (email.isNotEmpty) return email.split('@').first;
+      }
+    } catch (_) {}
+    return 'Teacher';
+  }
+
+  Future<List<_UserPick>> _loadAdmins() async {
+    final out = <_UserPick>[];
+    try {
+      final snap = await _db.child('users').get();
+      final v = snap.value;
+      if (v is! Map) return out;
+
+      final raw = Map<dynamic, dynamic>.from(v);
+      raw.forEach((uid, val) {
+        if (val is! Map) return;
+        final m = val.map((k, vv) => MapEntry(k.toString(), vv));
+        if (!_isAdminRole(m['role'])) return;
+
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final name = ('$first $last').trim().isEmpty ? 'Admin' : ('$first $last').trim();
+
+        out.add(_UserPick(uid: uid.toString(), name: name, subtitle: 'Admin'));
+      });
+
+      out.sort((a, b) => a.name.compareTo(b.name));
+      return out;
+    } catch (_) {
+      return out;
+    }
+  }
+
+  Future<List<_UserPick>> _loadLearnersInMyClasses() async {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me == null) return [];
+
+    final learners = <String, String>{}; // uid -> name
+
+    try {
+      final classesSnap = await _db.child('classes').get();
+      final v = classesSnap.value;
+      if (v is! Map) return [];
+
+      final raw = Map<dynamic, dynamic>.from(v);
+
+      raw.forEach((classId, classVal) {
+        if (classVal is! Map) return;
+        final c = classVal.map((k, vv) => MapEntry(k.toString(), vv));
+
+        // match teacher to this class
+        bool isMine = false;
+
+        final cur = c['instructor_current'];
+        if (cur is Map) {
+          final cm = cur.map((kk, vv) => MapEntry(kk.toString(), vv));
+          final tuid = (cm['uid'] ?? '').toString().trim();
+          if (tuid.isNotEmpty && tuid == me) isMine = true;
+        }
+
+        // legacy fallback: instructor name compare (best-effort)
+        if (!isMine) {
+          final legacyInstructor = (c['instructor'] ?? '').toString().trim();
+          if (legacyInstructor.isNotEmpty) {
+            // if your users/uid record name matches this legacy string, we try.
+            // But without guaranteed format, we keep this minimal and safe (do nothing).
+          }
+        }
+
+        if (!isMine) return;
+
+        final l = c['learners'];
+        if (l is! Map) return;
+
+        final lm = Map<dynamic, dynamic>.from(l);
+        lm.forEach((uid, lv) {
+          final u = uid.toString();
+          if (u == me) return; // teacher isn't a learner
+
+          String name = 'Learner';
+          if (lv is Map) {
+            final mm = lv.map((kk, vv) => MapEntry(kk.toString(), vv));
+            final n = (mm['name'] ?? '').toString().trim();
+            final serial = (mm['serial'] ?? '').toString().trim();
+            name = n.isNotEmpty ? n : (serial.isNotEmpty ? serial : 'Learner');
+          }
+
+          learners.putIfAbsent(u, () => name);
+        });
+      });
+
+      // enrich from users node (optional)
+      final out = <_UserPick>[];
+      for (final entry in learners.entries) {
+        final uid = entry.key;
+        String name = entry.value;
+
+        try {
+          final snap = await _db.child('users/$uid').get();
+          final vv = snap.value;
+          if (vv is Map) {
+            final m = vv.map((k, v) => MapEntry(k.toString(), v));
+            final first = (m['first_name'] ?? '').toString().trim();
+            final last = (m['last_name'] ?? '').toString().trim();
+            final full = ('$first $last').trim();
+            if (full.isNotEmpty) name = full;
+          }
+        } catch (_) {}
+
+        out.add(_UserPick(uid: uid, name: name, subtitle: 'Learner'));
+      }
+
+      out.sort((a, b) => a.name.compareTo(b.name));
+      return out;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _startCallTo({
+    required String peerUid,
+    required String peerName,
+  }) async {
+    final myName = await _myDisplayName();
+    if (!mounted) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AudioCallScreen(
+          peerUid: peerUid,
+          peerName: peerName,
+          isCaller: true,
+          callerName: myName,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndCall({
+    required String title,
+    required Future<List<_UserPick>> Function() loader,
+    required IconData icon,
+  }) async {
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: appBg,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: FutureBuilder<List<_UserPick>>(
+              future: loader(),
+              builder: (context, snap) {
+                final items = snap.data ?? const <_UserPick>[];
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: primaryBlue.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: uiBorder.withOpacity(0.9)),
+                          ),
+                          child: Icon(icon, color: primaryBlue),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: primaryBlue,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (snap.connectionState == ConnectionState.waiting)
+                      const Padding(
+                        padding: EdgeInsets.all(18),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (items.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: uiBorder.withOpacity(0.85)),
+                        ),
+                        child: const Text(
+                          'No users found.',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.55,
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (context, i) {
+                            final it = items[i];
+
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () async {
+                                Navigator.of(ctx).pop();
+                                await _startCallTo(peerUid: it.uid, peerName: it.name);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: primaryBlue.withOpacity(0.08),
+                                      child: Text(
+                                        it.name.isNotEmpty ? it.name[0].toUpperCase() : '?',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: primaryBlue,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            it.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: primaryBlue,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            it.subtitle,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.grey.shade600,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: actionOrange.withOpacity(0.10),
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(color: actionOrange.withOpacity(0.22)),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.call_rounded, size: 16, color: actionOrange),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            'Call',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: actionOrange,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openSupportSheet() async {
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: appBg,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.support_agent_rounded, color: primaryBlue),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Support Call',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                _SupportTile(
+                  icon: Icons.admin_panel_settings_rounded,
+                  title: 'Call Admin',
+                  subtitle: 'Choose an admin to call',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickAndCall(
+                      title: 'Choose Admin',
+                      loader: _loadAdmins,
+                      icon: Icons.admin_panel_settings_rounded,
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+
+                _SupportTile(
+                  icon: Icons.groups_rounded,
+                  title: 'Call Learner',
+                  subtitle: 'Learners in your classes',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickAndCall(
+                      title: 'Choose Learner',
+                      loader: _loadLearnersInMyClasses,
+                      icon: Icons.groups_rounded,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -357,6 +773,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ],
       ),
+
+      // ✅ Floating Support button
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: actionOrange,
+        foregroundColor: Colors.white,
+        icon: const Text('🎧', style: TextStyle(fontSize: 18)),
+        label: const Text(
+          'Support',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        onPressed: _openSupportSheet,
+      ),
     );
   }
 
@@ -456,4 +884,82 @@ class _ClassesSummary {
   const _ClassesSummary({required this.classesCount, required this.learnersCount});
   final int classesCount;
   final int learnersCount;
+}
+
+class _UserPick {
+  const _UserPick({required this.uid, required this.name, required this.subtitle});
+  final String uid;
+  final String name;
+  final String subtitle;
+}
+
+class _SupportTile extends StatelessWidget {
+  const _SupportTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _TeacherHomeScreenState.uiBorder.withOpacity(0.85)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _TeacherHomeScreenState.primaryBlue.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _TeacherHomeScreenState.uiBorder.withOpacity(0.85)),
+              ),
+              child: Icon(icon, color: _TeacherHomeScreenState.primaryBlue),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: _TeacherHomeScreenState.primaryBlue,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(Icons.chevron_right_rounded, color: _TeacherHomeScreenState.primaryBlue),
+          ],
+        ),
+      ),
+    );
+  }
 }
