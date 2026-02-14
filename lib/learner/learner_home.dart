@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
-import 'learner_mail_screen.dart'; // ✅ ADD
+import 'learner_mail_screen.dart';
 
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
@@ -19,7 +20,6 @@ class LearnerHome extends StatefulWidget {
 }
 
 class _LearnerHomeState extends State<LearnerHome> {
-  // ✅ Courses is the first tab now
   int _index = 0;
 
   static const _pages = <Widget>[
@@ -59,7 +59,6 @@ class _LearnerHomeState extends State<LearnerHome> {
           ),
         ),
         actions: [
-          // ✅ Call Logs (safe: just opens a screen)
           IconButton(
             tooltip: 'Call Logs',
             icon: const Icon(Icons.history, color: UiK.primaryBlue),
@@ -69,7 +68,6 @@ class _LearnerHomeState extends State<LearnerHome> {
               );
             },
           ),
-
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout, color: UiK.actionOrange),
@@ -83,7 +81,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         selectedItemColor: UiK.actionOrange,
         unselectedItemColor: UiK.primaryBlue.withOpacity(0.65),
         onTap: (i) => setState(() => _index = i),
-        // ✅ Items order changed: Courses first
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.school_rounded), label: 'Courses'),
           BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
@@ -94,8 +91,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 }
 
-/// Simple home: tells learner to use Courses.
-/// (We keep it minimal & fast; Courses screen shows real progress per course.)
+/// Simple home dashboard with cards
 class _LearnerDashboardLite extends StatelessWidget {
   const _LearnerDashboardLite();
 
@@ -105,9 +101,8 @@ class _LearnerDashboardLite extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _HomeCardsGrid(),
+          const _HomeCardsGrid(),
           const SizedBox(height: 12),
-
           Card(
             elevation: 0,
             color: Colors.white,
@@ -128,11 +123,11 @@ class _LearnerDashboardLite extends StatelessWidget {
             ),
           ),
         ],
-
       ),
     );
   }
 }
+
 class _HomeCardsGrid extends StatelessWidget {
   const _HomeCardsGrid();
 
@@ -146,12 +141,7 @@ class _HomeCardsGrid extends StatelessWidget {
       crossAxisSpacing: 12,
       childAspectRatio: 1.25,
       children: const [
-        _HomeCard(
-          icon: Icons.mail_rounded,
-          title: 'Mail',
-          subtitle: 'Read & reply',
-          routeType: _HomeCardRoute.mail,
-        ),
+        _MailHomeCard(),
         _HomeCard(
           icon: Icons.assignment_rounded,
           title: 'Homework',
@@ -175,6 +165,54 @@ class _HomeCardsGrid extends StatelessWidget {
   }
 }
 
+/// ✅ Special card: Mail + unread badge sum
+class _MailHomeCard extends StatelessWidget {
+  const _MailHomeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final me = FirebaseAuth.instance.currentUser;
+    final meUid = me?.uid ?? '';
+    final ref = FirebaseDatabase.instance.ref('mail_index/$meUid');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
+      builder: (context, snap) {
+        int unreadTotal = 0;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          v.forEach((_, vv) {
+            if (vv is! Map) return;
+            final m = vv.map((k, v) => MapEntry(k.toString(), v));
+
+            // ignore deleted threads for me
+            final deletedAt = m['deletedAt'];
+            if (deletedAt != null) return;
+
+            final unread = _toInt(m['unreadCount']);
+            unreadTotal += unread;
+          });
+        }
+
+        return _HomeCard(
+          icon: Icons.mail_rounded,
+          title: 'Mail',
+          subtitle: 'Read & reply',
+          routeType: _HomeCardRoute.mail,
+          badgeCount: unreadTotal,
+        );
+      },
+    );
+  }
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+}
+
 enum _HomeCardRoute { mail, homework, reminders, friends }
 
 class _HomeCard extends StatelessWidget {
@@ -183,15 +221,55 @@ class _HomeCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.routeType,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final _HomeCardRoute routeType;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
+    Widget iconBox() {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: UiK.primaryBlue.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+            ),
+            child: Icon(icon, color: UiK.primaryBlue),
+          ),
+          if (badgeCount > 0)
+            Positioned(
+              right: -8,
+              top: -8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () {
@@ -216,16 +294,7 @@ class _HomeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: UiK.primaryBlue.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-              ),
-              child: Icon(icon, color: UiK.primaryBlue),
-            ),
+            iconBox(),
             const Spacer(),
             Text(title, style: UiK.titleText(size: 16)),
             const SizedBox(height: 4),

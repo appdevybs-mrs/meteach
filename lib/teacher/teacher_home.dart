@@ -38,6 +38,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // Reminders: count not-done
   Stream<DatabaseEvent>? _remindersStream;
 
+  // ✅ Mail: total unread (sum across threads)
+  Stream<DatabaseEvent>? _mailIndexStream;
+
   // Classes summary (count classes + total learners)
   Future<_ClassesSummary>? _classesSummaryFuture;
 
@@ -48,6 +51,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     if (uid != null) {
       _remindersStream = _db.child('reminders/$uid').onValue.asBroadcastStream();
+      _mailIndexStream = _db.child('mail_index/$uid').onValue.asBroadcastStream();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
     }
   }
@@ -84,7 +88,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           : <String, dynamic>{};
 
       if (!_isTeacherRole(u['role'])) {
-        // If not teacher, just show nothing
         return const _ClassesSummary(classesCount: 0, learnersCount: 0);
       }
 
@@ -139,7 +142,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
       return _ClassesSummary(classesCount: classesCount, learnersCount: learnersTotal);
     } catch (_) {
-      // Keep home stable if anything fails
       return const _ClassesSummary(classesCount: 0, learnersCount: 0);
     }
   }
@@ -159,6 +161,30 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return count;
   }
 
+  int _countUnreadMail(dynamic snapshotValue) {
+    if (snapshotValue is! Map) return 0;
+    int total = 0;
+
+    snapshotValue.forEach((k, v) {
+      if (v is! Map) return;
+      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+
+      // ignore deleted for me
+      if (m['deletedAt'] != null) return;
+
+      final unread = _toInt(m['unreadCount']);
+      total += unread;
+    });
+
+    return total;
+  }
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -175,7 +201,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
-          // ✅ Call Logs
           IconButton(
             tooltip: 'Call Logs',
             icon: const Icon(Icons.history, color: primaryBlue),
@@ -194,7 +219,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       ),
       body: Stack(
         children: [
-          // Subtle Watermark Logo
           Positioned.fill(
             child: IgnorePointer(
               child: Opacity(
@@ -209,7 +233,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               ),
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0),
             child: Column(
@@ -233,7 +256,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
                 Expanded(
                   child: GridView.count(
                     crossAxisCount: 2,
@@ -247,8 +269,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                         Icons.calendar_today_rounded,
                         const TeacherSchedule(),
                       ),
-
-                      // ✅ Classes card with small counts under title
                       FutureBuilder<_ClassesSummary>(
                         future: _classesSummaryFuture,
                         builder: (context, snap) {
@@ -266,19 +286,28 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           );
                         },
                       ),
-
                       _buildQuickCard(
                         context,
                         'Profile',
                         Icons.person_rounded,
                         const TeacherProfileScreen(),
                       ),
-                      _buildQuickCard(
-                        context,
-                        'Mail',
-                        Icons.email_rounded,
-                        const TeacherMailScreen(),
+
+                      // ✅ Mail card with unread badge (sum)
+                      StreamBuilder<DatabaseEvent>(
+                        stream: _mailIndexStream,
+                        builder: (context, snap) {
+                          final unreadTotal = _countUnreadMail(snap.data?.snapshot.value);
+                          return _buildQuickCard(
+                            context,
+                            'Mail',
+                            Icons.email_rounded,
+                            const TeacherMailScreen(),
+                            badgeCount: unreadTotal,
+                          );
+                        },
                       ),
+
                       _buildQuickCard(
                         context,
                         'Payment',
@@ -286,7 +315,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                         const TeacherPaymentScreen(),
                       ),
 
-                      // ✅ Reminders card with badge (not done count)
                       StreamBuilder<DatabaseEvent>(
                         stream: _remindersStream,
                         builder: (context, snap) {
@@ -301,7 +329,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                         },
                       ),
 
-                      // ✅ OPTIONAL: Call Logs as a tile too (professional)
                       _buildQuickCard(
                         context,
                         'Call Logs',
@@ -312,7 +339,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     ],
                   ),
                 ),
-
                 Center(
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
@@ -334,7 +360,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
-  // Professional Grid Card UI (keeps your logic, adds optional badge + subtitle)
   Widget _buildQuickCard(
       BuildContext context,
       String title,
@@ -364,7 +389,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Icon + optional badge
             Stack(
               clipBehavior: Clip.none,
               children: [
@@ -399,7 +423,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   ),
               ],
             ),
-
             const SizedBox(height: 14),
             Text(
               title,
@@ -410,7 +433,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 fontSize: 15,
               ),
             ),
-
             if (subtitle.trim().isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(

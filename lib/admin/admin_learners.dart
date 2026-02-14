@@ -436,6 +436,66 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     return token;
   }
 
+  String get _adminUid => FirebaseAuth.instance.currentUser!.uid;
+
+  /// Sum unread mail (for THIS admin) coming from a specific learner (peerUid).
+  /// Reads mail_index/{adminUid} threads where peerUid == learnerUid and sums unreadCount.
+  Stream<int> _unreadForLearnerStream(String learnerUid) {
+    final q = FirebaseDatabase.instance
+        .ref('mail_index/$_adminUid')
+        .orderByChild('peerUid')
+        .equalTo(learnerUid);
+
+    return q.onValue.map((event) {
+      final v = event.snapshot.value;
+      if (v is! Map) return 0;
+
+      int sum = 0;
+      v.forEach((_, raw) {
+        if (raw is! Map) return;
+        final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
+
+        // ignore deleted threads (deleted for admin)
+        if (m['deletedAt'] != null) return;
+
+        final uc = m['unreadCount'];
+        int toInt(dynamic x) {
+          if (x is int) return x;
+          if (x is num) return x.toInt();
+          return int.tryParse(x?.toString() ?? '') ?? 0;
+        }
+
+        sum += toInt(uc);
+      });
+
+      return sum;
+    });
+  }
+
+  Widget _badge(int count) {
+    if (count <= 0) return const SizedBox.shrink();
+
+    final label = count > 99 ? '99+' : '$count';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+
+
   Future<void> _sendLearnerQuickReminder({
     required String uid,
     required Learner learner,
@@ -744,16 +804,37 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                   children: [
                                     GestureDetector(
                                       onLongPress: () => _showQuickReminderSheet(uid: row.uid, learner: l),
-                                      child: CircleAvatar(
-                                        backgroundColor: avatarBg,
-                                        child: Text(
-                                          l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: avatarFg,
-                                          ),
-                                        ),
+                                      child: StreamBuilder<int>(
+                                        stream: _unreadForLearnerStream(row.uid),
+                                        builder: (context, snapUnread) {
+                                          final unread = snapUnread.data ?? 0;
+
+                                          return Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              CircleAvatar(
+                                                backgroundColor: avatarBg, // keeps your due-red logic
+                                                child: Text(
+                                                  l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w900,
+                                                    color: avatarFg,
+                                                  ),
+                                                ),
+                                              ),
+
+                                              // unread badge
+                                              if (unread > 0)
+                                                Positioned(
+                                                  right: -6,
+                                                  top: -6,
+                                                  child: _badge(unread),
+                                                ),
+                                            ],
+                                          );
+                                        },
                                       ),
+
                                     ),
 
                                     const SizedBox(width: 12),
