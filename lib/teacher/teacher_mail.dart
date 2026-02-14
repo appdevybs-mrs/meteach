@@ -85,12 +85,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
   }
 
-  // -------------------------
-  // ✅ New: Compose to admin
-  // -------------------------
+  // -----------------------------------------
+  // Compose: admin OR learner OR whole class
+  // -----------------------------------------
   Future<void> _composeNewTopic() async {
     try {
-      final picked = await showModalBottomSheet<_PickResult>(
+      final picked = await showModalBottomSheet<_ComposeResult>(
         context: context,
         showDragHandle: true,
         isScrollControlled: true,
@@ -101,77 +101,188 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
       final subject = picked.subject.trim();
       final text = picked.firstMessage.trim();
-
       final now = DateTime.now().millisecondsSinceEpoch;
-      final threadId = _db.ref('mail_threads').push().key;
-      if (threadId == null) {
-        _snack('Failed to create thread id.');
+
+      if (subject.isEmpty || text.isEmpty) {
+        _snack('Write subject and message.');
         return;
       }
 
-      final msgId = _db.ref('mail_threads/$threadId/messages').push().key;
-      if (msgId == null) {
-        _snack('Failed to create message id.');
-        return;
-      }
+      // 1) Send to ONE person (admin or learner)
+      if (picked.mode == _ComposeMode.single && picked.receiverUid != null) {
+        final toUid = picked.receiverUid!;
+        final toName = picked.receiverName ?? '';
 
-      // 1) Thread header
-      await _db.ref('mail_threads/$threadId').set({
-        'subject': subject,
-        'createdAt': now,
-        'updatedAt': now,
-        'lastMessage': text,
-      });
+        final threadId = _db.ref('mail_threads').push().key;
+        if (threadId == null) {
+          _snack('Failed to create thread id.');
+          return;
+        }
 
-      // 2) First message
-      await _db.ref('mail_threads/$threadId/messages/$msgId').set({
-        'id': msgId,
-        'text': text,
-        'senderUid': _meUid,
-        'senderName': picked.teacherName,
-        'createdAt': now,
-      });
+        final msgId = _db.ref('mail_threads/$threadId/messages').push().key;
+        if (msgId == null) {
+          _snack('Failed to create message id.');
+          return;
+        }
 
-      // 3) Teacher index (sender) -> unread 0
-      await _db.ref('mail_index/$_meUid/$threadId').set({
-        'subject': subject,
-        'updatedAt': now,
-        'lastMessage': text,
-        'unreadCount': 0,
-        'peerUid': picked.adminUid,
-        'peerName': picked.adminName,
-        'deletedAt': null,
-      });
+        // thread meta
+        await _db.ref('mail_threads/$threadId').set({
+          'subject': subject,
+          'createdAt': now,
+          'updatedAt': now,
+          'lastMessage': text,
+        });
 
-      // 4) Admin index (receiver) -> unread 1 ✅
-      await _db.ref('mail_index/${picked.adminUid}/$threadId').set({
-        'subject': subject,
-        'updatedAt': now,
-        'lastMessage': text,
-        'unreadCount': 1,
-        'peerUid': _meUid,
-        'peerName': picked.teacherName,
-        'deletedAt': null,
-      });
+        // first message
+        await _db.ref('mail_threads/$threadId/messages/$msgId').set({
+          'id': msgId,
+          'text': text,
+          'senderUid': _meUid,
+          'senderName': picked.teacherName,
+          'createdAt': now,
+        });
 
-      if (!mounted) return;
+        // teacher index (sender) unread 0
+        await _db.ref('mail_index/$_meUid/$threadId').set({
+          'subject': subject,
+          'updatedAt': now,
+          'lastMessage': text,
+          'unreadCount': 0,
+          'peerUid': toUid,
+          'peerName': toName,
+          'deletedAt': null,
+        });
 
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          settings: RouteSettings(name: '/mail/thread/$threadId'),
-          builder: (_) => TeacherMailThreadScreen(
-            threadId: threadId,
-            peerUid: picked.adminUid,
-            peerName: picked.adminName.isEmpty ? 'Admin' : picked.adminName,
-            subject: subject,
+        // receiver index unread 1
+        await _db.ref('mail_index/$toUid/$threadId').set({
+          'subject': subject,
+          'updatedAt': now,
+          'lastMessage': text,
+          'unreadCount': 1,
+          'peerUid': _meUid,
+          'peerName': picked.teacherName,
+          'deletedAt': null,
+        });
+
+        if (!mounted) return;
+
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            settings: RouteSettings(name: '/mail/thread/$threadId'),
+            builder: (_) => TeacherMailThreadScreen(
+              threadId: threadId,
+              peerUid: toUid,
+              peerName: toName.isEmpty ? 'User' : toName,
+              subject: subject,
+            ),
           ),
-        ),
-      );
+        );
+
+        return;
+      }
+
+      // 2) Send to WHOLE CLASS: create a thread per learner
+      if (picked.mode == _ComposeMode.classGroup) {
+        final classId = picked.classId;
+        if (classId == null || classId.trim().isEmpty) {
+          _snack('No class selected.');
+          return;
+        }
+
+        // load class learners
+        final cSnap = await _db.ref('classes/$classId/learners').get();
+        final cVal = cSnap.value;
+
+        if (cVal is! Map || cVal.isEmpty) {
+          _snack('This class has no learners.');
+          return;
+        }
+
+        // optional: load users once to display names better
+        final usersSnap = await _db.ref('users').get();
+        final usersVal = usersSnap.value;
+        final nameByUid = <String, String>{};
+
+        if (usersVal is Map) {
+          usersVal.forEach((uid, vv) {
+            if (uid == null || vv == null || vv is! Map) return;
+            final m = vv.map((k, v) => MapEntry(k.toString(), v));
+            final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+            final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+            final email = (m['email'] ?? '').toString().trim();
+            final n = ('$fn $ln').trim();
+            nameByUid[uid.toString()] = n.isNotEmpty ? n : (email.isNotEmpty ? email : uid.toString());
+          });
+        }
+
+        int sent = 0;
+
+        for (final entry in cVal.entries) {
+          final learnerUid = entry.key.toString().trim();
+          if (learnerUid.isEmpty) continue;
+
+          // avoid sending to self if teacher accidentally appears
+          if (learnerUid == _meUid) continue;
+
+          final learnerName = nameByUid[learnerUid] ??
+              (entry.value is Map ? ((entry.value as Map)['name'] ?? '').toString() : '') ??
+              'Learner';
+
+          final threadId = _db.ref('mail_threads').push().key;
+          if (threadId == null) continue;
+
+          final msgId = _db.ref('mail_threads/$threadId/messages').push().key;
+          if (msgId == null) continue;
+
+          // thread meta
+          await _db.ref('mail_threads/$threadId').set({
+            'subject': '[$classId] $subject', // keeps it recognizable in inbox
+            'createdAt': now,
+            'updatedAt': now,
+            'lastMessage': text,
+          });
+
+          // first message
+          await _db.ref('mail_threads/$threadId/messages/$msgId').set({
+            'id': msgId,
+            'text': text,
+            'senderUid': _meUid,
+            'senderName': picked.teacherName,
+            'createdAt': now,
+          });
+
+          // teacher index (sender)
+          await _db.ref('mail_index/$_meUid/$threadId').set({
+            'subject': '[$classId] $subject',
+            'updatedAt': now,
+            'lastMessage': text,
+            'unreadCount': 0,
+            'peerUid': learnerUid,
+            'peerName': learnerName,
+            'deletedAt': null,
+          });
+
+          // learner index (receiver)
+          await _db.ref('mail_index/$learnerUid/$threadId').set({
+            'subject': '[$classId] $subject',
+            'updatedAt': now,
+            'lastMessage': text,
+            'unreadCount': 1,
+            'peerUid': _meUid,
+            'peerName': picked.teacherName,
+            'deletedAt': null,
+          });
+
+          sent++;
+        }
+
+        _snack('Sent to $sent learners ✅');
+        return;
+      }
     } catch (e) {
       _snack('Compose failed: $e');
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -208,7 +319,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  '${r.peerName.isEmpty ? "Admin" : r.peerName} • ${r.lastMessage}',
+                  '${r.peerName.isEmpty ? "User" : r.peerName} • ${r.lastMessage}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -249,7 +360,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                       builder: (_) => TeacherMailThreadScreen(
                         threadId: r.threadId,
                         peerUid: r.peerUid,
-                        peerName: r.peerName.isEmpty ? 'Admin' : r.peerName,
+                        peerName: r.peerName.isEmpty ? 'User' : r.peerName,
                         subject: r.subject,
                       ),
                     ),
@@ -279,18 +390,26 @@ class _ComposeSheet extends StatefulWidget {
 }
 
 class _ComposeSheetState extends State<_ComposeSheet> {
+  bool _loading = true;
+
+  final _subjectC = TextEditingController();
   final _messageC = TextEditingController();
 
-  bool _loading = true;
-  List<_AdminRow> _admins = [];
-  _AdminRow? _picked;
-  final _subjectC = TextEditingController();
   String _teacherName = 'Teacher';
+
+  List<_RecipientRow> _recipients = [];
+  _RecipientRow? _picked;
+
+  // for "whole class"
+  List<_ClassRow> _classes = [];
+  _ClassRow? _pickedClass;
+
+  _ComposeMode _mode = _ComposeMode.single;
 
   @override
   void initState() {
     super.initState();
-    _loadAdminsAndMe();
+    _loadEverything();
   }
 
   @override
@@ -300,8 +419,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     super.dispose();
   }
 
-
-  Future<void> _loadAdminsAndMe() async {
+  Future<void> _loadEverything() async {
     try {
       // teacher name
       final meSnap = await widget.db.ref('users/${widget.meUid}').get();
@@ -314,37 +432,99 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         if (full.isNotEmpty) _teacherName = full;
       }
 
-      // admins list
-      final snap = await widget.db.ref('users').get();
-      final v = snap.value;
+      // load users (names + admins)
+      final usersSnap = await widget.db.ref('users').get();
+      final usersVal = usersSnap.value;
 
-      final out = <_AdminRow>[];
-      if (v is Map) {
-        v.forEach((uid, vv) {
-          if (uid == null || vv == null) return;
-          if (vv is! Map) return;
+      final nameByUid = <String, String>{};
+      final admins = <_RecipientRow>[];
 
+      if (usersVal is Map) {
+        usersVal.forEach((uid, vv) {
+          if (uid == null || vv == null || vv is! Map) return;
           final m = vv.map((k, v) => MapEntry(k.toString(), v));
-          final role = (m['role'] ?? '').toString().toLowerCase().trim();
-          if (role != 'admin') return;
 
+          final role = (m['role'] ?? '').toString().toLowerCase().trim();
           final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
           final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
           final email = (m['email'] ?? '').toString().trim();
 
           final name = ('$fn $ln').trim();
-          final display = name.isNotEmpty ? name : (email.isNotEmpty ? email : 'Admin');
+          final display = name.isNotEmpty ? name : (email.isNotEmpty ? email : uid.toString());
 
-          out.add(_AdminRow(uid: uid.toString(), name: display));
+          final u = uid.toString();
+          nameByUid[u] = display;
+
+          if (role == 'admin') {
+            admins.add(_RecipientRow(uid: u, name: display, type: _RecipientType.admin));
+          }
         });
       }
 
-      out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      // classes where I'm instructor_current.uid
+      final classesSnap = await widget.db.ref('classes').get();
+      final classesVal = classesSnap.value;
+
+      final myLearners = <String>{};
+      final myClasses = <_ClassRow>[];
+
+      if (classesVal is Map) {
+        classesVal.forEach((classId, classVal) {
+          if (classId == null || classVal == null || classVal is! Map) return;
+          final c = classVal.map((k, v) => MapEntry(k.toString(), v));
+
+          final cur = c['instructor_current'];
+          String tUid = '';
+          if (cur is Map) {
+            final curM = cur.map((k, v) => MapEntry(k.toString(), v));
+            tUid = (curM['uid'] ?? '').toString().trim();
+          }
+          if (tUid != widget.meUid) return;
+
+          final title = (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId).toString().trim();
+          myClasses.add(_ClassRow(classId: classId.toString(), title: title.isEmpty ? classId.toString() : title));
+
+          final learners = c['learners'];
+          if (learners is Map) {
+            learners.forEach((uid, _) {
+              final u = uid.toString().trim();
+              if (u.isEmpty) return;
+              if (u == widget.meUid) return;
+              myLearners.add(u);
+            });
+          }
+        });
+      }
+
+      final learnerRecipients = myLearners.map((u) {
+        final name = nameByUid[u] ?? 'Learner';
+        return _RecipientRow(uid: u, name: name, type: _RecipientType.learner);
+      }).toList();
+
+      // merge recipients (admins + my learners)
+      final all = <_RecipientRow>[
+        ...admins,
+        ...learnerRecipients,
+      ];
+
+      int rank(_RecipientType t) => t == _RecipientType.admin ? 0 : 1;
+
+      all.sort((a, b) {
+        final r = rank(a.type).compareTo(rank(b.type));
+        if (r != 0) return r;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+      myClasses.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
       if (!mounted) return;
       setState(() {
-        _admins = out;
-        _picked = out.isNotEmpty ? out.first : null;
+        _recipients = all;
+        _picked = all.isNotEmpty ? all.first : null;
+
+        _classes = myClasses;
+        _pickedClass = myClasses.isNotEmpty ? myClasses.first : null;
+
         _loading = false;
       });
     } catch (_) {
@@ -354,123 +534,203 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   }
 
   void _submit() {
-    if (_picked == null) return;
     final subject = _subjectC.text.trim();
     final msg = _messageC.text.trim();
     if (subject.isEmpty || msg.isEmpty) return;
 
+    if (_mode == _ComposeMode.single) {
+      final r = _picked;
+      if (r == null) return;
+
+      Navigator.pop(
+        context,
+        _ComposeResult(
+          mode: _ComposeMode.single,
+          teacherName: _teacherName,
+          subject: subject,
+          firstMessage: msg,
+          receiverUid: r.uid,
+          receiverName: r.name,
+          classId: null,
+        ),
+      );
+      return;
+    }
+
+    // class group
+    final c = _pickedClass;
+    if (c == null) return;
+
     Navigator.pop(
       context,
-      _PickResult(
-        adminUid: _picked!.uid,
-        adminName: _picked!.name,
-        subject: subject,
+      _ComposeResult(
+        mode: _ComposeMode.classGroup,
         teacherName: _teacherName,
+        subject: subject,
         firstMessage: msg,
+        receiverUid: null,
+        receiverName: null,
+        classId: c.classId,
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
+    String prefixFor(_RecipientType t) {
+      if (t == _RecipientType.admin) return '🛡️ ';
+      return '🎓 ';
+    }
+
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 6),
-          const Text(
-            'New topic',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-          ),
-          const SizedBox(height: 12),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            const Text('New topic', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            const SizedBox(height: 12),
 
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                  SizedBox(width: 10),
-                  Text('Loading admins...'),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(18),
+                child: Row(
+                  children: [
+                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 10),
+                    Text('Loading...'),
+                  ],
+                ),
+              )
+            else ...[
+              // Mode selector
+              SegmentedButton<_ComposeMode>(
+                segments: const [
+                  ButtonSegment(value: _ComposeMode.single, label: Text('Single')),
+                  ButtonSegment(value: _ComposeMode.classGroup, label: Text('Whole class')),
                 ],
+                selected: {_mode},
+                onSelectionChanged: (s) => setState(() => _mode = s.first),
               ),
-            )
-          else if (_admins.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('No admins found (users where role = admin).'),
-            )
-          else
-            DropdownButtonFormField<_AdminRow>(
-              value: _picked,
-              items: _admins
-                  .map((a) => DropdownMenuItem<_AdminRow>(
-                value: a,
-                child: Text(a.name),
-              ))
-                  .toList(),
-              onChanged: (v) => setState(() => _picked = v),
-              decoration: const InputDecoration(
-                labelText: 'Send to',
-                border: OutlineInputBorder(),
+
+              const SizedBox(height: 12),
+
+              if (_mode == _ComposeMode.single)
+                DropdownButtonFormField<_RecipientRow>(
+                  value: _picked,
+                  items: _recipients.map((r) {
+                    return DropdownMenuItem<_RecipientRow>(
+                      value: r,
+                      child: Text('${prefixFor(r.type)}${r.name}'),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setState(() => _picked = v),
+                  decoration: const InputDecoration(
+                    labelText: 'Send to',
+                    border: OutlineInputBorder(),
+                  ),
+                )
+              else
+                DropdownButtonFormField<_ClassRow>(
+                  value: _pickedClass,
+                  items: _classes.map((c) {
+                    return DropdownMenuItem<_ClassRow>(
+                      value: c,
+                      child: Text('👥 ${c.title} (${c.classId})'),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setState(() => _pickedClass = v),
+                  decoration: const InputDecoration(
+                    labelText: 'Class',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _subjectC,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Topic / Subject',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
 
-          const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-          TextFormField(
-            controller: _subjectC,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-              labelText: 'Topic / Subject',
-              hintText: 'Example: Attendance issue',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
+              TextFormField(
+                controller: _messageC,
+                minLines: 3,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'First message',
+                  hintText: 'Write your message…',
+                  border: OutlineInputBorder(),
+                ),
+              ),
 
+              const SizedBox(height: 12),
 
-
-          const SizedBox(height: 12),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: (_picked == null) ? null : _submit,
-              icon: const Icon(Icons.send_rounded),
-              label: const Text('Create topic'),
-            ),
-          ),
-        ],
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _submit,
+                  icon: const Icon(Icons.send_rounded),
+                  label: Text(_mode == _ComposeMode.classGroup ? 'Send to class' : 'Create topic'),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _AdminRow {
-  _AdminRow({required this.uid, required this.name});
+enum _ComposeMode { single, classGroup }
+
+enum _RecipientType { admin, learner }
+
+class _RecipientRow {
+  _RecipientRow({required this.uid, required this.name, required this.type});
   final String uid;
   final String name;
+  final _RecipientType type;
 }
 
-class _PickResult {
-  _PickResult({
-    required this.adminUid,
-    required this.adminName,
-    required this.subject,
+class _ClassRow {
+  _ClassRow({required this.classId, required this.title});
+  final String classId;
+  final String title;
+}
+
+class _ComposeResult {
+  _ComposeResult({
+    required this.mode,
     required this.teacherName,
+    required this.subject,
     required this.firstMessage,
+    required this.receiverUid,
+    required this.receiverName,
+    required this.classId,
   });
 
-  final String adminUid;
-  final String adminName;
-  final String subject;
+  final _ComposeMode mode;
+
   final String teacherName;
+  final String subject;
   final String firstMessage;
+
+  // single
+  final String? receiverUid;
+  final String? receiverName;
+
+  // class group
+  final String? classId;
 }
 
 // ----------------------------
