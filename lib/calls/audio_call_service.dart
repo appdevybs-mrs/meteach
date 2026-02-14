@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter/foundation.dart';
 
 import '../services/push_client.dart'; // <-- adjust path if different
 
@@ -26,6 +27,10 @@ class AudioCallService {
   bool _remoteSet = false;
   bool _starting = false;
 
+  /// ✅ UI can listen to this (AudioCallScreen)
+  /// values: idle | ringing | accepted | ended
+  final ValueNotifier<String> callState = ValueNotifier<String>('idle');
+
   Map<String, dynamic> get _iceConfig => {
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
@@ -33,6 +38,10 @@ class AudioCallService {
   };
 
   // ---------- helpers ----------
+
+  void _setStateSafe(String s) {
+    if (callState.value != s) callState.value = s;
+  }
 
   Future<void> _cleanupSubs() async {
     try {
@@ -79,12 +88,37 @@ class AudioCallService {
     _remoteSet = false;
     callId = null;
     _callRef = null;
+    _setStateSafe('idle');
   }
 
   Future<void> _ensureFreshState() async {
     if (_pc != null || _localStream != null || _callRef != null) {
       await hangUp(localOnly: true);
     }
+  }
+
+  void _wirePcConnectionGuards() {
+    final pc = _pc;
+    if (pc == null) return;
+
+    pc.onConnectionState = (RTCPeerConnectionState state) async {
+      // If the peer closes / disconnects, end locally + notify UI.
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
+          state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+          state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+        _setStateSafe('ended');
+        await hangUp(localOnly: true);
+      }
+    };
+
+    pc.onIceConnectionState = (RTCIceConnectionState state) async {
+      if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
+          state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
+          state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
+        _setStateSafe('ended');
+        await hangUp(localOnly: true);
+      }
+    };
   }
 
   Future<void> _createPeer({
@@ -97,8 +131,9 @@ class AudioCallService {
     });
 
     _pc = await createPeerConnection(_iceConfig);
+    _wirePcConnectionGuards();
 
-    // ✅ capture remote audio (helps with "connected but silent")
+    // ✅ capture remote audio
     _pc!.onTrack = (RTCTrackEvent event) async {
       if (event.track.kind != 'audio') return;
 
@@ -199,8 +234,8 @@ class AudioCallService {
     required String callId,
     required String peerUid,
     required String peerName,
-    required String direction, // "incoming" or "outgoing"
-    required String status, // "ringing" | "accepted" | "ended"
+    required String direction,
+    required String status,
     int? createdAt,
     int? acceptedAt,
     int? endedAt,
@@ -223,7 +258,6 @@ class AudioCallService {
     if (durationSec != null) data['durationSec'] = durationSec;
 
     try {
-      // Use update so we don't overwrite existing fields accidentally
       await ref.update(data);
     } catch (_) {}
   }
@@ -239,7 +273,6 @@ class AudioCallService {
     int? endedAt,
     int? durationSec,
   }) async {
-    // caller log
     await _writeCallLogForUser(
       uid: callerUid,
       callId: callId,
@@ -252,7 +285,6 @@ class AudioCallService {
       durationSec: durationSec,
     );
 
-    // callee log
     await _writeCallLogForUser(
       uid: calleeUid,
       callId: callId,
@@ -286,7 +318,6 @@ class AudioCallService {
       _callRef = _db.ref('calls/$id');
       _remoteSet = false;
 
-      // Get callee display name for logs (safe)
       final calleeName = await _getDisplayName(calleeUid);
       final cleanCallerName = callerName.trim().isEmpty ? 'Caller' : callerName.trim();
 
@@ -299,7 +330,8 @@ class AudioCallService {
         'createdAt': ServerValue.timestamp,
       });
 
-      // ✅ Create logs for BOTH sides (ringing)
+      _setStateSafe('ringing');
+
       await _updateCallLogsForBoth(
         callId: id,
         callerUid: me,
@@ -309,7 +341,6 @@ class AudioCallService {
         status: 'ringing',
       );
 
-      // best-effort push
       try {
         await _sendIncomingCallPush(
           calleeUid: calleeUid,
@@ -336,6 +367,7 @@ class AudioCallService {
 
         final status = (v['status'] ?? '').toString();
         if (status == 'ended') {
+          _setStateSafe('ended');
           await hangUp(localOnly: true);
           return;
         }
@@ -346,6 +378,8 @@ class AudioCallService {
           final type = (answer['type'] ?? 'answer').toString();
           await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
           _remoteSet = true;
+
+          _setStateSafe('accepted');
         }
       });
 
@@ -394,7 +428,6 @@ class AudioCallService {
       final data = await _waitForOffer(callRef: _callRef!);
       final offer = data['offer'] as Map;
 
-      // Read call info for logs
       final callerUid = (data['callerUid'] ?? '').toString();
       final callerName = (data['callerName'] ?? 'Caller').toString();
       final calleeUid = (data['calleeUid'] ?? me).toString();
@@ -414,14 +447,14 @@ class AudioCallService {
       final answer = await _pc!.createAnswer({'offerToReceiveAudio': 1});
       await _pc!.setLocalDescription(answer);
 
-      // ✅ Set acceptedAt for duration
       await _callRef!.update({
         'answer': {'type': answer.type, 'sdp': answer.sdp},
         'status': 'accepted',
         'acceptedAt': ServerValue.timestamp,
       });
 
-      // ✅ Update logs to accepted (both sides)
+      _setStateSafe('accepted');
+
       await _updateCallLogsForBoth(
         callId: callId,
         callerUid: callerUid,
@@ -429,7 +462,7 @@ class AudioCallService {
         calleeUid: calleeUid,
         calleeName: calleeName,
         status: 'accepted',
-        acceptedAt: DateTime.now().millisecondsSinceEpoch, // good enough for logs
+        acceptedAt: DateTime.now().millisecondsSinceEpoch,
       );
 
       await _cleanupSubs();
@@ -456,7 +489,10 @@ class AudioCallService {
 
       _callSub = _callRef!.onValue.listen((event) async {
         final v = event.snapshot.value;
-        if (v is Map && (v['status'] ?? '').toString() == 'ended') {
+        final status = (v is Map) ? (v['status'] ?? '').toString() : '';
+
+        if (status == 'ended') {
+          _setStateSafe('ended');
           await hangUp(localOnly: true);
         }
       });
@@ -469,7 +505,9 @@ class AudioCallService {
     final ref = _callRef;
     final currentCallId = callId;
 
-    // Try to compute duration (best-effort)
+    // Always notify UI that call is ending (even localOnly)
+    _setStateSafe('ended');
+
     int? durationSec;
     String? callerUid;
     String? callerName;
@@ -509,7 +547,6 @@ class AudioCallService {
       } catch (_) {}
     }
 
-    // ✅ Update logs to ended (both sides) (best-effort)
     if (!localOnly &&
         currentCallId != null &&
         callerUid != null &&

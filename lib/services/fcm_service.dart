@@ -7,7 +7,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../calls/audio_call_screen.dart';
 
 import '../main.dart'; // appNavigatorKey
 import '../calls/audio_call_screen.dart';
@@ -18,6 +17,19 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     WidgetsFlutterBinding.ensureInitialized();
     await Firebase.initializeApp();
     await FCMService.I._ensureLocalInit();
+
+    // ✅ IMPORTANT: if FCM message has a "notification" payload,
+    // Android will already show a system notification in background/killed.
+    // Showing a local notification too causes duplicates.
+    final type = (message.data['type'] ?? '').toString().toLowerCase();
+    final hasSystemNotification = message.notification != null;
+
+    if (hasSystemNotification) {
+      // Avoid duplicate local notifications.
+      // (Calls are the most visible problem, but we keep this safe for all types.)
+      return;
+    }
+
     await FCMService.I._showFromRemoteMessage(message);
   } catch (_) {}
 }
@@ -37,8 +49,7 @@ class FCMService {
   static const String chCalls = 'ch_calls';
   static const String chDefault = 'ch_default';
 
-  /// ✅ Prevents opening the same incoming call screen multiple times
-  /// (FCM tap can arrive from getInitialMessage, onMessageOpenedApp, local notification tap, etc.)
+  /// ✅ Prevent opening the same incoming call screen multiple times
   static String? _lastIncomingCallIdHandled;
   static DateTime? _lastIncomingCallHandledAt;
 
@@ -68,8 +79,22 @@ class FCMService {
       await saveTokenToDatabase(newToken);
     });
 
-    // Foreground push
+    // ✅ Foreground push (APP OPEN)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      final type = (message.data['type'] ?? '').toString().toLowerCase();
+
+      // ✅ Fix #2: If incoming call arrives while app is open, OPEN call screen.
+      if (type == 'incoming_call') {
+        _handleNotificationTapPayload(jsonEncode(message.data));
+
+        // Optional: show a local heads-up notification too, but with a STABLE id (no spam).
+        // If you prefer ZERO notifications while app is open, comment this line.
+        await _showFromRemoteMessage(message);
+
+        return;
+      }
+
+      // Non-call notifications: show local
       await _showFromRemoteMessage(message);
     });
 
@@ -129,7 +154,6 @@ class FCMService {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidInit);
 
-    // ✅ v20+: initialize uses named params and the param name is `settings`
     await _local.initialize(
       settings: initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
@@ -195,6 +219,13 @@ class FCMService {
     _localInited = true;
   }
 
+  int _stableNotifIdForCall(String callId) {
+    // Stable int id so the same call updates/overwrites instead of spamming many.
+    // (hashCode can be negative, so normalize)
+    final h = callId.hashCode;
+    return h < 0 ? -h : h;
+  }
+
   Future<void> _showFromRemoteMessage(RemoteMessage message) async {
     final data = Map<String, dynamic>.from(message.data);
     final type = (data['type'] ?? '').toString().toLowerCase();
@@ -219,9 +250,19 @@ class FCMService {
       channelName = 'Calls';
     }
 
-    // ✅ v20+: show uses named params
+    // ✅ Notification ID:
+    // - Calls: stable id from callId (prevents duplicates)
+    // - Others: timestamp id
+    int notifId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (type == 'incoming_call') {
+      final callId = (data['callId'] ?? '').toString().trim();
+      if (callId.isNotEmpty) {
+        notifId = _stableNotifIdForCall(callId);
+      }
+    }
+
     await _local.show(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      id: notifId,
       title: title,
       body: body,
       notificationDetails: NotificationDetails(
@@ -238,7 +279,6 @@ class FCMService {
     );
   }
 
-  // ✅ moved inside class so it can access the static guard fields safely
   void _handleNotificationTapPayload(String payload) {
     Map<String, dynamic> data;
     try {
@@ -256,7 +296,7 @@ class FCMService {
 
     if (callId.isEmpty) return;
 
-    // ✅ Block duplicate opens for the same callId (prevents "already started" + auto hangup)
+    // ✅ Block duplicate opens for the same callId
     final now = DateTime.now();
     if (_lastIncomingCallIdHandled == callId &&
         _lastIncomingCallHandledAt != null &&
@@ -282,7 +322,6 @@ class FCMService {
       );
     }
 
-    // ✅ ensure navigator exists (single navigation only)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       go();
     });

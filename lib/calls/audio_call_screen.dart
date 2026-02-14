@@ -42,12 +42,50 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
   @override
   void initState() {
     super.initState();
+    // ✅ Listen to service state so receiver UI closes when caller ends
+    AudioCallService.I.callState.addListener(_onCallState);
     _startOnce();
+  }
+
+  void _onCallState() {
+    if (!mounted) return;
+
+    final s = AudioCallService.I.callState.value;
+
+    if (s == 'ringing') {
+      if (_status != 'Ringing…') setState(() => _status = 'Ringing…');
+      return;
+    }
+
+    if (s == 'accepted') {
+      if (_status != 'Connected ✅') {
+        setState(() {
+          _status = 'Connected ✅';
+          _callReady = true;
+        });
+      }
+      if (_timer == null) _startTimer();
+      return;
+    }
+
+    if (s == 'ended') {
+      _timer?.cancel();
+      _timer = null;
+
+      if (_status != 'Ended') setState(() => _status = 'Ended');
+
+      // ✅ Close this screen if the call ended remotely
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.maybePop(context);
+      });
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    AudioCallService.I.callState.removeListener(_onCallState);
+
     // ✅ Best-effort: end call when screen is closed
     AudioCallService.I.hangUp(localOnly: false);
     super.dispose();
@@ -331,7 +369,6 @@ class _TopCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Status chip + timer
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -446,7 +483,9 @@ class _ActionTile extends StatelessWidget {
                 ),
                 child: Icon(
                   icon,
-                  color: enabled ? (active ? cs.primary : cs.onSurface) : cs.onSurface.withOpacity(0.35),
+                  color: enabled
+                      ? (active ? cs.primary : cs.onSurface)
+                      : cs.onSurface.withOpacity(0.35),
                 ),
               ),
               const SizedBox(width: 12),
