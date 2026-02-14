@@ -14,6 +14,7 @@ class AudioCallService {
 
   RTCPeerConnection? _pc;
   MediaStream? _localStream;
+  MediaStream? _remoteStream;
 
   DatabaseReference? _callRef;
   StreamSubscription<DatabaseEvent>? _callSub;
@@ -60,6 +61,11 @@ class AudioCallService {
       await _localStream?.dispose();
     } catch (_) {}
     _localStream = null;
+
+    try {
+      await _remoteStream?.dispose();
+    } catch (_) {}
+    _remoteStream = null;
   }
 
   Future<void> _closePeer() async {
@@ -92,6 +98,21 @@ class AudioCallService {
 
     _pc = await createPeerConnection(_iceConfig);
 
+    // ✅ capture remote audio (helps with "connected but silent")
+    _pc!.onTrack = (RTCTrackEvent event) async {
+      if (event.track.kind != 'audio') return;
+
+      if (event.streams.isNotEmpty) {
+        _remoteStream = event.streams.first;
+        return;
+      }
+
+      _remoteStream ??= await createLocalMediaStream('remote');
+      try {
+        await _remoteStream!.addTrack(event.track);
+      } catch (_) {}
+    };
+
     for (final t in _localStream!.getAudioTracks()) {
       await _pc!.addTrack(t, _localStream!);
     }
@@ -111,7 +132,6 @@ class AudioCallService {
   }
 
   Future<String?> _getUserFcmToken(String uid) async {
-    // your FCMService saves to /fcm_tokens/{uid}/token
     final snap = await _db.ref('fcm_tokens/$uid/token').get();
     final token = (snap.value ?? '').toString().trim();
     return token.isEmpty ? null : token;
@@ -158,6 +178,94 @@ class AudioCallService {
     throw Exception('Offer not ready yet (timeout). Try again.');
   }
 
+  // ---------- Call logs helpers ----------
+
+  Future<String> _getDisplayName(String uid) async {
+    try {
+      final snap = await _db.ref('users/$uid').get();
+      final v = snap.value;
+      if (v is Map) {
+        final first = (v['first_name'] ?? '').toString().trim();
+        final last = (v['last_name'] ?? '').toString().trim();
+        final full = ('$first $last').trim();
+        if (full.isNotEmpty) return full;
+      }
+    } catch (_) {}
+    return 'User';
+  }
+
+  Future<void> _writeCallLogForUser({
+    required String uid,
+    required String callId,
+    required String peerUid,
+    required String peerName,
+    required String direction, // "incoming" or "outgoing"
+    required String status, // "ringing" | "accepted" | "ended"
+    int? createdAt,
+    int? acceptedAt,
+    int? endedAt,
+    int? durationSec,
+  }) async {
+    final ref = _db.ref('call_logs/$uid/$callId');
+
+    final data = <String, dynamic>{
+      'callId': callId,
+      'peerUid': peerUid,
+      'peerName': peerName,
+      'direction': direction,
+      'status': status,
+      'createdAt': createdAt ?? ServerValue.timestamp,
+      'updatedAt': ServerValue.timestamp,
+    };
+
+    if (acceptedAt != null) data['acceptedAt'] = acceptedAt;
+    if (endedAt != null) data['endedAt'] = endedAt;
+    if (durationSec != null) data['durationSec'] = durationSec;
+
+    try {
+      // Use update so we don't overwrite existing fields accidentally
+      await ref.update(data);
+    } catch (_) {}
+  }
+
+  Future<void> _updateCallLogsForBoth({
+    required String callId,
+    required String callerUid,
+    required String callerName,
+    required String calleeUid,
+    required String calleeName,
+    required String status,
+    int? acceptedAt,
+    int? endedAt,
+    int? durationSec,
+  }) async {
+    // caller log
+    await _writeCallLogForUser(
+      uid: callerUid,
+      callId: callId,
+      peerUid: calleeUid,
+      peerName: calleeName,
+      direction: 'outgoing',
+      status: status,
+      acceptedAt: acceptedAt,
+      endedAt: endedAt,
+      durationSec: durationSec,
+    );
+
+    // callee log
+    await _writeCallLogForUser(
+      uid: calleeUid,
+      callId: callId,
+      peerUid: callerUid,
+      peerName: callerName,
+      direction: 'incoming',
+      status: status,
+      acceptedAt: acceptedAt,
+      endedAt: endedAt,
+      durationSec: durationSec,
+    );
+  }
+
   // ---------- public API ----------
 
   Future<String> startCall({
@@ -178,13 +286,28 @@ class AudioCallService {
       _callRef = _db.ref('calls/$id');
       _remoteSet = false;
 
+      // Get callee display name for logs (safe)
+      final calleeName = await _getDisplayName(calleeUid);
+      final cleanCallerName = callerName.trim().isEmpty ? 'Caller' : callerName.trim();
+
       await _callRef!.set({
         'callerUid': me,
-        'callerName': callerName,
+        'callerName': cleanCallerName,
         'calleeUid': calleeUid,
+        'calleeName': calleeName,
         'status': 'ringing',
         'createdAt': ServerValue.timestamp,
       });
+
+      // ✅ Create logs for BOTH sides (ringing)
+      await _updateCallLogsForBoth(
+        callId: id,
+        callerUid: me,
+        callerName: cleanCallerName,
+        calleeUid: calleeUid,
+        calleeName: calleeName,
+        status: 'ringing',
+      );
 
       // best-effort push
       try {
@@ -192,7 +315,7 @@ class AudioCallService {
           calleeUid: calleeUid,
           callId: id,
           callerUid: me,
-          callerName: callerName.trim().isEmpty ? 'Caller' : callerName.trim(),
+          callerName: cleanCallerName,
         );
       } catch (_) {}
 
@@ -271,6 +394,14 @@ class AudioCallService {
       final data = await _waitForOffer(callRef: _callRef!);
       final offer = data['offer'] as Map;
 
+      // Read call info for logs
+      final callerUid = (data['callerUid'] ?? '').toString();
+      final callerName = (data['callerName'] ?? 'Caller').toString();
+      final calleeUid = (data['calleeUid'] ?? me).toString();
+      final calleeName = (data['calleeName'] ?? '').toString().trim().isEmpty
+          ? await _getDisplayName(calleeUid)
+          : (data['calleeName'] ?? '').toString();
+
       await _createPeer(isCaller: false, callRef: _callRef!);
 
       await _pc!.setRemoteDescription(
@@ -283,10 +414,23 @@ class AudioCallService {
       final answer = await _pc!.createAnswer({'offerToReceiveAudio': 1});
       await _pc!.setLocalDescription(answer);
 
+      // ✅ Set acceptedAt for duration
       await _callRef!.update({
         'answer': {'type': answer.type, 'sdp': answer.sdp},
         'status': 'accepted',
+        'acceptedAt': ServerValue.timestamp,
       });
+
+      // ✅ Update logs to accepted (both sides)
+      await _updateCallLogsForBoth(
+        callId: callId,
+        callerUid: callerUid,
+        callerName: callerName,
+        calleeUid: calleeUid,
+        calleeName: calleeName,
+        status: 'accepted',
+        acceptedAt: DateTime.now().millisecondsSinceEpoch, // good enough for logs
+      );
 
       await _cleanupSubs();
 
@@ -323,6 +467,34 @@ class AudioCallService {
 
   Future<void> hangUp({bool localOnly = false}) async {
     final ref = _callRef;
+    final currentCallId = callId;
+
+    // Try to compute duration (best-effort)
+    int? durationSec;
+    String? callerUid;
+    String? callerName;
+    String? calleeUid;
+    String? calleeName;
+
+    if (!localOnly && ref != null) {
+      try {
+        final snap = await ref.get();
+        final v = snap.value;
+        if (v is Map) {
+          callerUid = (v['callerUid'] ?? '').toString();
+          callerName = (v['callerName'] ?? 'Caller').toString();
+          calleeUid = (v['calleeUid'] ?? '').toString();
+          calleeName = (v['calleeName'] ?? '').toString();
+
+          final acceptedAt = v['acceptedAt'];
+          if (acceptedAt is int) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            durationSec = ((now - acceptedAt) / 1000).floor();
+            if (durationSec < 0) durationSec = 0;
+          }
+        }
+      } catch (_) {}
+    }
 
     await _cleanupSubs();
     await _disposeMedia();
@@ -330,8 +502,32 @@ class AudioCallService {
 
     if (!localOnly && ref != null) {
       try {
-        await ref.update({'status': 'ended'});
+        await ref.update({
+          'status': 'ended',
+          'endedAt': ServerValue.timestamp,
+        });
       } catch (_) {}
+    }
+
+    // ✅ Update logs to ended (both sides) (best-effort)
+    if (!localOnly &&
+        currentCallId != null &&
+        callerUid != null &&
+        callerUid!.isNotEmpty &&
+        calleeUid != null &&
+        calleeUid!.isNotEmpty) {
+      await _updateCallLogsForBoth(
+        callId: currentCallId,
+        callerUid: callerUid!,
+        callerName: callerName ?? 'Caller',
+        calleeUid: calleeUid!,
+        calleeName: (calleeName ?? '').trim().isEmpty
+            ? await _getDisplayName(calleeUid!)
+            : calleeName!,
+        status: 'ended',
+        endedAt: DateTime.now().millisecondsSinceEpoch,
+        durationSec: durationSec,
+      );
     }
 
     await _resetState();
@@ -342,5 +538,12 @@ class AudioCallService {
     for (final t in tracks) {
       t.enabled = !muted;
     }
+  }
+
+  /// 🔊 Speaker toggle (used by AudioCallScreen)
+  Future<void> setSpeakerOn(bool on) async {
+    try {
+      await Helper.setSpeakerphoneOn(on);
+    } catch (_) {}
   }
 }

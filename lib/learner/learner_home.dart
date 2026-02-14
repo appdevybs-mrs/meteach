@@ -7,6 +7,9 @@ import '../shared/watermark_background.dart';
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
 
+// ✅ Call logs screen
+import '../calls/call_logs_screen.dart';
+
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
 
@@ -55,6 +58,17 @@ class _LearnerHomeState extends State<LearnerHome> {
           ),
         ),
         actions: [
+          // ✅ Call Logs (safe: just opens a screen)
+          IconButton(
+            tooltip: 'Call Logs',
+            icon: const Icon(Icons.history, color: UiK.primaryBlue),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+              );
+            },
+          ),
+
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout, color: UiK.actionOrange),

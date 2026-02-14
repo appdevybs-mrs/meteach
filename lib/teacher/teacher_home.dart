@@ -11,6 +11,9 @@ import 'teacher_mail.dart';
 import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
 
+// ✅ Call logs
+import '../calls/call_logs_screen.dart';
+
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
 
@@ -172,6 +175,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          // ✅ Call Logs
+          IconButton(
+            tooltip: 'Call Logs',
+            icon: const Icon(Icons.history, color: primaryBlue),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout, color: actionOrange),
@@ -286,6 +299,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             badgeCount: notDone,
                           );
                         },
+                      ),
+
+                      // ✅ OPTIONAL: Call Logs as a tile too (professional)
+                      _buildQuickCard(
+                        context,
+                        'Call Logs',
+                        Icons.history_rounded,
+                        const CallLogsScreen(),
+                        subtitle: 'History & duration',
                       ),
                     ],
                   ),

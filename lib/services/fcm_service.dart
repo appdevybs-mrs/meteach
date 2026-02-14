@@ -7,6 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../calls/audio_call_screen.dart';
 
 import '../main.dart'; // appNavigatorKey
 import '../calls/audio_call_screen.dart';
@@ -26,8 +27,7 @@ class FCMService {
   static final FCMService I = FCMService._();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _local =
-  FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
 
   bool _localInited = false;
 
@@ -36,6 +36,11 @@ class FCMService {
   static const String chMail = 'ch_mail';
   static const String chCalls = 'ch_calls';
   static const String chDefault = 'ch_default';
+
+  /// ✅ Prevents opening the same incoming call screen multiple times
+  /// (FCM tap can arrive from getInitialMessage, onMessageOpenedApp, local notification tap, etc.)
+  static String? _lastIncomingCallIdHandled;
+  static DateTime? _lastIncomingCallHandledAt;
 
   /// Call once in main()
   Future<void> init() async {
@@ -141,8 +146,8 @@ class FCMService {
       Future.microtask(() => _handleNotificationTapPayload(payload));
     }
 
-    final androidPlugin = _local.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin =
+    _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
     if (androidPlugin != null) {
       await androidPlugin.createNotificationChannel(
@@ -194,9 +199,7 @@ class FCMService {
     final data = Map<String, dynamic>.from(message.data);
     final type = (data['type'] ?? '').toString().toLowerCase();
 
-    final title =
-    (data['title'] ?? message.notification?.title ?? 'Notification')
-        .toString();
+    final title = (data['title'] ?? message.notification?.title ?? 'Notification').toString();
     final body = (data['body'] ?? message.notification?.body ?? '').toString();
 
     String channelId = chDefault;
@@ -227,42 +230,61 @@ class FCMService {
           channelName,
           importance: Importance.max,
           priority: Priority.high,
-          category: type == 'incoming_call'
-              ? AndroidNotificationCategory.call
-              : null,
+          category: type == 'incoming_call' ? AndroidNotificationCategory.call : null,
           fullScreenIntent: type == 'incoming_call',
         ),
       ),
       payload: data.isEmpty ? null : jsonEncode(data),
     );
   }
-}
 
-void _handleNotificationTapPayload(String payload) {
-  Map<String, dynamic> data;
-  try {
-    data = jsonDecode(payload) as Map<String, dynamic>;
-  } catch (_) {
-    return;
+  // ✅ moved inside class so it can access the static guard fields safely
+  void _handleNotificationTapPayload(String payload) {
+    Map<String, dynamic> data;
+    try {
+      data = jsonDecode(payload) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+
+    final type = (data['type'] ?? '').toString().toLowerCase();
+    if (type != 'incoming_call') return;
+
+    final callId = (data['callId'] ?? '').toString().trim();
+    final peerUid = (data['peerUid'] ?? '').toString().trim();
+    final peerName = (data['peerName'] ?? 'Caller').toString().trim();
+
+    if (callId.isEmpty) return;
+
+    // ✅ Block duplicate opens for the same callId (prevents "already started" + auto hangup)
+    final now = DateTime.now();
+    if (_lastIncomingCallIdHandled == callId &&
+        _lastIncomingCallHandledAt != null &&
+        now.difference(_lastIncomingCallHandledAt!).inSeconds < 10) {
+      return;
+    }
+    _lastIncomingCallIdHandled = callId;
+    _lastIncomingCallHandledAt = now;
+
+    void go() {
+      final nav = appNavigatorKey.currentState;
+      if (nav == null) return;
+
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => AudioCallScreen(
+            peerUid: peerUid,
+            peerName: peerName,
+            isCaller: false,
+            incomingCallId: callId,
+          ),
+        ),
+      );
+    }
+
+    // ✅ ensure navigator exists (single navigation only)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      go();
+    });
   }
-
-  final type = (data['type'] ?? '').toString().toLowerCase();
-  if (type != 'incoming_call') return;
-
-  final callId = (data['callId'] ?? '').toString().trim();
-  final peerUid = (data['peerUid'] ?? '').toString().trim();
-  final peerName = (data['peerName'] ?? 'Caller').toString().trim();
-
-  if (callId.isEmpty) return;
-
-  appNavigatorKey.currentState?.push(
-    MaterialPageRoute(
-      builder: (_) => AudioCallScreen(
-        peerUid: peerUid,
-        peerName: peerName,
-        isCaller: false,
-        incomingCallId: callId,
-      ),
-    ),
-  );
 }

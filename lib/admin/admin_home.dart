@@ -7,8 +7,11 @@ import 'admin_learners.dart';
 import 'admin_staff.dart';
 import 'admin_classes.dart';
 
-// ✅ ADD THIS import (your new screen file)
+// ✅ timetable
 import 'admin_timetable_screen.dart';
+
+// ✅ call logs
+import '../calls/call_logs_screen.dart';
 
 class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
@@ -53,6 +56,16 @@ class AdminHome extends StatelessWidget {
           ),
         ),
         actions: [
+          // ✅ Call Logs
+          IconButton(
+            tooltip: 'Call Logs',
+            icon: const Icon(Icons.history, color: primaryBlue),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout, color: actionOrange),
@@ -179,7 +192,7 @@ class AdminHome extends StatelessWidget {
                           ),
                         ),
 
-                        // ✅ NEW CARD: Weekly timetable grid
+                        // ✅ Weekly timetable grid
                         _DashCard(
                           title: 'Schedule',
                           subtitle: 'Weekly timetable',
@@ -200,7 +213,6 @@ class AdminHome extends StatelessWidget {
                           ),
                         ),
 
-
                         _DashCard(
                           title: 'Learners',
                           subtitle: 'Students list',
@@ -217,6 +229,17 @@ class AdminHome extends StatelessWidget {
                           color: primaryBlue,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
+                          ),
+                        ),
+
+                        // ✅ OPTIONAL: Call Logs as a tile too (looks nice on dashboard)
+                        _DashCard(
+                          title: 'Call Logs',
+                          subtitle: 'History & duration',
+                          icon: Icons.history_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const CallLogsScreen()),
                           ),
                         ),
                       ],
