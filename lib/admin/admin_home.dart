@@ -6,6 +6,7 @@ import 'admin_courses.dart';
 import 'admin_learners.dart';
 import 'admin_staff.dart';
 import 'admin_classes.dart';
+import 'admin_public_preview.dart';
 
 // ✅ timetable
 import 'admin_timetable_screen.dart';
@@ -117,22 +118,32 @@ class AdminHome extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: primaryBlue.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: primaryBlue.withOpacity(0.12)),
-                          ),
-                          child: Image.asset(
-                            'assets/images/ybs_logo.png',
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.school_rounded, color: primaryBlue),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
+                            );
+                          },
+
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: primaryBlue.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                            ),
+                            child: Image.asset(
+                              'assets/images/ybs_logo.png',
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.school_rounded, color: primaryBlue),
+                            ),
                           ),
                         ),
+
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

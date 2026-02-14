@@ -94,6 +94,10 @@
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           ),
         ),
+        routes: {
+          '/homeShell': (_) => const HomeShell(),
+        },
+
         home: const AuthGate(
           signedOutHome: HomeShell(),
         ),
@@ -136,7 +140,7 @@
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.graphic_eq_rounded),
-              label: 'Assistant',
+              label: 'Courses',
             ),
             NavigationDestination(
               icon: Icon(Icons.school_rounded),
@@ -563,7 +567,7 @@
               ],
             ), // ✅ COMMA IS HERE
 
-            Positioned(
+          /*  Positioned(
               right: 18,
               bottom: 18,
               child: _FloatingCharacterButton(
@@ -571,7 +575,7 @@
                 state: state,
                 onTap: _toggleListening,
               ),
-            ),
+            ),*/
           ],
         ),
       );
@@ -2029,5 +2033,5 @@
       );
     }
   }
-  
-  
+
+
