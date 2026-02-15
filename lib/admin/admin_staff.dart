@@ -672,6 +672,8 @@ class _StaffListState extends State<_StaffList>
                                     peerName: u.fullName.isEmpty ? 'User' : u.fullName,
                                     isCaller: true,
                                     callerName: callerName, // ✅ add this (Step 2)
+                                    startWithVideo: true,
+
                                   ),
                                 ),
                               );

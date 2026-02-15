@@ -331,6 +331,8 @@ class FCMService {
               peerName: peerName,
               isCaller: false,
               incomingCallId: callId,
+              startWithVideo: true,
+
             ),
           ),
         );
