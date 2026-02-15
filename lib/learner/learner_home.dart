@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'learner_homework_screen.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
@@ -654,12 +655,8 @@ class _HomeCardsGrid extends StatelessWidget {
       childAspectRatio: 1.25,
       children: const [
         _MailHomeCard(),
-        _HomeCard(
-          icon: Icons.assignment_rounded,
-          title: 'Homework',
-          subtitle: 'Coming soon',
-          routeType: _HomeCardRoute.homework,
-        ),
+        _LearnerHomeworkHomeCard(),
+
         _HomeCard(
           icon: Icons.notifications_active_rounded,
           title: 'Reminders',
@@ -676,6 +673,166 @@ class _HomeCardsGrid extends StatelessWidget {
     );
   }
 }
+
+Future<void> _openHomeworkCoursePicker(BuildContext context) async {
+  final me = FirebaseAuth.instance.currentUser;
+  final uid = me?.uid ?? '';
+  if (uid.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Not logged in.')),
+    );
+    return;
+  }
+
+  final db = FirebaseDatabase.instance.ref();
+
+  List<Map<String, dynamic>> courses = [];
+  try {
+    final snap = await db.child('users/$uid/courses').get();
+    final v = snap.value;
+
+    if (v is Map) {
+      final raw = Map<dynamic, dynamic>.from(v);
+
+      courses = raw.entries.map((e) {
+        final key = e.key.toString();
+        final m = (e.value is Map) ? Map<String, dynamic>.from(e.value as Map) : <String, dynamic>{};
+        final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
+        final code = (m['course_code'] ?? '').toString();
+
+        int numVal(dynamic vv) => (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+        final assignedAt = numVal(m['assignedAt']);
+
+        return {
+          'courseKey': key,
+          'title': title,
+          'code': code,
+          'assignedAt': assignedAt,
+        };
+      }).toList();
+
+      courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to load courses: $e')),
+    );
+    return;
+  }
+
+  if (!context.mounted) return;
+
+  if (courses.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('No courses found.')),
+    );
+    return;
+  }
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: UiK.appBg,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (ctx) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Choose course',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: UiK.primaryBlue),
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.60,
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: courses.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final c = courses[i];
+                    final courseKey = (c['courseKey'] ?? '').toString();
+                    final title = (c['title'] ?? 'Course').toString();
+                    final code = (c['code'] ?? '').toString();
+
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => LearnerHomeworkScreen(
+                              courseKey: courseKey,
+                              courseTitle: title,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: UiK.primaryBlue.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                              ),
+                              child: const Icon(Icons.school_rounded, color: UiK.primaryBlue),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    code.isEmpty ? '—' : 'Code: $code',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.grey.shade600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 
 /// ✅ Special card: Mail + unread badge sum
 class _MailHomeCard extends StatelessWidget {
@@ -784,7 +941,7 @@ class _HomeCard extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
-      onTap: () {
+      onTap: () async {
         if (routeType == _HomeCardRoute.mail) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
@@ -792,10 +949,16 @@ class _HomeCard extends StatelessWidget {
           return;
         }
 
+        if (routeType == _HomeCardRoute.homework) {
+          await _openHomeworkCoursePicker(context);
+          return;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$title is not ready yet.')),
         );
       },
+
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -907,3 +1070,67 @@ class _ClassesAndPeers {
   final Map<String, String> teacherUids;
   final Map<String, String> classmateUids;
 }
+/// ✅ Homework card with undone badge
+class _LearnerHomeworkHomeCard extends StatelessWidget {
+  const _LearnerHomeworkHomeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final me = FirebaseAuth.instance.currentUser;
+    final meUid = me?.uid ?? '';
+    final ref = FirebaseDatabase.instance.ref('users/$meUid/courses');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
+      builder: (context, snap) {
+        int undoneTotal = 0;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          final courses = Map<dynamic, dynamic>.from(v);
+
+          for (final courseVal in courses.values) {
+            if (courseVal is! Map) continue;
+            final course = Map<dynamic, dynamic>.from(courseVal);
+
+            final attendance = course['attendance'];
+            if (attendance is! Map) continue;
+
+            final attMap = Map<dynamic, dynamic>.from(attendance);
+
+            for (final sessionVal in attMap.values) {
+              if (sessionVal is! Map) continue;
+              final session = Map<dynamic, dynamic>.from(sessionVal);
+
+              final hw = session['homework'];
+              if (hw is! Map) continue;
+
+              final hwMap = Map<dynamic, dynamic>.from(hw);
+
+              final text = (hwMap['text'] ?? '').toString().trim();
+              final due = (hwMap['dueDate'] ?? '').toString().trim();
+
+              if (text.isEmpty && due.isEmpty) continue;
+
+              final doneAt = hwMap['doneAt'];
+              final isDone = doneAt != null;
+
+              if (!isDone) {
+                undoneTotal += 1;
+              }
+            }
+          }
+        }
+
+        return _HomeCard(
+          icon: Icons.assignment_rounded,
+          title: 'Homework',
+          subtitle: 'View & submit',
+          routeType: _HomeCardRoute.homework,
+          badgeCount: undoneTotal,
+        );
+      },
+    );
+  }
+}
+

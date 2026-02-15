@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'admin_payments.dart';
 
+import 'admin_payments.dart';
 import 'admin_courses.dart';
 import 'admin_learners.dart';
 import 'admin_staff.dart';
 import 'admin_classes.dart';
 import 'admin_public_preview.dart';
+import 'admin_subscriptions.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 // ✅ timetable
 import 'admin_timetable_screen.dart';
@@ -125,7 +127,6 @@ class AdminHome extends StatelessWidget {
                               MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
                             );
                           },
-
                           child: Container(
                             width: 52,
                             height: 52,
@@ -143,7 +144,6 @@ class AdminHome extends StatelessWidget {
                             ),
                           ),
                         ),
-
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -224,6 +224,9 @@ class AdminHome extends StatelessWidget {
                           ),
                         ),
 
+                        // ✅ Subscriptions (subtitle shows count)
+                        const _SubscriptionsDashCard(),
+
                         _DashCard(
                           title: 'Learners',
                           subtitle: 'Students list',
@@ -243,7 +246,7 @@ class AdminHome extends StatelessWidget {
                           ),
                         ),
 
-                        // ✅ OPTIONAL: Call Logs as a tile too (looks nice on dashboard)
+                        // ✅ Call Logs
                         _DashCard(
                           title: 'Call Logs',
                           subtitle: 'History & duration',
@@ -275,6 +278,40 @@ class AdminHome extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ✅ Subscriptions card without floating badge.
+// Subtitle becomes: "X new subscriptions"
+class _SubscriptionsDashCard extends StatelessWidget {
+  const _SubscriptionsDashCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('subscriptions');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int count = 0;
+        final v = snap.data?.snapshot.value;
+        if (v is Map) count = v.length;
+
+        final subtitle = count == 0
+            ? 'No new subscriptions'
+            : '$count new subscription${count == 1 ? '' : 's'}';
+
+        return _DashCard(
+          title: 'Subscriptions',
+          subtitle: subtitle,
+          icon: Icons.how_to_reg_rounded,
+          color: AdminHome.primaryBlue,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminSubscriptionsScreen()),
+          ),
+        );
+      },
     );
   }
 }
@@ -338,7 +375,7 @@ class _DashCard extends StatelessWidget {
                   color: Color(0xFF1A2B48),
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 subtitle,
                 style: TextStyle(

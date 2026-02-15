@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../admin/admin_teacher_mail_thread_screen.dart';
 import 'route_state.dart'; // if same folder
+import '../admin/admin_payments.dart';
 
 import '../main.dart'; // appNavigatorKey
 import '../calls/audio_call_screen.dart';
@@ -387,6 +388,21 @@ class FCMService {
     }
 
 
+    if (type == 'payment') {
+      void go() {
+        final nav = appNavigatorKey.currentState;
+        if (nav == null) return;
+
+        // Option 1: named route
+        nav.pushNamed('/payments');
+
+        // Option 2: if you don't have routes, push the screen directly:
+        // nav.push(MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()));
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) => go());
+      return;
+    }
 
     // ✅ ignore other types safely
     return;

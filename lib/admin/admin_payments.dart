@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../services/push_client.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
   const AdminPaymentsScreen({super.key});
@@ -135,11 +138,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             ),
           ),
 
-          // Horizontal-scroll table (header + rows share same width)
+          // Horizontal-scroll table
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Make table wider than screen so it can scroll horizontally
                 final tableWidth = constraints.maxWidth < 1100 ? 1100.0 : constraints.maxWidth;
 
                 return SingleChildScrollView(
@@ -148,14 +150,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     width: tableWidth,
                     child: Column(
                       children: [
-                        // Header
                         Container(
                           color: Colors.white,
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                           child: _TableHeaderRow(),
                         ),
 
-                        // Rows (vertical scroll)
                         Expanded(
                           child: StreamBuilder<DatabaseEvent>(
                             stream: _paymentsRef.onValue,
@@ -186,14 +186,20 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               final filtered = s.isEmpty
                                   ? list
                                   : list.where((p) {
-                                final learnerName = (p['learner_name'] ?? '').toString().toLowerCase();
-                                final serial = (p['learner_serial'] ?? '').toString().toLowerCase();
+                                final learnerName =
+                                (p['learner_name'] ?? '').toString().toLowerCase();
+                                final serial =
+                                (p['learner_serial'] ?? '').toString().toLowerCase();
                                 final code = (p['course_code'] ?? '').toString().toLowerCase();
-                                final title = (p['course_title'] ?? '').toString().toLowerCase();
-                                final teacher = (p['teacherName'] ?? '').toString().toLowerCase();
+                                final title =
+                                (p['course_title'] ?? '').toString().toLowerCase();
+                                final teacher =
+                                (p['teacherName'] ?? '').toString().toLowerCase();
                                 final notes = (p['notes'] ?? '').toString().toLowerCase();
-                                final paidDate = _fmtDateFromMs(p['paidAt']).toLowerCase();
-                                final startDate = (p['startDate'] ?? '').toString().toLowerCase();
+                                final paidDate =
+                                _fmtDateFromMs(p['paidAt']).toLowerCase();
+                                final startDate =
+                                (p['startDate'] ?? '').toString().toLowerCase();
                                 return learnerName.contains(s) ||
                                     serial.contains(s) ||
                                     code.contains(s) ||
@@ -285,7 +291,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               },
             ),
           ),
-
         ],
       ),
     );
@@ -331,7 +336,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     Map<String, dynamic> pickedLearner = {};
     Map<String, dynamic> pickedCourse = {};
 
-    // ✅ teacher selection (from /users role=teacher)
     String? selectedTeacherUid;
     String? selectedTeacherName;
 
@@ -381,18 +385,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           if (cVal is Map) pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
                         }
 
-                        final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+                        final totalSessions =
+                        _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
                         sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
-                        amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                        amountC.text =
+                            _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                         remindBeforeSession = sessionsPaid;
 
                         setD(() {});
                       },
                     ),
-
                     const SizedBox(height: 12),
-
                     Row(
                       children: [
                         Expanded(
@@ -430,9 +434,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     if (pickedUid == null)
                       const _MiniHint('Pick learner first.')
                     else
@@ -452,7 +454,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
                                 final code = (m['course_code'] ?? '').toString().trim();
                                 final title = (m['title'] ?? '').toString().trim();
-                                final label = [if (code.isNotEmpty) code, if (title.isNotEmpty) title].join(' — ');
+                                final label =
+                                [if (code.isNotEmpty) code, if (title.isNotEmpty) title].join(' — ');
                                 keys.add(key);
                                 labelByKey[key] = label.isNotEmpty ? label : key;
                                 idByKey[key] = (m['id'] ?? '').toString();
@@ -482,11 +485,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 if (cVal is Map) pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
                               }
 
-                              final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+                              final totalSessions =
+                              _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
                               final maxS = (totalSessions > 0) ? totalSessions : 24;
                               if (sessionsPaid > maxS) sessionsPaid = maxS;
 
-                              amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                              amountC.text =
+                                  _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                               if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
                               if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
@@ -496,10 +501,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           );
                         },
                       ),
-
                     const SizedBox(height: 12),
-
-                    // ✅ Teacher dropdown from users(role=teacher)
                     _TeacherDropdownFromUsers(
                       usersRef: _usersRef,
                       valueUid: selectedTeacherUid,
@@ -509,9 +511,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         selectedTeacherName = name;
                       }),
                     ),
-
                     const SizedBox(height: 12),
-
                     _NumberPickerRow(
                       label: 'Sessions paid',
                       value: sessionsPaid,
@@ -519,8 +519,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       max: _maxSessionsFromCourse(pickedCourse),
                       onChanged: (v) {
                         sessionsPaid = v;
-                        final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
-                        amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                        final totalSessions =
+                        _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+                        amountC.text =
+                            _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                         if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
                         if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
@@ -528,9 +530,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         setD(() {});
                       },
                     ),
-
                     const SizedBox(height: 10),
-
                     _NumberPickerRow(
                       label: 'Reminder (before session)',
                       value: (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession),
@@ -538,26 +538,20 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       max: (sessionsPaid > 0 ? sessionsPaid : 1),
                       onChanged: (v) => setD(() => remindBeforeSession = v),
                     ),
-
                     const SizedBox(height: 10),
-
                     DropdownButtonFormField<String>(
                       value: method,
                       decoration: const InputDecoration(labelText: 'Method'),
                       items: _methods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
-
                     const SizedBox(height: 10),
-
                     TextFormField(
                       controller: amountC,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Fee (editable)'),
                     ),
-
                     const SizedBox(height: 10),
-
                     TextField(
                       controller: notesC,
                       maxLines: 2,
@@ -612,7 +606,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     final courseCode = (pickedCourse['course_code'] ?? '').toString();
                     final courseTitle = (pickedCourse['title'] ?? '').toString();
                     final learnerName =
-                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'.trim();
+                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
+                        .trim();
                     final learnerSerial = (pickedLearner['serial'] ?? '').toString();
 
                     final remind = (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
@@ -623,26 +618,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       'course_id': pickedCourseId ?? '',
                       'course_code': courseCode,
                       'course_title': courseTitle,
-
                       'sessionsPaid': sessionsPaid,
                       'remindBeforeSession': remind,
-
                       'amount': fee,
                       'method': method,
-
-                      // ✅ teacher from users
                       'teacherId': selectedTeacherUid ?? '',
                       'teacherName': selectedTeacherName ?? '',
-
                       'startDate': startDateYmd,
                       'notes': notesC.text.trim(),
-
                       'paidAt': paidAtMs,
                       'createdAt': ServerValue.timestamp,
-
                       'learner_name': learnerName,
                       'learner_serial': learnerSerial,
-
                       'dayKey': dayKey,
                     });
 
@@ -655,6 +642,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       lastMethod: method,
                       lastAmount: fee,
                       remindBeforeSession: remind,
+                    );
+
+                    await _sendPaymentReceiptMail(
+                      learnerUid: pickedUid!,
+                      learnerName: learnerName.isEmpty ? 'Learner' : learnerName,
+                      courseTitle: courseTitle,
+                      amount: fee,
+                      sessionsPaid: sessionsPaid,
+                      paidDateYmd: paidDateYmd,
                     );
 
                     if (context.mounted) Navigator.pop(context);
@@ -677,6 +673,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   Future<void> _openEditPaymentDialog(Map<String, dynamic> p) async {
     final paymentId = (p['paymentId'] ?? '').toString();
     if (paymentId.isEmpty) return;
+
+    // Keep these so we can recalc correctly if courseKey/uid changes (it usually doesn't)
+    final oldUid = (p['uid'] ?? '').toString().trim();
+    final oldCourseKey = (p['courseKey'] ?? '').toString().trim();
 
     int sessionsPaid = _asInt(p['sessionsPaid']);
     int remindBeforeSession = _asInt(p['remindBeforeSession']);
@@ -746,9 +746,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     _TeacherDropdownFromUsers(
                       usersRef: _usersRef,
                       valueUid: selectedTeacherUid,
@@ -758,9 +756,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         selectedTeacherName = name;
                       }),
                     ),
-
                     const SizedBox(height: 12),
-
                     _NumberPickerRow(
                       label: 'Sessions paid',
                       value: sessionsPaid,
@@ -825,17 +821,22 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       'remindBeforeSession': remindBeforeSession,
                       'method': method,
                       'amount': fee,
-
                       'teacherId': selectedTeacherUid ?? '',
                       'teacherName': selectedTeacherName ?? '',
-
                       'startDate': startDateYmd,
                       'notes': notesC.text.trim(),
-
                       'paidAt': paidAtMs,
                       'dayKey': paidDateYmd,
                       'updatedAt': ServerValue.timestamp,
                     });
+
+                    // ✅ FIX: keep payment_summary correct after edit
+                    final uidNow = oldUid; // uid/courseKey typically never change on edit
+                    final courseKeyNow = oldCourseKey;
+
+                    if (uidNow.isNotEmpty && courseKeyNow.isNotEmpty) {
+                      await _recalcLearnerSummaryForCourse(uid: uidNow, courseKey: courseKeyNow);
+                    }
 
                     if (context.mounted) Navigator.pop(context);
                     _toast('Updated ✅');
@@ -877,6 +878,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
     try {
       await _paymentsRef.child(paymentId).remove();
+
+      // ✅ optional but safe: keep summary correct after delete too
+      final uid = (p['uid'] ?? '').toString().trim();
+      final courseKey = (p['courseKey'] ?? '').toString().trim();
+      if (uid.isNotEmpty && courseKey.isNotEmpty) {
+        await _recalcLearnerSummaryForCourse(uid: uid, courseKey: courseKey);
+      }
+
       _toast('Deleted ✅');
     } catch (e) {
       _toast('Failed: $e');
@@ -946,6 +955,88 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         'lastAmount': lastAmount,
       });
     });
+  }
+
+  // ✅ NEW: Recalculate summary totals so edits/deletes never break totals
+  Future<void> _recalcLearnerSummaryForCourse({
+    required String uid,
+    required String courseKey,
+  }) async {
+    final snap = await _paymentsRef.limitToLast(2000).get();
+    final v = snap.value;
+
+    int totalPaid = 0;
+    int sessionsTotal = 0;
+    int lastPaidAt = 0;
+    String lastPaymentId = '';
+    String lastMethod = '';
+    int lastAmount = 0;
+
+    if (v is Map) {
+      for (final entry in v.entries) {
+        final raw = entry.value;
+        if (raw is! Map) continue;
+        final m = raw.map((k, v) => MapEntry(k.toString(), v));
+
+        if ((m['uid'] ?? '') != uid) continue;
+        if ((m['courseKey'] ?? '') != courseKey) continue;
+
+        final amount = _asInt(m['amount']);
+        final sp = _asInt(m['sessionsPaid']);
+        final paidAt = _asInt(m['paidAt']);
+        final method = (m['method'] ?? '').toString();
+
+        totalPaid += amount;
+        sessionsTotal += sp;
+
+        if (paidAt >= lastPaidAt) {
+          lastPaidAt = paidAt;
+          lastPaymentId = entry.key.toString();
+          lastMethod = method;
+          lastAmount = amount;
+        }
+      }
+    }
+
+    final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+
+    await sumRef.update({
+      'totalPaid': totalPaid,
+      'sessionsPaidTotal': sessionsTotal,
+      // keep these useful fields sane too (won't break anything if unused)
+      'lastPaymentId': lastPaymentId,
+      'lastMethod': lastMethod,
+      'lastAmount': lastAmount,
+      'updatedAt': ServerValue.timestamp,
+    });
+  }
+
+  Future<void> _sendPaymentPushToLearner({
+    required String learnerUid,
+    required String courseTitle,
+    required int amount,
+    required int sessionsPaid,
+    required String paidDateYmd,
+  }) async {
+    try {
+      final snap = await FirebaseDatabase.instance.ref('fcm_tokens/$learnerUid/token').get();
+      final token = (snap.value ?? '').toString().trim();
+      if (token.isEmpty) return;
+
+      await PushClient.sendToToken(
+        token: token,
+        title: 'Payment received ✅',
+        message: '$courseTitle • $sessionsPaid sessions • $amount DA • $paidDateYmd',
+        data: {
+          'type': 'payment',
+          'uid': learnerUid,
+          'courseTitle': courseTitle,
+          'amount': amount,
+          'sessionsPaid': sessionsPaid,
+          'paidDate': paidDateYmd,
+        },
+      );
+    } catch (_) {}
   }
 
   static int _asInt(dynamic v) {
@@ -1034,6 +1125,11 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
   final String? fallbackName;
   final void Function(String? teacherUid, String? teacherName) onChanged;
 
+  bool _isTeacherRole(dynamic role) {
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
+  }
+
   String _labelFor(String uid, Map<String, dynamic> m) {
     final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
     final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
@@ -1049,24 +1145,17 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
     return uid;
   }
 
-  bool _isTeacherRole(dynamic role) {
-    final r = (role ?? '').toString().trim().toLowerCase();
-    return r == 'teacher';
-  }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<DataSnapshot>(
-      // teachers list rarely changes; one-time fetch is enough
       future: usersRef.get(),
       builder: (context, snap) {
         final v = snap.data?.value;
 
-        final teachers = <Map<String, String>>[]; // {uid, name}
+        final teachers = <Map<String, String>>[];
 
         if (v is Map) {
           v.forEach((k, val) {
-            if (k == null || val == null) return;
             if (val is Map) {
               final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
               if (!_isTeacherRole(m['role'])) return;
@@ -1080,17 +1169,15 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
 
         teachers.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
 
-        String? effectiveUid = valueUid;
-        if ((effectiveUid == null || effectiveUid.isEmpty) && (fallbackName ?? '').trim().isNotEmpty) {
-          final found = teachers.firstWhere(
-                (t) => (t['name'] ?? '').trim().toLowerCase() == fallbackName!.trim().toLowerCase(),
-            orElse: () => const {'uid': '', 'name': ''},
-          );
-          if ((found['uid'] ?? '').isNotEmpty) effectiveUid = found['uid'];
+        final uidSet = teachers.map((t) => t['uid'] ?? '').toSet();
+
+        String? effectiveUid = (valueUid ?? '').trim();
+        if (effectiveUid.isEmpty || !uidSet.contains(effectiveUid)) {
+          effectiveUid = null;
         }
 
         return DropdownButtonFormField<String>(
-          value: (effectiveUid != null && effectiveUid!.isNotEmpty) ? effectiveUid : null,
+          value: effectiveUid,
           decoration: const InputDecoration(labelText: 'Teacher'),
           items: [
             const DropdownMenuItem<String>(
@@ -1098,9 +1185,11 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
               child: Text('— Select teacher —'),
             ),
             ...teachers.map((t) {
+              final uid = t['uid'] ?? '';
+              final name = t['name'] ?? uid;
               return DropdownMenuItem<String>(
-                value: t['uid'],
-                child: Text(t['name'] ?? t['uid'] ?? ''),
+                value: uid,
+                child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
               );
             }),
           ],
@@ -1109,7 +1198,10 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
               onChanged(null, null);
               return;
             }
-            final found = teachers.firstWhere((t) => t['uid'] == uid, orElse: () => {'uid': uid, 'name': uid});
+            final found = teachers.firstWhere(
+                  (t) => t['uid'] == uid,
+              orElse: () => {'uid': uid, 'name': uid},
+            );
             onChanged(uid, found['name'] ?? uid);
           },
         );
@@ -1343,4 +1435,134 @@ class _DateField extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _sendPaymentReceiptMail({
+  required String learnerUid,
+  required String learnerName,
+  required String courseTitle,
+  required int amount,
+  required int sessionsPaid,
+  required String paidDateYmd,
+}) async {
+  final meUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final meName = (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+  if (meUid.isEmpty) return;
+
+  final db = FirebaseDatabase.instance;
+  final threadsRef = db.ref('mail_threads');
+  final indexRef = db.ref('mail_index');
+  final stateRef = db.ref('mail_state');
+
+  final subject = 'Payment receipt';
+  final now = DateTime.now().millisecondsSinceEpoch;
+
+  final body =
+      '✅ Payment received\n'
+      'Course: $courseTitle\n'
+      'Sessions: $sessionsPaid\n'
+      'Amount: $amount DA\n'
+      'Paid date: $paidDateYmd\n';
+
+  String? threadId;
+
+  final adminIndexSnap = await indexRef.child(meUid).get();
+  final v = adminIndexSnap.value;
+
+  if (v is Map) {
+    for (final e in v.entries) {
+      final tid = e.key.toString();
+      final mRaw = e.value;
+      if (mRaw is! Map) continue;
+      final m = mRaw.map((k, v) => MapEntry(k.toString(), v));
+
+      final peerUid = (m['peerUid'] ?? '').toString().trim();
+      final subj = (m['subject'] ?? '').toString().trim();
+      final deletedAt = m['deletedAt'];
+
+      if (deletedAt != null) continue;
+      if (peerUid == learnerUid && subj == subject) {
+        threadId = tid;
+        break;
+      }
+    }
+  }
+
+  if (threadId == null) {
+    threadId = threadsRef.push().key!;
+    await threadsRef.child(threadId).set({
+      'subject': subject,
+      'createdAt': now,
+      'updatedAt': now,
+      'lastMessage': '',
+    });
+
+    await indexRef.child(meUid).child(threadId).set({
+      'subject': subject,
+      'updatedAt': now,
+      'lastMessage': '',
+      'unreadCount': 0,
+      'peerUid': learnerUid,
+      'peerName': learnerName,
+      'deletedAt': null,
+    });
+
+    await indexRef.child(learnerUid).child(threadId).set({
+      'subject': subject,
+      'updatedAt': now,
+      'lastMessage': '',
+      'unreadCount': 0,
+      'peerUid': meUid,
+      'peerName': meName.isEmpty ? 'Admin' : meName,
+      'deletedAt': null,
+    });
+  }
+
+  final msgsRef = db.ref('mail_messages/$threadId');
+  final msgRef = msgsRef.push();
+
+  final preview80 = body.length > 80 ? body.substring(0, 80) : body;
+
+  await msgRef.set({
+    'fromUid': meUid,
+    'body': body,
+    'toUids': {learnerUid: true},
+    'ccUids': {},
+    'bccUids': {},
+    'attachments': [],
+    'createdAt': now,
+    'deletedFor': {},
+  });
+
+  await db.ref('mail_threads/$threadId').update({
+    'updatedAt': now,
+    'lastMessage': preview80,
+  });
+
+  await indexRef.child(meUid).child(threadId).update({
+    'subject': subject,
+    'updatedAt': now,
+    'lastMessage': preview80,
+    'unreadCount': 0,
+    'peerUid': learnerUid,
+    'peerName': learnerName,
+    'deletedAt': null,
+  });
+
+  await indexRef.child(learnerUid).child(threadId).runTransaction((cur) {
+    final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
+
+    m['subject'] = subject;
+    m['updatedAt'] = now;
+    m['lastMessage'] = preview80;
+    m['unreadCount'] = oldUnread + 1;
+    m['peerUid'] = meUid;
+    m['peerName'] = meName.isEmpty ? 'Admin' : meName;
+    m['deletedAt'] = null;
+
+    return Transaction.success(m);
+  });
+
+  await stateRef.child(meUid).child(threadId).update({'lastReadAt': now});
 }

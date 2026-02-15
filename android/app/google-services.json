@@ -13,7 +13,20 @@
           "package_name": "com.dreamenglish.academy.dream_english_academy"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "337224826950-p139a8tkv1d2c8qctpnod6pshd5iselr.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dreamenglish.academy.dream_english_academy",
+            "certificate_hash": "2d40a540aa74f287d6ff811b1890eb5fee119535"
+          }
+        },
+        {
+          "client_id": "337224826950-j0g7vgi2sluk6j9ubue7io215gb9kuh1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyD8SFtCkgJXfnZMoPWxwGcpsshDJ3IeeJ0"
@@ -21,7 +34,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "337224826950-j0g7vgi2sluk6j9ubue7io215gb9kuh1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

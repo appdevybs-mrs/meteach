@@ -32,12 +32,12 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // 30-min grid
   static const int _minutesStep = 30;
-  static const int _slotsPerDay = (24 * 60) ~/ _minutesStep; // 48
 
-  // UI sizing
-  static const double _timeGutterW = 66;
-  static const double _dayColW = 150;
-  static const double _slotH = 36;
+  // ✅ Visible timetable window: 07:00 -> 23:00
+  static const int _visibleStartMin = 7 * 60; // 07:00
+  static const int _visibleEndMin = 23 * 60; // 23:00
+  static const int _visibleSlots =
+      (_visibleEndMin - _visibleStartMin) ~/ _minutesStep; // 32
 
   // Teachers for filter
   bool _loadingTeachers = true;
@@ -46,22 +46,42 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // Filters
   String _teacherFilterUid = "ALL";
-  String _levelFilter = "ALL";
+
+  /// ✅ "Level" spinner requested: populated from classes/*/course_title
+  String _levelTitleFilter = "ALL";
+
   bool _showOnlyOpen = false;
 
-  // scroll (one horizontal controller shared by header + grid)
-  final ScrollController _hCtrl = ScrollController();
+  // Scroll controllers
+  final ScrollController _hBodyCtrl = ScrollController();
+  final ScrollController _hHeaderCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
+  bool _syncingH = false;
 
   @override
   void initState() {
     super.initState();
     _loadTeachers();
+
+    // ✅ Sync horizontal (body -> header)
+    _hBodyCtrl.addListener(() {
+      if (_syncingH) return;
+      if (!_hHeaderCtrl.hasClients) return;
+      _syncingH = true;
+      _hHeaderCtrl.jumpTo(
+        _hBodyCtrl.offset.clamp(
+          _hHeaderCtrl.position.minScrollExtent,
+          _hHeaderCtrl.position.maxScrollExtent,
+        ),
+      );
+      _syncingH = false;
+    });
   }
 
   @override
   void dispose() {
-    _hCtrl.dispose();
+    _hBodyCtrl.dispose();
+    _hHeaderCtrl.dispose();
     _vCtrl.dispose();
     super.dispose();
   }
@@ -78,6 +98,94 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   bool _isTeacherRole(dynamic role) {
     final r = (role ?? "").toString().trim().toLowerCase();
     return r == "teacher" || r == "teachers" || r == "teacher(s)";
+  }
+
+  String _classIdOf(Map<String, dynamic> cls) {
+    return (cls["class_id"] ?? cls["id"] ?? "").toString().trim();
+  }
+
+  String _titleOf(Map<String, dynamic> cls) {
+    return (cls["course_title"] ?? "").toString().trim();
+  }
+
+  int _learnersCountOf(Map<String, dynamic> cls) {
+    final learners =
+    (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
+    return learners?.length ?? 0;
+  }
+
+  // -------------------- Teacher-based colors (fixed + dynamic shades) --------------------
+
+  static const List<double> _teacherHuePalette = <double>[
+    210, // A -> Blue
+    320, // Purple
+    150, // Green
+    25, // Orange
+    55, // S -> Yellow (because 18 % 7 = 4)
+    0, // Red
+    185, // Teal
+  ];
+
+  String _teacherKey(String instructorName) {
+    final t = instructorName.trim();
+    if (t.isEmpty) return "#";
+    return t[0].toUpperCase();
+  }
+
+  double _teacherBaseHue(String instructorName) {
+    final key = _teacherKey(instructorName);
+    final code = key.codeUnitAt(0);
+    final idx = (code >= 65 && code <= 90) ? (code - 65) : 26;
+    return _teacherHuePalette[idx % _teacherHuePalette.length];
+  }
+
+  int _stableHash(String s) {
+    int h = 0;
+    for (final cu in s.codeUnits) {
+      h = 0x1fffffff & (h + cu);
+      h = 0x1fffffff & (h + ((0x0007ffff & h) << 10));
+      h ^= (h >> 6);
+    }
+    h = 0x1fffffff & (h + ((0x03ffffff & h) << 3));
+    h ^= (h >> 11);
+    h = 0x1fffffff & (h + ((0x00003fff & h) << 15));
+    return h;
+  }
+
+  HSLColor _classHslForTeacher({
+    required String instructorName,
+    required String classId,
+  }) {
+    final hue = _teacherBaseHue(instructorName);
+    final h = _stableHash(classId.isEmpty ? "?" : classId);
+    final t = (h % 1000) / 999.0; // 0..1
+    final sat = 0.62;
+    final light = 0.34 + (t * 0.30); // 0.34..0.64
+    return HSLColor.fromAHSL(1.0, hue, sat, light);
+  }
+
+  LinearGradient _classGradient({
+    required String instructorName,
+    required String classId,
+  }) {
+    final base = _classHslForTeacher(instructorName: instructorName, classId: classId);
+    final c1 =
+    base.withLightness((base.lightness + 0.10).clamp(0.0, 1.0)).toColor();
+    final c2 =
+    base.withLightness((base.lightness - 0.05).clamp(0.0, 1.0)).toColor();
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [c1, c2],
+    );
+  }
+
+  Color _classBorderColor({
+    required String instructorName,
+    required String classId,
+  }) {
+    final base = _classHslForTeacher(instructorName: instructorName, classId: classId);
+    return base.withLightness((base.lightness - 0.12).clamp(0.0, 1.0)).toColor();
   }
 
   // -------------------- Load teachers --------------------
@@ -132,25 +240,48 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // -------------------- Time helpers --------------------
 
-  int _timeToSlotIndex(String hhmm) {
+  int _timeToMinutes(String hhmm) {
     final parts = hhmm.split(":");
     if (parts.length != 2) return 0;
     final hh = int.tryParse(parts[0]) ?? 0;
     final mm = int.tryParse(parts[1]) ?? 0;
-    final total = (hh * 60) + mm;
-    return (total ~/ _minutesStep).clamp(0, _slotsPerDay - 1);
+    return (hh * 60) + mm;
   }
 
-  String _slotLabel(int slotIndex) {
-    final totalMin = slotIndex * _minutesStep;
-    final hh = (totalMin ~/ 60).toString().padLeft(2, '0');
-    final mm = (totalMin % 60).toString().padLeft(2, '0');
+  String _minutesToLabel(int minutes) {
+    final hh = (minutes ~/ 60).toString().padLeft(2, '0');
+    final mm = (minutes % 60).toString().padLeft(2, '0');
     return "$hh:$mm";
   }
 
   int _dayIndex(String day) {
     final idx = _weekDays.indexOf(day);
     return idx < 0 ? 0 : idx;
+  }
+
+  // -------------------- Sessions progress (done / left) --------------------
+
+  int _sessionsTotal(Map<String, dynamic> cls) {
+    final sched = (cls["schedule"] is Map)
+        ? Map<String, dynamic>.from(cls["schedule"])
+        : <String, dynamic>{};
+
+    final sc = int.tryParse((sched["sessions_count"] ?? "").toString());
+    if (sc != null && sc > 0) return sc;
+
+    final sessions = (sched["sessions"] is List)
+        ? List<dynamic>.from(sched["sessions"])
+        : const [];
+    if (sessions.isNotEmpty) return sessions.length;
+
+    return 0;
+  }
+
+  int _sessionsDone(Map<String, dynamic> cls) {
+    final att = cls["attendance"];
+    if (att is Map) return Map<dynamic, dynamic>.from(att).length;
+    if (att is List) return List<dynamic>.from(att).length;
+    return 0;
   }
 
   // -------------------- Filtering --------------------
@@ -174,20 +305,20 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       if (uid != _teacherFilterUid) return false;
     }
 
-    // level filter
-    if (_levelFilter != "ALL") {
-      final lvl = (cls["course_level"] ?? cls["level"] ?? "").toString().trim();
-      if (lvl != _levelFilter) return false;
+    // "Level" filter = course_title
+    if (_levelTitleFilter != "ALL") {
+      final title = _titleOf(cls);
+      if (title != _levelTitleFilter) return false;
     }
 
     return true;
   }
 
-  List<String> _extractLevels(List<Map<String, dynamic>> classes) {
+  List<String> _extractLevelTitles(List<Map<String, dynamic>> classes) {
     final set = <String>{};
     for (final cls in classes) {
-      final lvl = (cls["course_level"] ?? cls["level"] ?? "").toString().trim();
-      if (lvl.isNotEmpty) set.add(lvl);
+      final title = _titleOf(cls);
+      if (title.isNotEmpty) set.add(title);
     }
     final list = set.toList()..sort();
     return list;
@@ -196,9 +327,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   // -------------------- Popup --------------------
 
   void _openClassPopup(Map<String, dynamic> cls) {
-    final id = (cls["class_id"] ?? "").toString();
+    final id = _classIdOf(cls);
     final code = (cls["course_code"] ?? "").toString();
-    final title = (cls["course_title"] ?? "").toString();
+    final title = _titleOf(cls);
     final instructor = (cls["instructor"] ?? "").toString();
     final isOpen = (cls["is_open"] ?? true) == true;
     final status = (cls["status"] ?? "active").toString();
@@ -207,10 +338,11 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         ? Map<String, dynamic>.from(cls["schedule"])
         : <String, dynamic>{};
     final first = (sched["first_session_date"] ?? "").toString();
-    final count = (sched["sessions_count"] ?? "").toString();
 
-    final learners = (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
-    final learnersCount = learners?.length ?? 0;
+    final total = _sessionsTotal(cls);
+    final done = _sessionsDone(cls);
+    final left = (total - done).clamp(0, 999999);
+    final learnersCount = _learnersCountOf(cls);
 
     showModalBottomSheet(
       context: context,
@@ -237,30 +369,65 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        color: (isOpen ? Colors.green : Colors.black).withOpacity(0.12),
+                        color: (isOpen ? Colors.green : Colors.red).withOpacity(0.12),
                         border: Border.all(
-                          color: (isOpen ? Colors.green : Colors.black).withOpacity(0.30),
+                          color: (isOpen ? Colors.green : Colors.red).withOpacity(0.35),
                         ),
                       ),
                       child: Text(
                         isOpen ? "OPEN" : "CLOSED",
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
-                          color: isOpen ? Colors.green : Colors.black,
+                          color: isOpen ? Colors.green : Colors.red,
                         ),
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                Text("Class ID: $id",
+                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text("Instructor: $instructor",
+                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text("Status: $status",
+                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
-                Text("Class ID: $id", style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text("Instructor: $instructor", style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text("Status: $status", style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.grey.withOpacity(0.25)),
+                    color: Colors.black.withOpacity(0.03),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "Sessions: ${total == 0 ? "-" : total}",
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          "Studied: ${total == 0 ? "-" : done}",
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          "Left: ${total == 0 ? "-" : left}",
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(
-                  "Start: ${first.isEmpty ? "-" : first} • Sessions: ${count.isEmpty ? "-" : count} • Learners: $learnersCount",
+                  "Start: ${first.isEmpty ? "-" : first} • Learners: $learnersCount",
                   style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 14),
@@ -268,8 +435,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      Navigator.pop(context); // close bottom sheet
-
+                      Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -277,7 +443,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                         ),
                       );
                     },
-
                     icon: const Icon(Icons.open_in_new),
                     label: const Text("Open in Admin Classes"),
                   ),
@@ -288,181 +453,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         );
       },
     );
-  }
-
-  // -------------------- Grid painter background --------------------
-
-  Widget _gridBackground(double gridH) {
-    return CustomPaint(
-      size: Size(_timeGutterW + (_weekDays.length * _dayColW), gridH),
-      painter: _TimetableGridPainter(
-        timeGutterW: _timeGutterW,
-        dayColW: _dayColW,
-        slotH: _slotH,
-        slotsPerDay: _slotsPerDay,
-        dayCount: _weekDays.length,
-      ),
-    );
-  }
-
-  // -------------------- Blocks overlay --------------------
-
-  List<Widget> _buildBlocks(List<Map<String, dynamic>> classes) {
-    final List<Widget> blocks = [];
-
-    for (final cls in classes) {
-      final bool isOpen = (cls["is_open"] ?? true) == true;
-
-      final sched = (cls["schedule"] is Map)
-          ? Map<String, dynamic>.from(cls["schedule"])
-          : <String, dynamic>{};
-      final sessions = (sched["sessions"] is List)
-          ? List<dynamic>.from(sched["sessions"])
-          : <dynamic>[];
-
-      if (sessions.isEmpty) continue;
-
-      for (final s in sessions) {
-        final m = (s is Map) ? Map<String, dynamic>.from(s) : <String, dynamic>{};
-        final day = (m["day"] ?? "").toString().trim();
-        final start = (m["start_time"] ?? "").toString().trim();
-        final dur = int.tryParse((m["duration_min"] ?? "0").toString()) ?? 0;
-
-        if (day.isEmpty || start.isEmpty || dur <= 0) continue;
-
-        final dayIdx = _dayIndex(day);
-        final startSlot = _timeToSlotIndex(start);
-        final span = (dur / _minutesStep).round().clamp(1, _slotsPerDay);
-
-        final top = startSlot * _slotH;
-        final left = _timeGutterW + (dayIdx * _dayColW) + 4;
-        final width = _dayColW - 8;
-        final height = (span * _slotH) - 4;
-
-        final title = (cls["course_title"] ?? "").toString();
-        final instructor = (cls["instructor"] ?? "").toString();
-        final learners = (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
-        final learnersCount = learners?.length ?? 0;
-
-
-        blocks.add(
-          Positioned(
-            left: left,
-            top: top + 2,
-            width: width,
-            height: height,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => _openClassPopup(cls),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  color: (isOpen ? Colors.green : Colors.black).withOpacity(isOpen ? 0.12 : 0.10),
-                  border: Border.all(
-                    color: (isOpen ? Colors.green : Colors.black).withOpacity(isOpen ? 0.35 : 0.25),
-                  ),
-                ),
-                child: DefaultTextStyle(
-                  style: TextStyle(
-                    color: isOpen ? Colors.green.shade900 : Colors.black,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                    height: 1.1,
-                  ),
-                  child: DefaultTextStyle(
-                    style: TextStyle(
-                      color: isOpen ? Colors.green.shade900 : Colors.black,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                      height: 1.1,
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, c) {
-                        final bool compact = c.maxHeight <= 58; // ✅ blocks that are 30min/short
-
-                        return DefaultTextStyle(
-                          style: TextStyle(
-                            color: isOpen ? Colors.green.shade900 : Colors.black,
-                            fontWeight: FontWeight.w800,
-                            fontSize: compact ? 10.5 : 12, // smaller when tight
-                            height: 1.05,
-                          ),
-                          child: ClipRect( // ✅ prevents RenderFlex overflow warning
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Title
-                                Text(
-                                  title.isEmpty ? "Untitled course" : title,
-                                  maxLines: compact ? 1 : 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-
-                                const SizedBox(height: 2),
-
-                                // ✅ Teacher + Learners always shown
-                                if (compact)
-                                  Text(
-                                    "${instructor.isEmpty ? "No teacher" : instructor} • $learnersCount",
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w900),
-                                  )
-                                else ...[
-                                  Text(
-                                    instructor.isEmpty ? "No teacher" : instructor,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(999),
-                                      color: Colors.black.withOpacity(0.06),
-                                    ),
-                                    child: Text(
-                                      "$learnersCount learners",
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
-                                    ),
-                                  ),
-                                ],
-
-                                const SizedBox(height: 2),
-
-                                // Start time (always shown)
-                                Text(
-                                  start,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: compact ? 10.5 : 11,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-
-                  ),
-
-                ),
-              ),
-            ),
-          ),
-        );
-      }
-    }
-
-    return blocks;
   }
 
   // -------------------- Parse classes --------------------
@@ -479,6 +469,317 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       list.add(cls);
     }
     return list;
+  }
+
+  // -------------------- Adaptive sizing --------------------
+
+  _Sizes _calcSizes(BoxConstraints c) {
+    final w = c.maxWidth;
+    final timeGutterW = (w * 0.16).clamp(56.0, 80.0);
+    final dayColW = (w * 0.34).clamp(120.0, 180.0);
+    final slotH = (w * 0.085).clamp(28.0, 44.0);
+
+    return _Sizes(
+      timeGutterW: timeGutterW,
+      dayColW: dayColW,
+      slotH: slotH,
+    );
+  }
+
+  // -------------------- Sticky Header --------------------
+
+  Widget _stickyHeader(double fullW, _Sizes s) {
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: Colors.grey.withOpacity(0.20))),
+        ),
+        child: SingleChildScrollView(
+          controller: _hHeaderCtrl,
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          child: SizedBox(
+            width: fullW,
+            height: 34,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: s.timeGutterW,
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Text("Time", style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ),
+                ..._weekDays.map(
+                      (d) => SizedBox(
+                    width: s.dayColW,
+                    child: Center(
+                      child: Text(d, style: const TextStyle(fontWeight: FontWeight.w900)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // -------------------- Grid background --------------------
+
+  Widget _gridBackground(double gridH, double fullW, _Sizes s) {
+    return CustomPaint(
+      size: Size(fullW, gridH),
+      painter: _TimetableGridPainter(
+        timeGutterW: s.timeGutterW,
+        dayColW: s.dayColW,
+        slotH: s.slotH,
+        slots: _visibleSlots,
+        dayCount: _weekDays.length,
+      ),
+    );
+  }
+
+  // -------------------- Blocks overlay (compact, no pixel overflow) --------------------
+
+  List<Widget> _buildBlocks(List<Map<String, dynamic>> classes, _Sizes s) {
+    final List<Widget> blocks = [];
+
+    for (final cls in classes) {
+      final bool isOpen = (cls["is_open"] ?? true) == true;
+      final classId = _classIdOf(cls);
+      final instructor = (cls["instructor"] ?? "").toString().trim();
+
+      final gradient = _classGradient(instructorName: instructor, classId: classId);
+      final borderColor = _classBorderColor(instructorName: instructor, classId: classId);
+
+      final sched = (cls["schedule"] is Map)
+          ? Map<String, dynamic>.from(cls["schedule"])
+          : <String, dynamic>{};
+      final sessions = (sched["sessions"] is List)
+          ? List<dynamic>.from(sched["sessions"])
+          : <dynamic>[];
+
+      if (sessions.isEmpty) continue;
+
+      for (final sess in sessions) {
+        final m = (sess is Map) ? Map<String, dynamic>.from(sess) : <String, dynamic>{};
+
+        final day = (m["day"] ?? "").toString().trim();
+        final start = (m["start_time"] ?? "").toString().trim();
+        final dur = int.tryParse((m["duration_min"] ?? "0").toString()) ?? 0;
+
+        if (day.isEmpty || start.isEmpty || dur <= 0) continue;
+
+        final startMin = _timeToMinutes(start);
+        final endMin = startMin + dur;
+
+        // Clip to visible window 07:00-23:00
+        final visStart = startMin < _visibleStartMin ? _visibleStartMin : startMin;
+        final visEnd = endMin > _visibleEndMin ? _visibleEndMin : endMin;
+        if (visEnd <= visStart) continue;
+
+        final dayIdx = _dayIndex(day);
+
+        final top = ((visStart - _visibleStartMin) / _minutesStep) * s.slotH;
+        final height = (((visEnd - visStart) / _minutesStep) * s.slotH) - 4;
+
+        final left = s.timeGutterW + (dayIdx * s.dayColW) + 4;
+        final width = s.dayColW - 8;
+
+        final title = _titleOf(cls);
+        final learnersCount = _learnersCountOf(cls);
+
+        blocks.add(
+          Positioned(
+            left: left,
+            top: top + 2,
+            width: width,
+            height: height.clamp(18.0, double.infinity),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _openClassPopup(cls),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: gradient,
+                  border: Border.all(
+                    color: isOpen ? borderColor.withOpacity(0.70) : Colors.red.withOpacity(0.75),
+                  ),
+                ),
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final fsTitle = (c.maxHeight < 42) ? 10.5 : 12.0;
+                    final fsSub = (c.maxHeight < 42) ? 10.0 : 11.0;
+
+                    return ClipRect(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topLeft,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: c.maxWidth),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                "${title.isEmpty ? "Untitled" : title} • $learnersCount",
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: fsTitle,
+                                  height: 1.0,
+                                  color: Colors.black.withOpacity(0.88),
+                                ),
+                              ),
+                              Text(
+                                instructor.isEmpty ? "No teacher" : instructor,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: fsSub,
+                                  height: 1.0,
+                                  color: Colors.black.withOpacity(0.82),
+                                ),
+                              ),
+                              Text(
+                                start,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: fsSub,
+                                  height: 1.0,
+                                  color: Colors.black.withOpacity(0.88),
+                                ),
+                              ),
+                              if (!isOpen)
+                                const Text(
+                                  "CLOSED",
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 11,
+                                    height: 1.0,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return blocks;
+  }
+
+  // -------------------- Filters UI (Teacher + Level same line, toggle below) --------------------
+
+  Widget _filtersCard({
+    required List<String> levelTitles,
+    required double maxWidth,
+  }) {
+    final twoCols = maxWidth >= 520;
+
+    final teacherDrop = DropdownButtonFormField<String>(
+      isExpanded: true,
+      value: _teacherFilterUid,
+      decoration: const InputDecoration(
+        labelText: "Teacher",
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        const DropdownMenuItem(value: "ALL", child: Text("All teachers")),
+        ..._teachersSorted.map((t) {
+          final uid = (t["uid"] ?? "").toString();
+          final name = (t["name"] ?? "").toString();
+          final serial = (t["serial"] ?? "").toString();
+          return DropdownMenuItem(
+            value: uid,
+            child: Text(
+              "$name${serial.isEmpty ? "" : " ($serial)"}",
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }),
+      ],
+      onChanged: _loadingTeachers ? null : (v) => setState(() => _teacherFilterUid = v ?? "ALL"),
+    );
+
+    final levelDrop = DropdownButtonFormField<String>(
+      isExpanded: true,
+      value: _levelTitleFilter,
+      decoration: const InputDecoration(
+        labelText: "Level",
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        const DropdownMenuItem(value: "ALL", child: Text("All levels")),
+        ...levelTitles.map(
+              (t) => DropdownMenuItem(
+            value: t,
+            child: Text(t, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ],
+      onChanged: (v) => setState(() => _levelTitleFilter = v ?? "ALL"),
+    );
+
+    final toggle = SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text("Only open", style: TextStyle(fontWeight: FontWeight.w800)),
+      value: _showOnlyOpen,
+      onChanged: (v) => setState(() => _showOnlyOpen = v),
+    );
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (twoCols)
+              Row(
+                children: [
+                  Expanded(child: teacherDrop),
+                  const SizedBox(width: 10),
+                  Expanded(child: levelDrop),
+                ],
+              )
+            else ...[
+              teacherDrop,
+              const SizedBox(height: 10),
+              levelDrop,
+            ],
+            const SizedBox(height: 6),
+            toggle,
+          ],
+        ),
+      ),
+    );
   }
 
   // -------------------- Main build --------------------
@@ -508,188 +809,93 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
             final classes = _parseClasses(snap.data?.snapshot.value);
             if (classes.isEmpty) return const Center(child: Text("No classes found."));
 
-            final levels = _extractLevels(classes);
-
+            final levelTitles = _extractLevelTitles(classes);
             final filtered = classes.where(_matchesFilters).toList();
 
-            final gridH = _slotsPerDay * _slotH;
-            final fullW = _timeGutterW + (_weekDays.length * _dayColW);
+            return LayoutBuilder(
+              builder: (context, c) {
+                final s = _calcSizes(c);
 
-            return Column(
-              children: [
-                // Filters card (no overflow: compact + Wrap)
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.grey.withOpacity(0.25)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    child: Column(
-                      children: [
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            SizedBox(
-                              width: 280,
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: _teacherFilterUid,
-                                decoration: const InputDecoration(
-                                  labelText: "Teacher",
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                                items: [
-                                  const DropdownMenuItem(value: "ALL", child: Text("All teachers")),
-                                  ..._teachersSorted.map((t) {
-                                    final uid = (t["uid"] ?? "").toString();
-                                    final name = (t["name"] ?? "").toString();
-                                    final serial = (t["serial"] ?? "").toString();
-                                    return DropdownMenuItem(
-                                      value: uid,
-                                      child: Text(
-                                        "$name${serial.isEmpty ? "" : " ($serial)"}",
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    );
-                                  }),
-                                ],
-                                onChanged: _loadingTeachers
-                                    ? null
-                                    : (v) => setState(() => _teacherFilterUid = v ?? "ALL"),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 180,
-                              child: DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: _levelFilter,
-                                decoration: const InputDecoration(
-                                  labelText: "Level",
-                                  border: OutlineInputBorder(),
-                                  isDense: true,
-                                ),
-                                items: [
-                                  const DropdownMenuItem(value: "ALL", child: Text("All levels")),
-                                  ...levels.map((lvl) => DropdownMenuItem(value: lvl, child: Text(lvl))),
-                                ],
-                                onChanged: (v) => setState(() => _levelFilter = v ?? "ALL"),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 180,
-                              child: SwitchListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text("Only open", style: TextStyle(fontWeight: FontWeight.w800)),
-                                value: _showOnlyOpen,
-                                onChanged: (v) => setState(() => _showOnlyOpen = v),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                final gridH = _visibleSlots * s.slotH;
+                final fullW = s.timeGutterW + (_weekDays.length * s.dayColW);
 
-                const SizedBox(height: 10),
+                return Column(
+                  children: [
+                    _filtersCard(levelTitles: levelTitles, maxWidth: c.maxWidth),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _stickyHeader(fullW, s),
+                          Expanded(
+                            child: Scrollbar(
+                              controller: _vCtrl,
+                              thumbVisibility: true,
+                              child: SingleChildScrollView(
+                                controller: _vCtrl,
+                                child: Scrollbar(
+                                  controller: _hBodyCtrl,
+                                  thumbVisibility: true,
+                                  notificationPredicate: (n) => n.metrics.axis == Axis.horizontal,
+                                  child: SingleChildScrollView(
+                                    controller: _hBodyCtrl,
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: fullW,
+                                      height: gridH,
+                                      child: Stack(
+                                        children: [
+                                          _gridBackground(gridH, fullW, s),
 
-                // Timetable (header + grid share the SAME horizontal scroll controller)
-                Expanded(
-                  child: Scrollbar(
-                    controller: _vCtrl,
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      controller: _vCtrl,
-                      child: Scrollbar(
-                        controller: _hCtrl,
-                        thumbVisibility: true,
-                        notificationPredicate: (n) => n.metrics.axis == Axis.horizontal,
-                        child: SingleChildScrollView(
-                          controller: _hCtrl,
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: fullW,
-                            child: Column(
-                              children: [
-                                // Header row
-                                SizedBox(
-                                  height: 34,
-                                  child: Row(
-                                    children: [
-                                      SizedBox(
-                                        width: _timeGutterW,
-                                        child: const Padding(
-                                          padding: EdgeInsets.only(left: 8),
-                                          child: Text("Time", style: TextStyle(fontWeight: FontWeight.w900)),
-                                        ),
-                                      ),
-                                      ..._weekDays.map((d) => SizedBox(
-                                        width: _dayColW,
-                                        child: Center(
-                                          child: Text(d, style: const TextStyle(fontWeight: FontWeight.w900)),
-                                        ),
-                                      )),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
+                                          // Time labels (07:00 -> 23:00)
+                                          Positioned(
+                                            left: 0,
+                                            top: 0,
+                                            bottom: 0,
+                                            width: s.timeGutterW,
+                                            child: Column(
+                                              children: List.generate(_visibleSlots, (i) {
+                                                final minutes =
+                                                    _visibleStartMin + (i * _minutesStep);
+                                                final isHour = (minutes % 60) == 0;
 
-                                // Grid + labels + blocks
-                                SizedBox(
-                                  height: gridH,
-                                  child: Stack(
-                                    children: [
-                                      _gridBackground(gridH),
-
-                                      // Time labels
-                                      Positioned(
-                                        left: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        width: _timeGutterW,
-                                        child: Column(
-                                          children: List.generate(_slotsPerDay, (i) {
-                                            final isHour = ((i * _minutesStep) % 60) == 0;
-                                            return SizedBox(
-                                              height: _slotH,
-                                              child: Align(
-                                                alignment: Alignment.topLeft,
-                                                child: Padding(
-                                                  padding: const EdgeInsets.only(left: 8, top: 2),
-                                                  child: Text(
-                                                    isHour ? _slotLabel(i) : "",
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w800,
-                                                      color: Colors.grey.shade800,
+                                                return SizedBox(
+                                                  height: s.slotH,
+                                                  child: Align(
+                                                    alignment: Alignment.topLeft,
+                                                    child: Padding(
+                                                      padding: const EdgeInsets.only(left: 8, top: 2),
+                                                      child: Text(
+                                                        isHour ? _minutesToLabel(minutes) : "",
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w800,
+                                                          color: Colors.grey.shade800,
+                                                        ),
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              ),
-                                            );
-                                          }),
-                                        ),
-                                      ),
+                                                );
+                                              }),
+                                            ),
+                                          ),
 
-                                      // Blocks
-                                      ..._buildBlocks(filtered),
-                                    ],
+                                          // Blocks
+                                          ..._buildBlocks(filtered, s),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             );
           },
         ),
@@ -698,19 +904,31 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   }
 }
 
+class _Sizes {
+  _Sizes({
+    required this.timeGutterW,
+    required this.dayColW,
+    required this.slotH,
+  });
+
+  final double timeGutterW;
+  final double dayColW;
+  final double slotH;
+}
+
 class _TimetableGridPainter extends CustomPainter {
   _TimetableGridPainter({
     required this.timeGutterW,
     required this.dayColW,
     required this.slotH,
-    required this.slotsPerDay,
+    required this.slots,
     required this.dayCount,
   });
 
   final double timeGutterW;
   final double dayColW;
   final double slotH;
-  final int slotsPerDay;
+  final int slots;
   final int dayCount;
 
   @override
@@ -728,14 +946,13 @@ class _TimetableGridPainter extends CustomPainter {
       final x = timeGutterW + (d * dayColW);
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), strong);
     }
-    // Time gutter border
     canvas.drawLine(Offset(timeGutterW, 0), Offset(timeGutterW, size.height), strong);
 
     // Horizontal lines
-    for (int s = 0; s <= slotsPerDay; s++) {
+    for (int s = 0; s <= slots; s++) {
       final y = s * slotH;
-      final minutes = s * 30;
-      final isHour = (minutes % 60) == 0;
+      final minutesFromStart = s * 30;
+      final isHour = (minutesFromStart % 60) == 0;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), isHour ? strong : line);
     }
   }

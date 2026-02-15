@@ -1154,6 +1154,19 @@ class _LoadingList extends StatelessWidget {
 // ----------------------------
 
 enum EditorMode { create, edit }
+class LearnerPrefill {
+  LearnerPrefill({
+    this.firstName = '',
+    this.lastName = '',
+    this.phone1 = '',
+    this.selectedCourseIds = const <String>{},
+  });
+
+  final String firstName;
+  final String lastName;
+  final String phone1;
+  final Set<String> selectedCourseIds;
+}
 
 class LearnerEditorScreen extends StatefulWidget {
   const LearnerEditorScreen({
@@ -1161,11 +1174,14 @@ class LearnerEditorScreen extends StatefulWidget {
     required this.mode,
     this.uid,
     this.initial,
+    this.prefill,
   });
+
 
   final EditorMode mode;
   final String? uid;
   final Learner? initial;
+  final LearnerPrefill? prefill;
 
   @override
   State<LearnerEditorScreen> createState() => _LearnerEditorScreenState();
@@ -1207,6 +1223,18 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     lastNameC = TextEditingController(text: initial?.lastName ?? '');
     dobC = TextEditingController(text: initial?.dob ?? '');
     phone1C = TextEditingController(text: initial?.phone1 ?? '');
+    // ✅ Apply subscription prefill (only when creating)
+    if (widget.mode == EditorMode.create && widget.prefill != null) {
+      final p = widget.prefill!;
+      if (p.firstName.trim().isNotEmpty) firstNameC.text = p.firstName.trim();
+      if (p.lastName.trim().isNotEmpty) lastNameC.text = p.lastName.trim();
+      if (p.phone1.trim().isNotEmpty) phone1C.text = p.phone1.trim();
+
+      _selectedCourseIds
+        ..clear()
+        ..addAll(p.selectedCourseIds);
+    }
+
     phone2C = TextEditingController(text: initial?.phone2 ?? '');
     emailC = TextEditingController(text: initial?.email ?? '');
     passwordC = TextEditingController();

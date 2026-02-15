@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'learner_mail_thread_screen.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
@@ -30,6 +31,132 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   String _uid = '';
   List<Map<String, dynamic>> _items = [];
+  int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
+  DatabaseReference _hwRef(String sessionId) {
+    return _usersRef
+        .child(_uid)
+        .child('courses')
+        .child(widget.courseKey)
+        .child('attendance')
+        .child(sessionId)
+        .child('homework');
+  }
+
+  Future<void> _markSeen(String sessionId) async {
+    try {
+      await _hwRef(sessionId).update({'seenAt': _nowMs()});
+    } catch (_) {}
+  }
+
+
+  Future<void> _createHomeworkMailAndOpen({
+    required String sessionId,
+    required String teacherUid,
+    required String teacherName,
+    required String date,
+    required String dueDate,
+    required String taughtTitle,
+    required String homeworkText,
+  }) async {
+    if (teacherUid.trim().isEmpty) return;
+
+    final now = _nowMs();
+
+    // ✅ Deterministic thread per session (prevents duplicates/spam)
+    // If learner undoes then marks done again, it continues same thread.
+    final threadId = '${_uid}_${teacherUid}_$sessionId';
+
+    final subject = '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
+
+    final body = [
+      'Homework submission',
+      'Course: ${widget.courseTitle}',
+      if (date.isNotEmpty) 'Session date: $date',
+      if (taughtTitle.isNotEmpty) 'Lesson: $taughtTitle',
+      if (dueDate.isNotEmpty) 'Due: $dueDate',
+      '',
+      'Task:',
+      homeworkText.isEmpty ? '—' : homeworkText,
+      '',
+      '➡️ Please attach your homework file here (photo/PDF) or type your answer.',
+    ].join('\n');
+
+    // Push message id
+    final msgKey = _db.child('mail_messages').child(threadId).push().key;
+    if (msgKey == null) return;
+
+    // Multi-location update (thread + message + my index)
+    final Map<String, dynamic> updates = {
+      // thread meta
+      'mail_threads/$threadId/subject': subject,
+      'mail_threads/$threadId/updatedAt': now,
+      'mail_threads/$threadId/createdAt': now,
+      'mail_threads/$threadId/lastMessage': body.length > 60 ? body.substring(0, 60) : body,
+      'mail_threads/$threadId/participants/$_uid': true,
+      'mail_threads/$threadId/participants/$teacherUid': true,
+
+      // message itself
+      'mail_messages/$threadId/$msgKey/body': body,
+      'mail_messages/$threadId/$msgKey/createdAt': now,
+      'mail_messages/$threadId/$msgKey/fromUid': _uid,
+      'mail_messages/$threadId/$msgKey/toUids/$teacherUid': true,
+
+      // my index
+      'mail_index/$_uid/$threadId/peerUid': teacherUid,
+      'mail_index/$_uid/$threadId/peerName': teacherName.isEmpty ? 'Teacher' : teacherName,
+      'mail_index/$_uid/$threadId/subject': subject,
+      'mail_index/$_uid/$threadId/lastMessage': body.length > 60 ? body.substring(0, 60) : body,
+      'mail_index/$_uid/$threadId/unreadCount': 0,
+      'mail_index/$_uid/$threadId/updatedAt': now,
+
+      // my read state (optional but consistent)
+      'mail_state/$_uid/$threadId/lastReadAt': now,
+    };
+
+    await _db.update(updates);
+
+    // Teacher index + unreadCount increment safely
+    final teacherIndexRef = _db.child('mail_index').child(teacherUid).child(threadId);
+
+    await teacherIndexRef.update({
+      'peerUid': _uid,
+      // if you have learner name, you can put it here; otherwise courseTitle is still helpful
+      'peerName': widget.courseTitle,
+      'subject': subject,
+      'lastMessage': body.length > 60 ? body.substring(0, 60) : body,
+      'updatedAt': now,
+    });
+
+    await teacherIndexRef.child('unreadCount').runTransaction((v) {
+      final curr = (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+      return Transaction.success(curr + 1);
+    });
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LearnerMailThreadScreen(
+          threadId: threadId,
+          peerUid: teacherUid,
+          peerName: teacherName.isEmpty ? 'Teacher' : teacherName,
+          subject: subject,
+        ),
+      ),
+    );
+  }
+  Future<void> _toggleDone(String sessionId, {required bool currentlyDone}) async {
+    try {
+      if (currentlyDone) {
+        // undo
+        await _hwRef(sessionId).child('doneAt').remove();
+      } else {
+        await _hwRef(sessionId).update({'doneAt': _nowMs()});
+      }
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -72,13 +199,27 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
         final taughtTitle = (taught['title'] ?? '').toString();
 
+        final seenAt = hw['seenAt'];
+        final doneAt = hw['doneAt'];
+
+        final teacherUid = (rec['teacherUid'] ?? '').toString().trim();
+        final teacherName = (rec['teacherName'] ?? '').toString().trim();
+
         list.add({
           'sessionId': entry.key.toString(),
           'date': (rec['date'] ?? '').toString(),
           'taughtTitle': taughtTitle,
           'text': text,
           'dueDate': due,
+          'seenAt': seenAt,
+          'doneAt': doneAt,
+
+          // ✅ NEW (needed for auto-mail)
+          'teacherUid': teacherUid,
+          'teacherName': teacherName,
         });
+
+
       }
 
       list.sort((a, b) => (b['date'] ?? '').toString().compareTo((a['date'] ?? '').toString()));
@@ -145,32 +286,148 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
             final text = (it['text'] ?? '').toString();
             final taughtTitle = (it['taughtTitle'] ?? '').toString();
 
-            return Card(
-              elevation: 0,
-              color: Colors.white,
-              shape: UiK.cardShape(),
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(date.isEmpty ? 'Session' : date, style: UiK.titleText(size: 15)),
-                    const SizedBox(height: 6),
-                    if (taughtTitle.isNotEmpty)
-                      Text('Taught: $taughtTitle', style: UiK.subtleText()),
-                    if (due.isNotEmpty) ...[
+            final sessionId = (it['sessionId'] ?? '').toString();
+            final seenAt = it['seenAt'];
+            final doneAt = it['doneAt'];
+
+            final isSeen = seenAt != null;
+            final isDone = doneAt != null;
+
+            return InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () async {
+                if (!isSeen) {
+                  await _markSeen(sessionId);
+                  // update local immediately for UI
+                  if (mounted) {
+                    setState(() {
+                      it['seenAt'] = _nowMs();
+                    });
+                  }
+                }
+              },
+              child: Card(
+                elevation: 0,
+                color: Colors.white,
+                shape: UiK.cardShape(),
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              date.isEmpty ? 'Session' : date,
+                              style: UiK.titleText(size: 15),
+                            ),
+                          ),
+                          if (isDone)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: UiK.primaryBlue.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                              ),
+                              child: const Text(
+                                'Done',
+                                style: TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue, fontSize: 12),
+                              ),
+                            )
+                          else if (isSeen)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: UiK.actionOrange.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
+                              ),
+                              child: const Text(
+                                'Seen',
+                                style: TextStyle(fontWeight: FontWeight.w900, color: UiK.actionOrange, fontSize: 12),
+                              ),
+                            ),
+                        ],
+                      ),
+
                       const SizedBox(height: 6),
-                      Text('Due: $due', style: UiK.subtleText()),
+
+                      if (taughtTitle.isNotEmpty)
+                        Text('Lesson: $taughtTitle', style: UiK.subtleText()),
+
+                      if (due.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text('Due: $due', style: UiK.subtleText()),
+                      ],
+
+                      if (text.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(text, style: UiK.subtleText()),
+                      ],
+
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: Icon(isDone ? Icons.undo_rounded : Icons.check_circle_rounded),
+                              label: Text(isDone ? 'Undo' : 'Mark done'),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onPressed: () async {
+                                // ✅ Undo = no mail
+                                if (isDone) {
+                                  await _toggleDone(sessionId, currentlyDone: true);
+
+                                  if (mounted) {
+                                    setState(() {
+                                      it['doneAt'] = null;
+                                    });
+                                  }
+                                  return;
+                                }
+
+                                // ✅ Mark done first (DB)
+                                await _toggleDone(sessionId, currentlyDone: false);
+
+                                // update local immediately
+                                if (mounted) {
+                                  setState(() {
+                                    it['doneAt'] = _nowMs();
+                                    it['seenAt'] ??= _nowMs();
+                                  });
+                                }
+
+                                // ✅ Then auto-create mail + open thread
+                                final teacherUid = (it['teacherUid'] ?? '').toString();
+                                final teacherName = (it['teacherName'] ?? '').toString();
+
+                                await _createHomeworkMailAndOpen(
+                                  sessionId: sessionId,
+                                  teacherUid: teacherUid,
+                                  teacherName: teacherName,
+                                  date: date,
+                                  dueDate: due,
+                                  taughtTitle: taughtTitle,
+                                  homeworkText: text,
+                                );
+                              },
+
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
-                    if (text.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(text, style: UiK.subtleText()),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             );
+
           },
         ),
       ),
