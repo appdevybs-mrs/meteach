@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import 'teacher_mail_thread_screen.dart';
 
@@ -13,6 +14,9 @@ class TeacherMailScreen extends StatefulWidget {
 
 class _TeacherMailScreenState extends State<TeacherMailScreen> {
   final _db = FirebaseDatabase.instance;
+  final _searchC = TextEditingController();
+  Timer? _searchDebounce;
+  String _q = '';
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
 
@@ -24,6 +28,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   void initState() {
     super.initState();
     _stream = _indexRef.orderByChild('updatedAt').onValue.asBroadcastStream();
+  }
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchC.dispose();
+    super.dispose();
   }
 
   void _snack(String msg) {
@@ -50,6 +60,46 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     out.sort((a, b) => (b.updatedAtMs).compareTo(a.updatedAtMs));
     return out;
   }
+
+
+  List<_TopicRow> _applyFilter(List<_TopicRow> rows) {
+    final q = _q.trim();
+    if (q.isEmpty) return rows;
+
+    bool hit(_TopicRow r) {
+      final subject = r.subject.toLowerCase();
+      final last = r.lastMessage.toLowerCase();
+      final peer = r.peerName.toLowerCase();
+      return subject.contains(q) || last.contains(q) || peer.contains(q);
+    }
+
+    return rows.where(hit).toList();
+  }
+
+  Map<String, List<_TopicRow>> _groupByPeer(List<_TopicRow> rows) {
+    // key by peerUid (stronger than name)
+    final Map<String, List<_TopicRow>> grouped = {};
+    for (final r in rows) {
+      final key = r.peerUid.isNotEmpty ? r.peerUid : r.peerName;
+      grouped.putIfAbsent(key, () => []).add(r);
+    }
+
+    // sort threads inside each group by updatedAt desc
+    for (final k in grouped.keys) {
+      grouped[k]!.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+    }
+
+    return grouped;
+  }
+
+  int _sumUnread(List<_TopicRow> rows) {
+    int s = 0;
+    for (final r in rows) {
+      s += r.unreadCount;
+    }
+    return s;
+  }
+
 
   Future<void> _deleteThreadForMe(_TopicRow row) async {
     final ok = await showDialog<bool>(
@@ -467,7 +517,40 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mail')),
+      appBar: AppBar(
+        title: const Text('Mail'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: TextField(
+              controller: _searchC,
+              decoration: InputDecoration(
+                hintText: 'Search topic / last message / person…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: (_q.isEmpty)
+                    ? null
+                    : IconButton(
+                  tooltip: 'Clear',
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    _searchC.clear();
+                    setState(() => _q = '');
+                  },
+                ),
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (v) {
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+                  if (!mounted) return;
+                  setState(() => _q = v.trim().toLowerCase());
+                });
+              },
+            ),
+          ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _composeNewTopic,
         icon: const Icon(Icons.edit_rounded),
@@ -482,78 +565,146 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             return const Center(child: Text('No mail yet.'));
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) {
-              final r = rows[i];
+          final filtered = _applyFilter(rows);
+          if (filtered.isEmpty) {
+            return const Center(child: Text('No results.'));
+          }
 
-              return ListTile(
-                tileColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                title: Text(
-                  r.subject.isEmpty ? '(No topic)' : r.subject,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: Text(
-                  '${r.peerName.isEmpty ? "User" : r.peerName} • ${r.lastMessage}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (r.unreadCount > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
+          final grouped = _groupByPeer(filtered);
+          final groupKeys = grouped.keys.toList();
+
+          // Sort groups by most recent thread inside group
+          groupKeys.sort((a, b) {
+            final aTop = grouped[a]!.isEmpty ? 0 : grouped[a]!.first.updatedAtMs;
+            final bTop = grouped[b]!.isEmpty ? 0 : grouped[b]!.first.updatedAtMs;
+            return bTop.compareTo(aTop);
+          });
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: groupKeys.length,
+            itemBuilder: (_, gi) {
+              final k = groupKeys[gi];
+              final items = grouped[k]!;
+              final displayName = (items.first.peerName.isEmpty) ? 'User' : items.first.peerName;
+              final unreadTotal = _sumUnread(items);
+
+              return Card(
+                elevation: 0,
+                color: Colors.black.withOpacity(0.03),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: ExpansionTile(
+                  initiallyExpanded: true,
+                  title: Row(
+                    children: [
+                      Expanded(
                         child: Text(
-                          r.unreadCount > 99 ? '99+' : '${r.unreadCount}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
-                          ),
+                          displayName,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    const SizedBox(width: 8),
-                    PopupMenuButton<String>(
-                      onSelected: (v) async {
-                        if (v == 'delete') await _deleteThreadForMe(r);
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'delete', child: Text('Delete (for me)')),
+                      if (unreadTotal > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            unreadTotal > 99 ? '99+' : '$unreadTotal',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       ],
+                    ],
+                  ),
+                  children: [
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) {
+                        final r = items[i];
+
+                        return ListTile(
+                          tileColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          title: Text(
+                            r.subject.isEmpty ? '(No topic)' : r.subject,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            '${r.lastMessage}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (r.unreadCount > 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    r.unreadCount > 99 ? '99+' : '${r.unreadCount}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              PopupMenuButton<String>(
+                                onSelected: (v) async {
+                                  if (v == 'delete') await _deleteThreadForMe(r);
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(value: 'delete', child: Text('Delete (for me)')),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onLongPress: () async {
+                            _snack('Long press ✅ ${r.threadId}');
+                            await _tryOpenHomeworkReview(r);
+                          },
+                          onTap: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
+                                builder: (_) => TeacherMailThreadScreen(
+                                  threadId: r.threadId,
+                                  peerUid: r.peerUid,
+                                  peerName: r.peerName.isEmpty ? 'User' : r.peerName,
+                                  subject: r.subject,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
                   ],
                 ),
-                onLongPress: () async {
-                  _snack('Long press ✅ ${r.threadId}');
-                  await _tryOpenHomeworkReview(r);
-                },
-
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
-                      builder: (_) => TeacherMailThreadScreen(
-                        threadId: r.threadId,
-                        peerUid: r.peerUid,
-                        peerName: r.peerName.isEmpty ? 'User' : r.peerName,
-                        subject: r.subject,
-                      ),
-                    ),
-                  );
-                },
               );
             },
           );
+
         },
       ),
     );

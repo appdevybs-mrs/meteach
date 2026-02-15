@@ -132,6 +132,36 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     return {'total': totalSyllabiSessions, 'covered': covered.length};
   }
 
+  // ---------- Payment helpers (for badge) ----------
+
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  String _paymentStateFromSummary({
+    required int sessionsDone,
+    required Map<String, dynamic> summary,
+  }) {
+    final sessionsPaidTotal = _asInt(summary['sessionsPaidTotal']);
+    final remindBeforeSession = _asInt(summary['remindBeforeSession']);
+
+    if (sessionsPaidTotal <= 0) return ''; // no info => no badge
+
+    final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
+
+    final overdue = sessionsDone >= sessionsPaidTotal;
+    final dueSoon = !overdue && sessionsDone >= (sessionsPaidTotal - warnBefore);
+
+    if (overdue) return 'PAYMENT NEEDED';
+    if (dueSoon) return 'PAYMENT SOON';
+
+    return '';
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -207,7 +237,55 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: UiK.titleText()),
+            Row(
+              children: [
+                Expanded(child: Text(title, style: UiK.titleText())),
+                const SizedBox(width: 8),
+
+                // Payment badge (live)
+                StreamBuilder<DatabaseEvent>(
+                  stream: _usersRef.child(_uid).child('courses').child(courseKey).child('payment_summary').onValue,
+                  builder: (context, snap) {
+                    final raw = snap.data?.snapshot.value;
+                    final sum = raw is Map
+                        ? raw.map((k, v) => MapEntry(k.toString(), v))
+                        : <String, dynamic>{};
+
+                    // sessionsDone = attendance count you already have in this screen
+                    final attCounts = _attendanceCounts(course);
+                    final sessionsDone = attCounts['total'] ?? 0;
+
+                    final state = _paymentStateFromSummary(
+                      sessionsDone: sessionsDone,
+                      summary: sum,
+                    );
+
+                    if (state.isEmpty) return const SizedBox.shrink();
+
+                    final bool isDue = state == 'DUE';
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: (isDue ? Colors.red : UiK.actionOrange).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: (isDue ? Colors.red : UiK.actionOrange).withOpacity(0.28),
+                        ),
+                      ),
+                      child: Text(
+                        state,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          color: isDue ? Colors.red : UiK.actionOrange,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             Text(
               'Code: ${code.isEmpty ? '-' : code} • Class: ${classId.isEmpty ? '-' : classId}',
