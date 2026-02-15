@@ -240,6 +240,161 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack('Delete failed: $e');
     }
   }
+  Future<void> _reviewHomeworkFromThread() async {
+    try {
+      final tSnap = await _threadRef.get();
+      if (!tSnap.exists || tSnap.value is! Map) {
+        _snack('Thread not found.');
+        return;
+      }
+
+      final t = Map<String, dynamic>.from(tSnap.value as Map);
+      if ((t['type'] ?? '').toString() != 'homework') {
+        _snack('Not a homework thread.');
+        return;
+      }
+
+      final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+      if (hwRefPath.isEmpty) {
+        _snack('homeworkRef missing.');
+        return;
+      }
+
+      // quick dialog (same fields)
+      int score = 100;
+      String note = '';
+      String status = 'approved';
+
+      try {
+        final hwSnap = await _db.ref(hwRefPath).get();
+        if (hwSnap.exists && hwSnap.value is Map) {
+          final hw = Map<String, dynamic>.from(hwSnap.value as Map);
+          final s = hw['reviewScore'];
+          if (s is num) score = s.toInt();
+          note = (hw['reviewNote'] ?? '').toString();
+          final st = (hw['reviewStatus'] ?? '').toString().trim();
+          if (st == 'needs_work' || st == 'approved') status = st;
+        }
+      } catch (_) {}
+
+      final scoreC = TextEditingController(text: score.toString());
+      final noteC = TextEditingController(text: note);
+
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: const Text('Evaluate homework'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: scoreC,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Score (0-100)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: noteC,
+                  minLines: 2,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Comment',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                RadioListTile<String>(
+                  value: 'approved',
+                  groupValue: status,
+                  onChanged: (v) => setLocal(() => status = v ?? 'approved'),
+                  title: const Text('Approved ✅'),
+                ),
+                RadioListTile<String>(
+                  value: 'needs_work',
+                  groupValue: status,
+                  onChanged: (v) => setLocal(() => status = v ?? 'needs_work'),
+                  title: const Text('Needs work 🔁'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+            ],
+          ),
+        ),
+      );
+
+      if (ok != true) return;
+
+      int parsedScore = int.tryParse(scoreC.text.trim()) ?? 0;
+      if (parsedScore < 0) parsedScore = 0;
+      if (parsedScore > 100) parsedScore = 100;
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final noteText = noteC.text.trim();
+
+// 1) ✅ Save review into homework node
+      await _db.ref(hwRefPath).update({
+        'reviewedAt': now,
+        'reviewStatus': status,
+        'reviewScore': parsedScore,
+        'reviewNote': noteText,
+      });
+
+// 2) ✅ Send evaluation as a reply message in this thread
+      final evalText = [
+        status == 'needs_work' ? '🔁 Homework needs work' : '✅ Homework approved',
+        'Score: $parsedScore/100',
+        if (noteText.isNotEmpty) 'Comment: $noteText',
+      ].join('\n');
+
+      final msgRef = _msgsRef.push(); // same as: mail_messages/{threadId}/...
+      await msgRef.set({
+        'fromUid': _meUid,
+        'body': evalText,
+        'toUids': {widget.peerUid: true},
+        'ccUids': {},
+        'bccUids': {},
+        'attachments': [],
+        'createdAt': now,
+        'deletedFor': {},
+      });
+
+// 3) ✅ Update thread preview so inbox shows evaluation
+      final preview80 = evalText.length > 80 ? evalText.substring(0, 80) : evalText;
+
+      await _threadRef.update({
+        'updatedAt': now,
+        'lastMessage': preview80,
+      });
+
+// 4) ✅ (Optional but recommended) mark learner inbox unread +1
+      await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
+        final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+        final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
+
+        m['subject'] = widget.subject;
+        m['updatedAt'] = now;
+        m['lastMessage'] = preview80;
+        m['unreadCount'] = oldUnread + 1;
+        m['peerUid'] = _meUid;
+        m['peerName'] = _meName;
+        m['deletedAt'] = null;
+
+        return Transaction.success(m);
+      });
+
+      _snack('Saved + sent ✅');
+
+    } catch (e) {
+      _snack('Failed: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -248,6 +403,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
+        actions: [
+          IconButton(
+            tooltip: 'Evaluate homework',
+            icon: const Icon(Icons.fact_check_rounded),
+            onPressed: _reviewHomeworkFromThread,
+          ),
+        ],
+
         bottom: (widget.subject.trim().isEmpty)
             ? null
             : PreferredSize(

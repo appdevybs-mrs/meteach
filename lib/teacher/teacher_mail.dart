@@ -85,6 +85,186 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
   }
 
+  Future<void> _tryOpenHomeworkReview(_TopicRow r) async {
+    try {
+      final tSnap = await _db.ref('mail_threads/${r.threadId}').get();
+      if (!tSnap.exists || tSnap.value is! Map) {
+        _snack('Thread not found.');
+        return;
+      }
+
+      final t = Map<String, dynamic>.from(tSnap.value as Map);
+      final type = (t['type'] ?? '').toString().trim();
+
+      if (type != 'homework') {
+        _snack('Not a homework thread.');
+        return;
+      }
+
+      final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+      if (hwRefPath.isEmpty) {
+        _snack('Homework link missing (homeworkRef).');
+        return;
+      }
+
+      final learnerUid = (t['learnerUid'] ?? '').toString().trim();
+      final teacherUid = (t['teacherUid'] ?? '').toString().trim();
+
+      await _openHomeworkReviewDialog(
+        threadId: r.threadId,
+        hwRefPath: hwRefPath,
+        learnerUid: learnerUid,
+        teacherUid: teacherUid,
+        subject: r.subject,
+      );
+    } catch (e) {
+      _snack('Failed: $e');
+    }
+  }
+
+  Future<void> _openHomeworkReviewDialog({
+    required String threadId,
+    required String hwRefPath,
+    required String learnerUid,
+    required String teacherUid,
+    required String subject,
+  }) async {
+    // load current values (optional but nice)
+    int score = 100;
+    String note = '';
+    String status = 'approved'; // approved | needs_work
+
+    try {
+      final hwSnap = await _db.ref(hwRefPath).get();
+      if (hwSnap.exists && hwSnap.value is Map) {
+        final hw = Map<String, dynamic>.from(hwSnap.value as Map);
+        final s = hw['reviewScore'];
+        if (s is num) score = s.toInt();
+        note = (hw['reviewNote'] ?? '').toString();
+        final st = (hw['reviewStatus'] ?? '').toString().trim();
+        if (st == 'needs_work' || st == 'approved') status = st;
+      }
+    } catch (_) {}
+
+    final scoreC = TextEditingController(text: score.toString());
+    final noteC = TextEditingController(text: note);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('Evaluate homework'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      subject.isEmpty ? 'Homework' : subject,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextField(
+                      controller: scoreC,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Score (0 - 100)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    TextField(
+                      controller: noteC,
+                      minLines: 2,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        labelText: 'Comment',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    RadioListTile<String>(
+                      value: 'approved',
+                      groupValue: status,
+                      onChanged: (v) => setLocal(() => status = v ?? 'approved'),
+                      title: const Text('Approved ✅'),
+                    ),
+                    RadioListTile<String>(
+                      value: 'needs_work',
+                      groupValue: status,
+                      onChanged: (v) => setLocal(() => status = v ?? 'needs_work'),
+                      title: const Text('Needs work 🔁'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok != true) return;
+
+    // parse score safely
+    int parsedScore = int.tryParse(scoreC.text.trim()) ?? 0;
+    if (parsedScore < 0) parsedScore = 0;
+    if (parsedScore > 100) parsedScore = 100;
+
+    final noteText = noteC.text.trim();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    try {
+      // 1) update homework node
+      await _db.ref(hwRefPath).update({
+        'reviewedAt': now,
+        'reviewStatus': status,
+        'reviewScore': parsedScore,
+        'reviewNote': noteText,
+      });
+
+      // 2) update thread + both indexes preview (so inbox shows review)
+      final preview = status == 'needs_work'
+          ? '🔁 Needs work • $parsedScore/100'
+          : '✅ Approved • $parsedScore/100';
+
+      final Map<String, dynamic> updates = {
+        'mail_threads/$threadId/updatedAt': now,
+        'mail_threads/$threadId/lastMessage': preview,
+
+        if (teacherUid.isNotEmpty) 'mail_index/$teacherUid/$threadId/updatedAt': now,
+        if (teacherUid.isNotEmpty) 'mail_index/$teacherUid/$threadId/lastMessage': preview,
+
+        if (learnerUid.isNotEmpty) 'mail_index/$learnerUid/$threadId/updatedAt': now,
+        if (learnerUid.isNotEmpty) 'mail_index/$learnerUid/$threadId/lastMessage': preview,
+      };
+
+      await _db.ref().update(updates);
+
+      _snack('Saved ✅');
+    } catch (e) {
+      _snack('Save failed: $e');
+    }
+  }
+
+
+
   // -----------------------------------------
   // Compose: admin OR learner OR whole class
   // -----------------------------------------
@@ -353,6 +533,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                     ),
                   ],
                 ),
+                onLongPress: () async {
+                  _snack('Long press ✅ ${r.threadId}');
+                  await _tryOpenHomeworkReview(r);
+                },
+
                 onTap: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(

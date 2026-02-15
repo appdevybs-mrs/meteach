@@ -217,6 +217,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         final submittedAt = hw['submittedAt'];
         final reviewedAt = hw['reviewedAt'];
         final reviewStatus = (hw['reviewStatus'] ?? '').toString().trim();
+        final reviewScore = hw['reviewScore'];
+        final reviewNote = (hw['reviewNote'] ?? '').toString();
 
         final teacherUid = (rec['teacherUid'] ?? '').toString().trim();
         final teacherName = (rec['teacherName'] ?? '').toString().trim();
@@ -230,6 +232,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           'seenAt': seenAt,
           'doneAt': doneAt,
           'submittedAt': submittedAt,
+          'reviewScore': reviewScore,
+          'reviewNote': reviewNote,
+
           'reviewedAt': reviewedAt,
           'reviewStatus': reviewStatus,
 
@@ -354,6 +359,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
             final submittedAt = it['submittedAt'];
             final reviewedAt = it['reviewedAt'];
             final reviewStatus = (it['reviewStatus'] ?? '').toString();
+            final reviewScore = it['reviewScore'];
+            final reviewNote = (it['reviewNote'] ?? '').toString();
 
             return InkWell(
               borderRadius: BorderRadius.circular(18),
@@ -435,10 +442,33 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                         ],
                       ),
 
+
                       const SizedBox(height: 6),
+
+                      if (reviewedAt != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.grade_rounded, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Score: ${(reviewScore ?? 0).toString()}/100',
+                              style: const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                        if (reviewNote.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Teacher note: $reviewNote',
+                            style: UiK.subtleText(),
+                          ),
+                        ],
+                      ],
 
                       if (taughtTitle.isNotEmpty)
                         Text('Lesson: $taughtTitle', style: UiK.subtleText()),
+
 
                       if (due.isNotEmpty) ...[
                         const SizedBox(height: 6),
