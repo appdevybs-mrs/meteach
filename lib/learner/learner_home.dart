@@ -181,8 +181,6 @@ class _LearnerHomeState extends State<LearnerHome> {
             teacherUids.putIfAbsent(tuid, () => tname.isNotEmpty ? tname : 'Teacher');
           }
         }
-
-        // legacy teacher name only -> cannot call without uid (we ignore it)
       });
 
       return _ClassesAndPeers(classIds: classIds, teacherUids: teacherUids, classmateUids: classmateUids);
@@ -327,7 +325,6 @@ class _LearnerHomeState extends State<LearnerHome> {
                       ],
                     ),
                     const SizedBox(height: 12),
-
                     if (snap.connectionState == ConnectionState.waiting)
                       const Padding(
                         padding: EdgeInsets.all(18),
@@ -491,7 +488,6 @@ class _LearnerHomeState extends State<LearnerHome> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 _SupportTile(
                   icon: Icons.admin_panel_settings_rounded,
                   title: 'Call Admin',
@@ -506,7 +502,6 @@ class _LearnerHomeState extends State<LearnerHome> {
                   },
                 ),
                 const SizedBox(height: 10),
-
                 _SupportTile(
                   icon: Icons.school_rounded,
                   title: 'Call Teacher',
@@ -521,7 +516,6 @@ class _LearnerHomeState extends State<LearnerHome> {
                   },
                 ),
                 const SizedBox(height: 10),
-
                 _SupportTile(
                   icon: Icons.groups_rounded,
                   title: 'Call Classmate',
@@ -656,7 +650,6 @@ class _HomeCardsGrid extends StatelessWidget {
       children: const [
         _MailHomeCard(),
         _LearnerHomeworkHomeCard(),
-
         _HomeCard(
           icon: Icons.notifications_active_rounded,
           title: 'Reminders',
@@ -674,7 +667,10 @@ class _HomeCardsGrid extends StatelessWidget {
   }
 }
 
-Future<void> _openHomeworkCoursePicker(BuildContext context) async {
+Future<void> _openHomeworkCoursePicker(
+    BuildContext context, {
+      Set<String> courseKeysWithUndone = const {},
+    }) async {
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
@@ -817,7 +813,30 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
                                 ],
                               ),
                             ),
-                            const Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (courseKeysWithUndone.contains(courseKey))
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(color: Colors.red.withOpacity(0.25)),
+                                    ),
+                                    child: const Text(
+                                      'HW',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.red,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -832,7 +851,6 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
     },
   );
 }
-
 
 /// ✅ Special card: Mail + unread badge sum
 class _MailHomeCard extends StatelessWidget {
@@ -891,6 +909,7 @@ class _HomeCard extends StatelessWidget {
     required this.subtitle,
     required this.routeType,
     this.badgeCount = 0,
+    this.disableTap = false, // ✅ NEW
   });
 
   final IconData icon;
@@ -898,6 +917,10 @@ class _HomeCard extends StatelessWidget {
   final String subtitle;
   final _HomeCardRoute routeType;
   final int badgeCount;
+
+  /// ✅ If true, this card will NOT have its own InkWell
+  /// (so an outer InkWell can handle taps, مثل homework popup)
+  final bool disableTap;
 
   @override
   Widget build(BuildContext context) {
@@ -939,6 +962,27 @@ class _HomeCard extends StatelessWidget {
       );
     }
 
+    final cardBody = Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          iconBox(),
+          const Spacer(),
+          Text(title, style: UiK.titleText(size: 16)),
+          const SizedBox(height: 4),
+          Text(subtitle, style: UiK.subtleText()),
+        ],
+      ),
+    );
+
+    if (disableTap) return cardBody;
+
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () async {
@@ -950,7 +994,7 @@ class _HomeCard extends StatelessWidget {
         }
 
         if (routeType == _HomeCardRoute.homework) {
-          await _openHomeworkCoursePicker(context);
+          // handled by the Homework widget itself (so it can pass badges)
           return;
         }
 
@@ -958,25 +1002,7 @@ class _HomeCard extends StatelessWidget {
           SnackBar(content: Text('$title is not ready yet.')),
         );
       },
-
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            iconBox(),
-            const Spacer(),
-            Text(title, style: UiK.titleText(size: 16)),
-            const SizedBox(height: 4),
-            Text(subtitle, style: UiK.subtleText()),
-          ],
-        ),
-      ),
+      child: cardBody,
     );
   }
 }
@@ -1070,6 +1096,7 @@ class _ClassesAndPeers {
   final Map<String, String> teacherUids;
   final Map<String, String> classmateUids;
 }
+
 /// ✅ Homework card with undone badge
 class _LearnerHomeworkHomeCard extends StatelessWidget {
   const _LearnerHomeworkHomeCard();
@@ -1137,16 +1164,24 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             ? 'All done ✅'
             : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending';
 
-        return _HomeCard(
-          icon: Icons.assignment_rounded,
-          title: 'Homework',
-          subtitle: subtitle,
-          routeType: _HomeCardRoute.homework,
-          badgeCount: undoneTotal,
+        return InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () async {
+            await _openHomeworkCoursePicker(
+              context,
+              courseKeysWithUndone: courseKeysWithUndone,
+            );
+          },
+          child: _HomeCard(
+            disableTap: true, // ✅ IMPORTANT (prevents inner InkWell blocking tap)
+            icon: Icons.assignment_rounded,
+            title: 'Homework',
+            subtitle: subtitle,
+            routeType: _HomeCardRoute.homework,
+            badgeCount: undoneTotal,
+          ),
         );
-
       },
     );
   }
 }
-
