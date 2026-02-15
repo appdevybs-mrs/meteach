@@ -56,6 +56,25 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     _markRead();
   }
 
+  Future<void> _markHomeworkSubmittedIfNeeded() async {
+    try {
+      final tSnap = await _db.ref('mail_threads/${widget.threadId}').get();
+      if (!tSnap.exists || tSnap.value is! Map) return;
+
+      final m = Map<String, dynamic>.from(tSnap.value as Map);
+      if ((m['type'] ?? '').toString() != 'homework') return;
+
+      final hwPath = (m['homeworkRef'] ?? '').toString().trim();
+      if (hwPath.isEmpty) return;
+
+      await _db.ref(hwPath).update({
+        'submittedAt': ServerValue.timestamp,
+      });
+    } catch (_) {}
+  }
+
+
+
   @override
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
@@ -174,6 +193,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       });
 
       await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
+      await _markHomeworkSubmittedIfNeeded();
 
       // Me
       await _indexRef.child(_meUid).child(widget.threadId).update({

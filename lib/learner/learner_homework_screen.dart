@@ -58,6 +58,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     required String dueDate,
     required String taughtTitle,
     required String homeworkText,
+
   }) async {
     if (teacherUid.trim().isEmpty) return;
 
@@ -95,6 +96,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_threads/$threadId/lastMessage': body.length > 60 ? body.substring(0, 60) : body,
       'mail_threads/$threadId/participants/$_uid': true,
       'mail_threads/$threadId/participants/$teacherUid': true,
+// ✅ Homework linkage (for full cycle)
+      'mail_threads/$threadId/type': 'homework',
+      'mail_threads/$threadId/courseKey': widget.courseKey,
+      'mail_threads/$threadId/sessionId': sessionId,
+      'mail_threads/$threadId/learnerUid': _uid,
+      'mail_threads/$threadId/teacherUid': teacherUid,
+      'mail_threads/$threadId/homeworkRef':
+      'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework',
 
       // message itself
       'mail_messages/$threadId/$msgKey/body': body,
@@ -135,7 +144,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
     if (!mounted) return;
 
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => LearnerMailThreadScreen(
@@ -146,6 +155,10 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         ),
       ),
     );
+
+// ✅ refresh list so submittedAt appears
+    if (mounted) await _load();
+
   }
   Future<void> _toggleDone(String sessionId, {required bool currentlyDone}) async {
     try {
@@ -201,6 +214,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
         final seenAt = hw['seenAt'];
         final doneAt = hw['doneAt'];
+        final submittedAt = hw['submittedAt'];
+        final reviewedAt = hw['reviewedAt'];
+        final reviewStatus = (hw['reviewStatus'] ?? '').toString().trim();
 
         final teacherUid = (rec['teacherUid'] ?? '').toString().trim();
         final teacherName = (rec['teacherName'] ?? '').toString().trim();
@@ -213,6 +229,10 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           'dueDate': due,
           'seenAt': seenAt,
           'doneAt': doneAt,
+          'submittedAt': submittedAt,
+          'reviewedAt': reviewedAt,
+          'reviewStatus': reviewStatus,
+
 
           // ✅ NEW (needed for auto-mail)
           'teacherUid': teacherUid,
@@ -235,6 +255,45 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       });
     }
   }
+
+  Future<bool> _confirmMarkDone() async {
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Submit homework?'),
+        content: const Text(
+          'This will open a message to your teacher with the homework details.\n\nContinue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, open mail'),
+          ),
+        ],
+      ),
+    );
+    return res == true;
+  }
+
+  Widget _statusBadge({required String text, required Color bg, required Color fg}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: fg.withOpacity(0.25)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontWeight: FontWeight.w900, color: fg, fontSize: 12),
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -292,6 +351,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
             final isSeen = seenAt != null;
             final isDone = doneAt != null;
+            final submittedAt = it['submittedAt'];
+            final reviewedAt = it['reviewedAt'];
+            final reviewStatus = (it['reviewStatus'] ?? '').toString();
 
             return InkWell(
               borderRadius: BorderRadius.circular(18),
@@ -324,6 +386,26 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                               style: UiK.titleText(size: 15),
                             ),
                           ),
+                          const SizedBox(width: 8),
+                          if (reviewedAt != null)
+                            _statusBadge(
+                              text: reviewStatus == 'needs_work' ? 'Needs work' : 'Reviewed',
+                              bg: (reviewStatus == 'needs_work' ? Colors.red : Colors.green).withOpacity(0.10),
+                              fg: (reviewStatus == 'needs_work' ? Colors.red : Colors.green),
+                            )
+                          else if (submittedAt != null)
+                            _statusBadge(
+                              text: 'Submitted',
+                              bg: Colors.amber.withOpacity(0.15),
+                              fg: Colors.orange,
+                            )
+                          else
+                            _statusBadge(
+                              text: 'Not submitted',
+                              bg: Colors.red.withOpacity(0.08),
+                              fg: Colors.red,
+                            ),
+
                           if (isDone)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -380,26 +462,38 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               ),
                               onPressed: () async {
-                                // ✅ Undo = no mail
+                                // ✅ Undo = no mail + (optional) undo submitted
                                 if (isDone) {
                                   await _toggleDone(sessionId, currentlyDone: true);
+
+                                  // OPTIONAL: if you want undo to also remove submittedAt
+                                  // await _hwRef(sessionId).child('submittedAt').remove();
 
                                   if (mounted) {
                                     setState(() {
                                       it['doneAt'] = null;
+                                      // it['submittedAt'] = null; // OPTIONAL for UI
                                     });
                                   }
                                   return;
                                 }
 
-                                // ✅ Mark done first (DB)
-                                await _toggleDone(sessionId, currentlyDone: false);
+                                // ✅ Mark done + submitted immediately
+                                final now = _nowMs();
+
+                                // 1) doneAt
+                                await _hwRef(sessionId).update({
+                                  'doneAt': now,
+                                  'submittedAt': now, // ✅ THIS is the key
+                                  'seenAt': it['seenAt'] ?? now,
+                                });
 
                                 // update local immediately
                                 if (mounted) {
                                   setState(() {
-                                    it['doneAt'] = _nowMs();
-                                    it['seenAt'] ??= _nowMs();
+                                    it['doneAt'] = now;
+                                    it['submittedAt'] = now; // ✅ local UI
+                                    it['seenAt'] ??= now;
                                   });
                                 }
 
@@ -417,6 +511,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                   homeworkText: text,
                                 );
                               },
+
+
 
                             ),
                           ),
