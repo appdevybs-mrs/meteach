@@ -1084,12 +1084,16 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
       stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
       builder: (context, snap) {
         int undoneTotal = 0;
+        final Set<String> courseKeysWithUndone = {};
 
         final v = snap.data?.snapshot.value;
         if (v is Map) {
           final courses = Map<dynamic, dynamic>.from(v);
 
-          for (final courseVal in courses.values) {
+          for (final entry in courses.entries) {
+            final courseKey = entry.key.toString();
+
+            final courseVal = entry.value;
             if (courseVal is! Map) continue;
             final course = Map<dynamic, dynamic>.from(courseVal);
 
@@ -1097,6 +1101,8 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             if (attendance is! Map) continue;
 
             final attMap = Map<dynamic, dynamic>.from(attendance);
+
+            bool thisCourseHasUndone = false;
 
             for (final sessionVal in attMap.values) {
               if (sessionVal is! Map) continue;
@@ -1109,7 +1115,6 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
 
               final text = (hwMap['text'] ?? '').toString().trim();
               final due = (hwMap['dueDate'] ?? '').toString().trim();
-
               if (text.isEmpty && due.isEmpty) continue;
 
               final doneAt = hwMap['doneAt'];
@@ -1117,18 +1122,29 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
 
               if (!isDone) {
                 undoneTotal += 1;
+                thisCourseHasUndone = true;
               }
+            }
+
+            if (thisCourseHasUndone) {
+              courseKeysWithUndone.add(courseKey);
             }
           }
         }
 
+        final coursesCount = courseKeysWithUndone.length;
+        final subtitle = coursesCount == 0
+            ? 'All done ✅'
+            : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending';
+
         return _HomeCard(
           icon: Icons.assignment_rounded,
           title: 'Homework',
-          subtitle: 'View & submit',
+          subtitle: subtitle,
           routeType: _HomeCardRoute.homework,
           badgeCount: undoneTotal,
         );
+
       },
     );
   }
