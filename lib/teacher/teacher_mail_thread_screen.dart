@@ -250,7 +250,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
       final t = Map<String, dynamic>.from(tSnap.value as Map);
       if ((t['type'] ?? '').toString() != 'homework') {
-        _snack('Not a homework thread.');
+        _snack('No Homework Found.');
         return;
       }
 

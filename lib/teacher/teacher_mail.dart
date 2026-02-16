@@ -147,7 +147,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       final type = (t['type'] ?? '').toString().trim();
 
       if (type != 'homework') {
-        _snack('Not a homework thread.');
+        _snack('No Homework Found.');
         return;
       }
 
