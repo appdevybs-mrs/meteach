@@ -1,5 +1,7 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// ===== Brand Colors (from your palette) =====
 class Brand {
@@ -9,6 +11,44 @@ class Brand {
   static const mainText = Color(0xFF2D2D2D); // #2D2D2D
   static const appBg = Color(0xFFF4F7F9); // #F4F7F9
   static const uiBorder = Color(0xFFD1D9E0); // #D1D9E0
+}
+
+/// ===== App-only enrollment cooldown (Option A) =====
+/// Blocks submitting another enrollment from the SAME device for 1 hour.
+/// Note: users can bypass by clearing app data/reinstalling.
+class EnrollLimiter {
+  static const Duration cooldown = Duration(hours: 1);
+
+  static String _keyForCourse(String courseId) => 'last_enroll_at_ms_$courseId';
+
+  static Future<DateTime?> _getLast(String courseId) async {
+    final sp = await SharedPreferences.getInstance();
+    final lastMs = sp.getInt(_keyForCourse(courseId));
+    if (lastMs == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(lastMs);
+  }
+
+  static Future<bool> canEnrollNow(String courseId) async {
+    final last = await _getLast(courseId);
+    if (last == null) return true;
+    return DateTime.now().difference(last) >= cooldown;
+  }
+
+  static Future<Duration> remaining(String courseId) async {
+    final last = await _getLast(courseId);
+    if (last == null) return Duration.zero;
+    final diff = DateTime.now().difference(last);
+    if (diff >= cooldown) return Duration.zero;
+    return cooldown - diff;
+  }
+
+  static Future<void> markEnrolledNow(String courseId) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setInt(
+      _keyForCourse(courseId),
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
 }
 
 class EnrollScreen extends StatefulWidget {
@@ -58,9 +98,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
     paymentSelected = paymentOptions.first;
 
     // Delivery options
-    deliveryOptions = widget.deliveryOptions.isNotEmpty
-        ? widget.deliveryOptions
-        : ['Not specified'];
+    deliveryOptions =
+    widget.deliveryOptions.isNotEmpty ? widget.deliveryOptions : ['Not specified'];
     deliverySelected = deliveryOptions.first;
   }
 
@@ -82,10 +121,34 @@ class _EnrollScreenState extends State<EnrollScreen> {
     return out;
   }
 
+  String _formatDuration(Duration d) {
+    if (d <= Duration.zero) return '0m';
+    final hours = d.inHours;
+    final minutes = d.inMinutes.remainder(60);
+    if (hours <= 0) return '${minutes}m';
+    return '${hours}h ${minutes}m';
+  }
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
 
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (saving) return;
+
+    // ✅ App-only cooldown (per course)
+    final can = await EnrollLimiter.canEnrollNow(widget.courseId);
+    if (!can) {
+      final rem = await EnrollLimiter.remaining(widget.courseId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Too many attempts. Please wait ${_formatDuration(rem)} and try again.',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() => saving = true);
 
@@ -103,6 +166,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'createdAt': ServerValue.timestamp,
       });
 
+      // ✅ mark cooldown only after successful write
+      await EnrollLimiter.markEnrolledNow(widget.courseId);
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -119,29 +185,60 @@ class _EnrollScreenState extends State<EnrollScreen> {
     }
   }
 
+  // Scales padding/radius a bit, but remains stable across font settings.
+  EdgeInsets _screenPadding(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    // clamps: small phones -> 16, tablets -> 24
+    final h = w < 400 ? 16.0 : (w < 900 ? 18.0 : 24.0);
+    return EdgeInsets.fromLTRB(h, 10, h, 120);
+  }
+
+  double _cardRadius(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    return (w < 420 ? 18.0 : 22.0);
+  }
+
+  double _fieldRadius(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    return (w < 420 ? 16.0 : 18.0);
+  }
+
+  // More modern: subtle borders, better error spacing, consistent density.
   InputDecoration _inputDeco({
     required String label,
     required IconData icon,
     String? hint,
   }) {
+    final radius = _fieldRadius(context);
+
     return InputDecoration(
       labelText: label,
       hintText: hint,
       prefixIcon: Icon(icon),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: Colors.white.withOpacity(0.92),
+      isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      alignLabelWithHint: true,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(radius),
         borderSide: const BorderSide(color: Brand.uiBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Brand.uiBorder),
+        borderRadius: BorderRadius.circular(radius),
+        borderSide: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(radius),
         borderSide: const BorderSide(color: Brand.accentCyan, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(radius),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(radius),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
       ),
     );
   }
@@ -165,38 +262,52 @@ class _EnrollScreenState extends State<EnrollScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // soft gradient background
+            // Modern, subtle layered background
             Positioned.fill(
-              child: Container(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
                       Brand.appBg,
-                      Brand.appBg.withOpacity(0.85),
-                      Colors.white.withOpacity(0.55),
+                      Colors.white.withOpacity(0.8),
+                      Brand.appBg.withOpacity(0.7),
                     ],
                   ),
                 ),
               ),
             ),
 
+            // A couple soft blobs for depth (no extra packages)
+            Positioned(
+              top: -120,
+              left: -120,
+              child: _SoftBlob(color: Brand.accentCyan.withOpacity(0.10), size: 260),
+            ),
+            Positioned(
+              bottom: -140,
+              right: -140,
+              child: _SoftBlob(color: Brand.actionOrange.withOpacity(0.10), size: 300),
+            ),
+
+            // Content
             SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
+              padding: _screenPadding(context),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _MascotHeader(courseTitle: widget.courseTitle),
 
                   if (prices.isNotEmpty) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                     _PriceCard(lines: prices),
                   ],
 
                   const SizedBox(height: 14),
 
-                  _CardShell(
+                  _GlassCard(
+                    radius: _cardRadius(context),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -245,19 +356,21 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
                           LayoutBuilder(
                             builder: (context, constraints) {
-                              final twoColumns = constraints.maxWidth >= 520; // adjust if you want
+                              final twoColumns = constraints.maxWidth >= 560;
 
                               final paymentField = DropdownButtonFormField<String>(
-                                isExpanded: true, // ✅ important
+                                isExpanded: true,
                                 value: paymentSelected,
                                 items: paymentOptions
-                                    .map((p) => DropdownMenuItem(
-                                  value: p,
-                                  child: Text(
-                                    p,
-                                    overflow: TextOverflow.ellipsis,
+                                    .map(
+                                      (p) => DropdownMenuItem(
+                                    value: p,
+                                    child: Text(
+                                      p,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ))
+                                )
                                     .toList(),
                                 onChanged: saving
                                     ? null
@@ -269,20 +382,23 @@ class _EnrollScreenState extends State<EnrollScreen> {
                               );
 
                               final deliveryField = DropdownButtonFormField<String>(
-                                isExpanded: true, // ✅ important
+                                isExpanded: true,
                                 value: deliverySelected,
                                 items: deliveryOptions
-                                    .map((d) => DropdownMenuItem(
-                                  value: d,
-                                  child: Text(
-                                    d,
-                                    overflow: TextOverflow.ellipsis,
+                                    .map(
+                                      (d) => DropdownMenuItem(
+                                    value: d,
+                                    child: Text(
+                                      d,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ))
+                                )
                                     .toList(),
                                 onChanged: saving
                                     ? null
-                                    : (v) => setState(() => deliverySelected = v ?? deliverySelected),
+                                    : (v) =>
+                                    setState(() => deliverySelected = v ?? deliverySelected),
                                 decoration: _inputDeco(
                                   label: 'Delivery',
                                   icon: Icons.videocam_rounded,
@@ -290,7 +406,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
                               );
 
                               if (!twoColumns) {
-                                // ✅ stacked (no overflow)
                                 return Column(
                                   children: [
                                     paymentField,
@@ -300,7 +415,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 );
                               }
 
-                              // ✅ side by side (nice on wide screens)
                               return Row(
                                 children: [
                                   Expanded(child: paymentField),
@@ -326,41 +440,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
                           const SizedBox(height: 14),
 
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Brand.accentCyan.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Brand.uiBorder),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: Brand.accentCyan.withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                    Icons.info_outline_rounded,
-                                    color: Brand.primaryBlue,
-                                    size: 18,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'We will contact you soon to confirm your subscription.',
-                                    style: TextStyle(
-                                      color: Brand.mainText.withOpacity(0.78),
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.3,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                          _InfoBanner(
+                            text: 'We will contact you soon to confirm your subscription.',
                           ),
                         ],
                       ),
@@ -370,11 +451,11 @@ class _EnrollScreenState extends State<EnrollScreen> {
               ),
             ),
 
-            // Sticky bottom button
+            // Sticky bottom button (now with blur/glass, safe for all sizes)
             Positioned(
-              left: 16,
-              right: 16,
-              bottom: 16,
+              left: 0,
+              right: 0,
+              bottom: 0,
               child: _BottomActionBar(
                 saving: saving,
                 onSubmit: _submit,
@@ -387,7 +468,66 @@ class _EnrollScreenState extends State<EnrollScreen> {
   }
 }
 
-/// ===== UI components =====
+/// ===== UI components (modern + responsive) =====
+
+class _SoftBlob extends StatelessWidget {
+  const _SoftBlob({required this.color, required this.size});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.55),
+              blurRadius: 90,
+              spreadRadius: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassCard extends StatelessWidget {
+  const _GlassCard({required this.child, this.radius = 22});
+  final Widget child;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.78),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 24,
+                offset: const Offset(0, 14),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
 
 class _MascotHeader extends StatelessWidget {
   const _MascotHeader({required this.courseTitle});
@@ -395,39 +535,30 @@ class _MascotHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Brand.uiBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          )
-        ],
-      ),
+    final w = MediaQuery.sizeOf(context).width;
+    final compact = w < 380;
+
+    return _GlassCard(
+      radius: (w < 420 ? 18 : 22),
       child: Row(
         children: [
           Container(
-            width: 62,
-            height: 62,
+            width: compact ? 54 : 62,
+            height: compact ? 54 : 62,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Brand.appBg,
-              border: Border.all(color: Brand.uiBorder),
+              border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
             ),
             padding: const EdgeInsets.all(8),
             child: ClipOval(
               child: Image.asset(
-                'assets/images/character.png', // <-- change if your path differs
+                'assets/images/character.png',
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
+                errorBuilder: (_, __, ___) => Icon(
                   Icons.person_rounded,
                   color: Brand.primaryBlue,
-                  size: 34,
+                  size: compact ? 30 : 34,
                 ),
               ),
             ),
@@ -437,12 +568,13 @@ class _MascotHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Complete your enrollment',
-                  style: TextStyle(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Brand.primaryBlue,
                     fontWeight: FontWeight.w900,
-                    fontSize: 16,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -450,10 +582,9 @@ class _MascotHeader extends StatelessWidget {
                   courseTitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: Brand.mainText,
                     fontWeight: FontWeight.w900,
-                    fontSize: 18,
                     height: 1.15,
                   ),
                 ),
@@ -475,74 +606,67 @@ class _PriceCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Brand.actionOrange.withOpacity(0.12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Brand.actionOrange.withOpacity(0.16),
+            Brand.actionOrange.withOpacity(0.08),
+          ],
+        ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: Brand.actionOrange.withOpacity(0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: Brand.actionOrange.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(12),
+              color: Brand.actionOrange.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Brand.actionOrange.withOpacity(0.25)),
             ),
             child: const Icon(Icons.payments_rounded, color: Brand.actionOrange),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Price',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: Brand.actionOrange,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                ...lines.map(
-                      (t) => Text(
-                    t,
-                    style: const TextStyle(
+            child: DefaultTextStyle.merge(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Brand.primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Price',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w900,
-                      color: Brand.primaryBlue,
-                      fontSize: 14,
+                      color: Brand.actionOrange,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  ...lines.map(
+                        (t) => Text(
+                      t,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CardShell extends StatelessWidget {
-  const _CardShell({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Brand.uiBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          )
-        ],
-      ),
-      child: child,
     );
   }
 }
@@ -560,22 +684,66 @@ class _SectionTitle extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: Brand.accentCyan.withOpacity(0.12),
+            color: Brand.accentCyan.withOpacity(0.14),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Brand.uiBorder),
+            border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
           ),
           child: Icon(icon, color: Brand.primaryBlue, size: 18),
         ),
         const SizedBox(width: 10),
         Text(
           title,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.w900,
             color: Brand.primaryBlue,
-            fontSize: 15,
           ),
         ),
       ],
+    );
+  }
+}
+
+class _InfoBanner extends StatelessWidget {
+  const _InfoBanner({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Brand.accentCyan.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Brand.accentCyan.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.info_outline_rounded,
+              color: Brand.primaryBlue,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Brand.mainText.withOpacity(0.80),
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -591,46 +759,65 @@ class _BottomActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.94),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Brand.uiBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          )
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 52,
-          child: FilledButton.icon(
-            onPressed: saving ? null : onSubmit,
-            style: FilledButton.styleFrom(
-              backgroundColor: Brand.primaryBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+    final mq = MediaQuery.of(context);
+
+    // Edge-to-edge, with safe area padding, blur background.
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            12 + mq.padding.bottom, // ✅ safe for gesture nav / iPhones
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.78),
+            border: Border(top: BorderSide(color: Brand.uiBorder.withOpacity(0.9))),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 18,
+                offset: const Offset(0, -6),
               ),
-            ),
-            icon: saving
-                ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
+            ],
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Center(
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: FilledButton.icon(
+                  onPressed: saving ? null : onSubmit,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Brand.primaryBlue,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Brand.primaryBlue.withOpacity(0.55),
+                    disabledForegroundColor: Colors.white.withOpacity(0.9),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  icon: saving
+                      ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                      : const Icon(Icons.check_circle_rounded),
+                  label: Text(
+                    saving ? 'Saving...' : 'Submit enrollment',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
               ),
-            )
-                : const Icon(Icons.check_circle_rounded),
-            label: Text(
-              saving ? 'Saving...' : 'Submit enrollment',
-              style: const TextStyle(fontWeight: FontWeight.w900),
             ),
           ),
         ),

@@ -879,7 +879,7 @@ class StoriesHome extends StatelessWidget {
     return SoftBackground(
       child: Column(
         children: [
-          const SimpleTopBar(title: 'Stories'),
+          const SimpleTopBar(title: 'Activities'),
           Expanded(
             child: Center(
               child: ConstrainedBox(
@@ -903,7 +903,7 @@ class StoriesHome extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Stories & Quizzes (Next)',
+                          'Stories & Quizzes (SOON)',
                           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
