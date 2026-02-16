@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -9,6 +12,7 @@ import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
 import 'admin_learner_mail_topics_screen.dart';
+import '../calls/audio_call_screen.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key});
@@ -63,10 +67,20 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     super.dispose();
   }
 
-  void _snack(String msg) {
+  void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+    Fluttertoast.cancel();
+    Fluttertoast.showToast(
+      msg: msg,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black.withOpacity(0.85),
+      textColor: Colors.white,
+      fontSize: 15,
+    );
   }
+
 
   Future<bool> _confirm({
     required String title,
@@ -104,7 +118,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
       'status': LearnerStatus.paused.value,
       'updatedAt': ServerValue.timestamp,
     });
-    _snack('Learner paused ✅');
+    _toast('Learner paused ✅');
   }
 
   Future<void> _activateLearner(String uid) async {
@@ -112,7 +126,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
       'status': LearnerStatus.active.value,
       'updatedAt': ServerValue.timestamp,
     });
-    _snack('Learner activated ✅');
+    _toast('Learner activated ✅');
   }
 
   Future<void> _moveToDeleted(String uid, Learner learner) async {
@@ -133,7 +147,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     await _deletedRef.child(uid).set(data);
     await _usersRef.child(uid).remove();
 
-    _snack('Moved to deleted 🗑️');
+    _toast('Moved to deleted 🗑️');
   }
 
   Future<void> _moveToBlocked(String uid, Learner learner) async {
@@ -154,7 +168,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     await _blockedRef.child(uid).set(data);
     await _usersRef.child(uid).remove();
 
-    _snack('Moved to blocked ⛔');
+    _toast('Moved to blocked ⛔');
   }
 
   Future<void> _restoreFromDeleted(String uid, Learner learner) async {
@@ -173,7 +187,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     await _usersRef.child(uid).set(data);
     await _deletedRef.child(uid).remove();
 
-    _snack('Restored ✅');
+    _toast('Restored ✅');
   }
 
   Future<void> _restoreFromBlocked(String uid, Learner learner) async {
@@ -192,7 +206,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     await _usersRef.child(uid).set(data);
     await _blockedRef.child(uid).remove();
 
-    _snack('Unblocked ✅');
+    _toast('Unblocked ✅');
   }
 
   Future<void> _deletePermanently(String uid, DatabaseReference fromRef) async {
@@ -205,7 +219,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     if (!ok) return;
 
     await fromRef.child(uid).remove();
-    _snack('Deleted permanently ✅');
+    _toast('Deleted permanently ✅');
   }
 
   // ---------- UI ----------
@@ -263,7 +277,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
                       ),
                     ),
                   );
-                  if (created != null) _snack('Learner created ✅');
+                  if (created != null) _toast('Learner created ✅');
                 },
               );
             },
@@ -290,7 +304,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
                   ),
                 ),
               );
-              if (updated != null) _snack('Learner updated ✅');
+              if (updated != null) _toast('Learner updated ✅');
             },
             actionsBuilder: (uid, learner) => [
               PopupMenuItem(
@@ -425,6 +439,20 @@ class _LearnersList extends StatefulWidget {
 }
 
 class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveClientMixin {
+  void _toast(String msg) {
+    if (!mounted) return;
+
+    Fluttertoast.cancel();
+    Fluttertoast.showToast(
+      msg: msg,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black.withOpacity(0.85),
+      textColor: Colors.white,
+      fontSize: 15,
+    );
+  }
+
   String? _expandedUid;
 
   Future<String?> _getLearnerFcmToken(String learnerUid) async {
@@ -497,9 +525,8 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     final token = await _getLearnerFcmToken(uid);
     if (token == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This learner has no FCM token')),
-      );
+      _toast('Cannot send reminder: learner is not connected (no notification token).');
+
       return;
     }
 
@@ -532,9 +559,8 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     );
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sent ✅ to ${learner.fullName.isEmpty ? 'learner' : learner.fullName}')),
-    );
+    _toast('Reminder sent to ${learner.fullName.isEmpty ? 'learner' : learner.fullName} ✅');
+
   }
 
   Future<void> _showQuickReminderSheet({
@@ -590,9 +616,8 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Push failed: $e')),
-      );
+      _toast('Could not send reminder. Please try again.');
+
     }
   }
 
@@ -751,11 +776,12 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
 
                       String compactLine2() {
                         final parts = <String>[];
-                        if (l.phone1.trim().isNotEmpty) parts.add('📞 ${l.phone1}');
                         if (l.dob.trim().isNotEmpty) parts.add('🎂 ${l.dob}');
-                        if (l.serial.trim().isNotEmpty) parts.add(l.serial);
+                     //   if (l.serial.trim().isNotEmpty) parts.add(l.serial);
+                        if (l.phone2.trim().isNotEmpty) parts.add('📞2 ${l.phone2}');
                         return parts.join('  •  ');
                       }
+
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -778,7 +804,40 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                 child: Row(
                                   children: [
                                     GestureDetector(
-                                      onLongPress: () => _showQuickReminderSheet(uid: row.uid, learner: l),
+                                    onTap: () async {
+                              final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                              title: const Text('Call learner?'),
+                              content: Text('Call ${l.fullName.isEmpty ? 'this learner' : l.fullName}?'),
+                              actions: [
+                              TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Call'),
+                              ),
+                              ],
+                              ),
+                              ) ?? false;
+
+                              if (!ok) return;
+
+                              await Navigator.of(context).push(
+                              MaterialPageRoute(
+                              builder: (_) => AudioCallScreen(
+                              peerUid: row.uid,
+                              peerName: l.fullName.isEmpty ? 'Learner' : l.fullName,
+                              isCaller: true,
+                              callerName: 'Admin', // you can improve later like staff version
+                              startWithVideo: true,
+                              ),
+                              ),
+                              );
+                              },
+                                onLongPress: () => _showQuickReminderSheet(uid: row.uid, learner: l),
                                       child: StreamBuilder<int>(
                                         stream: _unreadForLearnerStream(row.uid),
                                         builder: (context, snapUnread) {
@@ -853,6 +912,41 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                             ],
                                           ),
                                           const SizedBox(height: 6),
+
+// ✅ Phone (clickable)
+                                          if (l.phone1.trim().isNotEmpty)
+                                            InkWell(
+                                              onTap: () async {
+                                                final phone = l.phone1.trim();
+                                                final uri = Uri(scheme: 'tel', path: phone);
+                                                if (await canLaunchUrl(uri)) {
+                                                  await launchUrl(uri);
+                                                } else {
+                                                  _toast('Cannot open phone dialer on this device.');
+                                                }
+                                              },
+                                              child: Text(
+                                                '📞 ${l.phone1}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AdminLearnersScreen.primaryBlue.withOpacity(0.9),
+                                                  decoration: TextDecoration.underline,
+                                                ),
+                                              ),
+                                            )
+                                          else
+                                            Text(
+                                              '📞 (No phone)',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.black.withOpacity(0.5),
+                                              ),
+                                            ),
+
+// ✅ extra info line (dob + serial + phone2)
+                                          const SizedBox(height: 4),
                                           if (compactLine2().isNotEmpty)
                                             Text(
                                               compactLine2(),
@@ -864,6 +958,7 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
                                             ),
+
                                         ],
                                       ),
                                     ),
@@ -1173,6 +1268,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   late final TextEditingController emailC;
   late final TextEditingController passwordC;
   late final TextEditingController serialC;
+  bool _serialUnlocked = false;
 
   DateTime? _dob;
   LearnerStatus _status = LearnerStatus.active;
@@ -1199,7 +1295,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 
     phone2C = TextEditingController(text: initial?.phone2 ?? '');
     emailC = TextEditingController(text: initial?.email ?? '');
-    passwordC = TextEditingController();
+    passwordC = TextEditingController(text: widget.mode == EditorMode.create ? '12345678' : '');
     serialC = TextEditingController(text: initial?.serial ?? '');
 
     _status = initial?.status ?? LearnerStatus.active;
@@ -1237,10 +1333,20 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     super.dispose();
   }
 
-  void _snack(String msg) {
+  void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+    Fluttertoast.cancel();
+    Fluttertoast.showToast(
+      msg: msg,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black.withOpacity(0.85),
+      textColor: Colors.white,
+      fontSize: 15,
+    );
   }
+
 
   Future<void> _pickDob() async {
     FocusScope.of(context).unfocus();
@@ -1253,8 +1359,10 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       initialDate: initial,
       firstDate: DateTime(1940),
       lastDate: DateTime(now.year + 1),
-      helpText: 'Select date of birth',
+      helpText: 'Date of birth',
+      initialEntryMode: DatePickerEntryMode.input,
     );
+
 
     if (picked == null) return;
 
@@ -1374,9 +1482,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       if (e.code == 'email-already-in-use') msg = 'Email already exists.';
       if (e.code == 'invalid-email') msg = 'Invalid email.';
       if (e.code == 'weak-password') msg = 'Password is too weak.';
-      _snack(msg);
+      _toast(msg);
     } catch (e) {
-      _snack('Save failed: $e');
+      _toast('Save failed: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1427,19 +1535,38 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       controller: firstNameC,
                       label: 'First name *',
                       hint: 'First name',
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'First name is required';
+                        if (t.length < 2) return 'First name is too short';
+                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) return 'First name has invalid characters';
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 12),
                     _TextField(
                       controller: lastNameC,
                       label: 'Last name *',
                       hint: 'Last name',
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'Last name is required';
+                        if (t.length < 2) return 'Last name is too short';
+                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) return 'Last name has invalid characters';
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: dobC,
                       readOnly: true,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'Date of birth is required';
+                        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t)) return 'Use format YYYY-MM-DD';
+                        return null;
+                      },
+
                       onTap: _pickDob,
                       decoration: InputDecoration(
                         labelText: 'Date of birth',
@@ -1454,11 +1581,38 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _TextField(
-                      controller: serialC,
-                      label: 'Serial number',
-                      hint: '🎓-000001',
+                    GestureDetector(
+                      onLongPress: () {
+                        setState(() => _serialUnlocked = true);
+                        _toast('Serial unlocked (you can edit it now).');
+                      },
+                      child: TextFormField(
+                        controller: serialC,
+                        readOnly: !_serialUnlocked,
+                        decoration: InputDecoration(
+                          labelText: 'Serial number',
+                          hintText: '🎓-000001',
+                          filled: true,
+                          fillColor: AdminLearnersScreen.appBg,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          prefixIcon: const Icon(Icons.confirmation_number_rounded),
+                          suffixIcon: _serialUnlocked
+                              ? IconButton(
+                            tooltip: 'Lock',
+                            icon: const Icon(Icons.lock_open_rounded),
+                            onPressed: () {
+                              setState(() => _serialUnlocked = false);
+                              _toast('Serial locked ✅');
+                            },
+                          )
+                              : const Icon(Icons.lock_rounded),
+                        ),
+                      ),
                     ),
+
                   ],
                 ),
               ),
@@ -1471,6 +1625,14 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       controller: phone1C,
                       keyboardType: TextInputType.phone,
                       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))],
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'Phone number is required';
+                        final digits = t.replaceAll(RegExp(r'[^0-9]'), '');
+                        if (digits.length < 9) return 'Phone number is too short';
+                        return null;
+                      },
+
                       decoration: InputDecoration(
                         labelText: 'Phone 1',
                         hintText: 'Example: 0550 00 00 00',
@@ -1519,15 +1681,17 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       _TextField(
                         controller: passwordC,
                         label: 'Password *',
-                        hint: 'Create password',
-                        obscureText: true,
+                        hint: 'Default: 12345678 (you can change it)',
+                        obscureText: false,
                         validator: (v) {
                           final t = (v ?? '').trim();
-                          if (t.isEmpty) return 'Required';
-                          if (t.length < 6) return 'Min 6 characters';
+                          if (t.isEmpty) return 'Password is required';
+                          if (t.length < 6) return 'Password must be at least 6 characters';
                           return null;
                         },
                       ),
+
+
                   ],
                 ),
               ),
