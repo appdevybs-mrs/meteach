@@ -92,6 +92,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   // -------------------------
   // Compose mail (admins + my teachers + my classmates)
+  // NOW: create topic only (no first message)
   // -------------------------
   Future<void> _composeNewMail() async {
     try {
@@ -105,57 +106,54 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       if (picked == null) return;
 
       final now = DateTime.now().millisecondsSinceEpoch;
-
-      // Use .ref() instead of just push() to ensure the reference is ready
       final threadId = _db.ref('mail_threads').push().key;
-      final msgId = _db.ref('mail_threads/$threadId/messages').push().key;
-
-      if (threadId == null || msgId == null) return;
+      if (threadId == null) {
+        _snack('Failed to create thread id.');
+        return;
+      }
 
       final subject = picked.subject.trim();
-      final text = picked.firstMessage.trim();
 
-      // Explicitly define as Map<String, Object?> to satisfy the Pigeon interface
-      final Map<String, Object?> updates = {
-        'mail_threads/$threadId': {
-          'subject': subject,
-          'createdAt': now,
-          'updatedAt': now,
-          'lastMessage': text,
-        },
-        'mail_threads/$threadId/messages/$msgId': {
-          'id': msgId,
-          'text': text,
-          'senderUid': _meUid,
-          'senderName': picked.senderName,
-          'createdAt': now,
-        },
-        'mail_index/$_meUid/$threadId': {
-          'subject': subject,
-          'updatedAt': now,
-          'lastMessage': text,
-          'unreadCount': 0,
-          'peerUid': picked.receiverUid,
-          'peerName': picked.receiverName,
-          // Removed null to avoid Pigeon channel issues
-        },
-        'mail_index/${picked.receiverUid}/$threadId': {
-          'subject': subject,
-          'updatedAt': now,
-          'lastMessage': text,
-          'unreadCount': 1,
-          'peerUid': _meUid,
-          'peerName': picked.senderName,
-        },
-      };
+      // No first message: keep lastMessage empty.
+      const lastMessage = '';
 
-      // Use the root reference for the multi-path update
-      await _db.ref().update(updates);
+      // 1) thread meta
+      await _db.ref('mail_threads/$threadId').set({
+        'subject': subject,
+        'createdAt': now,
+        'updatedAt': now,
+        'lastMessage': lastMessage,
+      });
+
+      // 2) (removed) first message
+
+      // 3) index (sender) unread 0
+      await _db.ref('mail_index/$_meUid/$threadId').set({
+        'subject': subject,
+        'updatedAt': now,
+        'lastMessage': lastMessage,
+        'unreadCount': 0,
+        'peerUid': picked.receiverUid,
+        'peerName': picked.receiverName,
+        'deletedAt': null,
+      });
+
+      // 4) index (receiver) unread 0 (because no message was sent yet)
+      await _db.ref('mail_index/${picked.receiverUid}/$threadId').set({
+        'subject': subject,
+        'updatedAt': now,
+        'lastMessage': lastMessage,
+        'unreadCount': 0,
+        'peerUid': _meUid,
+        'peerName': picked.senderName,
+        'deletedAt': null,
+      });
 
       if (!mounted) return;
 
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
+          settings: RouteSettings(name: '/mail/thread/$threadId'),
           builder: (_) => LearnerMailThreadScreen(
             threadId: threadId,
             peerUid: picked.receiverUid,
@@ -165,7 +163,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         ),
       );
     } catch (e) {
-      _snack('Error: $e');
+      _snack('Compose failed: $e');
     }
   }
 
@@ -197,6 +195,10 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
             itemBuilder: (_, i) {
               final r = rows[i];
 
+              final peer = r.peerName.isEmpty ? "Staff" : r.peerName;
+              final last = r.lastMessage.trim();
+              final subtitleText = last.isEmpty ? peer : '$peer • $last';
+
               return ListTile(
                 tileColor: Colors.white,
                 shape: RoundedRectangleBorder(
@@ -207,7 +209,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  '${r.peerName.isEmpty ? "Staff" : r.peerName} • ${r.lastMessage}',
+                  subtitleText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -284,7 +286,6 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   bool _loading = true;
 
   final _subjectC = TextEditingController();
-  final _messageC = TextEditingController();
 
   String _senderName = 'Learner';
 
@@ -300,7 +301,6 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
   @override
   void dispose() {
     _subjectC.dispose();
-    _messageC.dispose();
     super.dispose();
   }
 
@@ -433,9 +433,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
     if (r == null) return;
 
     final subject = _subjectC.text.trim();
-    final msg = _messageC.text.trim();
-
-    if (subject.isEmpty || msg.isEmpty) return;
+    if (subject.isEmpty) return;
 
     Navigator.pop(
       context,
@@ -444,7 +442,6 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
         receiverName: r.name,
         subject: subject,
         senderName: _senderName,
-        firstMessage: msg,
       ),
     );
   }
@@ -512,18 +509,6 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
 
           const SizedBox(height: 12),
 
-          TextFormField(
-            controller: _messageC,
-            minLines: 3,
-            maxLines: 6,
-            decoration: const InputDecoration(
-              labelText: 'First message',
-              border: OutlineInputBorder(),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -548,14 +533,12 @@ class _RecipientPickResult {
     required this.receiverName,
     required this.subject,
     required this.senderName,
-    required this.firstMessage,
   });
 
   final String receiverUid;
   final String receiverName;
   final String subject;
   final String senderName;
-  final String firstMessage;
 }
 
 enum _RecipientType { admin, teacher, learner }

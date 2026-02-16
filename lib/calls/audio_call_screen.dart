@@ -439,7 +439,10 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     final viewPadding = MediaQuery.of(context).viewPadding;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    final showRemoteVideo = _remoteRenderer.srcObject != null;
+    final remoteHasVideo =
+    (_remoteRenderer.srcObject?.getVideoTracks().isNotEmpty ?? false);
+
+    final showRemoteVideo = remoteHasVideo;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),

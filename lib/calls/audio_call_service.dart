@@ -292,23 +292,37 @@ class AudioCallService {
       // ignore if not supported on platform
     }
 
+    // ✅ Prefer onAddStream (most reliable on Android for flutter_webrtc)
+    _pc!.onAddStream = (MediaStream stream) {
+      debugPrint('✅ onAddStream: id=${stream.id} vids=${stream.getVideoTracks().length} auds=${stream.getAudioTracks().length}');
+      _remoteStream = stream;
+      remoteStreamVN.value = stream;
+    };
+
+// ✅ Keep onTrack too (some platforms only fire onTrack)
     _pc!.onTrack = (RTCTrackEvent event) async {
+      debugPrint('✅ onTrack: kind=${event.track.kind} streams=${event.streams.length}');
+
+      // If platform provides a stream, use it
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
         remoteStreamVN.value = _remoteStream;
         return;
       }
 
-      _remoteStream ??= await createLocalMediaStream('remote');
-      try {
-        await _remoteStream!.addTrack(event.track);
-      } catch (_) {}
-
-      remoteStreamVN.value = _remoteStream;
+      // If no stream is provided, DON'T try to create one (causes your "stream is null")
+      // Just wait for onAddStream to deliver it.
     };
 
+
     for (final t in _localStream!.getTracks()) {
+      // add audio always
       if (t.kind == 'audio') {
+        await _pc!.addTrack(t, _localStream!);
+      }
+
+      // if call started with video, also add the video track
+      if (enableVideo && t.kind == 'video') {
         await _pc!.addTrack(t, _localStream!);
       }
     }
@@ -736,7 +750,13 @@ class AudioCallService {
     final pc = _pc;
     if (pc == null) return;
 
-    // Fallback: find existing video sender if transceiver didn't work
+    // 1) Prefer transceiver sender if we created it
+    if (_videoTransceiver != null) {
+      _videoSender = _videoTransceiver!.sender;
+      return;
+    }
+
+    // 2) Fallback: try to find a sender that already has a video track
     final senders = await pc.getSenders();
     for (final s in senders) {
       if (s.track?.kind == 'video') {
@@ -744,6 +764,9 @@ class AudioCallService {
         return;
       }
     }
+
+    // If we reach here: there is no video sender yet.
+    // We'll create one later by adding a video track when camera is enabled.
   }
 
 
@@ -768,16 +791,31 @@ class AudioCallService {
       throw Exception('Camera track not available.');
     }
 
-    await _replaceVideoTrack(_videoTrack);
+    // Ensure there is a sender. If not, create one by adding the track.
+    await _ensureVideoSender();
+
+    if (_videoSender == null) {
+      // No video sender exists yet -> addTrack creates it
+      try {
+        _videoSender = await _pc!.addTrack(_videoTrack!, _localStream!);
+      } catch (_) {
+        // If addTrack fails, fallback to replaceTrack path
+      }
+    } else {
+      // Sender exists -> just replace the track
+      await _replaceVideoTrack(_videoTrack);
+    }
+
     withVideo = true;
     await _renegotiate();
-    // Ask the peer to turn on camera too
+
+    // Ask peer to enable too (your popup feature)
     final peer = _peerUid;
     if (peer != null && peer.isNotEmpty) {
       await requestPeerCameraOn(peer);
     }
-
   }
+
 
   Future<void> disableVideo() async {
     if (_pc == null || _localStream == null) return;
