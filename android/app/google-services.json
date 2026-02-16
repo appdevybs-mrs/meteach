@@ -42,6 +42,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:337224826950:android:1e14ed96fb3966bff48a47",
+        "android_client_info": {
+          "package_name": "com.yourbridgeschool.dreamenglish"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "337224826950-j0g7vgi2sluk6j9ubue7io215gb9kuh1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD8SFtCkgJXfnZMoPWxwGcpsshDJ3IeeJ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "337224826950-j0g7vgi2sluk6j9ubue7io215gb9kuh1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

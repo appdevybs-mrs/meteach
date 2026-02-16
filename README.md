@@ -1,6 +1,6 @@
 # dream_english_academy
 
-Dream English Academy – Assistant, Classroom, Stories
+Your Bridge School - Not for The Certificate, for The Skill
 
 ## Getting Started
 

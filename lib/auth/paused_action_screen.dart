@@ -193,7 +193,7 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
                   const SizedBox(height: 12),
 
                   Text(
-                    'Dream English Academy',
+                    'Your Bridge School',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: Colors.grey,
                     ),

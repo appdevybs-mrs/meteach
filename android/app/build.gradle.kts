@@ -1,57 +1,61 @@
 import java.util.Properties
 import java.io.FileInputStream
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-
-    // Flutter Gradle Plugin must be applied after Android + Kotlin
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
-
-    // ✅ Google Services (Firebase) plugin
     id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.dreamenglish.academy.dream_english_academy"
+    namespace = "com.yourbridgeschool.dreamenglish"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        // ✅ Keep your Java 17
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-
-        // ✅ REQUIRED for flutter_local_notifications (desugaring)
         isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
-        // ✅ Keep Kotlin target 17
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
     }
 
     defaultConfig {
-        applicationId = "com.dreamenglish.academy.dream_english_academy"
-
-        // ✅ WebRTC requires minSdk 21+
+        applicationId = "com.yourbridgeschool.dreamenglish"
         minSdk = flutter.minSdkVersion
-
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
+    }
+
     buildTypes {
         release {
-            // NOTE: for real release you should configure a release keystore later
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
 
 dependencies {
-    // ✅ keep desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 

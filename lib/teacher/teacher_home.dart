@@ -759,7 +759,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
                     child: Text(
-                      'Dream English Academy',
+                      'Your Bridge School',
                       style: TextStyle(
                         color: mainText.withOpacity(0.4),
                         fontWeight: FontWeight.w700,

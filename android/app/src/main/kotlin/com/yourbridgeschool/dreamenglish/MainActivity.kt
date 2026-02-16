@@ -1,4 +1,4 @@
-package com.dreamenglish.academy.dream_english_academy
+package com.yourbridgeschool.dreamenglish
 
 import io.flutter.embedding.android.FlutterActivity
 

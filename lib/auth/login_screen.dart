@@ -97,34 +97,42 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       fikraLog('Google sign-in start');
 
-      final googleUser = await GoogleSignIn().signIn();
+      // 1. Trigger the sign-in flow
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+
       if (googleUser == null) {
-        fikraLog('Google sign-in cancelled');
+        fikraLog('Google sign-in cancelled by user');
+        setState(() => _busy = false); // Reset busy if user just backed out
         return;
       }
 
-      fikraLog('Google email=${googleUser.email}');
+      // 2. Obtain auth details from the request
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-      final googleAuth = await googleUser.authentication;
+      // 3. Create a new credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
+      // 4. Once signed in, Firebase will automatically link if "One account per email" is off,
+      // or return the user if they already used Google before.
       final cred = await FirebaseAuth.instance.signInWithCredential(credential);
-      final user = cred.user;
 
-      fikraLog('Google login success userNull=${user == null}');
-      if (user != null) {
-        fikraLog('AUTH uid=${user.uid} email=${user.email}');
-        fikraLog('AUTH providers=${user.providerData.map((p) => p.providerId).toList()}');
-      }
+      fikraLog('Firebase sign-in successful: ${cred.user?.uid}');
 
       if (!mounted) return;
-      Navigator.of(context).pop(); // AuthGate routes
+
+      // If you are using an AuthGate/StreamBuilder at the top of your app,
+      // pop() is correct. If not, use pushReplacement.
+      Navigator.of(context).pop();
+
+    } on FirebaseAuthException catch (e) {
+      fikraLog('Firebase Auth Error: ${e.code}');
+      setState(() => _error = e.message);
     } catch (e) {
-      fikraLog('Google sign-in error: $e');
-      setState(() => _error = e.toString());
+      fikraLog('General Error: $e');
+      setState(() => _error = 'An unexpected error occurred.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

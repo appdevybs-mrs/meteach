@@ -243,7 +243,7 @@ class AdminHome extends StatelessWidget {
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Dream English Academy',
+                      'Your Bridge School',
                       style: TextStyle(
                         color: mainText.withOpacity(0.55),
                         fontWeight: FontWeight.w700,

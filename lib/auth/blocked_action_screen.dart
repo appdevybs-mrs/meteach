@@ -248,7 +248,7 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                   const SizedBox(height: 12),
 
                   Text(
-                    'Dream English Academy',
+                    'Your Bridge School',
                     style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
                   ),
                 ],
