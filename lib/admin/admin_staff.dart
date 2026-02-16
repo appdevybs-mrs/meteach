@@ -85,8 +85,10 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
       final v = snap.value;
       if (v is Map) {
         final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-        final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-        final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+        final first =
+        (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+        final last =
+        (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
         final full = ('$first $last').trim();
         if (full.isNotEmpty) return full;
       }
@@ -147,7 +149,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
   Future<void> _moveToDeleted(String uid, Staff staff) async {
     final ok = await _confirm(
       title: 'Delete staff?',
-      message: 'This will move the staff member to "deleted".\n\nYou can restore later.',
+      message:
+      'This will move the staff member to "deleted".\n\nYou can restore later.',
       confirmText: 'Move to deleted',
       danger: true,
     );
@@ -155,7 +158,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
 
     try {
       // Read their courses BEFORE moving (so we can clean instructors if teacher)
-      final userCoursesSnap = await _usersRef.child(uid).child('courses').get();
+      final userCoursesSnap =
+      await _usersRef.child(uid).child('courses').get();
       final userCoursesVal = userCoursesSnap.value;
 
       final courseIds = <String>[];
@@ -410,7 +414,6 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
               }
             },
           ),
-
           _StaffList(
             titleHint: 'Search deleted…',
             stream: _deletedStream,
@@ -441,7 +444,6 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
               }
             },
           ),
-
           _StaffList(
             titleHint: 'Search blocked…',
             stream: _blockedStream,
@@ -525,6 +527,23 @@ class _StaffListState extends State<_StaffList>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  final _db = FirebaseDatabase.instance;
+
+  // same stable thread id logic as AdminTeacherMailThreadScreen
+  static String _pairThreadId(String a, String b) {
+    final x = a.trim();
+    final y = b.trim();
+    if (x.compareTo(y) < 0) return '${x}_$y';
+    return '${y}_$x';
+  }
+
+  int _parseUnread(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -637,12 +656,29 @@ class _StaffListState extends State<_StaffList>
                 );
               }
 
+              final meUid = FirebaseAuth.instance.currentUser?.uid;
+
               return ListView.builder(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                 itemCount: filtered.length,
                 itemBuilder: (context, i) {
                   final row = filtered[i];
                   final u = row.staff;
+
+                  // unread is relevant for teacher conversations
+                  final canShowMailBadge =
+                      meUid != null && u.role == StaffRole.teacher;
+                  final threadId = canShowMailBadge
+                      ? _pairThreadId(meUid!, row.uid)
+                      : '';
+
+                  final unreadRef = canShowMailBadge
+                      ? _db
+                      .ref('mail_index')
+                      .child(meUid!)
+                      .child(threadId)
+                      .child('unreadCount')
+                      : null;
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -659,7 +695,8 @@ class _StaffListState extends State<_StaffList>
                                 _openTeacherQuickActions(context, row.uid, u),
                             onLongPress: () async {
                               final callerName =
-                              await (context.findAncestorStateOfType<_AdminStaffScreenState>()
+                              await (context.findAncestorStateOfType<
+                                  _AdminStaffScreenState>()
                                   ?._getMyCallerName() ??
                                   Future.value('Caller'));
 
@@ -669,29 +706,80 @@ class _StaffListState extends State<_StaffList>
                                 MaterialPageRoute(
                                   builder: (_) => AudioCallScreen(
                                     peerUid: row.uid,
-                                    peerName: u.fullName.isEmpty ? 'User' : u.fullName,
+                                    peerName:
+                                    u.fullName.isEmpty ? 'User' : u.fullName,
                                     isCaller: true,
                                     callerName: callerName, // ✅ add this (Step 2)
                                     startWithVideo: true,
-
                                   ),
                                 ),
                               );
                             },
 
-
-                            child: CircleAvatar(
-                              backgroundColor:
-                              AdminStaffScreen.appBg.withOpacity(1),
-                              child: Text(
-                                u.firstName.isNotEmpty
-                                    ? u.firstName[0].toUpperCase()
-                                    : 'S',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: AdminStaffScreen.primaryBlue,
+                            // ✅ Avatar + Mail badge
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor:
+                                  AdminStaffScreen.appBg.withOpacity(1),
+                                  child: Text(
+                                    u.firstName.isNotEmpty
+                                        ? u.firstName[0].toUpperCase()
+                                        : 'S',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: AdminStaffScreen.primaryBlue,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                if (unreadRef != null)
+                                  Positioned(
+                                    right: -2,
+                                    top: -2,
+                                    child: StreamBuilder<DatabaseEvent>(
+                                      stream: unreadRef.onValue,
+                                      builder: (_, snap) {
+                                        final unread =
+                                        _parseUnread(snap.data?.snapshot.value);
+                                        if (unread <= 0) {
+                                          return const SizedBox.shrink();
+                                        }
+
+                                        final txt =
+                                        unread > 99 ? '99+' : unread.toString();
+
+                                        return IgnorePointer(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red,
+                                              borderRadius:
+                                              BorderRadius.circular(999),
+                                              border: Border.all(
+                                                  color: Colors.white, width: 2),
+                                            ),
+                                            constraints: const BoxConstraints(
+                                              minWidth: 18,
+                                              minHeight: 18,
+                                            ),
+                                            child: Center(
+                                              child: Text(
+                                                txt,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -740,8 +828,9 @@ class _StaffListState extends State<_StaffList>
                             tooltip: 'Actions',
                             onSelected: (a) async {
                               if (a == _RowAction.edit) {
-                                if (widget.onEdit != null)
+                                if (widget.onEdit != null) {
                                   await widget.onEdit!(row.uid, u);
+                                }
                                 return;
                               }
                               await widget.onAction(row.uid, u, a);
@@ -826,7 +915,8 @@ class _Pill extends StatelessWidget {
       BoxDecoration(color: background, borderRadius: BorderRadius.circular(999)),
       child: Text(
         label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: foreground),
+        style: TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w700, color: foreground),
       ),
     );
   }
@@ -855,7 +945,8 @@ Future<void> _openTeacherQuickActions(
             ListTile(
               leading: const Icon(Icons.mail_outline),
               title: const Text('Mail'),
-              subtitle: Text(staff.email.trim().isEmpty ? '(No email)' : staff.email),
+              subtitle:
+              Text(staff.email.trim().isEmpty ? '(No email)' : staff.email),
               onTap: () async {
                 Navigator.pop(ctx);
 
@@ -866,12 +957,10 @@ Future<void> _openTeacherQuickActions(
                       teacherUid: teacherUid,
                       teacher: staff,
                     ),
-
                   ),
                 );
               },
             ),
-
             ListTile(
               leading: const Icon(Icons.notifications_active_outlined),
               title: const Text('Reminder'),
@@ -894,9 +983,6 @@ Future<void> _openTeacherQuickActions(
     },
   );
 }
-
-
-
 
 class _StateCard extends StatelessWidget {
   const _StateCard({required this.title, required this.message, required this.icon});
@@ -959,15 +1045,24 @@ class _LoadingList extends StatelessWidget {
           padding: EdgeInsets.all(16),
           child: Row(
             children: [
-              SizedBox(width: 44, height: 44, child: ColoredBox(color: AdminStaffScreen.appBg)),
+              SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: ColoredBox(color: AdminStaffScreen.appBg)),
               SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(height: 14, width: 160, child: ColoredBox(color: AdminStaffScreen.appBg)),
+                    SizedBox(
+                        height: 14,
+                        width: 160,
+                        child: ColoredBox(color: AdminStaffScreen.appBg)),
                     SizedBox(height: 10),
-                    SizedBox(height: 12, width: 260, child: ColoredBox(color: AdminStaffScreen.appBg)),
+                    SizedBox(
+                        height: 12,
+                        width: 260,
+                        child: ColoredBox(color: AdminStaffScreen.appBg)),
                   ],
                 ),
               ),
@@ -1030,9 +1125,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
   bool _loadingCourses = true;
   // --- to track what was assigned BEFORE editing (needed for add/remove instructors) ---
   final Set<String> _initialCourseIds = {}; // courses before edit
-  StaffRole? _initialRole;                  // role before edit
-  String _initialTeacherName = '';          // name before edit
-
+  StaffRole? _initialRole; // role before edit
+  String _initialTeacherName = ''; // name before edit
 
   @override
   void initState() {
@@ -1098,14 +1192,16 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         coursesVal.forEach((key, value) {
           if (key == null || value == null) return;
           if (value is Map) {
-            coursesOut[key.toString()] = value.map((k, v) => MapEntry(k.toString(), v));
+            coursesOut[key.toString()] =
+                value.map((k, v) => MapEntry(k.toString(), v));
           }
         });
       }
 
       // If editing: read /users/{uid}/courses as course_1/course_2 structure
       if (widget.mode == EditorMode.edit && widget.uid != null) {
-        final userCoursesSnap = await _usersRef.child(widget.uid!).child('courses').get();
+        final userCoursesSnap =
+        await _usersRef.child(widget.uid!).child('courses').get();
         final userCoursesVal = userCoursesSnap.value;
 
         _selectedCourseIds.clear();
@@ -1126,7 +1222,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
       _initialRole = _role;
       _initialTeacherName = _teacherFullName;
-
 
       if (!mounted) return;
       setState(() {
@@ -1164,8 +1259,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     final next = max + 1;
     return '000-$next';
   }
-
-
 
   Future<void> _pickDob() async {
     FocusScope.of(context).unfocus();
@@ -1226,7 +1319,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
     return label.isNotEmpty ? label : courseId;
   }
-
 
   int _maxCourseIndexFromExisting(dynamic v) {
     if (v is! Map) return 0;
@@ -1359,7 +1451,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
       final c = _allCourses[courseId];
 
       final code = (c?['course_code'] ?? '').toString().trim();
-      final title = (c?['title'] ?? c?['name'] ?? c?['level'] ?? '').toString().trim();
+      final title =
+      (c?['title'] ?? c?['name'] ?? c?['level'] ?? '').toString().trim();
 
       updates['$key/id'] = courseId;
       updates['$key/course_code'] = code;
@@ -1370,13 +1463,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     await coursesRef.update(updates);
   }
 
-  /// If staff role == teacher:
-  /// add teacher full name into /courses/{courseId}/instructors (list) if not present.
-
-
   // ----------------------------
-// Course instructors sync (add/remove teacher name)
-// ----------------------------
+  // Course instructors sync (add/remove teacher name)
+  // ----------------------------
 
   Future<List<String>> _readInstructorsList(DatabaseReference ref) async {
     final snap = await ref.get();
@@ -1406,7 +1495,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     final instrRef = _coursesRef.child(courseId).child('instructors');
     final list = await _readInstructorsList(instrRef);
 
-    final exists = list.any((x) => x.toLowerCase().trim() == n.toLowerCase().trim());
+    final exists =
+    list.any((x) => x.toLowerCase().trim() == n.toLowerCase().trim());
     if (!exists) {
       list.add(n);
       await instrRef.set(list);
@@ -1443,9 +1533,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
     // 1) Remove teacher from courses that were removed OR from all if role changed away
     if (wasTeacher) {
-      final removed = isTeacherNow
-          ? beforeCourses.difference(afterCourses)
-          : beforeCourses;
+      final removed =
+      isTeacherNow ? beforeCourses.difference(afterCourses) : beforeCourses;
 
       for (final courseId in removed) {
         await _removeTeacherFromCourse(courseId, beforeName);
@@ -1470,16 +1559,14 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
     // 3) Add teacher to newly added courses OR all if role changed to teacher
     if (isTeacherNow) {
-      final added = wasTeacher
-          ? afterCourses.difference(beforeCourses)
-          : afterCourses;
+      final added =
+      wasTeacher ? afterCourses.difference(beforeCourses) : afterCourses;
 
       for (final courseId in added) {
         await _addTeacherToCourse(courseId, afterName);
       }
     }
   }
-
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -1488,7 +1575,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
     try {
       final isCreate = widget.mode == EditorMode.create;
-// ✅ Serial: create only (teacher), keep same on edit
+      // ✅ Serial: create only (teacher), keep same on edit
       if (isCreate && _role == StaffRole.teacher && _serial.trim().isEmpty) {
         _serial = await _generateNextSerial();
       }
@@ -1520,7 +1607,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         phone2: phone2,
         email: email,
         serial: (_role == StaffRole.teacher) ? _serial : '',
-
         role: _role,
         status: _status,
         updatedAtMs: null,
@@ -1558,7 +1644,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
           ? Set<String>.from(_selectedCourseIds)
           : <String>{};
 
-// sync instructors in /courses
+      // sync instructors in /courses
       await _syncTeacherInstructors(
         beforeCourses: beforeCourses,
         afterCourses: afterCourses,
@@ -1568,25 +1654,12 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         afterName: afterName,
       );
 
-// update initial cache (so edits stay consistent)
+      // update initial cache (so edits stay consistent)
       _initialCourseIds
         ..clear()
         ..addAll(afterCourses);
       _initialRole = afterRole;
       _initialTeacherName = afterName;
-
-
-      if (!mounted) return;
-      FocusManager.instance.primaryFocus?.unfocus();
-
-      if (!mounted) return;
-      FocusManager.instance.primaryFocus?.unfocus();
-
-      if (!mounted) return;
-      FocusManager.instance.primaryFocus?.unfocus();
-
-      if (!mounted) return;
-      FocusManager.instance.primaryFocus?.unfocus();
 
       if (!mounted) return;
       FocusManager.instance.primaryFocus?.unfocus();
@@ -1632,7 +1705,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
             onPressed: _saving ? null : _save,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Text(_saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Staff')),
+              child: Text(_saving
+                  ? 'Saving…'
+                  : (isEdit ? 'Save Changes' : 'Create Staff')),
             ),
           ),
         ),
@@ -1651,14 +1726,16 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       controller: firstNameC,
                       label: 'First name *',
                       hint: 'First name',
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
                     _TextField(
                       controller: lastNameC,
                       label: 'Last name *',
                       hint: 'Last name',
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -1688,7 +1765,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                     TextFormField(
                       controller: phone1C,
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))],
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))
+                      ],
                       decoration: InputDecoration(
                         labelText: 'Phone 1',
                         hintText: 'Example: 0550 00 00 00',
@@ -1705,7 +1784,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                     TextFormField(
                       controller: phone2C,
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))],
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))
+                      ],
                       decoration: InputDecoration(
                         labelText: 'Phone 2',
                         hintText: 'Optional',
@@ -1766,7 +1847,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         ),
                       ),
                       items: StaffRole.values
-                          .map((r) => DropdownMenuItem(value: r, child: Text(r.label)))
+                          .map((r) =>
+                          DropdownMenuItem(value: r, child: Text(r.label)))
                           .toList(),
                       onChanged: (v) async {
                         if (v == null) return;
@@ -1783,14 +1865,15 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
                         // ✅ if switched to teacher in CREATE mode, generate serial now (so it shows before saving)
                         final isCreate = widget.mode == EditorMode.create;
-                        if (isCreate && _role == StaffRole.teacher && _serial.trim().isEmpty) {
+                        if (isCreate &&
+                            _role == StaffRole.teacher &&
+                            _serial.trim().isEmpty) {
                           final s = await _generateNextSerial();
                           if (!mounted) return;
                           setState(() => _serial = s);
                         }
                       },
                     ),
-
                     const SizedBox(height: 12),
 
                     // ✅ Show serial for teachers
@@ -1798,7 +1881,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       TextFormField(
                         readOnly: true,
                         controller: TextEditingController(
-                          text: _serial.trim().isEmpty ? '(auto on save)' : _serial,
+                          text:
+                          _serial.trim().isEmpty ? '(auto on save)' : _serial,
                         ),
                         decoration: InputDecoration(
                           labelText: 'Serial',
@@ -1808,7 +1892,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                             borderRadius: BorderRadius.circular(14),
                             borderSide: BorderSide.none,
                           ),
-                          prefixIcon: const Icon(Icons.confirmation_number_rounded),
+                          prefixIcon:
+                          const Icon(Icons.confirmation_number_rounded),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -1826,7 +1911,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         ),
                       ),
                       items: StaffStatus.values
-                          .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                          .map((s) =>
+                          DropdownMenuItem(value: s, child: Text(s.label)))
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
@@ -1836,14 +1922,17 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 12),
               _SectionCard(
                 title: 'Assign Courses',
                 child: _loadingCourses
                     ? const Row(
                   children: [
-                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(
+                        width: 18,
+                        height: 18,
+                        child:
+                        CircularProgressIndicator(strokeWidth: 2)),
                     SizedBox(width: 10),
                     Text('Loading courses...'),
                   ],
@@ -1852,7 +1941,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     FilledButton.tonalIcon(
-                      onPressed: (_allCourses.isEmpty || _role != StaffRole.teacher)
+                      onPressed:
+                      (_allCourses.isEmpty || _role != StaffRole.teacher)
                           ? null
                           : _openCoursesPicker,
                       icon: const Icon(Icons.school_rounded),
@@ -1873,7 +1963,6 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         ),
                       ),
                     ],
-
                     const SizedBox(height: 10),
                     if (_selectedCourseIds.isNotEmpty)
                       Wrap(
@@ -1883,7 +1972,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                           return _Pill(label: _courseLabelFor(id));
                         }).toList(),
                       ),
-                    if (_role == StaffRole.teacher && _selectedCourseIds.isNotEmpty) ...[
+                    if (_role == StaffRole.teacher &&
+                        _selectedCourseIds.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       Text(
                         'Teacher will be added to each course instructors list.',
@@ -2135,7 +2225,6 @@ class Staff {
   }
 }
 
-
 class _StaffRow {
   _StaffRow({required this.uid, required this.staff});
   final String uid;
@@ -2171,4 +2260,3 @@ List<_StaffRow> _parseStaffMap(dynamic data) {
 
   return [];
 }
-
