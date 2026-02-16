@@ -142,7 +142,12 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
       ..addAll({
         'movedAt': ServerValue.timestamp,
         'movedFrom': _usersPath,
+
+        // ✅ NEW flags for self-delete flow
+        'deleteAuth': true,
+        'selfDeleteDone': false,
       });
+
 
     await _deletedRef.child(uid).set(data);
     await _usersRef.child(uid).remove();
@@ -167,6 +172,15 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
 
     await _blockedRef.child(uid).set(data);
     await _usersRef.child(uid).remove();
+// ✅ ALSO block by email (so admin cannot create same email again)
+    final email = learner.email.trim().toLowerCase();
+    final emailKey = email.replaceAll('.', ','); // RTDB safe key
+    if (email.isNotEmpty) {
+      await _db.ref('blocked_emails/$emailKey').set({
+        'blockedAt': ServerValue.timestamp,
+        'uid': uid,
+      });
+    }
 
     _toast('Moved to blocked ⛔');
   }
@@ -205,6 +219,12 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
 
     await _usersRef.child(uid).set(data);
     await _blockedRef.child(uid).remove();
+// ✅ remove from blocked_emails
+    final email = learner.email.trim().toLowerCase();
+    final emailKey = email.replaceAll('.', ',');
+    if (email.isNotEmpty) {
+      await _db.ref('blocked_emails/$emailKey').remove();
+    }
 
     _toast('Unblocked ✅');
   }
@@ -364,8 +384,15 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
                   await _restoreFromDeleted(uid, learner);
                   break;
                 case _RowAction.deleteForever:
+                // ✅ Only allow permanent delete after self delete done
+                  if (!learner.selfDeleteDone) {
+                    _toast('Cannot delete forever yet. The learner must login once so the app can remove the Auth account.');
+                    return;
+                  }
+
                   await _deletePermanently(uid, _deletedRef);
                   break;
+
                 default:
                   break;
               }
@@ -1227,6 +1254,7 @@ class LearnerPrefill {
     this.firstName = '',
     this.lastName = '',
     this.phone1 = '',
+
     this.selectedCourseIds = const <String>{},
   });
 
@@ -1443,10 +1471,21 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       String uid;
 
       if (isCreate) {
+        // ✅ blocklist check by email
+        final emailNorm = email.trim().toLowerCase();
+        final emailKey = emailNorm.replaceAll('.', ',');
+        final blockedSnap = await FirebaseDatabase.instance.ref('blocked_emails/$emailKey').get();
+        if (blockedSnap.exists) {
+          _toast('This email has been blocked.');
+          setState(() => _saving = false);
+          return;
+        }
+
         uid = await _createAuthUserAndGetUid(email: email, password: pass);
       } else {
         uid = widget.uid!;
       }
+
 
       final learner = Learner(
         uid: uid,
@@ -1880,7 +1919,10 @@ class Learner {
     required this.role,
     required this.status,
     required this.updatedAtMs,
+    this.deleteAuth = false,
+    this.selfDeleteDone = false,
   });
+
 
   final String uid;
   final String firstName;
@@ -1893,6 +1935,8 @@ class Learner {
   final String role;
   final LearnerStatus status;
   final int? updatedAtMs;
+  final bool deleteAuth;
+  final bool selfDeleteDone;
 
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 
@@ -1908,7 +1952,11 @@ class Learner {
       'serial': serial,
       'status': status.value,
       'updatedAt': updatedAtMs,
+      'deleteAuth': deleteAuth,
+      'selfDeleteDone': selfDeleteDone,
+
     };
+
   }
 
   factory Learner.fromMap(String uid, Map<dynamic, dynamic> raw) {
@@ -1933,6 +1981,9 @@ class Learner {
       serial: (m['serial'] ?? '').toString(),
       status: LearnerStatus.fromValue(m['status']?.toString()),
       updatedAtMs: parseInt(m['updatedAt']),
+      deleteAuth: (m['deleteAuth'] == true) || (m['deleteAuth']?.toString() == 'true'),
+      selfDeleteDone: (m['selfDeleteDone'] == true) || (m['selfDeleteDone']?.toString() == 'true'),
+
     );
   }
 }

@@ -724,99 +724,33 @@
     }
 
     Future<void> _signInWithFirebase(String email, String pass, {bool fromAutoLogin = false}) async {
+      if (!mounted) return;
       setState(() {
         loading = true;
         error = '';
       });
 
       try {
-        final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: email,
           password: pass,
         );
 
-        final uid = cred.user?.uid;
-        if (uid == null) throw Exception('Login failed (no user).');
-
-        final ref = FirebaseDatabase.instance.ref('users/$uid/role');
-        final snap = await ref.get();
-        final role = (snap.value ?? '')
-            .toString()
-            .toLowerCase()
-            .replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '')
-            .trim();
-        if (role == 'admin') {
-          final p = await SharedPreferences.getInstance();
-
-          if (rememberMe) {
-            await p.setBool('rememberMe', true);
-            await p.setString('rememberEmail', email);
-          } else {
-            await p.setBool('rememberMe', false);
-            await p.remove('rememberEmail');
-          }
-
-
-          if (!mounted) return;
-          setState(() => loading = false);
-
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const AdminHome()),
-          );
-          return;
+        // save remember me
+        final p = await SharedPreferences.getInstance();
+        if (rememberMe) {
+          await p.setBool('rememberMe', true);
+          await p.setString('rememberEmail', email);
+        } else {
+          await p.setBool('rememberMe', false);
+          await p.remove('rememberEmail');
         }
 
-        if (role == 'learner') {
-          final p = await SharedPreferences.getInstance();
+        // IMPORTANT: no Navigator here.
+        // AuthGate will rebuild and route (Learner/Teacher/Admin/Blocked/Paused/Deleted)
 
-          if (rememberMe) {
-            await p.setBool('rememberMe', true);
-            await p.setString('rememberEmail', email);
-          } else {
-            await p.setBool('rememberMe', false);
-            await p.remove('rememberEmail');
-          }
-
-
-          if (!mounted) return;
-          setState(() => loading = false);
-
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LearnerHome()),
-          );
-          return;
-        }
-        if (role == 'teacher' || role == 'teachers' || role == 'teacher(s)') {
-          final p = await SharedPreferences.getInstance();
-
-          if (rememberMe) {
-            await p.setBool('rememberMe', true);
-            await p.setString('rememberEmail', email);
-          } else {
-            await p.setBool('rememberMe', false);
-            await p.remove('rememberEmail');
-          }
-
-
-          if (!mounted) return;
-          setState(() => loading = false);
-
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
-          );
-          return;
-        }
-
-
-        // If role is missing or something else
-        await FirebaseAuth.instance.signOut();
-        setState(() {
-          loading = false;
-          error = 'Access denied: unknown role ($role).';
-        });
-        if (!fromAutoLogin) _refreshCaptcha();
-        return;
-
+        if (!mounted) return;
+        setState(() => loading = false);
       } on FirebaseAuthException catch (e) {
         String msg = 'Login failed.';
         if (e.code == 'user-not-found') msg = 'No user found for that email.';
@@ -824,18 +758,18 @@
         if (e.code == 'invalid-email') msg = 'Invalid email.';
         if (e.code == 'user-disabled') msg = 'This account is disabled.';
 
+        if (!mounted) return;
         setState(() {
           loading = false;
           error = msg;
         });
-
         if (!fromAutoLogin) _refreshCaptcha();
       } catch (e) {
+        if (!mounted) return;
         setState(() {
           loading = false;
           error = 'Error: $e';
         });
-
         if (!fromAutoLogin) _refreshCaptcha();
       }
     }

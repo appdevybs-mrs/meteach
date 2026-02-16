@@ -7,120 +7,177 @@ import '../admin/admin_home.dart';
 import '../teacher/teacher_home.dart';
 import 'not_authorized.dart';
 import '../services/topic_service.dart';
-
-// ✅ ADD THIS
 import '../services/fcm_service.dart';
 
-class AuthGate extends StatelessWidget {
+import 'deleted_action_screen.dart';
+import 'blocked_action_screen.dart';
+import 'paused_action_screen.dart';
+
+class AuthGate extends StatefulWidget {
   final Widget signedOutHome;
   const AuthGate({super.key, required this.signedOutHome});
 
-  void fikraLog(String msg) => print('FIKRA_AUTH | $msg');
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  void log(String msg) => debugPrint('FIKRA_AUTH | $msg');
 
   String normRole(String? role) {
     final s = (role ?? '').toLowerCase();
-    // remove whitespace + NBSP + zero-width spaces
     return s.replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '').trim();
-  }
-
-  Future<DataSnapshot> getSnap(String path) async {
-    fikraLog('DB GET: $path');
-    final ref = FirebaseDatabase.instance.ref(path);
-    final snap = await ref.get();
-    fikraLog('DB GOT: $path | exists=${snap.exists} | type=${snap.value.runtimeType} | value=${snap.value}');
-    return snap;
   }
 
   @override
   Widget build(BuildContext context) {
-    fikraLog('AuthGate build()');
+    log('AuthGate build() ✅ NEW ROUTER ✅');
 
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnap) {
-        fikraLog('AUTH stream state=${authSnap.connectionState} hasData=${authSnap.hasData} hasError=${authSnap.hasError}');
-
         if (authSnap.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        if (authSnap.hasError) {
-          fikraLog('AUTH ERROR: ${authSnap.error}');
-          return Scaffold(body: Center(child: Text('Auth error:\n${authSnap.error}')));
-        }
-
         final user = authSnap.data;
-        if (user == null) {
-          fikraLog('AUTH user=null -> signedOutHome');
-          return signedOutHome;
-        }
+        if (user == null) return widget.signedOutHome;
 
-        fikraLog('AUTH user present uid=${user.uid} email=${user.email}');
-        fikraLog('AUTH providers=${user.providerData.map((p) => p.providerId).toList()}');
+        final uid = user.uid;
 
-        return FutureBuilder<DataSnapshot>(
-          future: getSnap('users/${user.uid}'),
-          builder: (context, userNodeSnap) {
-            fikraLog('USER NODE future state=${userNodeSnap.connectionState} hasError=${userNodeSnap.hasError} hasData=${userNodeSnap.hasData}');
+        final usersRef = FirebaseDatabase.instance.ref('users/$uid');
 
-            if (userNodeSnap.connectionState == ConnectionState.waiting) {
+        return StreamBuilder<DatabaseEvent>(
+          stream: usersRef.onValue,
+          builder: (context, userEvent) {
+            if (userEvent.connectionState == ConnectionState.waiting) {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
 
-            if (userNodeSnap.hasError) {
-              fikraLog('USER NODE ERROR: ${userNodeSnap.error}');
-              return Scaffold(body: Center(child: Text('User fetch error:\n${userNodeSnap.error}')));
+            if (userEvent.hasError) {
+              return Scaffold(
+                body: Center(child: Text('User stream error:\n${userEvent.error}')),
+              );
             }
 
-            final userNode = userNodeSnap.data!;
-            if (!userNode.exists) {
-              fikraLog('❌ Missing /users/${user.uid} -> NotAuthorized');
-              return NotAuthorized(role: 'Missing /users/${user.uid}');
+            final snap = userEvent.data?.snapshot;
+            final existsInUsers = snap?.exists == true;
+
+            // If /users/{uid} missing => check users_deleted/users_blocked
+            if (!existsInUsers) {
+              final delRef = FirebaseDatabase.instance.ref('users_deleted/$uid');
+              final blkRef = FirebaseDatabase.instance.ref('users_blocked/$uid');
+
+              return FutureBuilder<List<DataSnapshot>>(
+                future: Future.wait([delRef.get(), blkRef.get()]),
+                builder: (context, checks) {
+                  if (!checks.hasData) {
+                    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                  }
+
+                  final delSnap = checks.data![0];
+                  final blkSnap = checks.data![1];
+
+                  if (delSnap.exists) {
+                    // Read flags
+                    final raw = delSnap.value;
+                    final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+
+                    final deleteAuth = (m['deleteAuth'] == true);
+                    final selfDeleteDone = (m['selfDeleteDone'] == true);
+
+                    log('🚫 Found in users_deleted | deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone');
+
+                    return DeletedActionScreen(
+                      uid: uid,
+                      deleteAuth: deleteAuth,
+                      selfDeleteDone: selfDeleteDone,
+                    );
+                  }
+
+                  if (blkSnap.exists) {
+                    // Optional flags for blocked too
+                    final raw = blkSnap.value;
+                    final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+
+                    final deleteAuth = (m['deleteAuth'] == true);
+                    final selfDeleteDone = (m['selfDeleteDone'] == true);
+
+                    log('⛔ Found in users_blocked | deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone');
+
+                    return BlockedActionScreen(
+                      uid: uid,
+                      deleteAuth: deleteAuth,
+                      selfDeleteDone: selfDeleteDone,
+                    );
+                  }
+
+                  return NotAuthorized(role: 'Missing /users/$uid');
+                },
+              );
             }
 
-            return FutureBuilder<DataSnapshot>(
-              future: getSnap('users/${user.uid}/role'),
-              builder: (context, roleSnap) {
-                fikraLog('ROLE future state=${roleSnap.connectionState} hasError=${roleSnap.hasError} hasData=${roleSnap.hasData}');
+            // Exists in /users => parse role/status
+            final raw = snap!.value;
+            final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
-                if (roleSnap.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
-                }
+            final status = (m['status'] ?? '').toString().toLowerCase().trim();
+            final role = normRole(m['role']?.toString());
 
-                if (roleSnap.hasError) {
-                  fikraLog('ROLE ERROR: ${roleSnap.error}');
-                  return Scaffold(body: Center(child: Text('Role fetch error:\n${roleSnap.error}')));
-                }
+            log('ROLE=[$role] STATUS=[$status]');
 
-                final rawRole = roleSnap.data!.value?.toString();
-                final role = normRole(rawRole);
+            // Paused => separate screen
+            if (status == 'paused') {
+              return const PausedActionScreen();
+            }
 
-                fikraLog('RAW ROLE=[$rawRole]');
-                fikraLog('NORM ROLE=[$role]');
+// ✅ Blocked (when /users/$uid still exists)
+            if (status == 'blocked') {
+              final blkRef = FirebaseDatabase.instance.ref('users_blocked/$uid');
 
-                // ✅ STEP 7: subscribe topics based on role (no await needed)
-                TopicService.subscribeForRole(role: role);
-                FCMService.syncTokenAfterLogin();
+              return FutureBuilder<DataSnapshot>(
+                future: blkRef.get(),
+                builder: (context, snap2) {
+                  if (!snap2.hasData) {
+                    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                  }
 
-                if (role == 'admin') {
-                  fikraLog('✅ ROUTE AdminHome');
-                  return const AdminHome();
-                }
+                  final blkSnap = snap2.data!;
+                  final raw2 = blkSnap.value;
+                  final mm = raw2 is Map
+                      ? raw2.map((k, v) => MapEntry(k.toString(), v))
+                      : <String, dynamic>{};
 
-                if (role == 'teacher' || role == 'teachers' || role == 'Teacher' || role == 'teacher(s)') {
-                  fikraLog('✅ ROUTE TeacherHomeScreen');
-                  return const TeacherHomeScreen();
-                }
+                  final deleteAuth = (mm['deleteAuth'] == true);
+                  final selfDeleteDone = (mm['selfDeleteDone'] == true);
 
-                if (role == 'learner' || role == 'learners' || role == 'learner(s)') {
-                  fikraLog('✅ ROUTE LearnerHome');
-                  return const LearnerHome();
-                }
+                  log('⛔ status=blocked | users_blocked exists=${blkSnap.exists} deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone');
 
-                fikraLog('❌ UNKNOWN ROLE -> NotAuthorized rawRole=[$rawRole]');
-                return NotAuthorized(role: rawRole);
-              },
-            );
+                  return BlockedActionScreen(
+                    uid: uid,
+                    deleteAuth: deleteAuth,
+                    selfDeleteDone: selfDeleteDone,
+                  );
+                },
+              );
+            }
+
+
+            // Normal routing
+            TopicService.subscribeForRole(role: role);
+            FCMService.syncTokenAfterLogin();
+
+            if (role == 'admin') return const AdminHome();
+
+            if (role == 'teacher' || role == 'teachers' || role == 'teacher(s)' || role == 'Teacher') {
+              return const TeacherHomeScreen();
+            }
+
+            if (role == 'learner' || role == 'learners' || role == 'learner(s)') {
+              return const LearnerHome();
+            }
+
+            return NotAuthorized(role: role);
           },
         );
       },
