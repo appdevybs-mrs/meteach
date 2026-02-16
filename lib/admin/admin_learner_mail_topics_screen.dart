@@ -23,7 +23,8 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
   String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
 
-  DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
+  Query get _indexQuery =>
+      _db.ref('mail_index/$_meUid').orderByChild('peerUid').equalTo(widget.learnerUid);
   DatabaseReference get _threadsRef => _db.ref('mail_threads');
 
   late final Stream<DatabaseEvent> _stream;
@@ -31,7 +32,7 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
   @override
   void initState() {
     super.initState();
-    _stream = _indexRef.onValue.asBroadcastStream();
+    _stream = _indexQuery.onValue.asBroadcastStream();
   }
 
   void _snack(String s) {
@@ -51,7 +52,6 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
       final item = _InboxItem.fromMap(m);
 
       // ✅ filter: only threads with this learner
-      if (item.peerUid.trim() != widget.learnerUid.trim()) return;
 
       // ✅ ignore deleted for me
       if ((m['deletedAt'] ?? '').toString().trim().isNotEmpty) return;
@@ -64,6 +64,8 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
   }
 
   Future<void> _openThread(_InboxRow row) async {
+    await _db.ref('mail_index/$_meUid/${row.threadId}/unreadCount').set(0);
+
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MailTopicThreadScreen(
@@ -182,15 +184,38 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
             itemBuilder: (_, i) {
               final row = rows[i];
               final item = row.item;
+              final hasUnread = item.unreadCount > 0;
 
               return Card(
                 child: ListTile(
-                  title: Text(item.subject.isEmpty ? '(No subject)' : item.subject),
+                  title: Text(
+                    item.subject.isEmpty ? '(No subject)' : item.subject,
+                    style: TextStyle(
+                      fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w400,
+                    ),
+                  ),
                   subtitle: Text(
                     item.lastMessage.isEmpty ? 'No messages yet' : item.lastMessage,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                    trailing: hasUnread
+                        ? Center(
+                      widthFactor: 1,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${item.unreadCount}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    )
+                        : null,
+
                   onTap: () => _openThread(row),
                 ),
               );
