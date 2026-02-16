@@ -33,6 +33,39 @@ class LearnerMailThreadScreen extends StatefulWidget {
 class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
+  String _meDisplayName = 'Learner';
+  String _peerDisplayName = '';
+  String get _peerNameShown {
+    final p = _peerDisplayName.trim();
+    if (p.isNotEmpty) return p;
+    return widget.peerName.trim();
+  }
+
+  Future<String> _fetchDisplayName(String uid) async {
+    // TODO: change "users" to your actual users node name if different
+    final snap = await _db.ref('users/$uid').get();
+    if (!snap.exists || snap.value is! Map) return '';
+
+    final m = Map<String, dynamic>.from(snap.value as Map);
+    final first = (m['first_name'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? '').toString().trim();
+
+    final full = ('$first $last').trim();
+    return full;
+  }
+
+  Future<void> _loadNames() async {
+    try {
+      final me = await _fetchDisplayName(_meUid);
+      final peer = await _fetchDisplayName(widget.peerUid);
+
+      if (!mounted) return;
+      setState(() {
+        _meDisplayName = me.isNotEmpty ? me : _meDisplayName;
+        _peerDisplayName = peer.isNotEmpty ? peer : widget.peerName;
+      });
+    } catch (_) {}
+  }
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
   String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Learner').trim();
@@ -54,6 +87,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
     _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
     _markRead();
+    _loadNames();
   }
 
   Future<void> _markHomeworkSubmittedIfNeeded() async {
@@ -202,7 +236,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         'lastMessage': preview80,
         'unreadCount': 0,
         'peerUid': widget.peerUid,
-        'peerName': widget.peerName,
+        'peerName': _peerNameShown,
         'deletedAt': null,
       });
 
@@ -216,7 +250,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         m['lastMessage'] = preview80;
         m['unreadCount'] = oldUnread + 1;
         m['peerUid'] = _meUid;
-        m['peerName'] = _meName;
+        m['peerName'] = _meDisplayName;
         m['deletedAt'] = null;
 
         return Transaction.success(m);
@@ -258,7 +292,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.peerName.isEmpty ? 'Mail' : 'Mail — ${widget.peerName}';
+    final title = _peerNameShown.isEmpty ? 'Mail' : 'Mail — $_peerNameShown';
+
 
     return Scaffold(
       appBar: AppBar(
@@ -312,7 +347,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        mine ? 'Me' : widget.peerName,
+                                        mine ? _meDisplayName : _peerNameShown,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -321,6 +356,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                           fontSize: 12,
                                         ),
                                       ),
+
                                     ),
                                     const SizedBox(width: 8),
                                     Text(

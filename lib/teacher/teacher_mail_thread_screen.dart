@@ -33,6 +33,38 @@ class TeacherMailThreadScreen extends StatefulWidget {
 class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
+  String _meDisplayName = 'Teacher';
+  String _peerDisplayName = '';
+
+  String get _peerNameShown {
+    final p = _peerDisplayName.trim();
+    if (p.isNotEmpty) return p;
+    return widget.peerName.trim();
+  }
+
+  Future<String> _fetchDisplayName(String uid) async {
+    // IMPORTANT: change "users" to your real node if different
+    final snap = await _db.ref('users/$uid').get();
+    if (!snap.exists || snap.value is! Map) return '';
+
+    final m = Map<String, dynamic>.from(snap.value as Map);
+    final first = (m['first_name'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? '').toString().trim();
+    return ('$first $last').trim();
+  }
+
+  Future<void> _loadNames() async {
+    try {
+      final me = await _fetchDisplayName(_meUid);
+      final peer = await _fetchDisplayName(widget.peerUid);
+
+      if (!mounted) return;
+      setState(() {
+        if (me.isNotEmpty) _meDisplayName = me;
+        if (peer.isNotEmpty) _peerDisplayName = peer;
+      });
+    } catch (_) {}
+  }
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
   String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Teacher').trim();
@@ -55,6 +87,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
     _markRead();
+    _loadNames();
+
   }
 
   @override
@@ -192,7 +226,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         m['lastMessage'] = preview80;
         m['unreadCount'] = oldUnread + 1;
         m['peerUid'] = _meUid;
-        m['peerName'] = _meName;
+        m['peerName'] = _meDisplayName;
         m['deletedAt'] = null;
 
         return Transaction.success(m);
@@ -383,7 +417,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         m['lastMessage'] = preview80;
         m['unreadCount'] = oldUnread + 1;
         m['peerUid'] = _meUid;
-        m['peerName'] = _meName;
+        m['peerName'] = _meDisplayName;
         m['deletedAt'] = null;
 
         return Transaction.success(m);
@@ -398,7 +432,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.peerName.isEmpty ? 'Mail' : 'Mail — ${widget.peerName}';
+    final title = _peerNameShown.isEmpty ? 'Mail' : 'Mail — $_peerNameShown';
 
     return Scaffold(
       appBar: AppBar(
@@ -461,7 +495,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        mine ? 'Me' : widget.peerName,
+                                        mine ? _meDisplayName : _peerNameShown,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
