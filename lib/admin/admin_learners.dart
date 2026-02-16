@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
@@ -237,7 +238,6 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
           ],
         ),
         actions: [
-          // ✅ changed: now goes to Payments screen (not Payments Log)
           IconButton(
             tooltip: 'Payments',
             icon: const Icon(Icons.payments_rounded, color: AdminLearnersScreen.primaryBlue),
@@ -258,7 +258,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
                 onPressed: () async {
                   final created = await Navigator.of(context).push<Learner?>(
                     MaterialPageRoute(
-                      builder: (_) => LearnerEditorScreen(
+                      builder: (_) => const LearnerEditorScreen(
                         mode: EditorMode.create,
                       ),
                     ),
@@ -417,9 +417,7 @@ class _LearnersList extends StatefulWidget {
   final ValueChanged<LearnerStatus?> onStatusFilterChanged;
 
   final List<PopupMenuEntry<_RowAction>> Function(String uid, Learner learner) actionsBuilder;
-
   final Future<void> Function(String uid, Learner learner, _RowAction action) onAction;
-
   final Future<void> Function(String uid, Learner learner)? onEdit;
 
   @override
@@ -441,10 +439,7 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
   /// Sum unread mail (for THIS admin) coming from a specific learner (peerUid).
   /// Reads mail_index/{adminUid} threads where peerUid == learnerUid and sums unreadCount.
   Stream<int> _unreadForLearnerStream(String learnerUid) {
-    final q = FirebaseDatabase.instance
-        .ref('mail_index/$_adminUid')
-        .orderByChild('peerUid')
-        .equalTo(learnerUid);
+    final q = FirebaseDatabase.instance.ref('mail_index/$_adminUid').orderByChild('peerUid').equalTo(learnerUid);
 
     return q.onValue.map((event) {
       final v = event.snapshot.value;
@@ -474,7 +469,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
 
   Widget _badge(int count) {
     if (count <= 0) return const SizedBox.shrink();
-
     final label = count > 99 ? '99+' : '$count';
 
     return Container(
@@ -495,7 +489,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     );
   }
 
-
   Future<void> _sendLearnerQuickReminder({
     required String uid,
     required Learner learner,
@@ -510,7 +503,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
       return;
     }
 
-    // Message templates (edit text if you want)
     String title;
     String message;
 
@@ -519,32 +511,23 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
         title = 'Payment Reminder';
         message = 'Your payment is due. Please contact the academy.';
         break;
-
       case _QuickLearnerReminder.absence:
         title = 'Absence Reminder';
         message = 'We noticed an absence. Please confirm with the academy.';
         break;
-
       case _QuickLearnerReminder.empty:
-      // we don't send push here. mail is opened from the sheet.
-        return;
-
-
+        return; // mail is opened from the sheet
     }
-
-    // Some Android devices may not show notification if body is truly empty.
-    // If you want "title only" but always show, uncomment next line:
-    // if (message.trim().isEmpty) message = ' ';
 
     await PushClient.sendToToken(
       token: token,
       title: title,
       message: message,
       data: {
-        'type': 'reminder',          // your FCMService maps this to chReminders
-        'route': 'learner',          // optional (for later tap handling)
+        'type': 'reminder',
+        'route': 'learner',
         'learnerUid': uid,
-        'kind': type.name,           // payment / absence / empty
+        'kind': type.name,
       },
     );
 
@@ -553,9 +536,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
       SnackBar(content: Text('Sent ✅ to ${learner.fullName.isEmpty ? 'learner' : learner.fullName}')),
     );
   }
-
-
-
 
   Future<void> _showQuickReminderSheet({
     required String uid,
@@ -584,9 +564,8 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
             ListTile(
               leading: const Icon(Icons.mail_rounded),
               title: const Text('Mail'),
-              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty), // (we reuse the same enum)
+              onTap: () => Navigator.pop(ctx, _QuickLearnerReminder.empty),
             ),
-
             const SizedBox(height: 10),
           ],
         ),
@@ -618,7 +597,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
   }
 
   final _db = FirebaseDatabase.instance;
-
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
 
   // --- Due helpers (UI only) ---
@@ -626,12 +604,10 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     required int sessionsPaidTotal,
     required int sessionsDone,
   }) {
-    // unchanged logic (same as reminder logic)
     return sessionsPaidTotal > 0 && sessionsDone >= (sessionsPaidTotal - 1);
   }
 
-  // ✅ CHANGE #1: we no longer paint the whole learner card yellow.
-  // We only compute `due` here and pass it to the card builder (so the avatar can become red).
+  // compute due and pass to builder (avatar red)
   Widget _withLearnerDueFlag({
     required String uid,
     required Widget Function(bool due) builder,
@@ -770,7 +746,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                   return _withLearnerDueFlag(
                     uid: row.uid,
                     builder: (due) {
-                      // ✅ CHANGE #2: compact card layout (same data, same logic)
                       final avatarBg = due ? Colors.red : AdminLearnersScreen.appBg;
                       final avatarFg = due ? Colors.white : AdminLearnersScreen.primaryBlue;
 
@@ -813,7 +788,7 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                             clipBehavior: Clip.none,
                                             children: [
                                               CircleAvatar(
-                                                backgroundColor: avatarBg, // keeps your due-red logic
+                                                backgroundColor: avatarBg,
                                                 child: Text(
                                                   l.firstName.isNotEmpty ? l.firstName[0].toUpperCase() : 'L',
                                                   style: TextStyle(
@@ -822,8 +797,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                                   ),
                                                 ),
                                               ),
-
-                                              // unread badge
                                               if (unread > 0)
                                                 Positioned(
                                                   right: -6,
@@ -834,15 +807,12 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                           );
                                         },
                                       ),
-
                                     ),
-
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          // Line 1: Name + Email + Status (same line)
                                           Row(
                                             children: [
                                               Expanded(
@@ -872,15 +842,17 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                                                   ),
                                                 ),
                                               const SizedBox(width: 10),
-                                              _Pill(
-                                                label: l.status.label,
-                                                bg: _statusBg(l.status),
-                                                fg: _statusFg(l.status),
-                                              ),
+
+                                              // ✅ show ONLY Inactive, hide Active
+                                              if (l.status == LearnerStatus.paused)
+                                                const _Pill(
+                                                  label: 'Inactive',
+                                                  bg: Color(0xFFFFF3D6),
+                                                  fg: Color(0xFF9A6B00),
+                                                ),
                                             ],
                                           ),
                                           const SizedBox(height: 6),
-                                          // Line 2: phone + dob + serial
                                           if (compactLine2().isNotEmpty)
                                             Text(
                                               compactLine2(),
@@ -1150,10 +1122,11 @@ class _LoadingList extends StatelessWidget {
 }
 
 // ----------------------------
-// Editor
+// Editor (NO course assignment here)
 // ----------------------------
 
 enum EditorMode { create, edit }
+
 class LearnerPrefill {
   LearnerPrefill({
     this.firstName = '',
@@ -1177,7 +1150,6 @@ class LearnerEditorScreen extends StatefulWidget {
     this.prefill,
   });
 
-
   final EditorMode mode;
   final String? uid;
   final Learner? initial;
@@ -1191,9 +1163,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final _db = FirebaseDatabase.instance;
-
   DatabaseReference get _usersRef => _db.ref('users');
-  DatabaseReference get _coursesRef => _db.ref('courses');
 
   late final TextEditingController firstNameC;
   late final TextEditingController lastNameC;
@@ -1205,13 +1175,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   late final TextEditingController serialC;
 
   DateTime? _dob;
-
   LearnerStatus _status = LearnerStatus.active;
-
   bool _saving = false;
-  Map<String, Map<String, dynamic>> _allCourses = {};
-  final Set<String> _selectedCourseIds = {};
-  bool _loadingCourses = true;
 
   @override
   void initState() {
@@ -1223,16 +1188,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     lastNameC = TextEditingController(text: initial?.lastName ?? '');
     dobC = TextEditingController(text: initial?.dob ?? '');
     phone1C = TextEditingController(text: initial?.phone1 ?? '');
-    // ✅ Apply subscription prefill (only when creating)
+
+    // Optional prefill (create only) - stays as before
     if (widget.mode == EditorMode.create && widget.prefill != null) {
       final p = widget.prefill!;
       if (p.firstName.trim().isNotEmpty) firstNameC.text = p.firstName.trim();
       if (p.lastName.trim().isNotEmpty) lastNameC.text = p.lastName.trim();
       if (p.phone1.trim().isNotEmpty) phone1C.text = p.phone1.trim();
-
-      _selectedCourseIds
-        ..clear()
-        ..addAll(p.selectedCourseIds);
     }
 
     phone2C = TextEditingController(text: initial?.phone2 ?? '');
@@ -1260,8 +1222,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         if (serialC.text.trim().isEmpty) serialC.text = s;
       });
     }
-
-    _loadCoursesAndSelection();
   }
 
   @override
@@ -1280,47 +1240,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Future<void> _loadCoursesAndSelection() async {
-    try {
-      final coursesSnap = await _coursesRef.get();
-      final coursesVal = coursesSnap.value;
-
-      final Map<String, Map<String, dynamic>> coursesOut = {};
-      if (coursesVal is Map) {
-        coursesVal.forEach((key, value) {
-          if (key == null || value == null) return;
-          if (value is Map) {
-            coursesOut[key.toString()] = value.map((k, v) => MapEntry(k.toString(), v));
-          }
-        });
-      }
-
-      if (widget.mode == EditorMode.edit && widget.uid != null) {
-        final userCoursesSnap = await _usersRef.child(widget.uid!).child('courses').get();
-        final userCoursesVal = userCoursesSnap.value;
-
-        _selectedCourseIds.clear();
-
-        if (userCoursesVal is Map) {
-          userCoursesVal.forEach((k, v) {
-            if (k == null) return;
-            _selectedCourseIds.add(k.toString());
-          });
-        }
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _allCourses = coursesOut;
-        _loadingCourses = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loadingCourses = false);
-      _snack('Failed to load courses: $e');
-    }
   }
 
   Future<void> _pickDob() async {
@@ -1393,159 +1312,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     }
   }
 
-  Future<void> _openCoursesPicker() async {
-    final tempSelected = Set<String>.from(_selectedCourseIds);
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Select courses'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: _allCourses.isEmpty
-                ? const Text('No courses found.')
-                : ListView(
-              shrinkWrap: true,
-              children: _allCourses.entries.map((e) {
-                final id = e.key;
-                final data = e.value;
-
-                final code = (data['course_code'] ?? '').toString().trim();
-                final titleText = (data['title'] ?? data['name'] ?? '').toString().trim();
-                final category = (data['category'] ?? '').toString().trim();
-
-                final display = [
-                  if (code.isNotEmpty) code,
-                  if (titleText.isNotEmpty) titleText,
-                ].join(' — ');
-
-                final finalTitle = display.isNotEmpty ? display : (category.isNotEmpty ? category : id);
-
-                return CheckboxListTile(
-                  value: tempSelected.contains(id),
-                  title: Text(finalTitle),
-                  subtitle: Text(
-                    id,
-                    style: TextStyle(
-                      color: Colors.black.withOpacity(0.5),
-                      fontSize: 12,
-                    ),
-                  ),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  onChanged: (v) {
-                    setDialogState(() {
-                      if (v == true) {
-                        tempSelected.add(id);
-                      } else {
-                        tempSelected.remove(id);
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                setState(() {
-                  _selectedCourseIds
-                    ..clear()
-                    ..addAll(tempSelected);
-                });
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Save selection'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  int _maxCourseIndexFromExisting(dynamic v) {
-    if (v is! Map) return 0;
-    int maxI = 0;
-    v.forEach((k, _) {
-      final key = k.toString();
-      final m = RegExp(r'^course_(\d+)$').firstMatch(key);
-      if (m != null) {
-        final n = int.tryParse(m.group(1) ?? '');
-        if (n != null && n > maxI) maxI = n;
-      }
-    });
-    return maxI;
-  }
-
-  Future<void> _saveUserCourses(String uid) async {
-    final coursesRef = _usersRef.child(uid).child('courses');
-
-    if (_selectedCourseIds.isEmpty) {
-      await coursesRef.remove();
-      return;
-    }
-
-    final existingSnap = await coursesRef.get();
-    final existingVal = existingSnap.value;
-
-    final Map<String, String> idToKey = {};
-
-    if (existingVal is Map) {
-      existingVal.forEach((k, v) {
-        if (k == null || v == null) return;
-        if (v is Map) {
-          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-          final existingId = (mm['id'] ?? '').toString();
-          if (existingId.isNotEmpty) {
-            idToKey[existingId] = k.toString();
-          }
-        }
-      });
-    }
-
-    int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
-
-    final Map<String, dynamic> updates = {};
-
-    if (existingVal is Map) {
-      existingVal.forEach((k, v) {
-        if (k == null) return;
-        if (k.toString().startsWith('course_')) {
-          String existingId = '';
-          if (v is Map) {
-            final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-            existingId = (mm['id'] ?? '').toString();
-          }
-          if (existingId.isNotEmpty && !_selectedCourseIds.contains(existingId)) {
-            updates[k.toString()] = null;
-          }
-        }
-      });
-    }
-
-    for (final courseId in _selectedCourseIds) {
-      final key = idToKey[courseId] ?? 'course_${nextIndex++}';
-
-      final c = _allCourses[courseId];
-      final code = (c?['course_code'] ?? '').toString().trim();
-      final title = (c?['title'] ?? c?['name'] ?? '').toString().trim();
-      final category = (c?['category'] ?? '').toString().trim();
-
-      updates['$key/id'] = courseId;
-      updates['$key/course_code'] = code;
-      updates['$key/title'] = title;
-      updates['$key/category'] = category;
-      updates['$key/assignedAt'] = ServerValue.timestamp;
-    }
-
-    await coursesRef.update(updates);
-  }
-
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -1600,8 +1366,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
           'updatedAt': nowTs,
         });
       }
-
-      await _saveUserCourses(uid);
 
       if (!mounted) return;
       Navigator.of(context).pop(learner);
@@ -1794,29 +1558,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              _SectionCard(
-                title: 'Assign Courses',
-                child: _loadingCourses
-                    ? const Row(
-                  children: [
-                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 10),
-                    Text('Loading courses...'),
-                  ],
-                )
-                    : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FilledButton.tonalIcon(
-                      onPressed: _allCourses.isEmpty ? null : _openCoursesPicker,
-                      icon: const Icon(Icons.school_rounded),
-                      label: Text(
-                        _selectedCourseIds.isEmpty ? 'Select courses' : 'Selected: ${_selectedCourseIds.length}',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -2085,6 +1826,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   String? _selectedCourseKey; // like "course_1"
   Map<String, dynamic> _userCourses = {}; // courseKey -> node data
 
+  // for Assign Courses dialog
+  Map<String, Map<String, dynamic>> _allCourses = {};
+  bool _loadingAllCourses = false;
+
+  DatabaseReference get _userCoursesRef => widget.db.ref('users/${widget.uid}/courses');
+  DatabaseReference get _coursesRef => widget.db.ref('courses');
+  DatabaseReference get _paymentsRef => widget.db.ref('payments');
+
   @override
   void initState() {
     super.initState();
@@ -2097,14 +1846,207 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     super.dispose();
   }
 
-  DatabaseReference get _userCoursesRef => widget.db.ref('users/${widget.uid}/courses');
-  DatabaseReference get _coursesRef => widget.db.ref('courses');
-  DatabaseReference get _paymentsRef => widget.db.ref('payments');
+  int _maxCourseIndexFromExisting(dynamic v) {
+    if (v is! Map) return 0;
+    int maxI = 0;
+    v.forEach((k, _) {
+      final key = k.toString();
+      final m = RegExp(r'^course_(\d+)$').firstMatch(key);
+      if (m != null) {
+        final n = int.tryParse(m.group(1) ?? '');
+        if (n != null && n > maxI) maxI = n;
+      }
+    });
+    return maxI;
+  }
+
+  Future<void> _ensureAllCoursesLoaded() async {
+    if (_allCourses.isNotEmpty) return;
+
+    setState(() => _loadingAllCourses = true);
+    try {
+      final snap = await _coursesRef.get();
+      final v = snap.value;
+
+      final out = <String, Map<String, dynamic>>{};
+      if (v is Map) {
+        v.forEach((k, val) {
+          if (k == null || val == null) return;
+          if (val is Map) {
+            out[k.toString()] = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+          }
+        });
+      }
+
+      if (!mounted) return;
+      setState(() => _allCourses = out);
+    } finally {
+      if (mounted) setState(() => _loadingAllCourses = false);
+    }
+  }
+
+  Set<String> _currentlyAssignedCourseIds() {
+    final ids = <String>{};
+    _userCourses.forEach((_, nodeRaw) {
+      final node = nodeRaw is Map ? nodeRaw : <dynamic, dynamic>{};
+      final id = (node['id'] ?? '').toString().trim();
+      if (id.isNotEmpty) ids.add(id);
+    });
+    return ids;
+  }
+
+  Future<void> _saveAssignedCourses(Set<String> selectedIds) async {
+    final coursesRef = _userCoursesRef;
+
+    // Build mapping existingId -> existingCourseKey (course_1, course_2, ...)
+    final existingSnap = await coursesRef.get();
+    final existingVal = existingSnap.value;
+
+    final Map<String, String> idToKey = {};
+    if (existingVal is Map) {
+      existingVal.forEach((k, v) {
+        if (k == null || v == null) return;
+        if (v is Map) {
+          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          final existingId = (mm['id'] ?? '').toString().trim();
+          if (existingId.isNotEmpty) idToKey[existingId] = k.toString();
+        }
+      });
+    }
+
+    int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
+    final Map<String, dynamic> updates = {};
+
+    // Remove courses that are no longer selected
+    if (existingVal is Map) {
+      existingVal.forEach((k, v) {
+        if (k == null) return;
+        final key = k.toString();
+        if (!key.startsWith('course_')) return;
+
+        String existingId = '';
+        if (v is Map) {
+          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          existingId = (mm['id'] ?? '').toString().trim();
+        }
+        if (existingId.isNotEmpty && !selectedIds.contains(existingId)) {
+          updates[key] = null;
+        }
+      });
+    }
+
+    // Add / keep selected
+    for (final courseId in selectedIds) {
+      final key = idToKey[courseId] ?? 'course_${nextIndex++}';
+
+      final c = _allCourses[courseId];
+      final code = (c?['course_code'] ?? '').toString().trim();
+      final title = (c?['title'] ?? c?['name'] ?? '').toString().trim();
+      final category = (c?['category'] ?? '').toString().trim();
+
+      updates['$key/id'] = courseId;
+      updates['$key/course_code'] = code;
+      updates['$key/title'] = title;
+      updates['$key/category'] = category;
+      updates['$key/assignedAt'] = ServerValue.timestamp;
+    }
+
+    await coursesRef.update(updates);
+  }
+
+  Future<void> _openAssignCoursesDialog() async {
+    await _ensureAllCoursesLoaded();
+
+    // ✅ pre-tick already assigned (by id)
+    final temp = Set<String>.from(_currentlyAssignedCourseIds());
+
+    // compute duplicate titles across ALL courses (so show code only when needed)
+    String titleOf(String id) {
+      final c = _allCourses[id] ?? {};
+      return (c['title'] ?? c['name'] ?? '').toString().trim();
+    }
+
+    final titleCount = <String, int>{};
+    for (final id in _allCourses.keys) {
+      final t = titleOf(id);
+      if (t.isEmpty) continue;
+      titleCount[t] = (titleCount[t] ?? 0) + 1;
+    }
+
+    String displayFor(String id) {
+      final c = _allCourses[id] ?? {};
+      final title = (c['title'] ?? c['name'] ?? '').toString().trim();
+      final code = (c['course_code'] ?? '').toString().trim();
+
+      if (title.isEmpty) return code.isNotEmpty ? code : id;
+
+      final duplicate = (titleCount[title] ?? 0) > 1;
+      if (duplicate && code.isNotEmpty) return '$title ($code)';
+      return title;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Assign courses'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: _loadingAllCourses
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                : ListView(
+              shrinkWrap: true,
+              children: _allCourses.keys.map((id) {
+                return CheckboxListTile(
+                  value: temp.contains(id),
+                  title: Text(displayFor(id)),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  onChanged: (v) {
+                    setDialogState(() {
+                      if (v == true) {
+                        temp.add(id); // ✅ Set prevents duplicates
+                      } else {
+                        temp.remove(id);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await _saveAssignedCourses(temp);
+                if (mounted) setState(() {}); // refresh picker + panels
+                if (mounted) Navigator.pop(dialogContext);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // ✅ Assign courses button moved here (not in editor)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonalIcon(
+            onPressed: _openAssignCoursesDialog,
+            icon: const Icon(Icons.school_rounded),
+            label: const Text('Assign courses'),
+          ),
+        ),
+        const SizedBox(height: 10),
         TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,
@@ -2159,15 +2101,25 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       return const _MiniState(text: 'No courses assigned to this learner.');
     }
 
+    // ✅ show title only; show code only if duplicate titles
+    final titleCount = <String, int>{};
+    for (final k in keys) {
+      final m = (_userCourses[k] ?? {}) as Map;
+      final t = (m['title'] ?? '').toString().trim();
+      if (t.isEmpty) continue;
+      titleCount[t] = (titleCount[t] ?? 0) + 1;
+    }
+
     String labelFor(String courseKey) {
       final m = (_userCourses[courseKey] ?? {}) as Map;
       final code = (m['course_code'] ?? '').toString().trim();
       final title = (m['title'] ?? '').toString().trim();
-      final s = [
-        if (code.isNotEmpty) code,
-        if (title.isNotEmpty) title,
-      ].join(' — ');
-      return s.isNotEmpty ? s : courseKey;
+
+      if (title.isEmpty) return code.isNotEmpty ? code : courseKey;
+
+      final duplicate = (titleCount[title] ?? 0) > 1;
+      if (duplicate && code.isNotEmpty) return '$title ($code)';
+      return title;
     }
 
     return DropdownButtonFormField<String>(
@@ -2210,13 +2162,12 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   Widget _paymentPanel(BuildContext context) {
     final courseKey = _selectedCourseKey!;
     final courseNode = (_userCourses[courseKey] ?? {}) as Map;
-    final courseId = (courseNode['id'] ?? '').toString();
+    final courseId = (courseNode['id'] ?? '').toString().trim();
 
-    if (courseId.trim().isEmpty) {
+    if (courseId.isEmpty) {
       return const _MiniState(text: 'This course has no "id" saved on learner node.');
     }
 
-    // Build attendance date list (yyyy-mm-dd strings) to compute "sessions left for that fee"
     final attendance = courseNode['attendance'];
     final attendanceDates = <String>[];
     if (attendance is Map) {
@@ -2232,11 +2183,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     int usedSince(String startDate) {
       if (startDate.trim().isEmpty) return 0;
-      // yyyy-mm-dd compares lexicographically correctly
       return attendanceDates.where((d) => d.compareTo(startDate) >= 0).length;
     }
 
     return FutureBuilder<DataSnapshot>(
+      key: ValueKey('payment-course-$courseId'), // ✅ force reload when course changes
       future: _coursesRef.child(courseId).get(),
       builder: (context, snap) {
         if (!snap.hasData) {
@@ -2247,7 +2198,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         }
 
         final courseMapRaw = snap.data!.value;
-        final courseMap = courseMapRaw is Map ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+        final courseMap =
+        courseMapRaw is Map ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
         final totalSessions = _parseTotalSessions(courseMap['duration']?.toString() ?? '');
         final pricePerLevel = _asInt(courseMap['price_per_level']);
@@ -2256,12 +2208,12 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         final sessionsDone = attendance is Map ? attendance.length : 0;
 
         return FutureBuilder<DataSnapshot>(
+          key: ValueKey('payment-sum-$courseKey'), // ✅ force reload when course changes
           future: widget.db.ref('users/${widget.uid}/courses/$courseKey/payment_summary').get(),
           builder: (context, sumSnap) {
             final sumRaw = sumSnap.data?.value;
             final sum = sumRaw is Map ? sumRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
-            // keep logic (DO NOT REMOVE) – only UI changes
             final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
             final remindBeforeSession = _asInt(sum['remindBeforeSession']);
 
@@ -2284,15 +2236,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                     ],
                   ),
                   const SizedBox(height: 10),
-
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
                       onPressed: () async {
                         final ck = _selectedCourseKey!;
                         final node = (_userCourses[ck] ?? {}) as Map;
-                        final cid = (node['id'] ?? '').toString();
-                        if (cid.trim().isEmpty) return;
+                        final cid = (node['id'] ?? '').toString().trim();
+                        if (cid.isEmpty) return;
 
                         await PaymentDialogShared.showAddFromLearnerTab(
                           context: context,
@@ -2306,9 +2257,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                       label: const Text('Add payment'),
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -2339,10 +2288,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
-                  // ✅ CHANGE #3 (payments table layout)
                   const Text('History', style: TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   SizedBox(
@@ -2404,7 +2350,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                                     if (method.trim().isNotEmpty || notes.trim().isNotEmpty) ...[
                                       const SizedBox(height: 6),
                                       Text(
-                                        [if (method.trim().isNotEmpty) method, if (notes.trim().isNotEmpty) notes].join(' • '),
+                                        [
+                                          if (method.trim().isNotEmpty) method,
+                                          if (notes.trim().isNotEmpty) notes
+                                        ].join(' • '),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -2442,7 +2391,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     final courseNode = (_userCourses[courseKey] ?? {}) as Map;
     final attendance = courseNode['attendance'];
-    final courseId = (courseNode['id'] ?? '').toString();
+    final courseId = (courseNode['id'] ?? '').toString().trim();
+
+    if (courseId.isEmpty) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _coursePicker(keys),
+          const SizedBox(height: 8),
+          const _MiniState(text: 'This course is missing an id.'),
+        ],
+      );
+    }
 
     final items = <Map<String, dynamic>>[];
     if (attendance is Map) {
@@ -2457,8 +2417,19 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     items.sort((a, b) => (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()));
 
     return FutureBuilder<DataSnapshot>(
-      future: courseId.trim().isEmpty ? null : _coursesRef.child(courseId).get(),
+      key: ValueKey('attendance-course-$courseId'), // ✅ reload when course changes
+      future: _coursesRef.child(courseId).get(),
       builder: (context, cs) {
+        if (!cs.hasData) {
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: const [
+              SizedBox(height: 8),
+              Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          );
+        }
+
         final cRaw = cs.data?.value;
         final cMap = cRaw is Map ? cRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
         final totalSessions = _parseTotalSessions(cMap['duration']?.toString() ?? '');
@@ -2507,7 +2478,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: tint, // ✅ CHANGE #3b: add colour tint for present/absent
+                      color: tint,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: AdminLearnersScreen.uiBorders),
                     ),
