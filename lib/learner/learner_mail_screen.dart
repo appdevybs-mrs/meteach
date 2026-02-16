@@ -105,65 +105,57 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       if (picked == null) return;
 
       final now = DateTime.now().millisecondsSinceEpoch;
-      final threadId = _db.ref('mail_threads').push().key;
-      if (threadId == null) {
-        _snack('Failed to create thread id.');
-        return;
-      }
 
+      // Use .ref() instead of just push() to ensure the reference is ready
+      final threadId = _db.ref('mail_threads').push().key;
       final msgId = _db.ref('mail_threads/$threadId/messages').push().key;
-      if (msgId == null) {
-        _snack('Failed to create message id.');
-        return;
-      }
+
+      if (threadId == null || msgId == null) return;
 
       final subject = picked.subject.trim();
       final text = picked.firstMessage.trim();
 
-      // 1) thread meta
-      await _db.ref('mail_threads/$threadId').set({
-        'subject': subject,
-        'createdAt': now,
-        'updatedAt': now,
-        'lastMessage': text,
-      });
+      // Explicitly define as Map<String, Object?> to satisfy the Pigeon interface
+      final Map<String, Object?> updates = {
+        'mail_threads/$threadId': {
+          'subject': subject,
+          'createdAt': now,
+          'updatedAt': now,
+          'lastMessage': text,
+        },
+        'mail_threads/$threadId/messages/$msgId': {
+          'id': msgId,
+          'text': text,
+          'senderUid': _meUid,
+          'senderName': picked.senderName,
+          'createdAt': now,
+        },
+        'mail_index/$_meUid/$threadId': {
+          'subject': subject,
+          'updatedAt': now,
+          'lastMessage': text,
+          'unreadCount': 0,
+          'peerUid': picked.receiverUid,
+          'peerName': picked.receiverName,
+          // Removed null to avoid Pigeon channel issues
+        },
+        'mail_index/${picked.receiverUid}/$threadId': {
+          'subject': subject,
+          'updatedAt': now,
+          'lastMessage': text,
+          'unreadCount': 1,
+          'peerUid': _meUid,
+          'peerName': picked.senderName,
+        },
+      };
 
-      // 2) first message
-      await _db.ref('mail_threads/$threadId/messages/$msgId').set({
-        'id': msgId,
-        'text': text,
-        'senderUid': _meUid,
-        'senderName': picked.senderName,
-        'createdAt': now,
-      });
-
-      // 3) index (sender) unread 0
-      await _db.ref('mail_index/$_meUid/$threadId').set({
-        'subject': subject,
-        'updatedAt': now,
-        'lastMessage': text,
-        'unreadCount': 0,
-        'peerUid': picked.receiverUid,
-        'peerName': picked.receiverName,
-        'deletedAt': null,
-      });
-
-      // 4) index (receiver) unread 1
-      await _db.ref('mail_index/${picked.receiverUid}/$threadId').set({
-        'subject': subject,
-        'updatedAt': now,
-        'lastMessage': text,
-        'unreadCount': 1,
-        'peerUid': _meUid,
-        'peerName': picked.senderName,
-        'deletedAt': null,
-      });
+      // Use the root reference for the multi-path update
+      await _db.ref().update(updates);
 
       if (!mounted) return;
 
-      await Navigator.of(context).push(
+      Navigator.of(context).push(
         MaterialPageRoute(
-          settings: RouteSettings(name: '/mail/thread/$threadId'),
           builder: (_) => LearnerMailThreadScreen(
             threadId: threadId,
             peerUid: picked.receiverUid,
@@ -173,7 +165,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         ),
       );
     } catch (e) {
-      _snack('Compose failed: $e');
+      _snack('Error: $e');
     }
   }
 

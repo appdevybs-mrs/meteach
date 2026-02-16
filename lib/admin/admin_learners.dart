@@ -859,7 +859,7 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
                               peerName: l.fullName.isEmpty ? 'Learner' : l.fullName,
                               isCaller: true,
                               callerName: 'Admin', // you can improve later like staff version
-                              startWithVideo: true,
+                              startWithVideo: false,
                               ),
                               ),
                               );

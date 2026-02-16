@@ -13,7 +13,7 @@ class AudioCallScreen extends StatefulWidget {
     required this.isCaller,
     this.incomingCallId,
     this.callerName,
-    this.startWithVideo = false, // ✅ THIS fixes your error
+    this.startWithVideo = false,
   });
 
   final String peerUid;
@@ -23,7 +23,6 @@ class AudioCallScreen extends StatefulWidget {
   final String? incomingCallId;
   final String? callerName;
 
-  /// ✅ if true => start as video call
   final bool startWithVideo;
 
   @override
@@ -33,63 +32,115 @@ class AudioCallScreen extends StatefulWidget {
 class _AudioCallScreenState extends State<AudioCallScreen> {
   bool _muted = false;
   bool _speakerOn = false;
-
   bool _cameraOn = false;
-  bool _captionsOn = false;
 
   bool _started = false;
   bool _callReady = false;
+  bool _incomingWaiting = false;
+
   String _status = 'Starting…';
 
   Timer? _timer;
   int _seconds = 0;
 
-  RTCVideoRenderer? _localRenderer;
-  RTCVideoRenderer? _remoteRenderer;
+  late final RTCVideoRenderer _localRenderer;
+  late final RTCVideoRenderer _remoteRenderer;
+  bool _renderersInit = false;
+
+  final _msgCtrl = TextEditingController();
+  final _chatScroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
+
+    _localRenderer = RTCVideoRenderer();
+    _remoteRenderer = RTCVideoRenderer();
+
     AudioCallService.I.callState.addListener(_onCallState);
-    AudioCallService.I.remoteCaption.addListener(_onCaptionChanged);
+    AudioCallService.I.localStreamVN.addListener(_bindStreams);
+    AudioCallService.I.remoteStreamVN.addListener(_bindStreams);
+    AudioCallService.I.chatMessages.addListener(_onChatChanged);
+    AudioCallService.I.videoOnRequestFromUid.addListener(_onVideoRequest);
+
     _startOnce();
   }
 
-  void _onCaptionChanged() {
+  Future<void> _ensureRenderersInit() async {
+    if (_renderersInit) return;
+    _renderersInit = true;
+    await _localRenderer.initialize();
+    await _remoteRenderer.initialize();
+  }
+
+  Future<void> _bindStreams() async {
+    if (!mounted) return;
+    await _ensureRenderersInit();
+
+    final local = AudioCallService.I.localStreamVN.value;
+    final remote = AudioCallService.I.remoteStreamVN.value;
+
+    if (_localRenderer.srcObject != local) {
+      _localRenderer.srcObject = local;
+    }
+    if (_remoteRenderer.srcObject != remote) {
+      _remoteRenderer.srcObject = remote;
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  void _onChatChanged() {
     if (!mounted) return;
     setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScroll.hasClients) {
+        _chatScroll.animateTo(
+          _chatScroll.position.maxScrollExtent + 120,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _onCallState() {
     if (!mounted) return;
-
     final s = AudioCallService.I.callState.value;
 
     if (s == 'ringing') {
-      if (_status != 'Ringing…') setState(() => _status = 'Ringing…');
+      setState(() => _status = 'Ringing…');
       return;
     }
 
     if (s == 'accepted') {
-      if (_status != 'Connected ✅') {
-        setState(() {
-          _status = 'Connected ✅';
-          _callReady = true;
-        });
-      }
-      _ensureRenderersBound();
+      setState(() {
+        _status = 'Connected ✅';
+        _callReady = true;
+        _incomingWaiting = false;
+        _cameraOn = AudioCallService.I.withVideo;
+      });
+      _bindStreams();
       if (_timer == null) _startTimer();
+      return;
+    }
+
+    if (s == 'declined') {
+      setState(() => _status = 'Declined');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.maybePop(context);
+      });
       return;
     }
 
     if (s == 'ended') {
       _timer?.cancel();
       _timer = null;
-      if (_status != 'Ended') setState(() => _status = 'Ended');
-
+      setState(() => _status = 'Ended');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.maybePop(context);
       });
+      return;
     }
   }
 
@@ -97,12 +148,15 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
   void dispose() {
     _timer?.cancel();
     AudioCallService.I.callState.removeListener(_onCallState);
-    AudioCallService.I.remoteCaption.removeListener(_onCaptionChanged);
+    AudioCallService.I.localStreamVN.removeListener(_bindStreams);
+    AudioCallService.I.remoteStreamVN.removeListener(_bindStreams);
+    AudioCallService.I.chatMessages.removeListener(_onChatChanged);
+    AudioCallService.I.videoOnRequestFromUid.removeListener(_onVideoRequest);
 
-    _localRenderer?.dispose();
-    _remoteRenderer?.dispose();
-
-    AudioCallService.I.hangUp(localOnly: false);
+    _localRenderer.dispose();
+    _remoteRenderer.dispose();
+    _msgCtrl.dispose();
+    _chatScroll.dispose();
     super.dispose();
   }
 
@@ -123,24 +177,14 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       return;
     }
 
-    final wantVideo = widget.startWithVideo;
-
-    if (wantVideo) {
-      final cam = await Permission.camera.request();
-      if (!cam.isGranted) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission denied. (Starting audio only)')),
-        );
-      }
-    }
-
     try {
       if (widget.isCaller) {
-        final name = (widget.callerName ?? '').trim();
-        final callerName = name.isEmpty ? 'Caller' : name;
+        final callerName = (widget.callerName ?? '').trim().isEmpty
+            ? 'Caller'
+            : widget.callerName!.trim();
 
-        setState(() => _status = wantVideo ? 'Starting video…' : 'Calling…');
+        final wantVideo = widget.startWithVideo;
+        setState(() => _status = wantVideo ? 'Calling (video)…' : 'Calling…');
 
         await AudioCallService.I.startCall(
           calleeUid: widget.peerUid,
@@ -154,27 +198,13 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
           _callReady = true;
           _cameraOn = wantVideo;
         });
-
-        _ensureRenderersBound();
+        await _bindStreams();
       } else {
-        final callId = widget.incomingCallId?.trim();
-        if (callId == null || callId.isEmpty) {
-          throw Exception('Missing incoming callId.');
-        }
-
-        setState(() => _status = 'Connecting…');
-
-        await AudioCallService.I.joinCall(callId: callId);
-
-        if (!mounted) return;
         setState(() {
-          _status = 'Connected ✅';
-          _callReady = true;
-          _cameraOn = AudioCallService.I.withVideo;
+          _incomingWaiting = true;
+          _callReady = false;
+          _status = 'Incoming call…';
         });
-
-        _ensureRenderersBound();
-        _startTimer();
       }
     } catch (e) {
       if (!mounted) return;
@@ -185,24 +215,40 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     }
   }
 
-  Future<void> _ensureRenderersBound() async {
-    final withVideo = AudioCallService.I.withVideo;
-    if (!withVideo) return;
+  Future<void> _acceptIncoming() async {
+    final callId = widget.incomingCallId?.trim();
+    if (callId == null || callId.isEmpty) return;
 
-    _localRenderer ??= RTCVideoRenderer();
-    _remoteRenderer ??= RTCVideoRenderer();
+    setState(() {
+      _incomingWaiting = false;
+      _status = 'Connecting…';
+    });
 
-    await _localRenderer!.initialize();
-    await _remoteRenderer!.initialize();
+    try {
+      await AudioCallService.I.joinCall(callId: callId);
+      if (!mounted) return;
+      setState(() {
+        _status = 'Connected ✅';
+        _callReady = true;
+        _cameraOn = AudioCallService.I.withVideo;
+      });
+      await _bindStreams();
+      _startTimer();
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.maybePop(context);
+    }
+  }
 
-
-    final local = AudioCallService.I.localStream;
-    final remote = AudioCallService.I.remoteStream;
-
-    if (local != null) _localRenderer!.srcObject = local;
-    if (remote != null) _remoteRenderer!.srcObject = remote;
-
-    if (mounted) setState(() {});
+  Future<void> _declineIncoming() async {
+    final callId = widget.incomingCallId?.trim();
+    if (callId != null && callId.isNotEmpty) {
+      await AudioCallService.I.declineCall(callId);
+    } else {
+      await AudioCallService.I.hangUp(localOnly: true);
+    }
+    if (!mounted) return;
+    Navigator.maybePop(context);
   }
 
   void _startTimer() {
@@ -223,8 +269,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
   Future<void> _hangup() async {
     setState(() => _status = 'Ending…');
     await AudioCallService.I.hangUp(localOnly: false);
-    if (!mounted) return;
-    Navigator.maybePop(context);
   }
 
   void _toggleMute() {
@@ -239,189 +283,394 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     await AudioCallService.I.setSpeakerOn(_speakerOn);
   }
 
-  void _toggleCamera() {
+  Future<void> _toggleCamera() async {
     if (!_callReady) return;
-    if (!AudioCallService.I.withVideo) return;
-    setState(() => _cameraOn = !_cameraOn);
-    AudioCallService.I.setCameraEnabled(_cameraOn);
+    if (!_cameraOn) {
+      final cam = await Permission.camera.request();
+      if (!cam.isGranted) return;
+      try {
+        await AudioCallService.I.enableVideo();
+        await _bindStreams();
+        if (!mounted) return;
+        setState(() => _cameraOn = true);
+      } catch (_) {}
+      return;
+    }
+    await AudioCallService.I.disableVideo();
+    if (!mounted) return;
+    setState(() => _cameraOn = false);
   }
 
   Future<void> _switchCamera() async {
-    if (!_callReady) return;
-    if (!AudioCallService.I.withVideo) return;
+    if (!_callReady || !_cameraOn) return;
     await AudioCallService.I.switchCamera();
   }
 
-  Future<void> _toggleCaptions() async {
+  Future<void> _sendMessage() async {
     if (!_callReady) return;
-    setState(() => _captionsOn = !_captionsOn);
+    final t = _msgCtrl.text.trim();
+    if (t.isEmpty) return;
+    _msgCtrl.clear();
+    await AudioCallService.I.sendChatMessage(t);
   }
 
-  Future<void> _sendCaption() async {
-    if (!_callReady) return;
-
-    final c = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Send caption'),
-        content: TextField(
-          controller: c,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Type text…',
+  Widget _chatBubble(AudioChatMessage m) {
+    final isMe = m.fromMe;
+    final bg = isMe ? const Color(0xFF1E88E5) : const Color(0xFF2E7D32);
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: const BoxConstraints(maxWidth: 240),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14).copyWith(
+            bottomRight: isMe ? const Radius.circular(0) : null,
+            bottomLeft: !isMe ? const Radius.circular(0) : null,
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Send'),
-          ),
-        ],
+        child: Text(
+          m.text,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
       ),
-    ) ??
-        false;
+    );
+  }
 
-    if (!ok) return;
-    await AudioCallService.I.sendCaption(c.text);
-    if (mounted) setState(() {});
+  bool _videoDialogOpen = false;
+
+  Future<void> _onVideoRequest() async {
+    if (!mounted) return;
+
+    final from = AudioCallService.I.videoOnRequestFromUid.value;
+    if (from == null) return;
+
+    // Avoid showing multiple dialogs
+    if (_videoDialogOpen) return;
+
+    // Only show if actually connected
+    if (AudioCallService.I.callState.value != 'accepted') {
+      AudioCallService.I.clearVideoOnRequest();
+      return;
+    }
+
+    // If already on camera, no need
+    if (_cameraOn) {
+      AudioCallService.I.clearVideoOnRequest();
+      return;
+    }
+
+    _videoDialogOpen = true;
+
+    final peerName = widget.peerName.trim().isEmpty ? 'The other person' : widget.peerName.trim();
+
+    final res = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text('Video request'),
+          content: Text('$peerName turned on video.\nDo you want to turn on your camera too?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Turn on'),
+            ),
+          ],
+        );
+      },
+    );
+
+    _videoDialogOpen = false;
+    AudioCallService.I.clearVideoOnRequest();
+
+    if (res == true) {
+      final cam = await Permission.camera.request();
+      if (!cam.isGranted) return;
+
+      try {
+        await AudioCallService.I.enableVideo();
+        await _bindStreams();
+        if (!mounted) return;
+        setState(() => _cameraOn = true);
+      } catch (_) {}
+    }
+  }
+
+  // ✅ New Compact Circular Buttons for the Side Dock
+  Widget _sideActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback? onTap,
+    bool isActive = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: isActive ? color : Colors.white.withOpacity(0.9),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
+            ],
+          ),
+          child: Icon(icon, color: isActive ? Colors.white : color, size: 26),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final peer = widget.peerName.trim().isEmpty ? 'User' : widget.peerName.trim();
-    final isConnected = _status.toLowerCase().contains('connected');
+    final isConnected = AudioCallService.I.callState.value == 'accepted';
+    final msgs = AudioCallService.I.chatMessages.value;
 
-    final withVideo = AudioCallService.I.withVideo;
-    final remoteCap = AudioCallService.I.remoteCaption.value.trim();
+    // We get the viewPadding to ensure we are truly clear of the system navigation bar
+    final viewPadding = MediaQuery.of(context).viewPadding;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    final showRemoteVideo = _remoteRenderer.srcObject != null;
 
     return Scaffold(
-      appBar: AppBar(title: Text(peer), centerTitle: true),
-      body: Column(
+      backgroundColor: const Color(0xFFF4F6F8),
+      resizeToAvoidBottomInset: false, // We handle the keyboard manually with bottomInset
+      appBar: AppBar(
+        title: Text(peer, style: const TextStyle(fontWeight: FontWeight.w900)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        foregroundColor: const Color(0xFF1A2B48),
+      ),
+      body: Stack(
         children: [
-          Expanded(
-            child: Stack(
+          // Background / Remote Video
+          Positioned.fill(
+            child: showRemoteVideo
+                ? RTCVideoView(_remoteRenderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover)
+                : Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 60,
+                    backgroundColor: const Color(0xFF1A2B48),
+                    child: Text(peer.isNotEmpty ? peer[0].toUpperCase() : '?',
+                        style: const TextStyle(fontSize: 40, color: Colors.white)),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(_status, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  if (isConnected) Text(_formatTime(_seconds), style: const TextStyle(fontSize: 18, color: Colors.blueGrey)),
+                ],
+              ),
+            ),
+          ),
+
+          // TOP LEFT DOCK: Video, Flip, Speaker, Mic
+          Positioned(
+            left: 16,
+            top: 16,
+            child: Column(
               children: [
-                Positioned.fill(
-                  child: withVideo && _remoteRenderer?.srcObject != null
-                      ? RTCVideoView(
-                    _remoteRenderer!,
-                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                _sideActionButton(
+                  icon: _cameraOn ? Icons.videocam_off : Icons.videocam,
+                  color: const Color(0xFF2E7D32),
+                  isActive: _cameraOn,
+                  onTap: _callReady ? _toggleCamera : null,
+                ),
+                if (_cameraOn)
+                  _sideActionButton(
+                    icon: Icons.cameraswitch,
+                    color: const Color(0xFFFF8F00),
+                    onTap: _callReady ? _switchCamera : null,
+                  ),
+                _sideActionButton(
+                  icon: _speakerOn ? Icons.volume_up : Icons.hearing,
+                  color: const Color(0xFF6A1B9A),
+                  isActive: _speakerOn,
+                  onTap: _callReady ? _toggleSpeaker : null,
+                ),
+                _sideActionButton(
+                  icon: _muted ? Icons.mic_off : Icons.mic,
+                  color: const Color(0xFF1565C0),
+                  isActive: !_muted,
+                  onTap: _callReady ? _toggleMute : null,
+                ),
+              ],
+            ),
+          ),
+
+          // Local Mini Preview
+          if (_cameraOn && _localRenderer.srcObject != null)
+            Positioned(
+              right: 16,
+              top: 16,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: 100,
+                  height: 140,
+                  color: Colors.black,
+                  child: RTCVideoView(_localRenderer, mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+                ),
+              ),
+            ),
+
+          // Chat Overlay (Lifted slightly higher to clear the new bottom bar)
+          if (!_incomingWaiting && msgs.isNotEmpty)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: bottomInset + 160,
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: ListView.builder(
+                  controller: _chatScroll,
+                  itemCount: msgs.length,
+                  itemBuilder: (_, i) => _chatBubble(msgs[i]),
+                ),
+              ),
+            ),
+
+          // Incoming Call Popup
+          if (_incomingWaiting) _buildIncomingPopup(peer),
+
+          // ✅ REDESIGNED BOTTOM BAR: Added extra padding and safe handling
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(
+                  16,
+                  12,
+                  16,
+                  // This logic ensures it stays above the keyboard OR the system gesture bar
+                  (bottomInset > 0) ? bottomInset + 10 : viewPadding.bottom + 20
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 15,
+                    offset: const Offset(0, -2),
                   )
-                      : Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_incomingWaiting) ...[
+                    Row(
                       children: [
-                        CircleAvatar(
-                          radius: 44,
-                          child: Text(peer.isNotEmpty ? peer[0].toUpperCase() : '?'),
+                        Expanded(
+                          child: TextField(
+                            controller: _msgCtrl,
+                            onSubmitted: (_) => _sendMessage(),
+                            decoration: InputDecoration(
+                              hintText: 'Type a message...',
+                              filled: true,
+                              fillColor: Colors.grey.shade100,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Text(_status, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                        if (isConnected) ...[
-                          const SizedBox(height: 6),
-                          Text(_formatTime(_seconds), style: const TextStyle(fontSize: 16)),
-                        ],
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          onPressed: _callReady ? _sendMessage : null,
+                          icon: const Icon(Icons.send),
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A2B48),
+                            minimumSize: const Size(48, 48),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                ),
-                if (withVideo && _localRenderer?.srcObject != null)
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: 120,
-                        height: 160,
-                        child: RTCVideoView(
-                          _localRenderer!,
-                          mirror: true,
-                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    const SizedBox(height: 16),
+                  ],
+                  // ✅ Large Hang Up Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 58,
+                    child: ElevatedButton.icon(
+                      onPressed: _incomingWaiting ? _declineIncoming : _hangup,
+                      icon: const Icon(Icons.call_end, color: Colors.white, size: 28),
+                      label: Text(
+                        _incomingWaiting ? 'DECLINE' : 'HANG UP',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w900
                         ),
                       ),
-                    ),
-                  ),
-                if (_captionsOn && remoteCap.isNotEmpty)
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 12,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        remoteCap,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD32F2F),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _callReady ? _toggleMute : null,
-                  icon: Icon(_muted ? Icons.mic_off : Icons.mic),
-                  label: Text(_muted ? 'Unmute' : 'Mute'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _callReady ? _toggleSpeaker : null,
-                  icon: Icon(_speakerOn ? Icons.volume_up : Icons.hearing),
-                  label: Text(_speakerOn ? 'Speaker' : 'Earpiece'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _callReady ? _toggleCaptions : null,
-                  icon: const Icon(Icons.closed_caption),
-                  label: Text(_captionsOn ? 'Captions On' : 'Captions Off'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: (_callReady && _captionsOn) ? _sendCaption : null,
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Send text'),
-                ),
-                if (withVideo) ...[
-                  ElevatedButton.icon(
-                    onPressed: _callReady ? _toggleCamera : null,
-                    icon: Icon(_cameraOn ? Icons.videocam : Icons.videocam_off),
-                    label: Text(_cameraOn ? 'Cam On' : 'Cam Off'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _callReady ? _switchCamera : null,
-                    icon: const Icon(Icons.cameraswitch),
-                    label: const Text('Flip'),
                   ),
                 ],
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: _hangup,
-                icon: const Icon(Icons.call_end),
-                label: const Text('Hang up'),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildIncomingPopup(String peer) {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black54,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Incoming Call', style: TextStyle(fontSize: 16, color: Colors.grey)),
+                const SizedBox(height: 8),
+                Text(peer, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _acceptIncoming,
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.all(16)),
+                        child: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _declineIncoming,
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.all(16)),
+                        child: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                )
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

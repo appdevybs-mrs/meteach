@@ -269,7 +269,7 @@ class _LearnerHomeState extends State<LearnerHome> {
           peerName: peerName,
           isCaller: true,
           callerName: myName,
-          startWithVideo: true,
+          startWithVideo: false,
 
         ),
       ),

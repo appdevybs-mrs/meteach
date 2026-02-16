@@ -1,12 +1,27 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
-import '../services/push_client.dart'; // keep your path as-is
+import '../services/push_client.dart';
+
+class AudioChatMessage {
+  AudioChatMessage({
+    required this.text,
+    required this.fromUid,
+    required this.ts,
+    required this.myUid,
+  });
+
+  final String text;
+  final String fromUid;
+  final int ts;
+  final String myUid;
+
+  bool get fromMe => fromUid == myUid;
+}
 
 class AudioCallService {
   AudioCallService._();
@@ -15,29 +30,57 @@ class AudioCallService {
   final _db = FirebaseDatabase.instance;
 
   RTCPeerConnection? _pc;
+
   MediaStream? _localStream;
   MediaStream? _remoteStream;
 
+  // Notifiers so UI rebinds when streams arrive later
+  final ValueNotifier<MediaStream?> localStreamVN = ValueNotifier(null);
+  final ValueNotifier<MediaStream?> remoteStreamVN = ValueNotifier(null);
+  // --- video request popup ---
+  final ValueNotifier<String?> videoOnRequestFromUid = ValueNotifier<String?>(null);
+
+  // store the peer uid for this call (so enableVideo can notify them)
+  String? _peerUid;
+
+  // camera
+  MediaStream? _cameraStream;
+  MediaStreamTrack? _videoTrack;
+  RTCRtpSender? _videoSender;
+  RTCRtpTransceiver? _videoTransceiver;
+
   DatabaseReference? _callRef;
+
   StreamSubscription<DatabaseEvent>? _callSub;
   StreamSubscription<DatabaseEvent>? _remoteCandidatesSub;
+
+  // renegotiation
+  StreamSubscription<DatabaseEvent>? _reofferSub;
+  StreamSubscription<DatabaseEvent>? _reanswerSub;
+  bool _handlingReoffer = false;
+
+  // commands
+  StreamSubscription<DatabaseEvent>? _cmdSub;
+
+  // chat
+  StreamSubscription<DatabaseEvent>? _chatSub;
+  final ValueNotifier<List<AudioChatMessage>> chatMessages =
+  ValueNotifier<List<AudioChatMessage>>([]);
 
   String? callId;
   bool get inCall => callId != null;
 
-  bool _remoteSet = false;
-  bool _starting = false;
-
-  // ✅ NEW: video flag for current call
+  /// True if call negotiated with video enabled (initially or later)
   bool withVideo = false;
 
-  // ✅ UI can listen to this (AudioCallScreen)
-  // values: idle | ringing | accepted | ended
+  bool _remoteAnswerApplied = false;
+  bool _starting = false;
+  bool _ending = false;
+
+  // values: idle | ringing | accepted | declined | ended
   final ValueNotifier<String> callState = ValueNotifier<String>('idle');
 
-  // ✅ NEW: captions (manual text captions)
-  final ValueNotifier<String> remoteCaption = ValueNotifier<String>('');
-  final ValueNotifier<String> localCaption = ValueNotifier<String>('');
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   Map<String, dynamic> get _iceConfig => {
     'iceServers': [
@@ -49,20 +92,40 @@ class AudioCallService {
     if (callState.value != s) callState.value = s;
   }
 
-  // Expose streams for video renderers
   MediaStream? get localStream => _localStream;
   MediaStream? get remoteStream => _remoteStream;
 
-  // ---------- cleanup helpers ----------
+  // ---------- cleanup ----------
 
-  Future<void> _cleanupSubs() async {
+  Future<void> _cleanupAllSubs() async {
+    Future<void> cancel(StreamSubscription? s) async {
+      try {
+        await s?.cancel();
+      } catch (_) {}
+    }
+
+    await cancel(_callSub);
+    await cancel(_remoteCandidatesSub);
+    await cancel(_reofferSub);
+    await cancel(_reanswerSub);
+    await cancel(_cmdSub);
+    await cancel(_chatSub);
+
+    _callSub = null;
+    _remoteCandidatesSub = null;
+    _reofferSub = null;
+    _reanswerSub = null;
+    _cmdSub = null;
+    _chatSub = null;
+  }
+
+  Future<void> _cleanupSignalingSubsOnly() async {
     try {
       await _callSub?.cancel();
     } catch (_) {}
     try {
       await _remoteCandidatesSub?.cancel();
     } catch (_) {}
-
     _callSub = null;
     _remoteCandidatesSub = null;
   }
@@ -79,14 +142,34 @@ class AudioCallService {
     } catch (_) {}
 
     try {
+      final tracks = _cameraStream?.getTracks() ?? const <MediaStreamTrack>[];
+      for (final t in tracks) {
+        try {
+          t.enabled = false;
+          await t.stop();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    try {
       await _localStream?.dispose();
     } catch (_) {}
     _localStream = null;
+    localStreamVN.value = null;
 
     try {
       await _remoteStream?.dispose();
     } catch (_) {}
     _remoteStream = null;
+    remoteStreamVN.value = null;
+
+    try {
+      await _cameraStream?.dispose();
+    } catch (_) {}
+    _cameraStream = null;
+
+    _videoTrack = null;
+    _videoSender = null;
   }
 
   Future<void> _closePeer() async {
@@ -94,18 +177,25 @@ class AudioCallService {
       await _pc?.close();
     } catch (_) {}
     _pc = null;
+
+    _videoTrack = null;
+    _videoSender = null;
   }
 
   Future<void> _resetState() async {
-    _remoteSet = false;
     callId = null;
     _callRef = null;
+    _peerUid = null;
+    videoOnRequestFromUid.value = null;
+
+    withVideo = false;
+    _remoteAnswerApplied = false;
+
+    chatMessages.value = [];
+
     _setStateSafe('idle');
 
-    // reset call-scoped values
-    withVideo = false;
-    remoteCaption.value = '';
-    localCaption.value = '';
+    _ending = false;
   }
 
   Future<void> _ensureFreshState() async {
@@ -114,17 +204,24 @@ class AudioCallService {
     }
   }
 
+  // ---------- connection guards ----------
   void _wirePcConnectionGuards() {
     final pc = _pc;
     if (pc == null) return;
+
+    Future<void> endNow() async {
+      if (_ending) return;
+      _ending = true;
+      _setStateSafe('ended');
+      await hangUp(localOnly: false);
+    }
 
     pc.onConnectionState = (RTCPeerConnectionState state) async {
       if (state ==
           RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
-        _setStateSafe('ended');
-        await hangUp(localOnly: true);
+        await endNow();
       }
     };
 
@@ -132,18 +229,17 @@ class AudioCallService {
       if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
           state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
           state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
-        _setStateSafe('ended');
-        await hangUp(localOnly: true);
+        await endNow();
       }
     };
   }
 
+  // ---------- peer creation ----------
   Future<void> _createPeer({
     required bool isCaller,
     required DatabaseReference callRef,
     required bool enableVideo,
   }) async {
-    // capture media
     _localStream = await navigator.mediaDevices.getUserMedia({
       'audio': true,
       'video': enableVideo
@@ -156,12 +252,50 @@ class AudioCallService {
           : false,
     });
 
+    localStreamVN.value = _localStream;
+
+    final vids = _localStream!.getVideoTracks();
+    _videoTrack = vids.isNotEmpty ? vids.first : null;
+    _cameraStream = enableVideo ? _localStream : null;
+
     _pc = await createPeerConnection(_iceConfig);
     _wirePcConnectionGuards();
+
+    // ✅ IMPORTANT FIX:
+    // Always create a recv-only video transceiver so that when either side
+    // enables camera later, the other side can receive it immediately.
+    try {
+      try {
+        _videoTransceiver = await _pc!.addTransceiver(
+          kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+          init: RTCRtpTransceiverInit(
+            // Key change: create a real video m-line that can later SEND or RECEIVE
+            direction: TransceiverDirection.SendRecv,
+          ),
+        );
+
+        // Keep a stable sender so enableVideo() can replaceTrack() reliably
+        _videoSender = _videoTransceiver!.sender;
+
+        // If we started the call with video already enabled, attach it now
+        if (enableVideo && _videoTrack != null) {
+          await _videoSender!.replaceTrack(_videoTrack);
+        } else {
+          // Start audio-only but keep the m-line; no camera track yet
+          await _videoSender!.replaceTrack(null);
+        }
+      } catch (_) {
+        // ignore if platform doesn't support transceivers well
+      }
+
+    } catch (_) {
+      // ignore if not supported on platform
+    }
 
     _pc!.onTrack = (RTCTrackEvent event) async {
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
+        remoteStreamVN.value = _remoteStream;
         return;
       }
 
@@ -169,14 +303,17 @@ class AudioCallService {
       try {
         await _remoteStream!.addTrack(event.track);
       } catch (_) {}
+
+      remoteStreamVN.value = _remoteStream;
     };
 
-    // add all tracks
     for (final t in _localStream!.getTracks()) {
-      await _pc!.addTrack(t, _localStream!);
+      if (t.kind == 'audio') {
+        await _pc!.addTrack(t, _localStream!);
+      }
     }
 
-    // ICE candidates
+
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
       final node = isCaller ? 'callerCandidates' : 'calleeCandidates';
@@ -189,7 +326,6 @@ class AudioCallService {
   }
 
   // ---------- push helpers ----------
-
   Future<String?> _getUserFcmToken(String uid) async {
     final snap = await _db.ref('fcm_tokens/$uid/token').get();
     final token = (snap.value ?? '').toString().trim();
@@ -230,17 +366,14 @@ class AudioCallService {
     while (DateTime.now().isBefore(end)) {
       final snap = await callRef.get();
       final data = snap.value;
-      if (data is Map && data['offer'] is Map) {
-        return data;
-      }
+      if (data is Map && data['offer'] is Map) return data;
       await Future<void>.delayed(pollEvery);
     }
 
     throw Exception('Offer not ready yet (timeout). Try again.');
   }
 
-  // ---------- Call logs (keep your same logic) ----------
-
+  // ---------- call logs helpers ----------
   Future<String> _getDisplayName(String uid) async {
     try {
       final snap = await _db.ref('users/$uid').get();
@@ -329,57 +462,346 @@ class AudioCallService {
     );
   }
 
-  // ---------- captions ----------
+  // ---------- chat ----------
+  void _listenChat() {
+    final ref = _callRef;
+    final me = _meUid;
+    if (ref == null || me.isEmpty) return;
 
-  Future<void> sendCaption(String text) async {
+    _chatSub?.cancel();
+    chatMessages.value = [];
+
+    _chatSub = ref.child('chat').limitToLast(120).onChildAdded.listen((event) {
+      final v = event.snapshot.value;
+      if (v is! Map) return;
+
+      final from = (v['from'] ?? '').toString();
+      final text = (v['text'] ?? '').toString();
+      final tsVal = v['ts'];
+
+      final ts = (tsVal is int)
+          ? tsVal
+          : int.tryParse(tsVal?.toString() ?? '') ??
+          DateTime.now().millisecondsSinceEpoch;
+
+      if (text.trim().isEmpty || from.isEmpty) return;
+
+      final list = List<AudioChatMessage>.from(chatMessages.value);
+      list.add(AudioChatMessage(
+        text: text.trim(),
+        fromUid: from,
+        ts: ts,
+        myUid: me,
+      ));
+      list.sort((a, b) => a.ts.compareTo(b.ts));
+      chatMessages.value = list;
+    });
+  }
+
+  Future<void> sendChatMessage(String text) async {
     final ref = _callRef;
     if (ref == null) return;
-
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me == null) return;
+    final me = _meUid;
+    if (me.isEmpty) return;
 
     final t = text.trim();
     if (t.isEmpty) return;
 
-    localCaption.value = t;
-
-    // store in call node; other side listens and shows it
-    await ref.child('captions').child(me).set({
+    await ref.child('chat').push().set({
+      'from': me,
       'text': t,
       'ts': ServerValue.timestamp,
     });
   }
 
-  void _listenCaptions() {
+  // ---------- renegotiation ----------
+  Future<void> _renegotiate() async {
     final ref = _callRef;
-    if (ref == null) return;
+    final pc = _pc;
+    final me = _meUid;
+    if (ref == null || pc == null || me.isEmpty) return;
+    if (callState.value != 'accepted') return;
 
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me == null) return;
+    // Avoid renegotiation in unstable signaling
+    if (pc.signalingState != RTCSignalingState.RTCSignalingStateStable) return;
 
-    ref.child('captions').onValue.listen((event) {
-      final v = event.snapshot.value;
-      if (v is! Map) return;
+    final offer = await pc.createOffer({
+      'offerToReceiveAudio': 1,
+      'offerToReceiveVideo': 1,
+    });
 
-      // pick caption from "the other user"
-      String? otherText;
+    await pc.setLocalDescription(offer);
 
-      v.forEach((k, vv) {
-        if (k.toString() == me) return;
-        if (vv is Map) {
-          final t = (vv['text'] ?? '').toString();
-          if (t.trim().isNotEmpty) otherText = t.trim();
-        }
-      });
-
-      if (otherText != null) {
-        remoteCaption.value = otherText!;
-      }
+    await ref.child('reoffer').set({
+      'from': me,
+      'type': offer.type,
+      'sdp': offer.sdp,
+      'ts': ServerValue.timestamp,
     });
   }
 
-  // ---------- public API ----------
+  void _listenRenegotiation() {
+    final ref = _callRef;
+    final pc = _pc;
+    final me = _meUid;
+    if (ref == null || pc == null || me.isEmpty) return;
 
+    _reofferSub?.cancel();
+    _reanswerSub?.cancel();
+
+    _reofferSub = ref.child('reoffer').onValue.listen((event) async {
+      final v = event.snapshot.value;
+      if (v is! Map) return;
+
+      final from = (v['from'] ?? '').toString();
+      if (from.isEmpty || from == me) return;
+
+      if (_handlingReoffer) return;
+      _handlingReoffer = true;
+
+      try {
+        final sdp = (v['sdp'] ?? '').toString();
+        final type = (v['type'] ?? 'offer').toString();
+
+        if (pc.signalingState != RTCSignalingState.RTCSignalingStateStable) {
+          return;
+        }
+
+        await pc.setRemoteDescription(RTCSessionDescription(sdp, type));
+
+        final answer = await pc.createAnswer({
+          'offerToReceiveAudio': 1,
+          'offerToReceiveVideo': 1,
+        });
+
+        await pc.setLocalDescription(answer);
+
+        await ref.child('reanswer').set({
+          'from': me,
+          'type': answer.type,
+          'sdp': answer.sdp,
+          'ts': ServerValue.timestamp,
+        });
+      } catch (_) {
+        // ignore
+      } finally {
+        _handlingReoffer = false;
+      }
+    });
+
+    _reanswerSub = ref.child('reanswer').onValue.listen((event) async {
+      final v = event.snapshot.value;
+      if (v is! Map) return;
+
+      final from = (v['from'] ?? '').toString();
+      if (from.isEmpty || from == me) return;
+
+      try {
+        if (pc.signalingState !=
+            RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+          return;
+        }
+
+        final sdp = (v['sdp'] ?? '').toString();
+        final type = (v['type'] ?? 'answer').toString();
+        await pc.setRemoteDescription(RTCSessionDescription(sdp, type));
+      } catch (_) {}
+    });
+  }
+
+  // ---------- commands ----------
+  void _listenCommandsAuto() {
+    final ref = _callRef;
+    final me = _meUid;
+    if (ref == null || me.isEmpty) return;
+
+    _cmdSub?.cancel();
+    _cmdSub = ref.child('commands').onChildAdded.listen((event) async {
+      final v = event.snapshot.value;
+      if (v is! Map) return;
+
+      final target = (v['target'] ?? '').toString();
+      final action = (v['action'] ?? '').toString();
+      debugPrint('CMD RECEIVED: $v');
+
+      if (target != me) return;
+
+      if (action == 'camera_off') {
+        await disableVideo();
+        return;
+      }
+
+      if (action == 'camera_on_request') {
+        // if I'm already on camera, ignore (or you can auto-accept if you want)
+        if (withVideo) return;
+
+        final from = (v['from'] ?? '').toString();
+        videoOnRequestFromUid.value = from.isNotEmpty ? from : 'peer';
+        return;
+      }
+
+    });
+  }
+  Future<void> requestPeerCameraOn(String peerUid) async {
+    final ref = _callRef;
+    if (ref == null) return;
+
+    await ref.child('commands').push().set({
+      'action': 'camera_on_request',
+      'target': peerUid,
+      'from': _meUid,
+      'ts': ServerValue.timestamp,
+    });
+  }
+
+  void clearVideoOnRequest() {
+    videoOnRequestFromUid.value = null;
+  }
+
+  Future<void> requestPeerCameraOff(String peerUid) async {
+    final ref = _callRef;
+    if (ref == null) return;
+
+    await ref.child('commands').push().set({
+      'action': 'camera_off',
+      'target': peerUid,
+      'ts': ServerValue.timestamp,
+    });
+  }
+
+  // ---------- video ----------
+  Future<void> _startVideoTrack() async {
+    if (_localStream == null) return;
+    if (_videoTrack != null) return;
+
+    final camStream = await navigator.mediaDevices.getUserMedia({
+      'audio': false,
+      'video': {
+        'facingMode': 'user',
+        'width': {'ideal': 640},
+        'height': {'ideal': 480},
+        'frameRate': {'ideal': 24},
+      },
+    });
+
+    final tracks = camStream.getVideoTracks();
+    if (tracks.isEmpty) {
+      try {
+        await camStream.dispose();
+      } catch (_) {}
+      return;
+    }
+
+    _cameraStream = camStream;
+    _videoTrack = tracks.first;
+
+    try {
+      await _localStream!.addTrack(_videoTrack!);
+    } catch (_) {}
+  }
+
+  Future<void> _stopVideoTrack() async {
+    final t = _videoTrack;
+    _videoTrack = null;
+
+    if (t != null) {
+      try {
+        await _localStream?.removeTrack(t);
+      } catch (_) {}
+      try {
+        t.enabled = false;
+        await t.stop();
+      } catch (_) {}
+    }
+
+    try {
+      final tracks = _cameraStream?.getTracks() ?? const <MediaStreamTrack>[];
+      for (final tr in tracks) {
+        try {
+          tr.enabled = false;
+          await tr.stop();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    try {
+      await _cameraStream?.dispose();
+    } catch (_) {}
+    _cameraStream = null;
+  }
+
+  Future<void> _ensureVideoSender() async {
+    if (_videoSender != null) return;
+
+    final pc = _pc;
+    if (pc == null) return;
+
+    // Fallback: find existing video sender if transceiver didn't work
+    final senders = await pc.getSenders();
+    for (final s in senders) {
+      if (s.track?.kind == 'video') {
+        _videoSender = s;
+        return;
+      }
+    }
+  }
+
+
+  Future<void> _replaceVideoTrack(MediaStreamTrack? newTrack) async {
+    final pc = _pc;
+    if (pc == null) return;
+
+    await _ensureVideoSender();
+
+    if (_videoSender != null) {
+      try {
+        await _videoSender!.replaceTrack(newTrack);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> enableVideo() async {
+    if (_pc == null || _localStream == null) return;
+
+    await _startVideoTrack();
+    if (_videoTrack == null) {
+      throw Exception('Camera track not available.');
+    }
+
+    await _replaceVideoTrack(_videoTrack);
+    withVideo = true;
+    await _renegotiate();
+    // Ask the peer to turn on camera too
+    final peer = _peerUid;
+    if (peer != null && peer.isNotEmpty) {
+      await requestPeerCameraOn(peer);
+    }
+
+  }
+
+  Future<void> disableVideo() async {
+    if (_pc == null || _localStream == null) return;
+
+    await _replaceVideoTrack(null);
+    await _stopVideoTrack();
+
+    withVideo = false;
+    await _renegotiate();
+  }
+
+  // ---------- decline ----------
+  Future<void> declineCall(String callId) async {
+    final ref = _db.ref('calls/$callId');
+    try {
+      await ref.update({
+        'status': 'declined',
+        'endedAt': ServerValue.timestamp,
+      });
+    } catch (_) {}
+    _setStateSafe('declined');
+  }
+
+  // ---------- public API ----------
   Future<String> startCall({
     required String calleeUid,
     required String callerName,
@@ -391,19 +813,20 @@ class AudioCallService {
     try {
       await _ensureFreshState();
 
-      final me = FirebaseAuth.instance.currentUser?.uid;
-      if (me == null) throw Exception('Not logged in.');
+      final me = _meUid;
+      if (me.isEmpty) throw Exception('Not logged in.');
 
       final id = _db.ref('calls').push().key!;
       callId = id;
       _callRef = _db.ref('calls/$id');
-      _remoteSet = false;
+      _remoteAnswerApplied = false;
 
       this.withVideo = withVideo;
 
       final calleeName = await _getDisplayName(calleeUid);
       final cleanCallerName =
       callerName.trim().isEmpty ? 'Caller' : callerName.trim();
+      _peerUid = calleeUid;
 
       await _callRef!.set({
         'callerUid': me,
@@ -437,11 +860,21 @@ class AudioCallService {
         );
       } catch (_) {}
 
-      await _createPeer(isCaller: true, callRef: _callRef!, enableVideo: withVideo);
+      await _cleanupSignalingSubsOnly();
+
+      await _createPeer(
+        isCaller: true,
+        callRef: _callRef!,
+        enableVideo: withVideo,
+      );
+
+      _listenRenegotiation();
+      _listenCommandsAuto();
+      _listenChat();
 
       final offer = await _pc!.createOffer({
         'offerToReceiveAudio': 1,
-        'offerToReceiveVideo': withVideo ? 1 : 0,
+        'offerToReceiveVideo': 1,
       });
       await _pc!.setLocalDescription(offer);
 
@@ -450,14 +883,17 @@ class AudioCallService {
         'sdp': offer.sdp,
       });
 
-      _listenCaptions();
-
-      await _cleanupSubs();
       _callSub = _callRef!.onValue.listen((event) async {
         final v = event.snapshot.value;
         if (v is! Map) return;
 
         final status = (v['status'] ?? '').toString();
+
+        if (status == 'declined') {
+          _setStateSafe('declined');
+          await hangUp(localOnly: true);
+          return;
+        }
         if (status == 'ended') {
           _setStateSafe('ended');
           await hangUp(localOnly: true);
@@ -465,13 +901,27 @@ class AudioCallService {
         }
 
         final answer = v['answer'];
-        if (answer is Map && !_remoteSet && _pc != null) {
+        final pc = _pc;
+
+        if (status == 'accepted' && callState.value != 'accepted') {
+          _setStateSafe('accepted');
+        }
+
+        if (answer is Map && !_remoteAnswerApplied && pc != null) {
+          if (pc.signalingState !=
+              RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+            return;
+          }
+
+          _remoteAnswerApplied = true;
+
           final sdp = (answer['sdp'] ?? '').toString();
           final type = (answer['type'] ?? 'answer').toString();
-          await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
-          _remoteSet = true;
 
-          _setStateSafe('accepted');
+          try {
+            await pc.setRemoteDescription(RTCSessionDescription(sdp, type));
+            _setStateSafe('accepted');
+          } catch (_) {}
         }
       });
 
@@ -508,18 +958,27 @@ class AudioCallService {
     try {
       await _ensureFreshState();
 
-      final me = FirebaseAuth.instance.currentUser?.uid;
-      if (me == null) throw Exception('Not logged in.');
+      final me = _meUid;
+      if (me.isEmpty) throw Exception('Not logged in.');
 
       this.callId = callId;
       _callRef = _db.ref('calls/$callId');
-
-      _remoteSet = true;
+      _remoteAnswerApplied = true;
 
       final data = await _waitForOffer(callRef: _callRef!);
+
+      final currentStatus = (data['status'] ?? '').toString();
+      if (currentStatus == 'ended' || currentStatus == 'declined') {
+        _setStateSafe(currentStatus);
+        await hangUp(localOnly: true);
+        return;
+      }
+
       final offer = data['offer'] as Map;
 
       final callerUid = (data['callerUid'] ?? '').toString();
+      _peerUid = callerUid;
+
       final callerName = (data['callerName'] ?? 'Caller').toString();
       final calleeUid = (data['calleeUid'] ?? me).toString();
       final calleeName = (data['calleeName'] ?? '').toString().trim().isEmpty
@@ -527,15 +986,20 @@ class AudioCallService {
           : (data['calleeName'] ?? '').toString();
 
       final videoFlag = (data['video'] ?? 0);
-      withVideo = (videoFlag is int)
-          ? videoFlag == 1
-          : videoFlag.toString() == '1';
+      withVideo =
+      (videoFlag is int) ? videoFlag == 1 : videoFlag.toString() == '1';
+
+      await _cleanupSignalingSubsOnly();
 
       await _createPeer(
         isCaller: false,
         callRef: _callRef!,
         enableVideo: withVideo,
       );
+
+      _listenRenegotiation();
+      _listenCommandsAuto();
+      _listenChat();
 
       await _pc!.setRemoteDescription(
         RTCSessionDescription(
@@ -546,7 +1010,7 @@ class AudioCallService {
 
       final answer = await _pc!.createAnswer({
         'offerToReceiveAudio': 1,
-        'offerToReceiveVideo': withVideo ? 1 : 0,
+        'offerToReceiveVideo': 1,
       });
       await _pc!.setLocalDescription(answer);
 
@@ -568,10 +1032,6 @@ class AudioCallService {
         video: withVideo,
         acceptedAt: DateTime.now().millisecondsSinceEpoch,
       );
-
-      _listenCaptions();
-
-      await _cleanupSubs();
 
       _remoteCandidatesSub =
           _callRef!.child('callerCandidates').onChildAdded.listen((event) async {
@@ -595,11 +1055,22 @@ class AudioCallService {
 
       _callSub = _callRef!.onValue.listen((event) async {
         final v = event.snapshot.value;
-        final status = (v is Map) ? (v['status'] ?? '').toString() : '';
+        if (v is! Map) return;
 
+        final status = (v['status'] ?? '').toString();
+
+        if (status == 'declined') {
+          _setStateSafe('declined');
+          await hangUp(localOnly: true);
+          return;
+        }
         if (status == 'ended') {
           _setStateSafe('ended');
           await hangUp(localOnly: true);
+          return;
+        }
+        if (status == 'accepted' && callState.value != 'accepted') {
+          _setStateSafe('accepted');
         }
       });
     } finally {
@@ -608,6 +1079,9 @@ class AudioCallService {
   }
 
   Future<void> hangUp({bool localOnly = false}) async {
+    if (_ending) return;
+    _ending = true;
+
     final ref = _callRef;
     final currentCallId = callId;
 
@@ -619,7 +1093,7 @@ class AudioCallService {
     String? calleeUid;
     String? calleeName;
 
-    if (!localOnly && ref != null) {
+    if (ref != null) {
       try {
         final snap = await ref.get();
         final v = snap.value;
@@ -639,10 +1113,7 @@ class AudioCallService {
       } catch (_) {}
     }
 
-    await _cleanupSubs();
-    await _disposeMedia();
-    await _closePeer();
-
+    // Notify peer before tearing down
     if (!localOnly && ref != null) {
       try {
         await ref.update({
@@ -652,6 +1123,11 @@ class AudioCallService {
       } catch (_) {}
     }
 
+    await _cleanupAllSubs();
+    await _disposeMedia();
+    await _closePeer();
+
+    // Update logs
     if (!localOnly &&
         currentCallId != null &&
         callerUid != null &&
@@ -663,9 +1139,9 @@ class AudioCallService {
         callerUid: callerUid!,
         callerName: callerName ?? 'Caller',
         calleeUid: calleeUid!,
-        calleeName: (calleeName ?? '').trim().isEmpty
-            ? await _getDisplayName(calleeUid!)
-            : calleeName!,
+        calleeName: (calleeName ?? '').trim().isNotEmpty
+            ? calleeName!
+            : await _getDisplayName(calleeUid!),
         status: 'ended',
         video: withVideo,
         endedAt: DateTime.now().millisecondsSinceEpoch,
@@ -676,6 +1152,7 @@ class AudioCallService {
     await _resetState();
   }
 
+  // ---------- audio controls ----------
   void setMuted(bool muted) {
     final tracks = _localStream?.getAudioTracks() ?? const <MediaStreamTrack>[];
     for (final t in tracks) {
@@ -689,15 +1166,6 @@ class AudioCallService {
     } catch (_) {}
   }
 
-  // ✅ NEW: camera enable/disable (video track)
-  void setCameraEnabled(bool enabled) {
-    final tracks = _localStream?.getVideoTracks() ?? const <MediaStreamTrack>[];
-    for (final t in tracks) {
-      t.enabled = enabled;
-    }
-  }
-
-  // ✅ NEW: switch camera
   Future<void> switchCamera() async {
     try {
       final tracks = _localStream?.getVideoTracks() ?? const <MediaStreamTrack>[];

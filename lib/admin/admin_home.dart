@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import 'admin_payments.dart';
 import 'admin_courses.dart';
@@ -8,7 +9,6 @@ import 'admin_staff.dart';
 import 'admin_classes.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
-import 'package:firebase_database/firebase_database.dart';
 
 // ✅ timetable
 import 'admin_timetable_screen.dart';
@@ -19,7 +19,7 @@ import '../calls/call_logs_screen.dart';
 class AdminHome extends StatelessWidget {
   const AdminHome({super.key});
 
-  // ===== Brand colors (same as main.dart) =====
+  // ===== Brand colors =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
   static const mainText = Color(0xFF2D2D2D);
@@ -29,8 +29,6 @@ class AdminHome extends StatelessWidget {
   Future<void> _logout(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
     if (!context.mounted) return;
-
-    // Clear ALL screens and go back to the app root
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
@@ -42,15 +40,16 @@ class AdminHome extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
     final crossAxisCount = width >= 900 ? 4 : (width >= 600 ? 3 : 2);
 
+    // ✅ ADJUSTED: Increased ratio makes cards shorter (Width / Height)
+    final cardRatio = width >= 600 ? 1.4 : 1.3;
+
     return Scaffold(
       backgroundColor: appBg,
-
-      // ✅ AppBar (no hamburger)
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.white,
-        automaticallyImplyLeading: false, // removes hamburger
+        automaticallyImplyLeading: false,
         title: const Text(
           'Admin Dashboard',
           style: TextStyle(
@@ -59,7 +58,6 @@ class AdminHome extends StatelessWidget {
           ),
         ),
         actions: [
-          // ✅ Call Logs
           IconButton(
             tooltip: 'Call Logs',
             icon: const Icon(Icons.history, color: primaryBlue),
@@ -77,13 +75,8 @@ class AdminHome extends StatelessWidget {
           const SizedBox(width: 6),
         ],
       ),
-
       body: Stack(
         children: [
-          // Base background
-          Container(color: appBg),
-
-          // Watermark logo
           Positioned.fill(
             child: IgnorePointer(
               child: Opacity(
@@ -101,8 +94,6 @@ class AdminHome extends StatelessWidget {
               ),
             ),
           ),
-
-          // Content
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -173,16 +164,14 @@ class AdminHome extends StatelessWidget {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 14),
-
                   // Grid
                   Expanded(
                     child: GridView.count(
                       crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.05,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: cardRatio, // ✅ Applied shorter ratio here
                       children: [
                         _DashCard(
                           title: 'Courses',
@@ -202,8 +191,6 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
                           ),
                         ),
-
-                        // ✅ Weekly timetable grid
                         _DashCard(
                           title: 'Schedule',
                           subtitle: 'Weekly timetable',
@@ -213,7 +200,6 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
                           ),
                         ),
-
                         _DashCard(
                           title: 'Payments',
                           subtitle: 'All payments',
@@ -223,10 +209,7 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
                           ),
                         ),
-
-                        // ✅ Subscriptions (subtitle shows count)
                         const _SubscriptionsDashCard(),
-
                         _DashCard(
                           title: 'Learners',
                           subtitle: 'Students list',
@@ -245,8 +228,6 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
                           ),
                         ),
-
-                        // ✅ Call Logs
                         _DashCard(
                           title: 'Call Logs',
                           subtitle: 'History & duration',
@@ -259,9 +240,7 @@ class AdminHome extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 6),
-
+                  const SizedBox(height: 8),
                   Center(
                     child: Text(
                       'Dream English Academy',
@@ -282,8 +261,6 @@ class AdminHome extends StatelessWidget {
   }
 }
 
-// ✅ Subscriptions card without floating badge.
-// Subtitle becomes: "X new subscriptions"
 class _SubscriptionsDashCard extends StatelessWidget {
   const _SubscriptionsDashCard();
 
@@ -299,8 +276,8 @@ class _SubscriptionsDashCard extends StatelessWidget {
         if (v is Map) count = v.length;
 
         final subtitle = count == 0
-            ? 'No new subscriptions'
-            : '$count new subscription${count == 1 ? '' : 's'}';
+            ? 'No new registrations'
+            : '$count new application${count == 1 ? '' : 's'}';
 
         return _DashCard(
           title: 'Subscriptions',
@@ -345,42 +322,47 @@ class _DashCard extends StatelessWidget {
           border: Border.all(color: uiBorder.withOpacity(0.8)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 6),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
             )
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center, // ✅ Centers content vertically
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 38, // ✅ Slightly smaller icon container
+                height: 38,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: color.withOpacity(0.12)),
                 ),
-                child: Icon(icon, color: color),
+                child: Icon(icon, color: color, size: 20),
               ),
-              const Spacer(),
+              const SizedBox(height: 10), // ✅ Fixed spacing instead of Spacer
               Text(
                 title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 15,
+                  fontSize: 14,
                   color: Color(0xFF1A2B48),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 2),
               Text(
                 subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
                   color: Colors.grey.shade600,
                 ),
               ),

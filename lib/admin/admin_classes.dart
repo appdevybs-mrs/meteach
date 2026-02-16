@@ -1583,13 +1583,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                 ),
                                 const SizedBox(height: 6),
 
-                                // 2) course_id
+                            /*    // 2) course_id
                                 Text(
                                   "Course ID: ${courseId.isEmpty ? "-" : courseId}",
                                   style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
                                 ),
 
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 6),*/
 
                                 // 3) rest
                                 Text(
