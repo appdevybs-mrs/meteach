@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
@@ -20,85 +22,248 @@ class DeletedActionScreen extends StatefulWidget {
 
 class _DeletedActionScreenState extends State<DeletedActionScreen> {
   bool _ran = false;
+  bool _loading = true;
 
-  void log(String msg) => debugPrint('FIKRA_DELETED | $msg');
+  Map<String, dynamic> _data = {};
+  String _status = 'Loading deleted account…';
+  String? _error;
 
-  Future<void> _signOut() async {
-    await FirebaseAuth.instance.signOut();
+  DatabaseReference get _ref =>
+      FirebaseDatabase.instance.ref('users_deleted/${widget.uid}');
+
+  void _setStatus(String s) {
+    debugPrint('FIKRA_DELETED | $s');
+    if (mounted) setState(() => _status = s);
   }
 
-  Future<void> _tryDeleteAuthUserAndMarkDone() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+  Future<void> _load() async {
+    try {
+      final snap = await _ref.get();
+      if (!snap.exists) {
+        setState(() {
+          _error = 'Not found in users_deleted/${widget.uid}';
+          _loading = false;
+        });
+        return;
+      }
 
-    // If already done, skip delete and sign out
-    if (widget.selfDeleteDone == true) {
-      log('selfDeleteDone already true → just sign out');
-      await _signOut();
+      final raw = snap.value;
+      final m = raw is Map
+          ? raw.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+
+      setState(() {
+        _data = Map<String, dynamic>.from(m);
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
+  }
+
+  Future<void> _deleteAuthIfNeeded() async {
+    // source of truth: data from RTDB (fallback to widget flags)
+    final deleteAuth = (_data['deleteAuth'] == true) || widget.deleteAuth == true;
+    final selfDeleteDone =
+        (_data['selfDeleteDone'] == true) || widget.selfDeleteDone == true;
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      _setStatus('Already signed out.');
       return;
     }
 
-    // If deleteAuth flag is false, do not delete auth, just sign out
-    if (widget.deleteAuth != true) {
-      log('deleteAuth=false → just sign out');
-      await _signOut();
+    if (selfDeleteDone) {
+      _setStatus('Deletion already finalized. Signing out…');
+      return;
+    }
+
+    if (!deleteAuth) {
+      _setStatus('Account removed. Signing out…');
       return;
     }
 
     try {
-      // reload first (helps sometimes)
+      _setStatus('Finalizing deletion…');
       await user.reload();
       final fresh = FirebaseAuth.instance.currentUser;
 
-      log('Attempting user.delete()...');
-      await fresh?.delete();
+      await fresh?.delete(); // may fail requires-recent-login
+      _setStatus('Auth user deleted ✅');
 
-      log('✅ user.delete() success');
-
-      // Mark done in RTDB
-      await FirebaseDatabase.instance.ref('users_deleted/${widget.uid}').update({
+      await _ref.update({
         'selfDeleteDone': true,
         'selfDeleteDoneAt': ServerValue.timestamp,
       });
+
+      _setStatus('Marked as done ✅');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        _setStatus('Needs recent login to delete auth. Signing out…');
+      } else {
+        _setStatus('Delete failed: ${e.code}');
+      }
     } catch (e) {
-      // Most common failure: requires-recent-login
-      log('❌ user.delete() failed: $e');
-    } finally {
-      await _signOut();
-      log('Signed out');
+      _setStatus('Delete failed: $e');
     }
+  }
+
+  Future<void> _run() async {
+    if (_ran) return;
+    _ran = true;
+
+    await _load();
+    if (_error != null) return;
+
+    // ✅ IMPORTANT: let the UI render + user see details
+    await Future.delayed(const Duration(milliseconds: 2500));
+
+    await _deleteAuthIfNeeded();
+
+    // ✅ let user see the status message
+    await Future.delayed(const Duration(milliseconds: 1200));
+
+    await _signOut();
   }
 
   @override
   void initState() {
     super.initState();
+    // run after first frame so UI can show
+    WidgetsBinding.instance.addPostFrameCallback((_) => _run());
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (_ran) return;
-      _ran = true;
-      await _tryDeleteAuthUserAndMarkDone();
-    });
+  String _v(String k) {
+    final v = _data[k];
+    if (v == null) return '-';
+    final s = v.toString().trim();
+    return s.isEmpty ? '-' : s;
+  }
+
+  Widget _row(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(k, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
+          Expanded(child: Text(v)),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
+    final name = ('${_v('first_name')} ${_v('last_name')}').trim();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Account Removed')),
+      body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.all(18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          padding: const EdgeInsets.all(18),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(child: Text('Error:\n$_error'))
+              : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.delete_forever_rounded, size: 72),
-              SizedBox(height: 12),
-              Text('Account Removed', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-              SizedBox(height: 8),
+              const Icon(Icons.delete_forever_rounded, size: 72),
+              const SizedBox(height: 10),
               Text(
-                'Your account has been removed.\nIf you think this is a mistake, please contact the school.',
+                name.isEmpty ? 'Account removed' : '$name removed',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'This account has been removed.\nIf you think this is a mistake, contact the school.',
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 14),
-              Text('Finalizing…'),
+              const SizedBox(height: 16),
+
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(.04),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.black.withOpacity(.08)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Details',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 10),
+                    _row('Serial', _v('serial')),
+                    _row('Email', _v('email')),
+                    _row('Role', _v('role')),
+                    _row('Status', _v('status')),
+                    _row('Phone', _v('phone1')),
+                    _row('Moved From', _v('movedFrom')),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(.07),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.withOpacity(.15)),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _status,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Spacer(),
+
+              OutlinedButton.icon(
+                onPressed: () => SystemNavigator.pop(),
+                icon: const Icon(Icons.close),
+                label: const Text('Close app'),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await _signOut();
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text('Sign out'),
+              ),
             ],
           ),
         ),

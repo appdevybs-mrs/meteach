@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'dart:async';
 
 import 'learner_homework_screen.dart';
 import '../shared/ui_constants.dart';
@@ -47,6 +48,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   Set<String> _coveredSessionIds = {};
 
   late final TabController _tab;
+  StreamSubscription<DatabaseEvent>? _paySub;
+  Map<String, dynamic> _paymentSummary = {};
+  bool _payLoading = true;
 
   @override
   void initState() {
@@ -58,6 +62,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   @override
   void dispose() {
+    _paySub?.cancel();
     _tab.dispose();
     super.dispose();
   }
@@ -106,6 +111,26 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
+// ✅ start payment listener (safe: one listener only)
+      await _paySub?.cancel();
+      _payLoading = true;
+
+      _paySub = _paymentSummaryRef.onValue.listen((event) {
+        final raw = event.snapshot.value;
+        final sum = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+
+        if (!mounted) return;
+        setState(() {
+          _paymentSummary = Map<String, dynamic>.from(sum);
+          _payLoading = false;
+        });
+      }, onError: (_) {
+        if (!mounted) return;
+        setState(() {
+          _paymentSummary = {};
+          _payLoading = false;
+        });
+      });
 
       // Reload course live (so it reflects new attendance/payment_summary)
       final snap = await _usersRef.child(_uid).child('courses').child(widget.courseKey).get();
@@ -288,6 +313,27 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   // -------------------- PAYMENT TAB (NEW) --------------------
 
   Widget _paymentTab({required int sessionsDone}) {
+    // ✅ show spinner while payment is loading
+    if (_payLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final sum = _paymentSummary;
+
+    final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
+    final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+    final totalPaid = _asInt(sum['totalPaid']);
+    final lastPaymentAt = _fmtDateFromMs(sum['lastPaymentAt']);
+
+    final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
+
+    final bool hasPayments = sessionsPaidTotal > 0;
+    final bool dueSoon = hasPayments && sessionsDone >= (sessionsPaidTotal - warnBefore);
+    final bool overdue = hasPayments && sessionsDone >= sessionsPaidTotal;
+
+    final int left = hasPayments ? (sessionsPaidTotal - sessionsDone) : 0;
+    final int leftSafe = left < 0 ? 0 : left;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -308,102 +354,71 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 ),
                 const SizedBox(height: 12),
 
-                // ✅ Live payment summary (from users/<uid>/courses/<courseKey>/payment_summary)
-                StreamBuilder<DatabaseEvent>(
-                  stream: _paymentSummaryRef.onValue,
-                  builder: (context, snap) {
-                    final raw = snap.data?.snapshot.value;
-                    final sum = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+                if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
 
-                    final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
-                    final remindBeforeSession = _asInt(sum['remindBeforeSession']);
-                    final totalPaid = _asInt(sum['totalPaid']);
-                    final lastPaymentAt = _fmtDateFromMs(sum['lastPaymentAt']); // might be ServerValue.timestamp
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _kpi(
+                      icon: Icons.confirmation_number_rounded,
+                      label: 'Sessions used',
+                      value: '$sessionsDone',
+                    ),
+                    _kpi(
+                      icon: Icons.event_available_rounded,
+                      label: 'Paid sessions',
+                      value: hasPayments ? '$sessionsPaidTotal' : '—',
+                    ),
+                    _kpi(
+                      icon: Icons.timelapse_rounded,
+                      label: 'Sessions left',
+                      value: hasPayments ? '$leftSafe' : '—',
+                    ),
+                    _kpi(
+                      icon: Icons.payments_rounded,
+                      label: 'Total paid',
+                      value: hasPayments ? '$totalPaid' : '—',
+                    ),
+                  ],
+                ),
 
-                    // ✅ Simple & robust reminder logic:
-                    // - if remindBeforeSession exists -> warn when sessionsDone >= sessionsPaidTotal - remindBeforeSession
-                    // - else -> warn when sessionsDone >= sessionsPaidTotal - 1
-                    final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
+                const SizedBox(height: 12),
 
-                    final bool hasPayments = sessionsPaidTotal > 0;
-                    final bool dueSoon = hasPayments && sessionsDone >= (sessionsPaidTotal - warnBefore);
-                    final bool overdue = hasPayments && sessionsDone >= sessionsPaidTotal;
-
-                    final int left = hasPayments ? (sessionsPaidTotal - sessionsDone) : 0;
-                    final int leftSafe = left < 0 ? 0 : left;
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
-
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            _kpi(
-                              icon: Icons.confirmation_number_rounded,
-                              label: 'Sessions used',
-                              value: '$sessionsDone',
-                            ),
-                            _kpi(
-                              icon: Icons.event_available_rounded,
-                              label: 'Paid sessions',
-                              value: hasPayments ? '$sessionsPaidTotal' : '—',
-                            ),
-                            _kpi(
-                              icon: Icons.timelapse_rounded,
-                              label: 'Sessions left',
-                              value: hasPayments ? '$leftSafe' : '—',
-                            ),
-                            _kpi(
-                              icon: Icons.payments_rounded,
-                              label: 'Total paid',
-                              value: hasPayments ? '$totalPaid' : '—',
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                            color: UiK.primaryBlue.withOpacity(0.04),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
-                                  SizedBox(width: 8),
-                                  Text('Recommendation', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                !hasPayments
-                                    ? 'Your payment info is not available yet. If you already paid, contact the academy to sync it.'
-                                    : overdue
-                                    ? 'Payment is due now. Please contact the academy to renew your sessions.'
-                                    : dueSoon
-                                    ? 'You are close to the last paid session. It’s a good time to renew soon.'
-                                    : 'Everything looks good. Keep attending and track your progress.',
-                                style: UiK.subtleText(),
-                              ),
-                              if (lastPaymentAt.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text('Last payment update: $lastPaymentAt', style: UiK.subtleText()),
-                              ],
-                            ],
-                          ),
-                        ),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                    color: UiK.primaryBlue.withOpacity(0.04),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                          SizedBox(width: 8),
+                          Text('Recommendation', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        !hasPayments
+                            ? 'Your payment info is not available yet. If you already paid, contact the academy to sync it.'
+                            : overdue
+                            ? 'Payment is due now. Please contact the academy to renew your sessions.'
+                            : dueSoon
+                            ? 'You are close to the last paid session. It’s a good time to renew soon.'
+                            : 'Everything looks good. Keep attending and track your progress.',
+                        style: UiK.subtleText(),
+                      ),
+                      if (lastPaymentAt.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text('Last payment update: $lastPaymentAt', style: UiK.subtleText()),
                       ],
-                    );
-                  },
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -412,6 +427,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       ],
     );
   }
+
 
   Widget _dueBanner({required bool overdue, required int left}) {
     final title = overdue ? 'Payment is due' : 'Payment due soon';
