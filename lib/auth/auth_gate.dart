@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/session_manager.dart';
 
 import '../learner/learner_home.dart';
 import '../admin/admin_home.dart';
@@ -29,6 +30,8 @@ class _AuthGateState extends State<AuthGate> {
     return s.replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '').trim();
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     log('AuthGate build() ✅ NEW ROUTER ✅');
@@ -41,7 +44,10 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         final user = authSnap.data;
-        if (user == null) return widget.signedOutHome;
+        if (user == null) {
+          SessionManager.stopListening(); // stop session listener when signed out
+          return widget.signedOutHome;
+        }
 
         final uid = user.uid;
 

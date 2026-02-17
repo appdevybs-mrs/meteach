@@ -718,9 +718,15 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
   bool _isDue({
     required int sessionsPaidTotal,
     required int sessionsDone,
+    required int remindBeforeSession,
   }) {
-    return sessionsPaidTotal > 0 && sessionsDone >= (sessionsPaidTotal - 1);
+    if (sessionsPaidTotal <= 0) return false;
+
+    final left = sessionsPaidTotal - sessionsDone;
+
+    return left <= remindBeforeSession;
   }
+
 
   // compute due and pass to builder (avatar red)
   Widget _withLearnerDueFlag({
@@ -749,7 +755,15 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
             final sumMap = sum is Map ? sum.map((k, vv) => MapEntry(k.toString(), vv)) : <String, dynamic>{};
             final sp = _LearnerExpandedTabsState._asInt(sumMap['sessionsPaidTotal']);
 
-            if (_isDue(sessionsPaidTotal: sp, sessionsDone: sessionsDone)) due = true;
+            final remind = _LearnerExpandedTabsState._asInt(sumMap['remindBeforeSession']);
+
+            if (_isDue(
+              sessionsPaidTotal: sp,
+              sessionsDone: sessionsDone,
+              remindBeforeSession: remind > 0 ? remind : 1,
+            )) {
+              due = true;
+            }
           });
         }
 
@@ -2107,8 +2121,20 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   // for Assign Courses dialog
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
+  // ------------------------------------------------------------
+  // Optional but smarter long-term design (best practice)
+  //
+  // Instead of storing learner courses as course_1, course_2,
+  // store them by courseId:
+  //
+  // users/{uid}/courses/{courseId}/...
+  //
+  // That completely eliminates this class of bugs forever.
+  // But the patch below fixes your current structure with minimal changes.
+  // ------------------------------------------------------------
 
   DatabaseReference get _userCoursesRef => widget.db.ref('users/${widget.uid}/courses');
+
   DatabaseReference get _coursesRef => widget.db.ref('courses');
   DatabaseReference get _paymentsRef => widget.db.ref('payments');
 
@@ -2184,13 +2210,17 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     if (existingVal is Map) {
       existingVal.forEach((k, v) {
         if (k == null || v == null) return;
+        final kk = k.toString();
+        if (!kk.startsWith('course_')) return;
+
         if (v is Map) {
-          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          final mm = v.map((kk2, vv) => MapEntry(kk2.toString(), vv));
           final existingId = (mm['id'] ?? '').toString().trim();
-          if (existingId.isNotEmpty) idToKey[existingId] = k.toString();
+          if (existingId.isNotEmpty) idToKey[existingId] = kk;
         }
       });
     }
+
 
     int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
     final Map<String, dynamic> updates = {};
@@ -2214,8 +2244,34 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     }
 
     // Add / keep selected
+    // Build mapping existingCourseKey -> existingId (so we can detect key reuse)
+    final Map<String, String> keyToExistingId = {};
+    if (existingVal is Map) {
+      existingVal.forEach((k, v) {
+        if (k == null || v == null) return;
+        if (v is Map) {
+          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+          final existingId = (mm['id'] ?? '').toString().trim();
+          keyToExistingId[k.toString()] = existingId;
+        }
+      });
+    }
+
     for (final courseId in selectedIds) {
       final key = idToKey[courseId] ?? 'course_${nextIndex++}';
+
+      final existingIdOnKey = (keyToExistingId[key] ?? '').trim();
+
+      // ✅ If this courseKey previously belonged to a different course, wipe old children
+      if (existingIdOnKey.isNotEmpty && existingIdOnKey != courseId) {
+        updates['$key/payment_summary'] = null;
+        updates['$key/attendance'] = null;
+
+        // If you store anything else under course nodes, clear it too:
+        // updates['$key/report'] = null;
+        // updates['$key/notes'] = null;
+      }
+
 
       final c = _allCourses[courseId];
       final code = (c?['course_code'] ?? '').toString().trim();
@@ -2228,6 +2284,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       updates['$key/category'] = category;
       updates['$key/assignedAt'] = ServerValue.timestamp;
     }
+
 
     await coursesRef.update(updates);
   }

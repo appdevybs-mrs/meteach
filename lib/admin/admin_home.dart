@@ -9,6 +9,7 @@ import 'admin_staff.dart';
 import 'admin_classes.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
+import '../shared/session_manager.dart';
 
 // ✅ timetable
 import 'admin_timetable_screen.dart';
@@ -27,25 +28,33 @@ class AdminHome extends StatelessWidget {
   static const uiBorder = Color(0xFFD1D9E0);
 
   Future<void> _logout(BuildContext context) async {
-    try {
-      // Get the current user's ID
-      final userId = FirebaseAuth.instance.currentUser?.uid;
+    final userId = FirebaseAuth.instance.currentUser?.uid;
 
-      if (userId != null) {
-        // Find their specific token in the 'fcm_tokens' folder and delete it
+    // ✅ stop "single device" listener (so it doesn't run after logout)
+    await SessionManager.stopListening();
+
+    // ✅ (optional but recommended) remove session in RTDB
+    if (userId != null && userId.isNotEmpty) {
+      try {
+        await FirebaseDatabase.instance.ref('sessions/$userId').remove();
+      } catch (_) {}
+    }
+
+    // ✅ remove FCM token record (your existing behavior)
+    try {
+      if (userId != null && userId.isNotEmpty) {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
       }
     } catch (e) {
-      // If there's an error (like no internet), we still want to log out
       debugPrint("Error removing token: $e");
     }
 
-    // Now perform the actual sign out
     await FirebaseAuth.instance.signOut();
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
+
 
   @override
   Widget build(BuildContext context) {

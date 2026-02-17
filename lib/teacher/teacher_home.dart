@@ -10,6 +10,7 @@ import 'teacher_payment.dart';
 import 'teacher_mail.dart';
 import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
+import '../shared/session_manager.dart';
 
 // ✅ Call logs
 import '../calls/call_logs_screen.dart';
@@ -61,14 +62,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   // ✅ UPDATED: Now deletes FCM token before signing out
   Future<void> _logout(BuildContext context) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
+    // ✅ stop "single device" listener (so it doesn't run after logout)
+    await SessionManager.stopListening();
+
+    // ✅ (optional but recommended) remove session in RTDB
+    if (userId != null && userId.isNotEmpty) {
+      try {
+        await FirebaseDatabase.instance.ref('sessions/$userId').remove();
+      } catch (_) {}
+    }
+
+    // ✅ remove FCM token record (your existing behavior)
     try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId != null) {
-        // Remove the device token from RTDB so notifications stop for this user
+      if (userId != null && userId.isNotEmpty) {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
       }
     } catch (e) {
-      debugPrint("Error removing teacher token: $e");
+      debugPrint("Error removing token: $e");
     }
 
     await FirebaseAuth.instance.signOut();
@@ -76,6 +88,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
+
 
   String _norm(String s) => s.trim().toLowerCase();
 

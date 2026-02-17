@@ -325,13 +325,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final totalPaid = _asInt(sum['totalPaid']);
     final lastPaymentAt = _fmtDateFromMs(sum['lastPaymentAt']);
 
-    final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
-
     final bool hasPayments = sessionsPaidTotal > 0;
-    final bool dueSoon = hasPayments && sessionsDone >= (sessionsPaidTotal - warnBefore);
-    final bool overdue = hasPayments && sessionsDone >= sessionsPaidTotal;
 
-    final int left = hasPayments ? (sessionsPaidTotal - sessionsDone) : 0;
+    final left = sessionsPaidTotal - sessionsDone;
+
+    final bool overdue = hasPayments && left <= 0;
+    final bool dueSoon = hasPayments && left > 0 && left <= remindBeforeSession;
+
+
     final int leftSafe = left < 0 ? 0 : left;
 
     return ListView(

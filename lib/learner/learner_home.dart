@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'learner_homework_screen.dart';
+import '../shared/session_manager.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
@@ -47,6 +48,16 @@ class _LearnerHomeState extends State<LearnerHome> {
   Future<void> _logout(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
+    // ✅ stop "single device" listener (so it doesn't run after logout)
+    await SessionManager.stopListening();
+
+    // (optional but recommended) remove session in RTDB
+    if (uid != null && uid.isNotEmpty) {
+      try {
+        await FirebaseDatabase.instance.ref('sessions/$uid').remove();
+      } catch (_) {}
+    }
+
     // ✅ 1) stop pushes on device
     try {
       await FirebaseMessaging.instance.deleteToken(); // VERY IMPORTANT
@@ -63,6 +74,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
+
 
   // -----------------------
   // Support FAB helpers
