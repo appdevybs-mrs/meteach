@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../services/push_client.dart';
 
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
 import 'attendance_stats_screen.dart';
+import 'dart:async';
+import 'package:fluttertoast/fluttertoast.dart';
+
+import '../calls/audio_call_screen.dart';
+import '../services/push_client.dart';
+import 'teacher_mail_thread_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
   const TeacherClassesScreen({super.key});
@@ -210,6 +217,350 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       'serial': (data['serial'] ?? '').toString(),
     };
   }
+
+  // ----------------------------
+  // Teacher -> Learner quick actions (safe add-on)
+  // ----------------------------
+
+  void _toast(String msg) {
+    if (!mounted) return;
+
+    Fluttertoast.cancel();
+    Fluttertoast.showToast(
+      msg: msg,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black.withOpacity(0.85),
+      textColor: Colors.white,
+      fontSize: 15,
+    );
+  }
+
+  Future<String?> _getLearnerFcmToken(String learnerUid) async {
+    final snap = FirebaseDatabase.instance.ref('fcm_tokens/$learnerUid/token');
+    final got = await snap.get();
+    final token = got.value?.toString().trim();
+    if (token == null || token.isEmpty) return null;
+    return token;
+  }
+
+  Future<void> _sendLearnerReminderWithPush({
+    required String learnerUid,
+    required String title,
+    required String message,
+    required String kind, // 'homework' | 'custom'
+  }) async {
+    final teacher = FirebaseAuth.instance.currentUser;
+
+    // 1) ALWAYS write reminder in RTDB
+    final reminderRef = FirebaseDatabase.instance
+        .ref('reminders/$learnerUid')
+        .push();
+
+    try {
+      await reminderRef.set({
+        'kind': kind,
+        'title': title,
+        'description': message,
+        'attachment_name': '',
+        'attachment_url': '',
+        'createdAt': ServerValue.timestamp,
+        'createdByUid': teacher?.uid ?? '',
+        'teacher': {
+          'name': _teacherName.isEmpty ? 'Teacher' : _teacherName,
+          'email': teacher?.email ?? '',
+        },
+        'status': 'queued',
+        'readAt': null,
+        'doneAt': null,
+        'push': {
+          'attemptedAt': null,
+          'sentAt': null,
+          'error': null,
+        }
+      });
+    } catch (e) {
+      _toast('RTDB write failed: $e');
+      return;
+    }
+
+    // 2) Push (same logic style as admin)
+    final token = await _getLearnerFcmToken(learnerUid);
+
+    await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
+
+    if (token == null || token.isEmpty) {
+      await reminderRef.update({'status': 'push_skipped_no_token'});
+      _toast('Reminder saved ✅ (learner offline)');
+      return;
+    }
+
+    try {
+      await PushClient.sendToToken(
+        token: token,
+        title: title,
+        message: message,
+        data: {
+          'type': 'reminder',
+          'route': 'learner',
+          'learnerUid': learnerUid,
+          'kind': kind,
+          'reminderId': reminderRef.key,
+        },
+      );
+
+      await reminderRef.update({
+        'status': 'push_sent',
+        'push/sentAt': ServerValue.timestamp,
+        'push/error': null,
+      });
+
+      _toast('Reminder saved & push sent ✅');
+    } catch (e) {
+      await reminderRef.update({
+        'status': 'push_error',
+        'push/error': e.toString(),
+      });
+      _toast('Reminder saved but push failed');
+    }
+  }
+
+  Future<void> _askAndSendCustomReminder({
+    required String learnerUid,
+  }) async {
+    final c = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reminder'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Type your reminder…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return;
+
+    final text = c.text.trim();
+    if (text.isEmpty) {
+      _toast('Nothing to send.');
+      return;
+    }
+
+    await _sendLearnerReminderWithPush(
+      learnerUid: learnerUid,
+      title: 'Reminder',
+      message: text,
+      kind: 'custom',
+    );
+  }
+
+  Future<void> _openOrCreateMailThread({
+    required String learnerUid,
+    required String learnerName,
+  }) async {
+    // ✅ We will create a threadId that is stable for teacher<->learner
+    // so you don't end up with many duplicate threads from the quick action.
+    final meUid = FirebaseAuth.instance.currentUser!.uid;
+    final a = meUid.compareTo(learnerUid) < 0 ? meUid : learnerUid;
+    final b = meUid.compareTo(learnerUid) < 0 ? learnerUid : meUid;
+
+    final threadId = 't_${a}_$b'; // safe deterministic key
+
+    final threadRef = FirebaseDatabase.instance.ref('mail_threads/$threadId');
+    final msgsRef = FirebaseDatabase.instance.ref('mail_messages/$threadId');
+    final indexRef = FirebaseDatabase.instance.ref('mail_index');
+
+    // topic/subject (you can change later, but we won't assume more)
+    const subject = 'Mail';
+
+    // ensure thread exists (do not overwrite if already exists)
+    final tSnap = await threadRef.get();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (!tSnap.exists) {
+      await threadRef.set({
+        'subject': subject,
+        'createdAt': now,
+        'updatedAt': now,
+        'lastMessage': '',
+      });
+    }
+
+    // ensure index rows exist (do not break existing)
+    await indexRef.child(meUid).child(threadId).update({
+      'subject': subject,
+      'updatedAt': now,
+      'lastMessage': '',
+      'unreadCount': 0,
+      'peerUid': learnerUid,
+      'peerName': learnerName,
+      'deletedAt': null,
+    });
+
+    await indexRef.child(learnerUid).child(threadId).update({
+      'subject': subject,
+      'updatedAt': now,
+      'lastMessage': '',
+      'unreadCount': 0,
+      'peerUid': meUid,
+      'peerName': _teacherName.isEmpty ? 'Teacher' : _teacherName,
+      'deletedAt': null,
+    });
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        settings: RouteSettings(name: '/mail/thread/$threadId'),
+        builder: (_) => TeacherMailThreadScreen(
+          threadId: threadId,
+          peerUid: learnerUid,
+          peerName: learnerName.isEmpty ? 'Learner' : learnerName,
+          subject: subject,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _callLearnerInApp({
+    required String learnerUid,
+    required String learnerName,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Call learner?'),
+        content: Text('Call ${learnerName.isEmpty ? 'this learner' : learnerName}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Call'),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return;
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AudioCallScreen(
+          peerUid: learnerUid,
+          peerName: learnerName.isEmpty ? 'Learner' : learnerName,
+          isCaller: true,
+          callerName: _teacherName.isEmpty ? 'Teacher' : _teacherName,
+          startWithVideo: false,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showLearnerQuickActionsSheet({
+    required String learnerUid,
+    required String learnerName,
+  }) async {
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+
+            ListTile(
+              leading: const Icon(Icons.menu_book_rounded),
+              title: const Text('Reminder: homework'),
+              onTap: () => Navigator.pop(ctx, 'homework'),
+            ),
+
+            ListTile(
+              leading: const Icon(Icons.edit_note_rounded),
+              title: const Text('Reminder: type your message'),
+              onTap: () => Navigator.pop(ctx, 'custom'),
+            ),
+
+            ListTile(
+              leading: const Icon(Icons.mail_rounded),
+              title: const Text('Send a mail'),
+              onTap: () => Navigator.pop(ctx, 'mail'),
+            ),
+
+            ListTile(
+              leading: const Icon(Icons.call_rounded),
+              title: const Text('Call (in-app)'),
+              onTap: () => Navigator.pop(ctx, 'call'),
+            ),
+
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+
+    if (picked == null) return;
+
+    if (picked == 'homework') {
+      await _sendLearnerReminderWithPush(
+        learnerUid: learnerUid,
+        title: 'Homework Reminder',
+        message: 'Please don’t forget your homework for the next session.',
+        kind: 'homework',
+      );
+      return;
+    }
+
+    if (picked == 'custom') {
+      await _askAndSendCustomReminder(learnerUid: learnerUid);
+      return;
+    }
+
+    if (picked == 'mail') {
+      await _openOrCreateMailThread(
+        learnerUid: learnerUid,
+        learnerName: learnerName,
+      );
+      return;
+    }
+
+    if (picked == 'call') {
+      await _callLearnerInApp(
+        learnerUid: learnerUid,
+        learnerName: learnerName,
+      );
+      return;
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -461,10 +812,21 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
           ),
           child: ListTile(
             dense: true,
-            leading: CircleAvatar(
-              backgroundColor: primaryBlue.withOpacity(0.08),
-              child: const Icon(Icons.person_rounded, color: primaryBlue),
+            leading: GestureDetector(
+              onLongPress: () async {
+                if (loading) return;
+
+                await _showLearnerQuickActionsSheet(
+                  learnerUid: uid,
+                  learnerName: name.isEmpty ? 'Learner' : name,
+                );
+              },
+              child: CircleAvatar(
+                backgroundColor: primaryBlue.withOpacity(0.08),
+                child: const Icon(Icons.person_rounded, color: primaryBlue),
+              ),
             ),
+
             title: Text(
               loading ? 'Loading...' : (name.isEmpty ? 'Learner: $uid' : name),
               style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
