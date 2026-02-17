@@ -27,7 +27,22 @@ class AdminHome extends StatelessWidget {
   static const uiBorder = Color(0xFFD1D9E0);
 
   Future<void> _logout(BuildContext context) async {
+    try {
+      // Get the current user's ID
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+
+      if (userId != null) {
+        // Find their specific token in the 'fcm_tokens' folder and delete it
+        await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+      }
+    } catch (e) {
+      // If there's an error (like no internet), we still want to log out
+      debugPrint("Error removing token: $e");
+    }
+
+    // Now perform the actual sign out
     await FirebaseAuth.instance.signOut();
+
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }

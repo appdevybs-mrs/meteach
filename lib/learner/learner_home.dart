@@ -49,10 +49,6 @@ class _LearnerHomeState extends State<LearnerHome> {
 
     // ✅ 1) stop pushes on device
     try {
-      // If you use topics, unsubscribe here (add the ones you actually use)
-      // await FirebaseMessaging.instance.unsubscribeFromTopic('all');
-      // await FirebaseMessaging.instance.unsubscribeFromTopic('learners');
-
       await FirebaseMessaging.instance.deleteToken(); // VERY IMPORTANT
     } catch (_) {}
 
@@ -60,7 +56,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (uid != null && uid.isNotEmpty) {
       try {
         await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
-        // (or only token) await FirebaseDatabase.instance.ref('fcm_tokens/$uid/token').remove();
       } catch (_) {}
     }
 
@@ -68,8 +63,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
-
-
 
   // -----------------------
   // Support FAB helpers
@@ -293,7 +286,6 @@ class _LearnerHomeState extends State<LearnerHome> {
           isCaller: true,
           callerName: myName,
           startWithVideo: false,
-
         ),
       ),
     );
@@ -639,7 +631,6 @@ class _LearnerDashboardLite extends StatelessWidget {
             elevation: 0,
             color: Colors.white,
             shape: UiK.cardShape(),
-
           ),
         ],
       ),
@@ -663,6 +654,7 @@ class _HomeCardsGrid extends StatelessWidget {
         _MailHomeCard(),
         _LearnerHomeworkHomeCard(),
         _RemindersHomeCard(),
+        _CallLogsHomeCard(), // ✅ NEW
 
         _HomeCard(
           icon: Icons.group_rounded,
@@ -908,7 +900,8 @@ class _MailHomeCard extends StatelessWidget {
   }
 }
 
-enum _HomeCardRoute { mail, homework, reminders, friends }
+/// ✅ NEW route type for Call Logs
+enum _HomeCardRoute { mail, homework, reminders, callLogs, friends }
 
 class _HomeCard extends StatelessWidget {
   const _HomeCard({
@@ -927,7 +920,7 @@ class _HomeCard extends StatelessWidget {
   final int badgeCount;
 
   /// ✅ If true, this card will NOT have its own InkWell
-  /// (so an outer InkWell can handle taps, مثل homework popup)
+  /// (so an outer InkWell can handle taps)
   final bool disableTap;
 
   @override
@@ -1001,8 +994,15 @@ class _HomeCard extends StatelessWidget {
           return;
         }
 
+        if (routeType == _HomeCardRoute.callLogs) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+          );
+          return;
+        }
+
         if (routeType == _HomeCardRoute.homework) {
-          // handled by the Homework widget itself (so it can pass badges)
+          // handled by the Homework widget itself
           return;
         }
 
@@ -1181,7 +1181,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             );
           },
           child: _HomeCard(
-            disableTap: true, // ✅ IMPORTANT (prevents inner InkWell blocking tap)
+            disableTap: true,
             icon: Icons.assignment_rounded,
             title: 'Homework',
             subtitle: subtitle,
@@ -1193,6 +1193,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
     );
   }
 }
+
 /// ✅ Reminders card with unread badge
 class _RemindersHomeCard extends StatelessWidget {
   const _RemindersHomeCard();
@@ -1234,6 +1235,77 @@ class _RemindersHomeCard extends StatelessWidget {
             subtitle: subtitle,
             routeType: _HomeCardRoute.reminders,
             badgeCount: unread,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// ✅ NEW: Call logs card with “attention needed” badge
+/// Improvement rules (safe, won’t break anything):
+/// - counts status == missed
+/// - counts status == ringing
+/// - counts ended calls with durationSec == null OR <= 0 (looks like “ended immediately”)
+class _CallLogsHomeCard extends StatelessWidget {
+  const _CallLogsHomeCard();
+
+  int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  bool _needsAttention(Map<String, dynamic> m) {
+    final status = (m['status'] ?? '').toString().trim().toLowerCase();
+    final dur = m.containsKey('durationSec') ? _toInt(m['durationSec']) : 0;
+
+    if (status == 'missed') return true;
+    if (status == 'ringing') return true;
+
+    // ended but no duration (or 0) -> treat as suspicious / attention
+    if (status == 'ended' && dur <= 0) return true;
+
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final me = FirebaseAuth.instance.currentUser;
+    final uid = me?.uid ?? '';
+    final ref = FirebaseDatabase.instance.ref('call_logs/$uid');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
+      builder: (context, snap) {
+        int attention = 0;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          v.forEach((_, vv) {
+            if (vv is! Map) return;
+            final m = vv.map((k, v) => MapEntry(k.toString(), v));
+            final mm = m.map((k, v) => MapEntry(k.toString(), v));
+            if (_needsAttention(mm)) attention += 1;
+          });
+        }
+
+        final subtitle = attention == 0 ? 'All good ✅' : '$attention need attention';
+
+        return InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+            );
+          },
+          child: _HomeCard(
+            disableTap: true,
+            icon: Icons.history_rounded,
+            title: 'Call Logs',
+            subtitle: subtitle,
+            routeType: _HomeCardRoute.callLogs,
+            badgeCount: attention,
           ),
         );
       },
