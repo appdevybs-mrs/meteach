@@ -549,13 +549,6 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
     required Learner learner,
     required _QuickLearnerReminder type,
   }) async {
-    final token = await _getLearnerFcmToken(uid);
-    if (token == null) {
-      if (!mounted) return;
-      _toast('Cannot send reminder: learner is not connected (no notification token).');
-
-      return;
-    }
 
     String title;
     String message;
@@ -570,25 +563,95 @@ class _LearnersListState extends State<_LearnersList> with AutomaticKeepAliveCli
         message = 'We noticed an absence. Please confirm with the academy.';
         break;
       case _QuickLearnerReminder.empty:
-        return; // mail is opened from the sheet
+        return;
     }
 
-    await PushClient.sendToToken(
-      token: token,
-      title: title,
-      message: message,
-      data: {
-        'type': 'reminder',
-        'route': 'learner',
-        'learnerUid': uid,
+    final admin = FirebaseAuth.instance.currentUser;
+
+    // 🔵 1) ALWAYS write reminder in RTDB
+    final reminderRef = FirebaseDatabase.instance
+        .ref('reminders/$uid')
+        .push();
+
+    try {
+      await reminderRef.set({
         'kind': type.name,
-      },
-    );
+        'title': title,
+        'description': message,
+        'attachment_name': '',
+        'attachment_url': '',
+        'createdAt': ServerValue.timestamp,
+        'createdByUid': admin?.uid ?? '',
+        'teacher': {
+          'name': 'Admin',
+          'email': admin?.email ?? '',
+        },
+        'status': 'queued',
+        'readAt': null,
+        'doneAt': null,
+        'push': {
+          'attemptedAt': null,
+          'sentAt': null,
+          'error': null,
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _toast('RTDB write failed: $e');
+      return; // stop here so you see the error
+    }
 
-    if (!mounted) return;
-    _toast('Reminder sent to ${learner.fullName.isEmpty ? 'learner' : learner.fullName} ✅');
 
+    // 🔵 2) Try push (if token exists)
+    final token = await _getLearnerFcmToken(uid);
+
+    await reminderRef.child('push/attemptedAt')
+        .set(ServerValue.timestamp);
+
+    if (token == null || token.isEmpty) {
+      await reminderRef.update({
+        'status': 'push_skipped_no_token',
+      });
+
+      if (!mounted) return;
+      _toast('Reminder saved ✅ (learner offline)');
+      return;
+    }
+
+    try {
+      await PushClient.sendToToken(
+        token: token,
+        title: title,
+        message: message,
+        data: {
+          'type': 'reminder',
+          'route': 'learner',
+          'learnerUid': uid,
+          'kind': type.name,
+          'reminderId': reminderRef.key,
+        },
+      );
+
+      await reminderRef.update({
+        'status': 'push_sent',
+        'push/sentAt': ServerValue.timestamp,
+        'push/error': null,
+      });
+
+      if (!mounted) return;
+      _toast('Reminder saved & push sent ✅');
+
+    } catch (e) {
+      await reminderRef.update({
+        'status': 'push_error',
+        'push/error': e.toString(),
+      });
+
+      if (!mounted) return;
+      _toast('Reminder saved but push failed');
+    }
   }
+
 
   Future<void> _showQuickReminderSheet({
     required String uid,

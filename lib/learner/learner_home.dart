@@ -11,12 +11,14 @@ import 'learner_mail_screen.dart';
 
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
+import 'learner_reminders_list_screen.dart';
 
 // ✅ Call logs screen
 import '../calls/call_logs_screen.dart';
 
 // ✅ Call screen
 import '../calls/audio_call_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -43,10 +45,31 @@ class _LearnerHomeState extends State<LearnerHome> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<void> _logout(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    // ✅ 1) stop pushes on device
+    try {
+      // If you use topics, unsubscribe here (add the ones you actually use)
+      // await FirebaseMessaging.instance.unsubscribeFromTopic('all');
+      // await FirebaseMessaging.instance.unsubscribeFromTopic('learners');
+
+      await FirebaseMessaging.instance.deleteToken(); // VERY IMPORTANT
+    } catch (_) {}
+
+    // ✅ 2) remove token from RTDB so admin can't target it
+    if (uid != null && uid.isNotEmpty) {
+      try {
+        await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
+        // (or only token) await FirebaseDatabase.instance.ref('fcm_tokens/$uid/token').remove();
+      } catch (_) {}
+    }
+
     await FirebaseAuth.instance.signOut();
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
+
+
 
   // -----------------------
   // Support FAB helpers
@@ -616,20 +639,7 @@ class _LearnerDashboardLite extends StatelessWidget {
             elevation: 0,
             color: Colors.white,
             shape: UiK.cardShape(),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Learner Dashboard', style: UiK.titleText(size: 18)),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Use the cards above to access your tools. Courses stay in the Courses tab.',
-                    style: UiK.subtleText(),
-                  ),
-                ],
-              ),
-            ),
+
           ),
         ],
       ),
@@ -652,15 +662,11 @@ class _HomeCardsGrid extends StatelessWidget {
       children: const [
         _MailHomeCard(),
         _LearnerHomeworkHomeCard(),
-        _HomeCard(
-          icon: Icons.notifications_active_rounded,
-          title: 'Reminders',
-          subtitle: 'Coming soon',
-          routeType: _HomeCardRoute.reminders,
-        ),
+        _RemindersHomeCard(),
+
         _HomeCard(
           icon: Icons.group_rounded,
-          title: 'Friends',
+          title: 'Activities',
           subtitle: 'Coming soon',
           routeType: _HomeCardRoute.friends,
         ),
@@ -1181,6 +1187,53 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             subtitle: subtitle,
             routeType: _HomeCardRoute.homework,
             badgeCount: undoneTotal,
+          ),
+        );
+      },
+    );
+  }
+}
+/// ✅ Reminders card with unread badge
+class _RemindersHomeCard extends StatelessWidget {
+  const _RemindersHomeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final me = FirebaseAuth.instance.currentUser;
+    final uid = me?.uid ?? '';
+    final ref = FirebaseDatabase.instance.ref('reminders/$uid');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
+      builder: (context, snap) {
+        int unread = 0;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          v.forEach((_, vv) {
+            if (vv is! Map) return;
+            final m = vv.map((k, v) => MapEntry(k.toString(), v));
+            final readAt = m['readAt'];
+            if (readAt == null) unread += 1;
+          });
+        }
+
+        final subtitle = unread == 0 ? 'All caught up ✅' : '$unread unread';
+
+        return InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LearnerRemindersListScreen()),
+            );
+          },
+          child: _HomeCard(
+            disableTap: true,
+            icon: Icons.notifications_active_rounded,
+            title: 'Reminders',
+            subtitle: subtitle,
+            routeType: _HomeCardRoute.reminders,
+            badgeCount: unread,
           ),
         );
       },
