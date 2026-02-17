@@ -59,8 +59,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     }
   }
 
+  // ✅ UPDATED: Now deletes FCM token before signing out
   Future<void> _logout(BuildContext context) async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId != null) {
+        // Remove the device token from RTDB so notifications stop for this user
+        await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
+      }
+    } catch (e) {
+      debugPrint("Error removing teacher token: $e");
+    }
+
     await FirebaseAuth.instance.signOut();
+
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
@@ -193,10 +205,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
-  // -----------------------
-  // Support FAB helpers
-  // -----------------------
-
   Future<String> _myDisplayName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return 'Teacher';
@@ -248,7 +256,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     final me = FirebaseAuth.instance.currentUser?.uid;
     if (me == null) return [];
 
-    final learners = <String, String>{}; // uid -> name
+    final learners = <String, String>{};
 
     try {
       final classesSnap = await _db.child('classes').get();
@@ -261,23 +269,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         if (classVal is! Map) return;
         final c = classVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-        // match teacher to this class
         bool isMine = false;
-
         final cur = c['instructor_current'];
         if (cur is Map) {
           final cm = cur.map((kk, vv) => MapEntry(kk.toString(), vv));
           final tuid = (cm['uid'] ?? '').toString().trim();
           if (tuid.isNotEmpty && tuid == me) isMine = true;
-        }
-
-        // legacy fallback: instructor name compare (best-effort)
-        if (!isMine) {
-          final legacyInstructor = (c['instructor'] ?? '').toString().trim();
-          if (legacyInstructor.isNotEmpty) {
-            // if your users/uid record name matches this legacy string, we try.
-            // But without guaranteed format, we keep this minimal and safe (do nothing).
-          }
         }
 
         if (!isMine) return;
@@ -288,7 +285,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         final lm = Map<dynamic, dynamic>.from(l);
         lm.forEach((uid, lv) {
           final u = uid.toString();
-          if (u == me) return; // teacher isn't a learner
+          if (u == me) return;
 
           String name = 'Learner';
           if (lv is Map) {
@@ -297,12 +294,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             final serial = (mm['serial'] ?? '').toString().trim();
             name = n.isNotEmpty ? n : (serial.isNotEmpty ? serial : 'Learner');
           }
-
           learners.putIfAbsent(u, () => name);
         });
       });
 
-      // enrich from users node (optional)
       final out = <_UserPick>[];
       for (final entry in learners.entries) {
         final uid = entry.key;
@@ -400,7 +395,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-
                     if (snap.connectionState == ConnectionState.waiting)
                       const Padding(
                         padding: EdgeInsets.all(18),
@@ -431,7 +425,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           separatorBuilder: (_, __) => const SizedBox(height: 10),
                           itemBuilder: (context, i) {
                             final it = items[i];
-
                             return InkWell(
                               borderRadius: BorderRadius.circular(18),
                               onTap: () async {
@@ -564,7 +557,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 _SupportTile(
                   icon: Icons.admin_panel_settings_rounded,
                   title: 'Call Admin',
@@ -579,7 +571,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   },
                 ),
                 const SizedBox(height: 10),
-
                 _SupportTile(
                   icon: Icons.groups_rounded,
                   title: 'Call Learner',
@@ -692,7 +683,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           final subtitle = (s == null)
                               ? ''
                               : '${s.classesCount} classes • ${s.learnersCount} learners';
-
                           return _buildQuickCard(
                             context,
                             'My Classes',
@@ -708,8 +698,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                         Icons.person_rounded,
                         const TeacherProfileScreen(),
                       ),
-
-                      // ✅ Mail card with unread badge (sum)
                       StreamBuilder<DatabaseEvent>(
                         stream: _mailIndexStream,
                         builder: (context, snap) {
@@ -723,14 +711,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           );
                         },
                       ),
-
                       _buildQuickCard(
                         context,
                         'Payment',
                         Icons.payments_rounded,
                         const TeacherPaymentScreen(),
                       ),
-
                       StreamBuilder<DatabaseEvent>(
                         stream: _remindersStream,
                         builder: (context, snap) {
@@ -744,7 +730,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           );
                         },
                       ),
-
                       _buildQuickCard(
                         context,
                         'Call Logs',
@@ -773,8 +758,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ],
       ),
-
-      // ✅ Floating Support button
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: actionOrange,
         foregroundColor: Colors.white,
@@ -909,14 +892,14 @@ class _SupportTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _TeacherHomeScreenState.uiBorder.withOpacity(0.85)),
+          border: Border.all(color: const Color(0xFFD1D9E0).withOpacity(0.85)),
         ),
         child: Row(
           children: [
@@ -924,11 +907,10 @@ class _SupportTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: _TeacherHomeScreenState.primaryBlue.withOpacity(0.06),
+                color: const Color(0xFF1A2B48).withOpacity(0.08),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _TeacherHomeScreenState.uiBorder.withOpacity(0.85)),
               ),
-              child: Icon(icon, color: _TeacherHomeScreenState.primaryBlue),
+              child: Icon(icon, color: const Color(0xFF1A2B48)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -939,11 +921,10 @@ class _SupportTile extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: _TeacherHomeScreenState.primaryBlue,
-                      fontSize: 15,
+                      color: Color(0xFF1A2B48),
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: TextStyle(
@@ -955,8 +936,7 @@ class _SupportTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            const Icon(Icons.chevron_right_rounded, color: _TeacherHomeScreenState.primaryBlue),
+            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
           ],
         ),
       ),

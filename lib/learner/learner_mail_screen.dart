@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'learner_mail_thread_screen.dart';
-import 'package:flutter/material.dart';
-import 'dart:async';
+
+// ============================
+// TOP-LEVEL enums (Dart rule)
+// ============================
+enum _MailFilter { all, unread, teachers, admins, classmates }
+enum _MailSort { recent, unreadFirst, subjectAZ, personAZ }
 
 class LearnerMailScreen extends StatefulWidget {
   const LearnerMailScreen({super.key});
@@ -19,6 +25,17 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
   late final Stream<DatabaseEvent> _stream;
+
+  // -------------------------
+  // Search + filter + sort
+  // -------------------------
+  final _searchC = TextEditingController();
+  Timer? _searchDebounce;
+  String _q = '';
+
+  _MailFilter _filter = _MailFilter.all;
+  _MailSort _sort = _MailSort.recent;
+
   // -------------------------
   // Name cache (uid -> "First Last")
   // -------------------------
@@ -56,10 +73,49 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
     return 'Staff';
   }
+
+  // -------------------------
+  // Role cache for filtering
+  // admin | teacher | learner | ''
+  // -------------------------
+  final Map<String, String> _roleCache = {};
+
+  Future<String> _fetchRole(String uid) async {
+    final snap = await _db.ref('users/$uid/role').get();
+    return snap.value?.toString().toLowerCase().trim() ?? '';
+  }
+
+  Future<void> _ensureRoleCached(String uid) async {
+    if (uid.isEmpty) return;
+    if (_roleCache.containsKey(uid)) return;
+
+    final role = await _fetchRole(uid);
+    if (!mounted) return;
+
+    setState(() => _roleCache[uid] = role);
+  }
+
+  _RecipientType _peerTypeFromUid(String uid) {
+    final r = (_roleCache[uid] ?? '').toLowerCase().trim();
+    if (r == 'admin') return _RecipientType.admin;
+    if (r == 'teacher') return _RecipientType.teacher;
+    if (r == 'learner') return _RecipientType.learner;
+
+    // keep old behavior: unknown treated as staff/teacher
+    return _RecipientType.teacher;
+  }
+
   @override
   void initState() {
     super.initState();
     _stream = _indexRef.orderByChild('updatedAt').onValue.asBroadcastStream();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchC.dispose();
+    super.dispose();
   }
 
   void _snack(String msg) {
@@ -89,6 +145,87 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
     out.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
     return out;
+  }
+
+  // -------------------------
+  // Search / Filter / Sort (local-only)
+  // -------------------------
+  List<_TopicRow> _applySearch(List<_TopicRow> rows) {
+    final q = _q.trim().toLowerCase();
+    if (q.isEmpty) return rows;
+
+    bool hit(_TopicRow r) {
+      final subject = r.subject.toLowerCase();
+      final last = r.lastMessage.toLowerCase();
+      final peer = _displayPeerName(r).toLowerCase();
+      return subject.contains(q) || last.contains(q) || peer.contains(q);
+    }
+
+    return rows.where(hit).toList();
+  }
+
+  List<_TopicRow> _applyFilter(List<_TopicRow> rows) {
+    if (_filter == _MailFilter.all) return rows;
+
+    return rows.where((r) {
+      if (_filter == _MailFilter.unread) return r.unreadCount > 0;
+
+      final t = _peerTypeFromUid(r.peerUid);
+      if (_filter == _MailFilter.teachers) return t == _RecipientType.teacher;
+      if (_filter == _MailFilter.admins) return t == _RecipientType.admin;
+      if (_filter == _MailFilter.classmates) return t == _RecipientType.learner;
+
+      return true;
+    }).toList();
+  }
+
+  List<_TopicRow> _applySort(List<_TopicRow> rows) {
+    final out = List<_TopicRow>.from(rows);
+
+    switch (_sort) {
+      case _MailSort.recent:
+        out.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+        break;
+
+      case _MailSort.unreadFirst:
+        out.sort((a, b) {
+          final u = b.unreadCount.compareTo(a.unreadCount);
+          if (u != 0) return u;
+          return b.updatedAtMs.compareTo(a.updatedAtMs);
+        });
+        break;
+
+      case _MailSort.subjectAZ:
+        out.sort((a, b) {
+          final aa = a.subject.trim().toLowerCase();
+          final bb = b.subject.trim().toLowerCase();
+          return aa.compareTo(bb);
+        });
+        break;
+
+      case _MailSort.personAZ:
+        out.sort((a, b) {
+          final aa = _displayPeerName(a).trim().toLowerCase();
+          final bb = _displayPeerName(b).trim().toLowerCase();
+          return aa.compareTo(bb);
+        });
+        break;
+    }
+
+    return out;
+  }
+
+  String _sortLabel(_MailSort s) {
+    switch (s) {
+      case _MailSort.recent:
+        return 'Recent';
+      case _MailSort.unreadFirst:
+        return 'Unread first';
+      case _MailSort.subjectAZ:
+        return 'Subject A–Z';
+      case _MailSort.personAZ:
+        return 'Person A–Z';
+    }
   }
 
   // -------------------------
@@ -130,7 +267,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   // -------------------------
   // Compose mail (admins + my teachers + my classmates)
-  // NOW: create topic only (no first message)
+  // create topic only (no first message)
   // -------------------------
   Future<void> _composeNewMail() async {
     try {
@@ -151,8 +288,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       }
 
       final subject = picked.subject.trim();
-
-      // No first message: keep lastMessage empty.
       const lastMessage = '';
 
       // 1) thread meta
@@ -163,9 +298,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         'lastMessage': lastMessage,
       });
 
-      // 2) (removed) first message
-
-      // 3) index (sender) unread 0
+      // 2) index (sender) unread 0
       await _db.ref('mail_index/$_meUid/$threadId').set({
         'subject': subject,
         'updatedAt': now,
@@ -176,7 +309,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         'deletedAt': null,
       });
 
-      // 4) index (receiver) unread 0 (because no message was sent yet)
+      // 3) index (receiver) unread 0 (because no message was sent yet)
       await _db.ref('mail_index/${picked.receiverUid}/$threadId').set({
         'subject': subject,
         'updatedAt': now,
@@ -211,7 +344,113 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mail')),
+      appBar: AppBar(
+        title: const Text('Mail'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(112),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _searchC,
+                  decoration: InputDecoration(
+                    hintText: 'Search topic / last message / person…',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: (_q.isEmpty)
+                        ? null
+                        : IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        _searchC.clear();
+                        setState(() => _q = '');
+                      },
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (v) {
+                    _searchDebounce?.cancel();
+                    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+                      if (!mounted) return;
+                      setState(() => _q = v.trim().toLowerCase());
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('All'),
+                              selected: _filter == _MailFilter.all,
+                              onSelected: (_) => setState(() => _filter = _MailFilter.all),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Unread'),
+                              selected: _filter == _MailFilter.unread,
+                              onSelected: (_) => setState(() => _filter = _MailFilter.unread),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Teachers'),
+                              selected: _filter == _MailFilter.teachers,
+                              onSelected: (_) => setState(() => _filter = _MailFilter.teachers),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Admins'),
+                              selected: _filter == _MailFilter.admins,
+                              onSelected: (_) => setState(() => _filter = _MailFilter.admins),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Classmates'),
+                              selected: _filter == _MailFilter.classmates,
+                              onSelected: (_) => setState(() => _filter = _MailFilter.classmates),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    PopupMenuButton<_MailSort>(
+                      tooltip: 'Sort',
+                      onSelected: (v) => setState(() => _sort = v),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: _MailSort.recent, child: Text('Recent')),
+                        PopupMenuItem(value: _MailSort.unreadFirst, child: Text('Unread first')),
+                        PopupMenuItem(value: _MailSort.subjectAZ, child: Text('Subject A–Z')),
+                        PopupMenuItem(value: _MailSort.personAZ, child: Text('Person A–Z')),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.sort, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              _sortLabel(_sort),
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _composeNewMail,
         icon: const Icon(Icons.edit_rounded),
@@ -220,10 +459,32 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       body: StreamBuilder<DatabaseEvent>(
         stream: _stream,
         builder: (_, snap) {
-          final rows = _parse(snap.data?.snapshot.value);
+          final base = _parse(snap.data?.snapshot.value);
+
+          if (base.isEmpty) {
+            return const Center(child: Text('No mail yet.'));
+          }
+
+          // Cache names + roles without blocking UI
+          for (final r in base) {
+            unawaited(_ensureNameCached(
+              r.peerUid,
+              fallback: (r.peerName.isNotEmpty ? r.peerName : 'Staff'),
+            ));
+            unawaited(_ensureRoleCached(r.peerUid));
+          }
+
+          var rows = base;
+          rows = _applySearch(rows);
+          rows = _applyFilter(rows);
+          rows = _applySort(rows);
 
           if (rows.isEmpty) {
-            return const Center(child: Text('No mail yet.'));
+            return Center(
+              child: Text(
+                _q.trim().isEmpty ? 'No results.' : 'No results for "${_q.trim()}".',
+              ),
+            );
           }
 
           return ListView.separated(
@@ -233,22 +494,26 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
             itemBuilder: (_, i) {
               final r = rows[i];
 
-              // Load and cache peer name (runs once per uid)
-              unawaited(_ensureNameCached(
-                r.peerUid,
-                fallback: (r.peerName.isNotEmpty ? r.peerName : 'Staff'),
-              ));
-
               final peer = _displayPeerName(r);
               final last = r.lastMessage.trim();
               final subtitleText = last.isEmpty ? peer : '$peer • $last';
 
+              IconData leadingIcon;
+              final t = _peerTypeFromUid(r.peerUid);
+              if (t == _RecipientType.admin) {
+                leadingIcon = Icons.shield_rounded;
+              } else if (t == _RecipientType.learner) {
+                leadingIcon = Icons.school_rounded;
+              } else {
+                leadingIcon = Icons.person_rounded;
+              }
 
               return ListTile(
                 tileColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
+                leading: CircleAvatar(child: Icon(leadingIcon)),
                 title: Text(
                   r.subject.isEmpty ? '(No topic)' : r.subject,
                   style: const TextStyle(fontWeight: FontWeight.w800),
@@ -313,7 +578,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 // ----------------------------
 // Compose bottom sheet
 // ----------------------------
-
 class _ComposeMailSheet extends StatefulWidget {
   const _ComposeMailSheet({
     required this.db,
@@ -367,6 +631,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
       final usersVal = usersSnap.value;
 
       final userNameByUid = <String, String>{};
+      final userRoleByUid = <String, String>{};
       final admins = <_RecipientRow>[];
 
       if (usersVal is Map) {
@@ -384,6 +649,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
 
           final u = uid.toString();
           userNameByUid[u] = display;
+          userRoleByUid[u] = role;
 
           if (role == 'admin') {
             admins.add(_RecipientRow(uid: u, name: display, type: _RecipientType.admin));
@@ -427,7 +693,20 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
         });
       }
 
-      final teachers = teacherUids.map((tUid) {
+      // Teachers list:
+      // - from classes
+      // - plus any user with role == teacher (optional safety)
+      final teacherRoleUids = userRoleByUid.entries
+          .where((e) => e.value == 'teacher')
+          .map((e) => e.key)
+          .toSet();
+
+      final allTeacherUids = <String>{
+        ...teacherUids,
+        ...teacherRoleUids,
+      }..remove(widget.meUid);
+
+      final teachers = allTeacherUids.map((tUid) {
         final name = userNameByUid[tUid] ?? 'Teacher';
         return _RecipientRow(uid: tUid, name: name, type: _RecipientType.teacher);
       }).toList();
@@ -437,12 +716,12 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
         return _RecipientRow(uid: u, name: name, type: _RecipientType.learner);
       }).toList();
 
-      // ---------- merge + sort ----------
-      final all = <_RecipientRow>[
-        ...teachers,
-        ...admins,
-        ...classmates,
-      ];
+      // ---------- merge + unique by uid ----------
+      final byUid = <String, _RecipientRow>{};
+      for (final r in [...teachers, ...admins, ...classmates]) {
+        byUid[r.uid] = r;
+      }
+      final all = byUid.values.toList();
 
       int rank(_RecipientType t) {
         switch (t) {
@@ -509,7 +788,6 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
           const SizedBox(height: 6),
           const Text('New mail', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           const SizedBox(height: 12),
-
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(18),
@@ -541,9 +819,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
-
           const SizedBox(height: 12),
-
           TextFormField(
             controller: _subjectC,
             decoration: const InputDecoration(
@@ -551,9 +827,7 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
               border: OutlineInputBorder(),
             ),
           ),
-
           const SizedBox(height: 12),
-
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -571,7 +845,6 @@ class _ComposeMailSheetState extends State<_ComposeMailSheet> {
 // ----------------------------
 // Models
 // ----------------------------
-
 class _RecipientPickResult {
   _RecipientPickResult({
     required this.receiverUid,
