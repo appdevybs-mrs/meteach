@@ -3,6 +3,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'learner_mail_thread_screen.dart';
+import 'package:flutter/material.dart';
+import 'dart:async';
 
 class LearnerMailScreen extends StatefulWidget {
   const LearnerMailScreen({super.key});
@@ -17,7 +19,43 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
   late final Stream<DatabaseEvent> _stream;
+  // -------------------------
+  // Name cache (uid -> "First Last")
+  // -------------------------
+  final Map<String, String> _nameCache = {};
 
+  Future<String> _fetchDisplayName(String uid) async {
+    final snap = await _db.ref('users/$uid').get();
+    if (!snap.exists || snap.value is! Map) return '';
+
+    final m = Map<String, dynamic>.from(snap.value as Map);
+    final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+    return ('$first $last').trim();
+  }
+
+  Future<void> _ensureNameCached(String uid, {String fallback = ''}) async {
+    if (uid.isEmpty) return;
+    if (_nameCache.containsKey(uid)) return;
+
+    final name = await _fetchDisplayName(uid);
+    if (!mounted) return;
+
+    setState(() {
+      _nameCache[uid] = name.isNotEmpty ? name : fallback;
+    });
+  }
+
+  String _displayPeerName(_TopicRow r) {
+    final cached = (_nameCache[r.peerUid] ?? '').trim();
+    if (cached.isNotEmpty) return cached;
+
+    final raw = r.peerName.trim();
+    // if peerName is already a real name (not email), use it
+    if (raw.isNotEmpty && !raw.contains('@')) return raw;
+
+    return 'Staff';
+  }
   @override
   void initState() {
     super.initState();
@@ -195,9 +233,16 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
             itemBuilder: (_, i) {
               final r = rows[i];
 
-              final peer = r.peerName.isEmpty ? "Staff" : r.peerName;
+              // Load and cache peer name (runs once per uid)
+              unawaited(_ensureNameCached(
+                r.peerUid,
+                fallback: (r.peerName.isNotEmpty ? r.peerName : 'Staff'),
+              ));
+
+              final peer = _displayPeerName(r);
               final last = r.lastMessage.trim();
               final subtitleText = last.isEmpty ? peer : '$peer • $last';
+
 
               return ListTile(
                 tileColor: Colors.white,

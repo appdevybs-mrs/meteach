@@ -319,41 +319,44 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
             title: const Text('Evaluate homework'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: scoreC,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Score (0-100)',
-                    border: OutlineInputBorder(),
+            // REPLACE YOUR OLD content: Column(...) WITH THIS:
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: scoreC,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Score (0-100)',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: noteC,
-                  minLines: 2,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Comment',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteC,
+                    minLines: 2,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Comment',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                RadioListTile<String>(
-                  value: 'approved',
-                  groupValue: status,
-                  onChanged: (v) => setLocal(() => status = v ?? 'approved'),
-                  title: const Text('Approved ✅'),
-                ),
-                RadioListTile<String>(
-                  value: 'needs_work',
-                  groupValue: status,
-                  onChanged: (v) => setLocal(() => status = v ?? 'needs_work'),
-                  title: const Text('Needs work 🔁'),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  RadioListTile<String>(
+                    value: 'approved',
+                    groupValue: status,
+                    onChanged: (v) => setLocal(() => status = v ?? 'approved'),
+                    title: const Text('Approved ✅'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'needs_work',
+                    groupValue: status,
+                    onChanged: (v) => setLocal(() => status = v ?? 'needs_work'),
+                    title: const Text('Needs work 🔁'),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),

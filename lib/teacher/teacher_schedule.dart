@@ -1,3 +1,8 @@
+// TeacherSchedule.dart
+// Drop-in replacement with safer parsing + debounce scheduling + fewer crash edges.
+// No new dependencies added.
+
+import 'dart:async';
 import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
@@ -24,18 +29,27 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   static const errorRed = Color(0xFFD32F2F);
   static const appBg = Color(0xFFF4F7F9);
   static const cardBorder = Color(0xFFE0E6ED);
-  static const pastGrey = Color(0xFF9E9E9E);
 
   final DatabaseReference _classesRef =
   FirebaseDatabase.instance.ref().child('classes');
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+
   bool _dailyEnabled = false;
   bool _sessionEnabled = false;
+
   late SharedPreferences _prefs;
   bool _prefsReady = false;
+
   bool _didAutoApply = false;
+
+  // Debounce / concurrency guards for scheduling
+  Timer? _applyDebounce;
+  bool _applyInProgress = false;
+  bool _applyPending = false;
+  List<_Occ> _lastUpcoming = const [];
+  List<_Occ> _lastAllOcc = const [];
 
   @override
   void initState() {
@@ -43,11 +57,19 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     _boot();
   }
 
+  @override
+  void dispose() {
+    _applyDebounce?.cancel();
+    super.dispose();
+  }
+
   Future<void> _boot() async {
     await NotificationService.I.init();
     await NotificationService.I.requestPermissions();
 
     _prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
     setState(() {
       _dailyEnabled = _prefs.getBool('reminders_daily_enabled') ?? false;
       _sessionEnabled = _prefs.getBool('reminders_session_enabled') ?? false;
@@ -57,6 +79,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   Future<void> _showBatteryPopupOnce() async {
     if (!Platform.isAndroid) return;
+    if (!_prefsReady) return;
 
     final alreadyShown = _prefs.getBool('battery_popup_shown') ?? false;
     if (alreadyShown) return;
@@ -80,6 +103,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           FilledButton(
             onPressed: () async {
               Navigator.pop(context);
+
+              // NOTE: Keep your correct package name here.
+              // If you use flavors / change applicationId, update this string.
               const intent = AndroidIntent(
                 action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
                 data: 'package:com.dreamenglish.academy.dream_english_academy',
@@ -110,20 +136,97 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       List<_Occ> up,
       List<_Occ> all,
       ) async {
+    if (!_prefsReady) return;
     final key = 'remind_day_${_fmtKey(day)}';
     await _prefs.setBool(key, enabled);
-    setState(() {});
-    await _applyAllReminders(upcoming: up, allOcc: all);
+    if (mounted) setState(() {});
+    _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
 
   bool _hasConflict(_Occ current, List<_Occ> allOnDay) {
-    for (var other in allOnDay) {
-      if (current == other) continue;
+    for (final other in allOnDay) {
+      if (identical(current, other)) continue;
       if (current.start.isBefore(other.end) && other.start.isBefore(current.end)) {
         return true;
       }
     }
     return false;
+  }
+
+  // Debounced apply to avoid cancel/reschedule storms when user toggles quickly.
+  void _queueApplyAllReminders({
+    required List<_Occ> upcoming,
+    required List<_Occ> allOcc,
+  }) {
+    _lastUpcoming = upcoming;
+    _lastAllOcc = allOcc;
+
+    _applyDebounce?.cancel();
+    _applyDebounce = Timer(const Duration(milliseconds: 450), () async {
+      await _applyAllRemindersInternal();
+    });
+  }
+
+  Future<void> _applyAllRemindersInternal() async {
+    if (_applyInProgress) {
+      _applyPending = true;
+      return;
+    }
+    _applyInProgress = true;
+
+    try {
+      // Snapshot of latest requested lists
+      final upcoming = _lastUpcoming;
+      final allOcc = _lastAllOcc;
+
+      debugPrint(
+        'APPLY reminders: daily=$_dailyEnabled session=$_sessionEnabled upcoming=${upcoming.length} all=${allOcc.length}',
+      );
+
+      // If your NotificationService supports selective canceling by id,
+      // it's better than cancelAll. We keep cancelAll for compatibility.
+      await NotificationService.I.cancelAll();
+      debugPrint('Canceled all notifications');
+
+      if (_dailyEnabled) {
+        debugPrint('Scheduling daily reminder 08:00');
+        await NotificationService.I.scheduleDailyReminder(
+          hour: 8,
+          minute: 0,
+          title: 'Classes Today',
+          body: 'Open app to see today\'s schedule.',
+        );
+      }
+
+      if (_sessionEnabled) {
+        debugPrint('Scheduling session reminders...');
+        final filtered = upcoming
+            .where((e) => _isClassEnabled(e.classId))
+            .where((e) => _isDayEnabled(e.start))
+        // Avoid scheduling reminders in the past
+            .where((e) => e.start.isAfter(DateTime.now()))
+            .take(30);
+
+        for (final o in filtered) {
+          await NotificationService.I.scheduleSessionReminder(
+            classId: o.classId,
+            title: 'Class Starting',
+            body: '${o.courseCode} at ${DateFormat('hh:mm a').format(o.start)}',
+            sessionStart: o.start,
+            minutesBefore: 15,
+          );
+        }
+      }
+    } catch (e, st) {
+      debugPrint('ERROR applying reminders: $e\n$st');
+    } finally {
+      _applyInProgress = false;
+      if (_applyPending) {
+        _applyPending = false;
+        // Run once more with latest changes
+        await _applyAllRemindersInternal();
+      }
+    }
   }
 
   @override
@@ -157,13 +260,23 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             }
 
             final data = snap.data?.snapshot.value;
-            if (data == null || data is! Map) {
+            if (data == null) {
               return const Center(child: Text('No classes found.'));
             }
 
-            final rawClasses = (data).values
-                .map((e) => Map<String, dynamic>.from(e as Map))
-                .toList();
+            // Safely parse RTDB data
+            final rawClasses = <Map<String, dynamic>>[];
+            if (data is Map) {
+              for (final v in data.values) {
+                if (v is Map) {
+                  rawClasses.add(Map<String, dynamic>.from(v));
+                }
+              }
+            }
+
+            if (rawClasses.isEmpty) {
+              return const Center(child: Text('No classes found.'));
+            }
 
             final allOcc = <_Occ>[];
             for (final cls in rawClasses) {
@@ -173,13 +286,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
             final now = DateTime.now();
             final twoDaysAgo = now.subtract(const Duration(days: 2));
-            final recentAndUpcoming = allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
-// ✅ Auto re-schedule reminders once when data is loaded
+            final recentAndUpcoming =
+            allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
+
+            // Auto reschedule once after first data load
             if (_prefsReady && !_didAutoApply) {
               _didAutoApply = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) async {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
-                await _applyAllReminders(upcoming: recentAndUpcoming, allOcc: allOcc);
+                _queueApplyAllReminders(upcoming: recentAndUpcoming, allOcc: allOcc);
               });
             }
 
@@ -206,7 +321,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     }
 
     final Map<String, List<_Occ>> grouped = {};
-    for (var o in displayList) {
+    for (final o in displayList) {
       final header = _fmtDayHeader(o.start);
       grouped.putIfAbsent(header, () => []).add(o);
     }
@@ -218,30 +333,33 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       itemBuilder: (context, index) {
         final day = headers[index];
         final dayClasses = grouped[day]!;
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-            child: Text(
-              day,
-              style: const TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w800,
-                fontSize: 15,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+              child: Text(
+                day,
+                style: const TextStyle(
+                  color: primaryBlue,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
               ),
             ),
-          ),
-          ...dayClasses.map((o) {
-            final isConflict = _hasConflict(o, dayClasses);
-            return _SessionCard(
-              o: o,
-              isConflict: isConflict,
-              enabled: _isClassEnabled(o.classId),
-              onToggle: () => _toggleClassNotif(o.classId, displayList, allOcc),
-              onAttendance: () => _openAttendance(o, rawClasses),
-              onHistory: () => _openHistory(o, rawClasses),
-            );
-          }),
-        ]);
+            ...dayClasses.map((o) {
+              final isConflict = _hasConflict(o, dayClasses);
+              return _SessionCard(
+                o: o,
+                isConflict: isConflict,
+                enabled: _isClassEnabled(o.classId),
+                onToggle: () => _toggleClassNotif(o.classId, displayList, allOcc),
+                onAttendance: () => _openAttendance(o, rawClasses),
+                onHistory: () => _openHistory(o, rawClasses),
+              );
+            }),
+          ],
+        );
       },
     );
   }
@@ -252,192 +370,252 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       List<Map<String, dynamic>> rawClasses,
       ) {
     final Map<String, List<_Occ>> byDay = {};
-    for (var o in allOcc) {
+    for (final o in allOcc) {
       final k = _fmtKey(o.start);
       byDay.putIfAbsent(k, () => []).add(o);
     }
+
     final selected = _selectedDay ?? _focusedDay;
     final events = byDay[_fmtKey(selected)] ?? [];
 
-    return Column(children: [
-      TableCalendar(
-        firstDay: DateTime.now().subtract(const Duration(days: 365)),
-        lastDay: DateTime.now().add(const Duration(days: 365)),
-        focusedDay: _focusedDay,
-        selectedDayPredicate: (day) => isSameDay(selected, day),
-        calendarFormat: CalendarFormat.month,
-        headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
-        calendarStyle: const CalendarStyle(
-          selectedDecoration: BoxDecoration(color: primaryBlue, shape: BoxShape.circle),
-          markerDecoration: BoxDecoration(color: actionOrange, shape: BoxShape.circle),
-        ),
-        onDaySelected: (s, f) => setState(() {
-          _selectedDay = s;
-          _focusedDay = f;
-        }),
-        eventLoader: (day) => byDay[_fmtKey(day)] ?? [],
-      ),
-      const Divider(height: 1),
-
-      // Disable reminders for this day (ALL classes on this date)
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: cardBorder),
+    return Column(
+      children: [
+        TableCalendar(
+          firstDay: DateTime.now().subtract(const Duration(days: 365)),
+          lastDay: DateTime.now().add(const Duration(days: 365)),
+          focusedDay: _focusedDay,
+          selectedDayPredicate: (day) => isSameDay(selected, day),
+          calendarFormat: CalendarFormat.month,
+          headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
+          calendarStyle: const CalendarStyle(
+            selectedDecoration: BoxDecoration(color: primaryBlue, shape: BoxShape.circle),
+            markerDecoration: BoxDecoration(color: actionOrange, shape: BoxShape.circle),
           ),
-          child: SwitchListTile(
-            title: Text("Reminders for ${DateFormat('yyyy-MM-dd').format(selected)}"),
-            subtitle: const Text("Disable = no reminders for all classes on this date"),
-            value: _isDayEnabled(selected),
-            onChanged: (v) => _toggleDay(selected, v, upcoming, allOcc),
-            secondary: Icon(
-              _isDayEnabled(selected) ? Icons.notifications_active_rounded : Icons.notifications_off_rounded,
-              color: _isDayEnabled(selected) ? actionOrange : Colors.grey,
+          onDaySelected: (s, f) => setState(() {
+            _selectedDay = s;
+            _focusedDay = f;
+          }),
+          eventLoader: (day) => byDay[_fmtKey(day)] ?? const [],
+        ),
+        const Divider(height: 1),
+
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: cardBorder),
+            ),
+            child: SwitchListTile(
+              title: Text("Reminders for ${DateFormat('yyyy-MM-dd').format(selected)}"),
+              subtitle: const Text("Disable = no reminders for all classes on this date"),
+              value: _isDayEnabled(selected),
+              onChanged: (v) => _toggleDay(selected, v, upcoming, allOcc),
+              secondary: Icon(
+                _isDayEnabled(selected)
+                    ? Icons.notifications_active_rounded
+                    : Icons.notifications_off_rounded,
+                color: _isDayEnabled(selected) ? actionOrange : Colors.grey,
+              ),
             ),
           ),
         ),
-      ),
 
-      Expanded(
-        child: ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: events.length,
-          itemBuilder: (context, i) {
-            final isConflict = _hasConflict(events[i], events);
-            return _SessionCard(
-              o: events[i],
-              isConflict: isConflict,
-              enabled: _isClassEnabled(events[i].classId),
-              onToggle: () => _toggleClassNotif(events[i].classId, upcoming, allOcc),
-              onAttendance: () => _openAttendance(events[i], rawClasses),
-              onHistory: () => _openHistory(events[i], rawClasses),
-            );
-          },
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: events.length,
+            itemBuilder: (context, i) {
+              final isConflict = _hasConflict(events[i], events);
+              return _SessionCard(
+                o: events[i],
+                isConflict: isConflict,
+                enabled: _isClassEnabled(events[i].classId),
+                onToggle: () => _toggleClassNotif(events[i].classId, upcoming, allOcc),
+                onAttendance: () => _openAttendance(events[i], rawClasses),
+                onHistory: () => _openHistory(events[i], rawClasses),
+              );
+            },
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 
   void _openAttendance(_Occ o, List<Map<String, dynamic>> rawClasses) {
-    final classMap =
-    rawClasses.firstWhere((c) => (c['class_id'] ?? c['id']) == o.classId);
+    final classMap = rawClasses.firstWhere(
+          (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (classMap.isEmpty) return;
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => TakeAttendanceScreen(classData: classMap),
-      ),
+      MaterialPageRoute(builder: (_) => TakeAttendanceScreen(classData: classMap)),
     );
   }
 
   void _openHistory(_Occ o, List<Map<String, dynamic>> rawClasses) {
-    final classMap =
-    rawClasses.firstWhere((c) => (c['class_id'] ?? c['id']) == o.classId);
+    final classMap = rawClasses.firstWhere(
+          (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (classMap.isEmpty) return;
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AttendanceHistoryScreen(classData: classMap),
-      ),
+      MaterialPageRoute(builder: (_) => AttendanceHistoryScreen(classData: classMap)),
     );
   }
 
-
   Widget _buildSettingsView(List<_Occ> upcoming, List<_Occ> allOcc) {
-    return ListView(padding: const EdgeInsets.all(20), children: [
-      const Text(
-        "Notifications",
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primaryBlue),
-      ),
-      const SizedBox(height: 16),
-      Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: cardBorder),
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text(
+          "Notifications",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primaryBlue),
         ),
-        child: Column(children: [
-          SwitchListTile(
-            secondary: const Icon(Icons.wb_sunny_rounded, color: actionOrange),
-            title: const Text("Daily Briefing (8:00 AM)"),
-            value: _dailyEnabled,
-            onChanged: (v) => _toggleDaily(v, upcoming, allOcc),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: cardBorder),
           ),
-          const Divider(height: 1, indent: 50),
-          SwitchListTile(
-            secondary: const Icon(Icons.notifications_active_rounded, color: primaryBlue),
-            title: const Text("Session Alerts (15m before)"),
-            value: _sessionEnabled,
-            onChanged: (v) => _toggleSession(v, upcoming, allOcc),
+          child: Column(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.wb_sunny_rounded, color: actionOrange),
+                title: const Text("Daily Briefing (8:00 AM)"),
+                value: _dailyEnabled,
+                onChanged: (v) => _toggleDaily(v, upcoming, allOcc),
+              ),
+              const Divider(height: 1, indent: 50),
+              SwitchListTile(
+                secondary: const Icon(Icons.notifications_active_rounded, color: primaryBlue),
+                title: const Text("Session Alerts (15m before)"),
+                value: _sessionEnabled,
+                onChanged: (v) => _toggleSession(v, upcoming, allOcc),
+              ),
+            ],
           ),
-        ]),
-      ),
-    ]);
+        ),
+      ],
+    );
   }
 
+  // Safer occurrence generator: handles malformed data and sessions_count edge cases.
   List<_Occ> _generateOccurrences(Map<String, dynamic> cls) {
-    if (cls['status'] != 'active') return [];
-    final firstDate = DateTime.tryParse(cls['schedule']?['first_session_date'] ?? '');
+    if (cls['status']?.toString() != 'active') return [];
+
+    final schedule = (cls['schedule'] is Map) ? Map<String, dynamic>.from(cls['schedule']) : null;
+    if (schedule == null) return [];
+
+    final firstDateRaw = schedule['first_session_date']?.toString() ?? '';
+    final firstDate = DateTime.tryParse(firstDateRaw);
     if (firstDate == null) return [];
-    final pattern = cls['schedule']?['sessions'] as List?;
-    final countLimit = int.tryParse(cls['schedule']?['sessions_count']?.toString() ?? '0') ?? 0;
-    if (pattern == null) return [];
+
+    final sessionsRaw = schedule['sessions'];
+    if (sessionsRaw is! List) return [];
+
+    final pattern = sessionsRaw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+    if (pattern.isEmpty) return [];
+
+    final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
+    int countLimit = int.tryParse(countLimitRaw) ?? 0;
+
+    // If missing/0, choose a safe default so the schedule actually shows.
+    // Adjust this number if you want more/less future sessions.
+    if (countLimit <= 0) countLimit = 200;
+
+    final classId = (cls['class_id'] ?? cls['id'] ?? '').toString();
+    final courseCode = (cls['course_code'] ?? '').toString();
+    final courseTitle = (cls['course_title'] ?? '').toString();
 
     final List<_Occ> occ = [];
+
     DateTime cursor = DateTime(firstDate.year, firstDate.month, firstDate.day);
     for (int week = 0; week < 52; week++) {
-      for (var s in pattern) {
+      for (final s in pattern) {
         if (occ.length >= countLimit) break;
-        final targetWeekday = _weekdayFromShort(s['day'] ?? 'Mon');
+
+        final dayShort = (s['day'] ?? 'Mon').toString();
+        final targetWeekday = _weekdayFromShort(dayShort);
+
         int diff = targetWeekday - cursor.weekday;
         if (diff < 0) diff += 7;
         final sDate = cursor.add(Duration(days: diff));
-        final timeParts = (s['start_time'] ?? '00:00').split(':');
-        final start = DateTime(
-          sDate.year,
-          sDate.month,
-          sDate.day,
-          int.parse(timeParts[0]),
-          int.parse(timeParts[1]),
-        );
+
+        final startTimeStr = (s['start_time'] ?? '00:00').toString();
+        final parts = startTimeStr.split(':');
+        final hh = (parts.isNotEmpty) ? int.tryParse(parts[0]) : null;
+        final mm = (parts.length >= 2) ? int.tryParse(parts[1]) : null;
+
+        final startHour = (hh != null && hh >= 0 && hh <= 23) ? hh : 0;
+        final startMin = (mm != null && mm >= 0 && mm <= 59) ? mm : 0;
+
+        final start = DateTime(sDate.year, sDate.month, sDate.day, startHour, startMin);
+
+        // Don’t generate before the actual first session date-time
         if (start.isBefore(firstDate)) continue;
 
-        occ.add(_Occ(
-          classId: (cls['class_id'] ?? cls['id'] ?? '').toString(),
-          courseCode: cls['course_code'] ?? '',
-          courseTitle: cls['course_title'] ?? '',
-          start: start,
-          end: start.add(Duration(minutes: int.parse(s['duration_min']?.toString() ?? '60'))),
-        ));
+        final durRaw = (s['duration_min'] ?? '60').toString();
+        final dur = int.tryParse(durRaw);
+        final durationMin = (dur != null && dur > 0) ? dur : 60;
+
+        occ.add(
+          _Occ(
+            classId: classId,
+            courseCode: courseCode,
+            courseTitle: courseTitle,
+            start: start,
+            end: start.add(Duration(minutes: durationMin)),
+          ),
+        );
       }
       cursor = cursor.add(const Duration(days: 7));
       if (occ.length >= countLimit) break;
     }
+
+    occ.sort((a, b) => a.start.compareTo(b.start));
     return occ;
   }
 
   int _weekdayFromShort(String day) {
-    const days = {'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7};
+    const days = {
+      'Mon': 1,
+      'Tue': 2,
+      'Wed': 3,
+      'Thu': 4,
+      'Fri': 5,
+      'Sat': 6,
+      'Sun': 7
+    };
     return days[day] ?? 1;
   }
 
   Future<void> _toggleClassNotif(String classId, List<_Occ> up, List<_Occ> all) async {
+    if (!_prefsReady) return;
+
     final current = _isClassEnabled(classId);
     await _prefs.setBool('remind_class_$classId', !current);
-    setState(() {});
-    await _applyAllReminders(upcoming: up, allOcc: all);
+    if (mounted) setState(() {});
+    _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
 
   Future<void> _toggleDaily(bool v, List<_Occ> up, List<_Occ> all) async {
+    if (!_prefsReady) return;
+
     setState(() => _dailyEnabled = v);
     await _prefs.setBool('reminders_daily_enabled', v);
-    await _applyAllReminders(upcoming: up, allOcc: all);
+    _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
 
   Future<void> _toggleSession(bool v, List<_Occ> up, List<_Occ> all) async {
+    if (!_prefsReady) return;
+
     setState(() => _sessionEnabled = v);
     await _prefs.setBool('reminders_session_enabled', v);
 
@@ -446,52 +624,14 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       await _showBatteryPopupOnce();
     }
 
-    await _applyAllReminders(upcoming: up, allOcc: all);
-  }
-
-  Future<void> _applyAllReminders({
-
-    required List<_Occ> upcoming,
-    required List<_Occ> allOcc,
-  }) async {
-    debugPrint('APPLY reminders: daily=$_dailyEnabled session=$_sessionEnabled upcoming=${upcoming.length}');
-
-    await NotificationService.I.cancelAll();
-    debugPrint('Canceled all notifications');
-
-    if (_dailyEnabled) {
-      debugPrint('Scheduling daily reminder 08:00');
-
-      await NotificationService.I.scheduleDailyReminder(
-        hour: 8,
-        minute: 0,
-        title: 'Classes Today',
-        body: 'Open app to see today\'s schedule.',
-      );
-    }
-
-    if (_sessionEnabled) {
-      debugPrint('Scheduling session reminders...');
-
-      for (var o in upcoming
-          .where((e) => _isClassEnabled(e.classId))
-          .where((e) => _isDayEnabled(e.start))
-          .take(30)) {
-        await NotificationService.I.scheduleSessionReminder(
-          classId: o.classId,
-          title: 'Class Starting',
-          body: '${o.courseCode} at ${DateFormat('hh:mm a').format(o.start)}',
-          sessionStart: o.start,
-          minutesBefore: 15,
-        );
-      }
-    }
+    _queueApplyAllReminders(upcoming: up, allOcc: all);
   }
 }
 
 class _Occ {
   final String classId, courseCode, courseTitle;
   final DateTime start, end;
+
   _Occ({
     required this.classId,
     required this.courseCode,
@@ -534,10 +674,24 @@ class _SessionCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: isPast ? Colors.grey.shade50 : (isConflict ? const Color(0xFFFFEBEE) : Colors.white),
+          color: isPast
+              ? Colors.grey.shade50
+              : (isConflict ? const Color(0xFFFFEBEE) : Colors.white),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: isConflict ? const Color(0xFFD32F2F).withOpacity(0.3) : const Color(0xFFE0E6ED)),
-          boxShadow: isLive ? [BoxShadow(color: const Color(0xFF1A2B48).withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 4))] : null,
+          border: Border.all(
+            color: isConflict
+                ? const Color(0xFFD32F2F).withOpacity(0.3)
+                : const Color(0xFFE0E6ED),
+          ),
+          boxShadow: isLive
+              ? [
+            BoxShadow(
+              color: const Color(0xFF1A2B48).withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            )
+          ]
+              : null,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
@@ -558,13 +712,24 @@ class _SessionCard extends StatelessWidget {
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
                                 fontSize: 16,
-                                color: isPast ? Colors.grey : (isLive ? const Color(0xFF1A2B48) : const Color(0xFF2D2D2D)),
+                                color: isPast
+                                    ? Colors.grey
+                                    : (isLive
+                                    ? const Color(0xFF1A2B48)
+                                    : const Color(0xFF2D2D2D)),
                               ),
                             ),
                             const Spacer(),
                             if (isLive) _LiveBadge(),
                             if (isPast)
-                              const Text('FINISHED', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              const Text(
+                                'FINISHED',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                ),
+                              ),
                             if (isConflict)
                               const Icon(Icons.warning_rounded, color: Color(0xFFD32F2F), size: 20),
                             if (!isPast)
@@ -572,7 +737,9 @@ class _SessionCard extends StatelessWidget {
                                 constraints: const BoxConstraints(),
                                 padding: const EdgeInsets.only(left: 8),
                                 icon: Icon(
-                                  enabled ? Icons.notifications_active : Icons.notifications_off_outlined,
+                                  enabled
+                                      ? Icons.notifications_active
+                                      : Icons.notifications_off_outlined,
                                   color: enabled ? const Color(0xFFF98D28) : Colors.grey,
                                   size: 20,
                                 ),
@@ -629,12 +796,18 @@ class _LiveBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: const Color(0xFF1A2B48), borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A2B48),
+        borderRadius: BorderRadius.circular(6),
+      ),
       child: const Row(
         children: [
           Icon(Icons.circle, color: Colors.red, size: 8),
           SizedBox(width: 4),
-          Text('LIVE NOW', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+          Text(
+            'LIVE NOW',
+            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
@@ -646,7 +819,13 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
-  const _ActionButton({required this.label, required this.icon, required this.color, required this.onTap});
+
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -655,13 +834,19 @@ class _ActionButton extends StatelessWidget {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(border: Border.all(color: color.withOpacity(0.2)), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(
+            border: Border.all(color: color.withOpacity(0.2)),
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 16, color: color),
               const SizedBox(width: 4),
-              Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+              Text(
+                label,
+                style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
         ),
