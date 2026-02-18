@@ -23,6 +23,9 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
+  bool _sessionStarted = false;
+  String? _sessionUid;
+
   void log(String msg) => debugPrint('FIKRA_AUTH | $msg');
 
   String normRole(String? role) {
@@ -45,9 +48,12 @@ class _AuthGateState extends State<AuthGate> {
 
         final user = authSnap.data;
         if (user == null) {
+          _sessionStarted = false;
+          _sessionUid = null;
           SessionManager.stopListening(); // stop session listener when signed out
           return widget.signedOutHome;
         }
+
 
         final uid = user.uid;
 
@@ -170,8 +176,21 @@ class _AuthGateState extends State<AuthGate> {
 
 
             // Normal routing
+
+// ✅ single-device session: start ONCE per uid
+            if (!_sessionStarted || _sessionUid != uid) {
+              _sessionStarted = true;
+              _sessionUid = uid;
+
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                SessionManager.createNewSessionAndStartListening();
+              });
+            }
+
+
             TopicService.subscribeForRole(role: role);
             FCMService.syncTokenAfterLogin();
+
 
             if (role == 'admin') return const AdminHome();
 

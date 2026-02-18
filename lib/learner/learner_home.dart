@@ -54,7 +54,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     // (optional but recommended) remove session in RTDB
     if (uid != null && uid.isNotEmpty) {
       try {
-        await FirebaseDatabase.instance.ref('sessions/$uid').remove();
       } catch (_) {}
     }
 

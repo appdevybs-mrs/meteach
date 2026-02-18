@@ -33,12 +33,7 @@ class AdminHome extends StatelessWidget {
     // ✅ stop "single device" listener (so it doesn't run after logout)
     await SessionManager.stopListening();
 
-    // ✅ (optional but recommended) remove session in RTDB
-    if (userId != null && userId.isNotEmpty) {
-      try {
-        await FirebaseDatabase.instance.ref('sessions/$userId').remove();
-      } catch (_) {}
-    }
+
 
     // ✅ remove FCM token record (your existing behavior)
     try {

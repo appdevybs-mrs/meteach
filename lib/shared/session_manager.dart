@@ -28,17 +28,44 @@ class SessionManager {
       'updatedAt': ServerValue.timestamp,
     });
 
+    await Future.delayed(const Duration(milliseconds: 300));
+
+
     // Listen for changes
     await _sub?.cancel();
-    _sub = _db.child('sessions/$uid/sessionId').onValue.listen((event) async {
+    final sessionRef = _db.child('sessions/$uid/sessionId');
+
+    _sub = sessionRef.onValue.listen((event) async {
       final remote = event.snapshot.value?.toString() ?? '';
       final local = (await _storage.read(key: _key)) ?? '';
 
-      // if someone else logged in and overwrote sessionId -> logout
+      // ✅ If sessionId is missing remotely (null/empty), DON'T logout.
+      //    Just restore it (this prevents instant logout loops).
+      if (remote.isEmpty && local.isNotEmpty) {
+        await _db.child('sessions/$uid').update({
+          'sessionId': local,
+          'updatedAt': ServerValue.timestamp,
+        });
+        return;
+      }
+
+      // ✅ If mismatch happens, DO NOT logout immediately.
+      //    Re-check from server once (prevents “old value first” glitch).
       if (local.isNotEmpty && remote.isNotEmpty && remote != local) {
-        await forceLogout();
+        try {
+          await Future.delayed(const Duration(milliseconds: 500));
+          final fresh = (await sessionRef.get()).value?.toString() ?? '';
+
+          // Still mismatched? then it’s a real other-device login → logout.
+          if (fresh.isNotEmpty && fresh != local) {
+            await forceLogout();
+          }
+        } catch (_) {
+          // If get() fails, don't logout blindly.
+        }
       }
     });
+
   }
 
   static Future<void> stopListening() async {

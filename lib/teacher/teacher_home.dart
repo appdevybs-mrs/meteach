@@ -70,7 +70,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     // ✅ (optional but recommended) remove session in RTDB
     if (userId != null && userId.isNotEmpty) {
       try {
-        await FirebaseDatabase.instance.ref('sessions/$userId').remove();
       } catch (_) {}
     }
 
