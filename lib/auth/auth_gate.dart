@@ -124,7 +124,11 @@ class _AuthGateState extends State<AuthGate> {
                     );
                   }
 
-                  return NotAuthorized(role: 'Missing /users/$uid');
+                  return DeletedActionScreen(
+                    uid: uid,
+                    deleteAuth: true,
+                    selfDeleteDone: false,
+                  );
                 },
               );
             }
@@ -134,7 +138,37 @@ class _AuthGateState extends State<AuthGate> {
             final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
             final status = (m['status'] ?? '').toString().toLowerCase().trim();
-            final role = normRole(m['role']?.toString());
+            // ✅ NEW: Always check if user is in users_deleted FIRST
+            final delRefEarly = FirebaseDatabase.instance.ref('users_deleted/$uid');
+
+            return FutureBuilder<DataSnapshot>(
+              future: delRefEarly.get(),
+              builder: (context, delSnapEarly) {
+                if (!delSnapEarly.hasData) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                if (delSnapEarly.data!.exists) {
+                  final rawDel = delSnapEarly.data!.value;
+                  final mm = rawDel is Map
+                      ? rawDel.map((k, v) => MapEntry(k.toString(), v))
+                      : <String, dynamic>{};
+
+                  final deleteAuth = (mm['deleteAuth'] == true);
+                  final selfDeleteDone = (mm['selfDeleteDone'] == true);
+
+                  return DeletedActionScreen(
+                    uid: uid,
+                    deleteAuth: deleteAuth,
+                    selfDeleteDone: selfDeleteDone,
+                  );
+                }
+
+                // ⬇️ If NOT deleted, continue normal logic below
+
+                final role = normRole(m['role']?.toString());
 
             log('ROLE=[$role] STATUS=[$status]');
 
@@ -203,6 +237,9 @@ class _AuthGateState extends State<AuthGate> {
             }
 
             return NotAuthorized(role: role);
+              },
+            );
+
           },
         );
       },

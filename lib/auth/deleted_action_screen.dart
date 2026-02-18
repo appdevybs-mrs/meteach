@@ -27,6 +27,7 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
   Map<String, dynamic> _data = {};
   String _status = 'Loading deleted account…';
   String? _error;
+  bool _forceDelete = false;
 
   DatabaseReference get _ref =>
       FirebaseDatabase.instance.ref('users_deleted/${widget.uid}');
@@ -40,12 +41,14 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
     try {
       final snap = await _ref.get();
       if (!snap.exists) {
+        // User not in users_deleted → force auth deletion
         setState(() {
-          _error = 'Not found in users_deleted/${widget.uid}';
+          _forceDelete = true;
           _loading = false;
         });
         return;
       }
+
 
       final raw = snap.value;
       final m = raw is Map
@@ -72,7 +75,10 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
 
   Future<void> _deleteAuthIfNeeded() async {
     // source of truth: data from RTDB (fallback to widget flags)
-    final deleteAuth = (_data['deleteAuth'] == true) || widget.deleteAuth == true;
+    final deleteAuth =
+        _forceDelete ||
+            (_data['deleteAuth'] == true) ||
+            widget.deleteAuth == true;
     final selfDeleteDone =
         (_data['selfDeleteDone'] == true) || widget.selfDeleteDone == true;
 

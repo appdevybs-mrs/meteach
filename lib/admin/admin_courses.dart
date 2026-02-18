@@ -1250,6 +1250,33 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   List<String> _categorySuggestions = [];
   bool _loadingCategories = false;
 
+  Future<void> _loadExistingInstructorsMapIfEdit() async {
+    // Only in edit mode and only if we have an id
+    if (widget.mode != EditorMode.edit) return;
+    final id = widget.courseId;
+    if (id == null || id.trim().isEmpty) return;
+
+    try {
+      final snap = await _coursesRef.child(id).get();
+      final v = snap.value;
+
+      if (v is Map) {
+        final m = v.map((k, val) => MapEntry(k.toString(), val));
+
+        final existing = m['instructors_map'];
+        if (existing is Map) {
+          // normalize keys to String
+          final normalized = existing.map((k, val) => MapEntry(k.toString(), val));
+          _pickedInstructorMap = Map<String, dynamic>.from(normalized);
+        }
+      }
+    } catch (_) {
+      // ignore: best effort; we keep empty map if read fails
+    }
+  }
+
+
+
   Future<void> _loadCategorySuggestions() async {
     setState(() => _loadingCategories = true);
     try {
@@ -1287,8 +1314,72 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
   bool _saving = false;
   bool _uploadingThumb = false;
+  // NEW: reliable instructors storage (uid -> {name, serial})
+  Map<String, dynamic> _pickedInstructorMap = {};
 
   DatabaseReference get _coursesRef => FirebaseDatabase.instance.ref('courses');
+  // ===== Teachers from RTDB (users) =====
+  static const String _usersPath = 'users';
+  DatabaseReference get _usersRef => FirebaseDatabase.instance.ref(_usersPath);
+
+  bool _loadingTeachers = false;
+
+  // uid -> {uid,name,serial}
+  Map<String, Map<String, String>> _teachersByUid = {};
+
+  List<Map<String, String>> get _teachersList {
+    final list = _teachersByUid.values.toList();
+    list.sort((a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""));
+    return list;
+  }
+
+  bool _isTeacherRole(dynamic role) {
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
+  }
+
+  Future<void> _loadTeachers() async {
+    if (_loadingTeachers) return;
+    if (!mounted) return;
+
+    setState(() => _loadingTeachers = true);
+
+    try {
+      final snap = await _usersRef.get();
+      final Map<String, Map<String, String>> byUid = {};
+
+      if (snap.exists && snap.value is Map) {
+        final all = Map<dynamic, dynamic>.from(snap.value as Map);
+
+        for (final entry in all.entries) {
+          final uid = entry.key.toString();
+          final raw = entry.value;
+          if (raw is! Map) continue;
+
+          final data = Map<String, dynamic>.from(raw);
+          if (!_isTeacherRole(data["role"])) continue;
+
+          final first = (data["first_name"] ?? "").toString().trim();
+          final last = (data["last_name"] ?? "").toString().trim();
+          final full = "$first $last".trim();
+          final serial = (data["serial"] ?? "").toString().trim();
+
+          byUid[uid] = {
+            "uid": uid,
+            "name": full.isEmpty ? uid : full,
+            "serial": serial,
+          };
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _teachersByUid = byUid);
+    } catch (_) {
+      // Non-blocking: if teachers fail to load, manual input still works.
+    } finally {
+      if (mounted) setState(() => _loadingTeachers = false);
+    }
+  }
 
   @override
   void initState() {
@@ -1331,6 +1422,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     }
 
     _loadCategorySuggestions();
+
+    // ✅ Load existing instructors_map (so we don't wipe it on save)
+    Future.microtask(_loadExistingInstructorsMapIfEdit);
+
+    _loadTeachers();
+
   }
 
   @override
@@ -1455,11 +1552,42 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       maxLines: 8,
                     ),
                     const SizedBox(height: 12),
-                    _TextField(
-                      controller: instructorsC,
-                      label: 'Instructors',
-                      hint: 'Comma separated (example: John, Sarah)',
+                    _InstructorsPicker(
+                      loading: _loadingTeachers,
+                      currentText: instructorsC.text,
+                      teachers: _teachersList,
+                      onRefresh: _loadTeachers,
+                      initiallySelectedUids: _pickedInstructorMap.keys.toList(),
+
+                      onApply: (pickedUids) {
+                        // Convert picked UIDs -> names for old field
+                        final names = <String>[];
+                        final map = <String, dynamic>{};
+
+                        for (final uid in pickedUids) {
+                          final t = _teachersByUid[uid];
+                          if (t == null) continue;
+                          final name = (t["name"] ?? "").trim();
+                          final serial = (t["serial"] ?? "").trim();
+
+                          if (name.isNotEmpty) names.add(name);
+                          map[uid] = {
+                            "name": name,
+                            "serial": serial,
+                          };
+                        }
+
+                        // Store names in the existing controller (old behavior stays)
+                        setState(() {
+                          instructorsC.text = names.join(', ');
+                        });
+
+                        // Save the reliable map into a variable we’ll add next
+                        _pickedInstructorMap = map;
+                      },
                     ),
+
+
                     const SizedBox(height: 12),
                     _TextField(
                       controller: levelC,
@@ -1648,10 +1776,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
         await newRef.set({
           ...course.toMap(),
+          'instructors_map': _pickedInstructorMap, // ✅ NEW
           'createdAt': nowTs,
           'updatedAt': nowTs,
           'order_index': nextIndex,
         });
+
+
       } else {
         final id = widget.courseId!;
         final updateMap = course.toMap()..remove('course_code'); // don’t overwrite
@@ -1662,8 +1793,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
         await _coursesRef.child(id).update({
           ...updateMap,
+          'instructors_map': _pickedInstructorMap, // ✅ NEW
           'updatedAt': nowTs,
         });
+
+
       }
 
       if (!mounted) return;
@@ -2333,4 +2467,222 @@ String generateCourseCode(String title) {
   final padded = number.toString().padLeft(3, '0');
 
   return '$initials-$padded';
+}
+class _InstructorsPicker extends StatelessWidget {
+  const _InstructorsPicker({
+    required this.loading,
+    required this.currentText,
+    required this.teachers,
+    required this.onRefresh,
+    required this.onApply,
+    required this.initiallySelectedUids,
+  });
+
+
+  final bool loading;
+  final String currentText;
+  final List<Map<String, String>> teachers; // {uid,name,serial}
+  final Future<void> Function() onRefresh;
+  final ValueChanged<List<String>> onApply;
+  final List<String> initiallySelectedUids;
+
+  static List<String> _splitCsv(String input) {
+    return input
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _splitCsv(currentText);
+    // We will preselect using saved instructors_map UIDs (if provided by parent via currentText display only)
+    // The dialog will return UIDs.
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Instructors',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh teachers',
+              onPressed: loading ? null : () async => onRefresh(),
+              icon: loading
+                  ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+                  : const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AdminCoursesScreen.appBg,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Text(
+            current.isEmpty ? 'No instructors selected' : current.join(', '),
+            style: TextStyle(color: Colors.black.withOpacity(0.75)),
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        FilledButton.icon(
+          onPressed: () async {
+            final pickedUids = await showDialog<List<String>>(
+              context: context,
+              builder: (_) => _TeacherMultiPickDialog(
+                teachers: teachers,
+                initiallySelectedUids: initiallySelectedUids,
+              ),
+            );
+
+            if (pickedUids != null) {
+              onApply(pickedUids);
+            }
+
+
+          },
+          icon: const Icon(Icons.people_alt_rounded),
+          label: Text(
+            teachers.isEmpty
+                ? 'Pick instructors (no teachers found)'
+                : (current.isEmpty
+                ? 'Pick instructors'
+                : 'Edit instructors (${current.length})'),
+          ),
+        ),
+
+
+      ],
+    );
+  }
+}
+
+class _TeacherMultiPickDialog extends StatefulWidget {
+  const _TeacherMultiPickDialog({
+    required this.teachers,
+    required this.initiallySelectedUids,
+  });
+
+  final List<Map<String, String>> teachers; // {uid,name,serial}
+  final List<String> initiallySelectedUids; // ✅ UIDs
+
+
+  @override
+  State<_TeacherMultiPickDialog> createState() => _TeacherMultiPickDialogState();
+}
+
+class _TeacherMultiPickDialogState extends State<_TeacherMultiPickDialog> {
+  final TextEditingController _search = TextEditingController();
+  late Set<String> _selected; // ✅ selected by UID
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initiallySelectedUids
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _search.text.trim().toLowerCase();
+
+    final filtered = widget.teachers.where((t) {
+      if (q.isEmpty) return true;
+      final name = (t["name"] ?? "").toLowerCase();
+      final serial = (t["serial"] ?? "").toLowerCase();
+      return name.contains(q) || serial.contains(q);
+    }).toList();
+
+    return AlertDialog(
+      title: const Text('Pick instructors'),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 460,
+        child: Column(
+          children: [
+            TextField(
+              controller: _search,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search by name or serial',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(child: Text('No teachers found'))
+                  : ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (_, i) {
+                  final t = filtered[i];
+                  final uid = (t["uid"] ?? "").trim();
+                  final name = (t["name"] ?? "").trim();
+                  final serial = (t["serial"] ?? "").trim();
+                  final checked = uid.isNotEmpty && _selected.contains(uid);
+
+
+                  return CheckboxListTile(
+                    value: checked,
+                    onChanged: (v) {
+                      setState(() {
+                        if (uid.isEmpty) return;
+                        if (v == true) {
+                          _selected.add(uid);
+                        } else {
+                          _selected.remove(uid);
+                        }
+
+                      });
+                    },
+                    title: Text(name.isEmpty ? '(Unnamed)' : name),
+                    subtitle: serial.isEmpty ? null : Text('Serial: $serial'),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final out = _selected.toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+            Navigator.pop(context, out);
+          },
+          child: const Text('Apply'),
+        ),
+      ],
+    );
+  }
 }

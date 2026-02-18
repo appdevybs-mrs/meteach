@@ -933,6 +933,7 @@ class StoriesHome extends StatelessWidget {
 
 class _CourseLite {
   _CourseLite({
+
     required this.id,
     required this.title,
     required this.thumb,
