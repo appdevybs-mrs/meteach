@@ -26,13 +26,31 @@ class NotificationService {
 
   static const int dailyReminderId = 900001;
 
+  // Separate channels so users can control Daily vs Session alerts independently in Android settings.
+  static const String _dailyChannelId = 'daily_reminders_channel';
+  static const String _dailyChannelName = 'Daily Reminders';
+  static const String _dailyChannelDesc = 'Daily reminder notifications';
+
+  static const String _sessionChannelId = 'class_reminders_channel';
+  static const String _sessionChannelName = 'Class Reminders';
+  static const String _sessionChannelDesc = 'Reminders for classes';
+
   Future<void> init() async {
     if (_inited) return;
 
     // Timezone init
     tz.initializeTimeZones();
-    final tzInfo = await FlutterTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
+
+    // flutter_timezone versions differ: sometimes returns String, sometimes object w/ identifier.
+    dynamic tzInfo = await FlutterTimezone.getLocalTimezone();
+    final String tzName = (tzInfo is String) ? tzInfo : (tzInfo?.identifier?.toString() ?? 'UTC');
+
+    try {
+      tz.setLocalLocation(tz.getLocation(tzName));
+    } catch (_) {
+      // Fallback (won't crash app)
+      tz.setLocalLocation(tz.getLocation('UTC'));
+    }
 
     // Init notifications (v20 uses named param "settings")
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -44,6 +62,26 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
+    // Create/update Android notification channels (safe to call repeatedly).
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    if (android != null) {
+      await android.createNotificationChannel(const AndroidNotificationChannel(
+        _dailyChannelId,
+        _dailyChannelName,
+        description: _dailyChannelDesc,
+        importance: Importance.defaultImportance,
+      ));
+
+      await android.createNotificationChannel(const AndroidNotificationChannel(
+        _sessionChannelId,
+        _sessionChannelName,
+        description: _sessionChannelDesc,
+        importance: Importance.max,
+      ));
+    }
+
     _inited = true;
   }
 
@@ -54,13 +92,26 @@ class NotificationService {
     return granted ?? true;
   }
 
-  /// Simple notification details (no actions)
-  NotificationDetails _detailsSimple() {
+  /// Daily reminder notification details (separate channel).
+  NotificationDetails _detailsDaily() {
     return const NotificationDetails(
       android: AndroidNotificationDetails(
-        'class_reminders_channel',
-        'Class Reminders',
-        channelDescription: 'Reminders for classes',
+        _dailyChannelId,
+        _dailyChannelName,
+        channelDescription: _dailyChannelDesc,
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+      ),
+    );
+  }
+
+  /// Simple notification details (session/simple, no actions).
+  NotificationDetails _detailsSimpleSession() {
+    return const NotificationDetails(
+      android: AndroidNotificationDetails(
+        _sessionChannelId,
+        _sessionChannelName,
+        channelDescription: _sessionChannelDesc,
         importance: Importance.max,
         priority: Priority.high,
         fullScreenIntent: true,
@@ -68,27 +119,57 @@ class NotificationService {
     );
   }
 
-  /// Session notification details (with Snooze actions)
-  NotificationDetails _detailsSession() {
-    return const NotificationDetails(
+  /// Session notification details with dynamic Snooze actions + a Dismiss action.
+  ///
+  /// We only show snooze options that would still fire BEFORE class starts.
+  NotificationDetails _detailsSessionWithActions({
+    required DateTime sessionStart,
+    required DateTime scheduledAt, // when this notif will fire
+  }) {
+    final now = DateTime.now();
+    // Estimate remaining time until class start when the notification is shown.
+    // If the notif is scheduled in the future, use scheduledAt; else use now.
+    final base = scheduledAt.isAfter(now) ? scheduledAt : now;
+
+    final remaining = sessionStart.difference(base);
+    final remainingMinutes = remaining.inMinutes;
+
+    final actions = <AndroidNotificationAction>[];
+
+    // Always provide a dismiss/ack action (does not reschedule anything).
+    actions.add(const AndroidNotificationAction('DISMISS', 'Dismiss'));
+
+    // Only add snooze actions that still fit before class start.
+    void addSnooze(int mins, String label) {
+      if (remainingMinutes > mins) {
+        actions.add(AndroidNotificationAction('SNOOZE_$mins', label));
+      }
+    }
+
+    addSnooze(5, 'Snooze 5m');
+    addSnooze(10, 'Snooze 10m');
+    addSnooze(15, 'Snooze 15m');
+
+    return NotificationDetails(
       android: AndroidNotificationDetails(
-        'class_reminders_channel',
-        'Class Reminders',
-        channelDescription: 'Reminders for classes',
+        _sessionChannelId,
+        _sessionChannelName,
+        channelDescription: _sessionChannelDesc,
         importance: Importance.max,
         priority: Priority.high,
         fullScreenIntent: true,
-        actions: <AndroidNotificationAction>[
-          AndroidNotificationAction('SNOOZE_5', 'Snooze 5m'),
-          AndroidNotificationAction('SNOOZE_10', 'Snooze 10m'),
-          AndroidNotificationAction('SNOOZE_15', 'Snooze 15m'),
-        ],
+        actions: actions,
       ),
     );
   }
 
   Future<void> cancelAll() async {
     await _plugin.cancelAll();
+  }
+
+  /// Optional helper: cancel just the daily reminder.
+  Future<void> cancelDailyReminder() async {
+    await _plugin.cancel(id: dailyReminderId);
   }
 
   Future<void> scheduleDailyReminder({
@@ -106,12 +187,32 @@ class NotificationService {
       title: title,
       body: body,
       scheduledDate: next,
-      notificationDetails: _detailsSimple(),
+      notificationDetails: _detailsDaily(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time, // repeats daily
     );
   }
 
+  /// Optional helper: cancel a specific session reminder (main notif).
+  Future<void> cancelSessionReminder({
+    required String classId,
+    required DateTime sessionStart,
+  }) async {
+    final id = _makeNotifId(classId, sessionStart);
+    await _plugin.cancel(id: id);
+  }
+
+  /// Optional helper: cancel a specific snooze reminder.
+  Future<void> cancelSnoozeReminder({
+    required String classId,
+    required DateTime sessionStart,
+    required int snoozeMinutes,
+  }) async {
+    final id = _makeSnoozeNotifId(classId, sessionStart, snoozeMinutes);
+    await _plugin.cancel(id: id);
+  }
+
+  /// Improved: auto-enhance body with time info (does NOT change your method signature).
   Future<void> scheduleSessionReminder({
     required String classId,
     required String title,
@@ -130,6 +231,13 @@ class NotificationService {
       return;
     }
 
+    // Add extra context to the body (safe; doesn't break callers).
+    final enhancedBody = _enhanceSessionBody(
+      originalBody: body,
+      sessionStart: sessionStart,
+      scheduledAt: scheduledAt,
+    );
+
     final tzTime = tz.TZDateTime.from(scheduledAt, tz.local);
     final id = _makeNotifId(classId, sessionStart);
 
@@ -138,27 +246,57 @@ class NotificationService {
       'classId': classId,
       'sessionStart': sessionStart.toIso8601String(),
       'title': title,
-      'body': body,
+      'body': enhancedBody,
       'kind': 'main',
     });
 
     await _plugin.zonedSchedule(
       id: id,
       title: title,
-      body: body,
+      body: enhancedBody,
       scheduledDate: tzTime,
-      notificationDetails: _detailsSession(),
+      notificationDetails: _detailsSessionWithActions(
+        sessionStart: sessionStart,
+        scheduledAt: scheduledAt,
+      ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payloadJson,
     );
   }
 
-  /// Handles notif tap + Snooze action taps (foreground + background)
+  String _two(int n) => n.toString().padLeft(2, '0');
+
+  String _formatLocalTime(DateTime dt) {
+    // Simple local HH:mm format (keeps this file dependency-free).
+    return '${_two(dt.hour)}:${_two(dt.minute)}';
+  }
+
+  String _enhanceSessionBody({
+    required String originalBody,
+    required DateTime sessionStart,
+    required DateTime scheduledAt,
+  }) {
+    final startTime = _formatLocalTime(sessionStart);
+    final diff = sessionStart.difference(scheduledAt).inMinutes;
+
+    // If original body is empty, create one. If not, append helpful info.
+    final base = originalBody.trim().isEmpty ? 'Starts at $startTime' : originalBody.trim();
+
+    if (diff <= 0) {
+      return '$base • Starts at $startTime';
+    }
+    return '$base • Starts at $startTime • in $diff min';
+  }
+
+  /// Handles notif tap + action taps (foreground + background)
   Future<void> handleNotificationResponse(NotificationResponse response) async {
     final actionId = response.actionId ?? '';
     final payload = response.payload;
 
-    // Only snooze actions matter for us
+    // If user tapped "Dismiss" we do nothing (just closes notif).
+    if (actionId == 'DISMISS') return;
+
+    // Only snooze actions need payload data.
     if (payload == null || payload.isEmpty) return;
 
     Map<String, dynamic> data;
@@ -183,9 +321,17 @@ class NotificationService {
     }
 
     int? snoozeMinutes;
-    if (actionId == 'SNOOZE_5') snoozeMinutes = 5;
+    // Support both your original IDs and dynamic ones like SNOOZE_5 / SNOOZE_10 / SNOOZE_15
+    if (actionId == 'SNOOZE_5' || actionId == 'SNOOZE_05') snoozeMinutes = 5;
     if (actionId == 'SNOOZE_10') snoozeMinutes = 10;
     if (actionId == 'SNOOZE_15') snoozeMinutes = 15;
+
+    // Also allow future dynamic snooze actions (SNOOZE_30, etc.)
+    if (snoozeMinutes == null && actionId.startsWith('SNOOZE_')) {
+      final raw = actionId.replaceFirst('SNOOZE_', '');
+      final parsed = int.tryParse(raw);
+      if (parsed != null) snoozeMinutes = parsed;
+    }
 
     if (snoozeMinutes == null) return;
 
@@ -232,7 +378,7 @@ class NotificationService {
       title: title,
       body: body,
       scheduledDate: tzTime,
-      notificationDetails: _detailsSimple(),
+      notificationDetails: _detailsSimpleSession(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payloadJson,
     );
