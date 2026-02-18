@@ -532,7 +532,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     ),
                     const SizedBox(height: 10),
                     _NumberPickerRow(
-                      label: 'Reminder (before session)',
+                      label: 'Reminder when left',
                       value: (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession),
                       min: 1,
                       max: (sessionsPaid > 0 ? sessionsPaid : 1),
@@ -770,7 +770,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     ),
                     const SizedBox(height: 10),
                     _NumberPickerRow(
-                      label: 'Reminder (before session)',
+                      label: 'Reminder when left',
                       value: remindBeforeSession,
                       min: 1,
                       max: (sessionsPaid > 0 ? sessionsPaid : 1),
