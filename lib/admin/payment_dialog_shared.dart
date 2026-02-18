@@ -141,6 +141,99 @@ class PaymentDialogShared {
 
   // ---------- Learner summary update (same logic as your payments screen) ----------
 
+  // ======================================================================
+  // ✅ REBUILD summary from ALL payments (used for Edit + Delete)
+  // This avoids breaking logic and fixes mismatches forever.
+  // ======================================================================
+  static Future<void> _rebuildLearnerSummaryFromPayments({
+    required FirebaseDatabase db,
+    required String uid,
+    required String courseKey,
+  }) async {
+    final paymentsRef = db.ref('payments');
+    final usersRef = db.ref('users');
+
+    // 1) Read existing summary so we keep fields like "title" if you stored it.
+    final sumRef = usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+    final sumSnap = await sumRef.get();
+    final sumRaw = sumSnap.value;
+    final oldSum = sumRaw is Map
+        ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    // 2) Load all payments for this uid, then filter by courseKey
+    final allForUidSnap = await paymentsRef.orderByChild('uid').equalTo(uid).get();
+    final allForUidRaw = allForUidSnap.value;
+
+    int totalPaid = 0;
+    int sessionsPaidTotal = 0;
+
+    // latest payment tracking
+    int latestPaidAt = 0;
+    String latestPaymentId = '';
+    String latestMethod = '';
+    int latestAmount = 0;
+    int latestRemind = 0;
+
+    if (allForUidRaw is Map) {
+      allForUidRaw.forEach((payId, payVal) {
+        if (payId == null || payVal == null) return;
+        if (payVal is! Map) return;
+
+        final p = payVal.map((k, v) => MapEntry(k.toString(), v));
+        if ((p['courseKey'] ?? '').toString() != courseKey) return;
+
+        final amount = _asInt(p['amount']);
+        final sp = _asInt(p['sessionsPaid']);
+        final paidAt = _asInt(p['paidAt']);
+
+        totalPaid += amount;
+        sessionsPaidTotal += sp;
+
+        if (paidAt >= latestPaidAt) {
+          latestPaidAt = paidAt;
+          latestPaymentId = payId.toString();
+          latestMethod = (p['method'] ?? '').toString();
+          latestAmount = amount;
+          latestRemind = _asInt(p['remindBeforeSession']);
+        }
+      });
+    }
+
+    // 3) Decide reminder value
+    // If latest payment had remindBeforeSession, use it.
+    // Otherwise keep old summary reminder if it exists.
+    int remind = latestRemind > 0 ? latestRemind : _asInt(oldSum['remindBeforeSession']);
+
+    // clamp reminder to sessionsPaidTotal (never bigger)
+    if (sessionsPaidTotal <= 0) {
+      remind = 0;
+    } else {
+      if (remind <= 0) remind = sessionsPaidTotal;
+      if (remind > sessionsPaidTotal) remind = sessionsPaidTotal;
+    }
+
+    // 4) Write rebuilt summary
+    await sumRef.update({
+      ...oldSum, // keep existing fields (like title) unless overwritten below
+      'totalPaid': totalPaid,
+      'sessionsPaidTotal': sessionsPaidTotal,
+      'remindBeforeSession': remind,
+
+      // last payment fields
+      'lastPaymentId': latestPaymentId,
+      'lastMethod': latestMethod,
+      'lastAmount': latestAmount,
+
+      // use the real paidAt of the latest payment
+      'lastPaymentAt': latestPaidAt,
+
+      // keep updatedAt as server timestamp
+      'updatedAt': ServerValue.timestamp,
+    });
+  }
+
+
   static Future<void> _updateLearnerSummary({
     required DatabaseReference usersRef,
     required String uid,
@@ -233,6 +326,57 @@ class PaymentDialogShared {
       fixedCourse: null,
     );
   }
+
+  static Future<void> showDelete({
+    required BuildContext context,
+    required FirebaseDatabase db,
+    required Map<String, dynamic> payment, // must contain paymentId, uid, courseKey
+  }) async {
+    final paymentsRef = db.ref('payments');
+
+    final paymentId = (payment['paymentId'] ?? '').toString().trim();
+    final uid = (payment['uid'] ?? '').toString().trim();
+    final courseKey = (payment['courseKey'] ?? '').toString().trim();
+
+    if (paymentId.isEmpty || uid.isEmpty || courseKey.isEmpty) {
+      _snack(context, 'Cannot delete: missing paymentId/uid/courseKey');
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete payment?'),
+        content: const Text('This will remove the payment and update the learner summary.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return;
+
+    try {
+      await paymentsRef.child(paymentId).remove();
+
+      await _rebuildLearnerSummaryFromPayments(
+        db: db,
+        uid: uid,
+        courseKey: courseKey,
+      );
+
+      _snack(context, 'Deleted ✅');
+    } catch (e) {
+      _snack(context, 'Delete failed: $e');
+    }
+  }
+
 
   /// Edit payment (works for both screens)
   static Future<void> showEdit({
@@ -346,7 +490,7 @@ class PaymentDialogShared {
                     ),
                     const SizedBox(height: 10),
                     _NumberPickerRow(
-                      label: 'Reminder (before session)',
+                      label: 'Reminder (how many sessiosn left)',
                       value: remindBeforeSession,
                       min: 1,
                       max: sessionsPaid > 0 ? sessionsPaid : 1,
@@ -407,6 +551,12 @@ class PaymentDialogShared {
                       'dayKey': paidDateYmd,
                       'updatedAt': ServerValue.timestamp,
                     });
+
+                    await _rebuildLearnerSummaryFromPayments(
+                      db: db,
+                      uid: (payment['uid'] ?? '').toString(),
+                      courseKey: (payment['courseKey'] ?? '').toString(),
+                    );
 
                     if (context.mounted) Navigator.pop(context);
                     _snack(context, 'Updated ✅');

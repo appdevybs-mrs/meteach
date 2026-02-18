@@ -962,15 +962,26 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     required String uid,
     required String courseKey,
   }) async {
-    final snap = await _paymentsRef.limitToLast(2000).get();
+    // Keep existing summary fields (so we don't accidentally wipe extra data)
+    final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+    final oldSnap = await sumRef.get();
+    final oldRaw = oldSnap.value;
+    final oldSum = oldRaw is Map
+        ? oldRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    // Load ALL payments for this learner (safer than limitToLast)
+    final snap = await _paymentsRef.orderByChild('uid').equalTo(uid).get();
     final v = snap.value;
 
     int totalPaid = 0;
     int sessionsTotal = 0;
+
     int lastPaidAt = 0;
     String lastPaymentId = '';
     String lastMethod = '';
     int lastAmount = 0;
+    int lastRemind = 0;
 
     if (v is Map) {
       for (final entry in v.entries) {
@@ -978,13 +989,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         if (raw is! Map) continue;
         final m = raw.map((k, v) => MapEntry(k.toString(), v));
 
-        if ((m['uid'] ?? '') != uid) continue;
-        if ((m['courseKey'] ?? '') != courseKey) continue;
+        if ((m['courseKey'] ?? '').toString() != courseKey) continue;
 
         final amount = _asInt(m['amount']);
         final sp = _asInt(m['sessionsPaid']);
         final paidAt = _asInt(m['paidAt']);
         final method = (m['method'] ?? '').toString();
+        final remind = _asInt(m['remindBeforeSession']);
 
         totalPaid += amount;
         sessionsTotal += sp;
@@ -994,22 +1005,36 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           lastPaymentId = entry.key.toString();
           lastMethod = method;
           lastAmount = amount;
+          lastRemind = remind;
         }
       }
     }
 
-    final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+    // Calculate remindBeforeSession safely:
+    // Prefer latest payment's remind; else keep old summary; else sessionsTotal
+    int remindBeforeSession =
+    (lastRemind > 0) ? lastRemind : _asInt(oldSum['remindBeforeSession']);
+
+    if (sessionsTotal <= 0) {
+      remindBeforeSession = 0;
+    } else {
+      if (remindBeforeSession <= 0) remindBeforeSession = sessionsTotal;
+      if (remindBeforeSession > sessionsTotal) remindBeforeSession = sessionsTotal;
+    }
 
     await sumRef.update({
+      ...oldSum, // keep extra fields that might exist
       'totalPaid': totalPaid,
       'sessionsPaidTotal': sessionsTotal,
-      // keep these useful fields sane too (won't break anything if unused)
+      'remindBeforeSession': remindBeforeSession,
+      'lastPaymentAt': lastPaidAt, // reflects actual latest paidAt
       'lastPaymentId': lastPaymentId,
       'lastMethod': lastMethod,
       'lastAmount': lastAmount,
       'updatedAt': ServerValue.timestamp,
     });
   }
+
 
   Future<void> _sendPaymentPushToLearner({
     required String learnerUid,
