@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import 'audio_call_service.dart';
 
@@ -43,12 +45,20 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
   Timer? _timer;
   int _seconds = 0;
 
+  // ✅ caller auto-timeout (10s)
+  Timer? _ringTimeout;
+
   late final RTCVideoRenderer _localRenderer;
   late final RTCVideoRenderer _remoteRenderer;
   bool _renderersInit = false;
 
   final _msgCtrl = TextEditingController();
   final _chatScroll = ScrollController();
+
+  bool _didPop = false;
+
+  // ✅ presence busy flag
+  static const String _presenceInCallPath = 'presence/in_call';
 
   @override
   void initState() {
@@ -64,6 +74,14 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     AudioCallService.I.videoOnRequestFromUid.addListener(_onVideoRequest);
 
     _startOnce();
+  }
+
+  Future<void> _setInCallPresence(bool v) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await FirebaseDatabase.instance.ref('$_presenceInCallPath/$uid').set(v);
+    } catch (_) {}
   }
 
   Future<void> _ensureRenderersInit() async {
@@ -104,16 +122,80 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     });
   }
 
+  void _showPrettySnack(
+      String message, {
+        IconData icon = Icons.info_outline,
+      }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(14),
+        duration: const Duration(seconds: 3),
+        content: Row(
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _popSafe() {
+    if (!mounted) return;
+    if (_didPop) return;
+    _didPop = true;
+    Navigator.maybePop(context);
+  }
+
+  void _cancelRingTimeout() {
+    _ringTimeout?.cancel();
+    _ringTimeout = null;
+  }
+
+  void _startCallerRingTimeout() {
+    _cancelRingTimeout();
+
+    // ✅ Only for caller: after 10s still ringing -> stop
+    if (!widget.isCaller) return;
+
+    _ringTimeout = Timer(const Duration(seconds: 10), () async {
+      if (!mounted) return;
+
+      final s = AudioCallService.I.callState.value;
+      if (s == 'ringing') {
+        setState(() => _status = 'No answer');
+        _showPrettySnack('No answer (10s).', icon: Icons.access_time);
+        try {
+          await AudioCallService.I.hangUp(localOnly: false);
+        } catch (_) {}
+        _popSafe();
+      }
+    });
+  }
+
   void _onCallState() {
     if (!mounted) return;
     final s = AudioCallService.I.callState.value;
 
     if (s == 'ringing') {
       setState(() => _status = 'Ringing…');
+      _startCallerRingTimeout();
       return;
     }
 
     if (s == 'accepted') {
+      _cancelRingTimeout();
+      _setInCallPresence(true);
+
       setState(() {
         _status = 'Connected ✅';
         _callReady = true;
@@ -125,20 +207,53 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       return;
     }
 
+    if (s == 'busy') {
+      _cancelRingTimeout();
+      _setInCallPresence(false);
+
+      setState(() => _status = 'Busy');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPrettySnack('User is busy right now.', icon: Icons.schedule);
+        _popSafe();
+      });
+      return;
+    }
+
+    if (s == 'no_answer') {
+      _cancelRingTimeout();
+      _setInCallPresence(false);
+
+      _timer?.cancel();
+      _timer = null;
+      setState(() => _status = 'No answer');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPrettySnack('No answer. Please try again.', icon: Icons.access_time);
+        _popSafe();
+      });
+      return;
+    }
+
     if (s == 'declined') {
+      _cancelRingTimeout();
+      _setInCallPresence(false);
+
       setState(() => _status = 'Declined');
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.maybePop(context);
+        _showPrettySnack('Call declined.', icon: Icons.block);
+        _popSafe();
       });
       return;
     }
 
     if (s == 'ended') {
+      _cancelRingTimeout();
+      _setInCallPresence(false);
+
       _timer?.cancel();
       _timer = null;
       setState(() => _status = 'Ended');
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.maybePop(context);
+        _popSafe();
       });
       return;
     }
@@ -147,6 +262,11 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _cancelRingTimeout();
+
+    // clear busy presence
+    _setInCallPresence(false);
+
     AudioCallService.I.callState.removeListener(_onCallState);
     AudioCallService.I.localStreamVN.removeListener(_bindStreams);
     AudioCallService.I.remoteStreamVN.removeListener(_bindStreams);
@@ -170,10 +290,8 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     final mic = await Permission.microphone.request();
     if (!mic.isGranted) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission denied.')),
-      );
-      Navigator.maybePop(context);
+      _showPrettySnack('Microphone permission denied.', icon: Icons.mic_off);
+      _popSafe();
       return;
     }
 
@@ -198,6 +316,8 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
           _callReady = true;
           _cameraOn = wantVideo;
         });
+
+        _startCallerRingTimeout();
         await _bindStreams();
       } else {
         setState(() {
@@ -208,10 +328,15 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Call error: $e')),
+
+      final raw = e.toString();
+      final msg = raw.replaceFirst('Exception: ', '').trim();
+      _showPrettySnack(
+        msg.isEmpty ? 'Something went wrong. Please try again.' : msg,
+        icon: Icons.error_outline,
       );
-      Navigator.maybePop(context);
+
+      _popSafe();
     }
   }
 
@@ -227,6 +352,11 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     try {
       await AudioCallService.I.joinCall(callId: callId);
       if (!mounted) return;
+
+      if (AudioCallService.I.callState.value != 'accepted') return;
+
+      _setInCallPresence(true);
+
       setState(() {
         _status = 'Connected ✅';
         _callReady = true;
@@ -234,21 +364,26 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       });
       await _bindStreams();
       _startTimer();
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
-      Navigator.maybePop(context);
+      _popSafe();
     }
   }
 
   Future<void> _declineIncoming() async {
     final callId = widget.incomingCallId?.trim();
-    if (callId != null && callId.isNotEmpty) {
-      await AudioCallService.I.declineCall(callId);
-    } else {
-      await AudioCallService.I.hangUp(localOnly: true);
-    }
+    try {
+      if (callId != null && callId.isNotEmpty) {
+        await AudioCallService.I.declineCall(callId);
+      } else {
+        await AudioCallService.I.hangUp(localOnly: true);
+      }
+    } catch (_) {}
+
+    _setInCallPresence(false);
+
     if (!mounted) return;
-    Navigator.maybePop(context);
+    _popSafe();
   }
 
   void _startTimer() {
@@ -267,8 +402,10 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
   }
 
   Future<void> _hangup() async {
+    _cancelRingTimeout();
     setState(() => _status = 'Ending…');
     await AudioCallService.I.hangUp(localOnly: false);
+    _setInCallPresence(false);
   }
 
   void _toggleMute() {
@@ -287,7 +424,10 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     if (!_callReady) return;
     if (!_cameraOn) {
       final cam = await Permission.camera.request();
-      if (!cam.isGranted) return;
+      if (!cam.isGranted) {
+        _showPrettySnack('Camera permission denied.', icon: Icons.videocam_off);
+        return;
+      }
       try {
         await AudioCallService.I.enableVideo();
         await _bindStreams();
@@ -346,16 +486,13 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     final from = AudioCallService.I.videoOnRequestFromUid.value;
     if (from == null) return;
 
-    // Avoid showing multiple dialogs
     if (_videoDialogOpen) return;
 
-    // Only show if actually connected
     if (AudioCallService.I.callState.value != 'accepted') {
       AudioCallService.I.clearVideoOnRequest();
       return;
     }
 
-    // If already on camera, no need
     if (_cameraOn) {
       AudioCallService.I.clearVideoOnRequest();
       return;
@@ -363,7 +500,8 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
 
     _videoDialogOpen = true;
 
-    final peerName = widget.peerName.trim().isEmpty ? 'The other person' : widget.peerName.trim();
+    final peerName =
+    widget.peerName.trim().isEmpty ? 'The other person' : widget.peerName.trim();
 
     final res = await showDialog<bool>(
       context: context,
@@ -391,7 +529,10 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
 
     if (res == true) {
       final cam = await Permission.camera.request();
-      if (!cam.isGranted) return;
+      if (!cam.isGranted) {
+        _showPrettySnack('Camera permission denied.', icon: Icons.videocam_off);
+        return;
+      }
 
       try {
         await AudioCallService.I.enableVideo();
@@ -402,7 +543,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     }
   }
 
-  // ✅ New Compact Circular Buttons for the Side Dock
   Widget _sideActionButton({
     required IconData icon,
     required Color color,
@@ -419,7 +559,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
           decoration: BoxDecoration(
             color: isActive ? color : Colors.white.withOpacity(0.9),
             shape: BoxShape.circle,
-            boxShadow: [
+            boxShadow: const [
               BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
             ],
           ),
@@ -435,18 +575,15 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     final isConnected = AudioCallService.I.callState.value == 'accepted';
     final msgs = AudioCallService.I.chatMessages.value;
 
-    // We get the viewPadding to ensure we are truly clear of the system navigation bar
     final viewPadding = MediaQuery.of(context).viewPadding;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    final remoteHasVideo =
-    (_remoteRenderer.srcObject?.getVideoTracks().isNotEmpty ?? false);
-
+    final remoteHasVideo = (_remoteRenderer.srcObject?.getVideoTracks().isNotEmpty ?? false);
     final showRemoteVideo = remoteHasVideo;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
-      resizeToAvoidBottomInset: false, // We handle the keyboard manually with bottomInset
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(peer, style: const TextStyle(fontWeight: FontWeight.w900)),
         centerTitle: true,
@@ -456,10 +593,12 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       ),
       body: Stack(
         children: [
-          // Background / Remote Video
           Positioned.fill(
             child: showRemoteVideo
-                ? RTCVideoView(_remoteRenderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover)
+                ? RTCVideoView(
+              _remoteRenderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            )
                 : Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -467,18 +606,26 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                   CircleAvatar(
                     radius: 60,
                     backgroundColor: const Color(0xFF1A2B48),
-                    child: Text(peer.isNotEmpty ? peer[0].toUpperCase() : '?',
-                        style: const TextStyle(fontSize: 40, color: Colors.white)),
+                    child: Text(
+                      peer.isNotEmpty ? peer[0].toUpperCase() : '?',
+                      style: const TextStyle(fontSize: 40, color: Colors.white),
+                    ),
                   ),
                   const SizedBox(height: 20),
-                  Text(_status, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                  if (isConnected) Text(_formatTime(_seconds), style: const TextStyle(fontSize: 18, color: Colors.blueGrey)),
+                  Text(
+                    _status,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                  if (isConnected)
+                    Text(
+                      _formatTime(_seconds),
+                      style: const TextStyle(fontSize: 18, color: Colors.blueGrey),
+                    ),
                 ],
               ),
             ),
           ),
 
-          // TOP LEFT DOCK: Video, Flip, Speaker, Mic
           Positioned(
             left: 16,
             top: 16,
@@ -512,7 +659,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
             ),
           ),
 
-          // Local Mini Preview
           if (_cameraOn && _localRenderer.srcObject != null)
             Positioned(
               right: 16,
@@ -523,12 +669,15 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                   width: 100,
                   height: 140,
                   color: Colors.black,
-                  child: RTCVideoView(_localRenderer, mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover),
+                  child: RTCVideoView(
+                    _localRenderer,
+                    mirror: true,
+                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  ),
                 ),
               ),
             ),
 
-          // Chat Overlay (Lifted slightly higher to clear the new bottom bar)
           if (!_incomingWaiting && msgs.isNotEmpty)
             Positioned(
               left: 16,
@@ -544,21 +693,18 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
               ),
             ),
 
-          // Incoming Call Popup
           if (_incomingWaiting) _buildIncomingPopup(peer),
 
-          // ✅ REDESIGNED BOTTOM BAR: Added extra padding and safe handling
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
               padding: EdgeInsets.fromLTRB(
-                  16,
-                  12,
-                  16,
-                  // This logic ensures it stays above the keyboard OR the system gesture bar
-                  (bottomInset > 0) ? bottomInset + 10 : viewPadding.bottom + 20
+                16,
+                12,
+                16,
+                (bottomInset > 0) ? bottomInset + 10 : viewPadding.bottom + 20,
               ),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -585,8 +731,12 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                               hintText: 'Type a message...',
                               filled: true,
                               fillColor: Colors.grey.shade100,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                              contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(30),
+                                borderSide: BorderSide.none,
+                              ),
                             ),
                           ),
                         ),
@@ -603,7 +753,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  // ✅ Large Hang Up Button
                   SizedBox(
                     width: double.infinity,
                     height: 58,
@@ -613,10 +762,10 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                       label: Text(
                         _incomingWaiting ? 'DECLINE' : 'HANG UP',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            letterSpacing: 1.2,
-                            fontWeight: FontWeight.w900
+                          color: Colors.white,
+                          fontSize: 16,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -643,7 +792,10 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
           child: Container(
             margin: const EdgeInsets.all(24),
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -656,7 +808,14 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: _acceptIncoming,
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.all(16)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.all(16),
+                        ),
                         child: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ),
@@ -664,7 +823,14 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: _declineIncoming,
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.all(16)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.all(16),
+                        ),
                         child: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ),

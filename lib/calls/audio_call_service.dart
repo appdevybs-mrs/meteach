@@ -37,8 +37,10 @@ class AudioCallService {
   // Notifiers so UI rebinds when streams arrive later
   final ValueNotifier<MediaStream?> localStreamVN = ValueNotifier(null);
   final ValueNotifier<MediaStream?> remoteStreamVN = ValueNotifier(null);
+
   // --- video request popup ---
-  final ValueNotifier<String?> videoOnRequestFromUid = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> videoOnRequestFromUid =
+  ValueNotifier<String?>(null);
 
   // store the peer uid for this call (so enableVideo can notify them)
   String? _peerUid;
@@ -77,7 +79,11 @@ class AudioCallService {
   bool _starting = false;
   bool _ending = false;
 
-  // values: idle | ringing | accepted | declined | ended
+  // call timeout (ringing)
+  Timer? _ringTimeoutTimer;
+  static const Duration _ringTimeout = Duration(seconds: 10);
+
+  // values: idle | ringing | accepted | declined | busy | no_answer | ended
   final ValueNotifier<String> callState = ValueNotifier<String>('idle');
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -95,8 +101,53 @@ class AudioCallService {
   MediaStream? get localStream => _localStream;
   MediaStream? get remoteStream => _remoteStream;
 
-  // ---------- cleanup ----------
+  // ---------- presence (busy) ----------
+  DatabaseReference _presenceRefFor(String uid) =>
+      _db.ref('presence/in_call/$uid');
 
+  Future<bool> _isUserBusy(String uid) async {
+    try {
+      final snap = await _presenceRefFor(uid).get();
+      final v = snap.value;
+      if (v is Map) {
+        final active = v['active'];
+        if (active is int) return active == 1;
+        if (active is bool) return active == true;
+        if (active != null) return active.toString() == '1';
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<void> _setMyInCallPresence({required String callId}) async {
+    final me = _meUid;
+    if (me.isEmpty) return;
+
+    final ref = _presenceRefFor(me);
+
+    // If app disconnects/crashes, try to clear presence
+    try {
+      await ref.onDisconnect().remove();
+    } catch (_) {}
+
+    try {
+      await ref.set({
+        'active': 1,
+        'callId': callId,
+        'ts': ServerValue.timestamp,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _clearMyInCallPresence() async {
+    final me = _meUid;
+    if (me.isEmpty) return;
+    try {
+      await _presenceRefFor(me).remove();
+    } catch (_) {}
+  }
+
+  // ---------- cleanup ----------
   Future<void> _cleanupAllSubs() async {
     Future<void> cancel(StreamSubscription? s) async {
       try {
@@ -204,6 +255,11 @@ class AudioCallService {
     }
   }
 
+  void _cancelRingTimeout() {
+    _ringTimeoutTimer?.cancel();
+    _ringTimeoutTimer = null;
+  }
+
   // ---------- connection guards ----------
   void _wirePcConnectionGuards() {
     final pc = _pc;
@@ -211,22 +267,24 @@ class AudioCallService {
 
     Future<void> endNow() async {
       if (_ending) return;
-      _ending = true;
-      _setStateSafe('ended');
-      await hangUp(localOnly: false);
+      await _endCall(reason: 'ended', localOnly: false);
     }
 
     pc.onConnectionState = (RTCPeerConnectionState state) async {
       if (state ==
-          RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+          RTCPeerConnectionState
+              .RTCPeerConnectionStateDisconnected ||
+          state ==
+              RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+          state ==
+              RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
         await endNow();
       }
     };
 
     pc.onIceConnectionState = (RTCIceConnectionState state) async {
-      if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
+      if (state ==
+          RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
           state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
           state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
         await endNow();
@@ -261,72 +319,53 @@ class AudioCallService {
     _pc = await createPeerConnection(_iceConfig);
     _wirePcConnectionGuards();
 
-    // ✅ IMPORTANT FIX:
-    // Always create a recv-only video transceiver so that when either side
-    // enables camera later, the other side can receive it immediately.
+    // ✅ Keep a video m-line ready so either side can enable later
     try {
       try {
         _videoTransceiver = await _pc!.addTransceiver(
           kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
           init: RTCRtpTransceiverInit(
-            // Key change: create a real video m-line that can later SEND or RECEIVE
             direction: TransceiverDirection.SendRecv,
           ),
         );
 
-        // Keep a stable sender so enableVideo() can replaceTrack() reliably
         _videoSender = _videoTransceiver!.sender;
 
-        // If we started the call with video already enabled, attach it now
         if (enableVideo && _videoTrack != null) {
           await _videoSender!.replaceTrack(_videoTrack);
         } else {
-          // Start audio-only but keep the m-line; no camera track yet
           await _videoSender!.replaceTrack(null);
         }
-      } catch (_) {
-        // ignore if platform doesn't support transceivers well
-      }
+      } catch (_) {}
+    } catch (_) {}
 
-    } catch (_) {
-      // ignore if not supported on platform
-    }
-
-    // ✅ Prefer onAddStream (most reliable on Android for flutter_webrtc)
     _pc!.onAddStream = (MediaStream stream) {
-      debugPrint('✅ onAddStream: id=${stream.id} vids=${stream.getVideoTracks().length} auds=${stream.getAudioTracks().length}');
+      debugPrint(
+          '✅ onAddStream: id=${stream.id} vids=${stream.getVideoTracks().length} auds=${stream.getAudioTracks().length}');
       _remoteStream = stream;
       remoteStreamVN.value = stream;
     };
 
-// ✅ Keep onTrack too (some platforms only fire onTrack)
     _pc!.onTrack = (RTCTrackEvent event) async {
-      debugPrint('✅ onTrack: kind=${event.track.kind} streams=${event.streams.length}');
+      debugPrint(
+          '✅ onTrack: kind=${event.track.kind} streams=${event.streams.length}');
 
-      // If platform provides a stream, use it
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
         remoteStreamVN.value = _remoteStream;
         return;
       }
-
-      // If no stream is provided, DON'T try to create one (causes your "stream is null")
-      // Just wait for onAddStream to deliver it.
+      // wait for onAddStream
     };
 
-
     for (final t in _localStream!.getTracks()) {
-      // add audio always
       if (t.kind == 'audio') {
         await _pc!.addTrack(t, _localStream!);
       }
-
-      // if call started with video, also add the video track
       if (enableVideo && t.kind == 'video') {
         await _pc!.addTrack(t, _localStream!);
       }
     }
-
 
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
@@ -536,7 +575,6 @@ class AudioCallService {
     if (ref == null || pc == null || me.isEmpty) return;
     if (callState.value != 'accepted') return;
 
-    // Avoid renegotiation in unstable signaling
     if (pc.signalingState != RTCSignalingState.RTCSignalingStateStable) return;
 
     final offer = await pc.createOffer({
@@ -646,16 +684,15 @@ class AudioCallService {
       }
 
       if (action == 'camera_on_request') {
-        // if I'm already on camera, ignore (or you can auto-accept if you want)
         if (withVideo) return;
 
         final from = (v['from'] ?? '').toString();
         videoOnRequestFromUid.value = from.isNotEmpty ? from : 'peer';
         return;
       }
-
     });
   }
+
   Future<void> requestPeerCameraOn(String peerUid) async {
     final ref = _callRef;
     if (ref == null) return;
@@ -750,13 +787,11 @@ class AudioCallService {
     final pc = _pc;
     if (pc == null) return;
 
-    // 1) Prefer transceiver sender if we created it
     if (_videoTransceiver != null) {
       _videoSender = _videoTransceiver!.sender;
       return;
     }
 
-    // 2) Fallback: try to find a sender that already has a video track
     final senders = await pc.getSenders();
     for (final s in senders) {
       if (s.track?.kind == 'video') {
@@ -764,11 +799,7 @@ class AudioCallService {
         return;
       }
     }
-
-    // If we reach here: there is no video sender yet.
-    // We'll create one later by adding a video track when camera is enabled.
   }
-
 
   Future<void> _replaceVideoTrack(MediaStreamTrack? newTrack) async {
     final pc = _pc;
@@ -791,31 +822,24 @@ class AudioCallService {
       throw Exception('Camera track not available.');
     }
 
-    // Ensure there is a sender. If not, create one by adding the track.
     await _ensureVideoSender();
 
     if (_videoSender == null) {
-      // No video sender exists yet -> addTrack creates it
       try {
         _videoSender = await _pc!.addTrack(_videoTrack!, _localStream!);
-      } catch (_) {
-        // If addTrack fails, fallback to replaceTrack path
-      }
+      } catch (_) {}
     } else {
-      // Sender exists -> just replace the track
       await _replaceVideoTrack(_videoTrack);
     }
 
     withVideo = true;
     await _renegotiate();
 
-    // Ask peer to enable too (your popup feature)
     final peer = _peerUid;
     if (peer != null && peer.isNotEmpty) {
       await requestPeerCameraOn(peer);
     }
   }
-
 
   Future<void> disableVideo() async {
     if (_pc == null || _localStream == null) return;
@@ -839,6 +863,92 @@ class AudioCallService {
     _setStateSafe('declined');
   }
 
+  // ---------- internal end call with reason ----------
+  Future<void> _endCall({required String reason, required bool localOnly}) async {
+    if (_ending) return;
+    _ending = true;
+
+    _cancelRingTimeout();
+
+    final ref = _callRef;
+    final currentCallId = callId;
+
+    // Keep the reason visible to UI
+    _setStateSafe(reason);
+
+    int? durationSec;
+    String? callerUid;
+    String? callerName;
+    String? calleeUid;
+    String? calleeName;
+    bool videoFlag = withVideo;
+
+    if (ref != null) {
+      try {
+        final snap = await ref.get();
+        final v = snap.value;
+        if (v is Map) {
+          callerUid = (v['callerUid'] ?? '').toString();
+          callerName = (v['callerName'] ?? 'Caller').toString();
+          calleeUid = (v['calleeUid'] ?? '').toString();
+          calleeName = (v['calleeName'] ?? '').toString();
+
+          final acceptedAt = v['acceptedAt'];
+          if (acceptedAt is int) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            durationSec = ((now - acceptedAt) / 1000).floor();
+            if (durationSec < 0) durationSec = 0;
+          }
+
+          final vf = v['video'];
+          if (vf is int) videoFlag = vf == 1;
+          if (vf != null && vf.toString() == '1') videoFlag = true;
+        }
+      } catch (_) {}
+    }
+
+    // Notify peer before tearing down
+    if (!localOnly && ref != null) {
+      try {
+        await ref.update({
+          'status': reason,
+          'endedAt': ServerValue.timestamp,
+        });
+      } catch (_) {}
+    }
+
+    await _cleanupAllSubs();
+    await _disposeMedia();
+    await _closePeer();
+
+    // Clear presence
+    await _clearMyInCallPresence();
+
+    // Update logs
+    if (!localOnly &&
+        currentCallId != null &&
+        callerUid != null &&
+        callerUid!.isNotEmpty &&
+        calleeUid != null &&
+        calleeUid!.isNotEmpty) {
+      await _updateCallLogsForBoth(
+        callId: currentCallId,
+        callerUid: callerUid!,
+        callerName: callerName ?? 'Caller',
+        calleeUid: calleeUid!,
+        calleeName: (calleeName ?? '').trim().isNotEmpty
+            ? calleeName!
+            : await _getDisplayName(calleeUid!),
+        status: reason,
+        video: videoFlag,
+        endedAt: DateTime.now().millisecondsSinceEpoch,
+        durationSec: durationSec,
+      );
+    }
+
+    await _resetState();
+  }
+
   // ---------- public API ----------
   Future<String> startCall({
     required String calleeUid,
@@ -852,14 +962,20 @@ class AudioCallService {
       await _ensureFreshState();
 
       final me = _meUid;
-      if (me.isEmpty) throw Exception('Not logged in.');
-// 🔒 Check if callee is logged in (FCM token must exist)
-      if (me.isEmpty) throw Exception('Not logged in.');
+      if (me.isEmpty) throw Exception('You must be logged in to place a call.');
 
-// 🔒 Check if callee is logged in (FCM token must exist)
+      // 1) Logged out check (FCM token missing => user logged out in your app)
       final calleeToken = await _getUserFcmToken(calleeUid);
+      if (calleeToken == null) {
+        throw Exception('User is currently logged out and unavailable.');
+      }
 
-
+      // 2) Busy check
+      final busy = await _isUserBusy(calleeUid);
+      if (busy) {
+        _setStateSafe('busy');
+        throw Exception('User is busy right now.');
+      }
 
       final id = _db.ref('calls').push().key!;
       callId = id;
@@ -883,6 +999,9 @@ class AudioCallService {
         'createdAt': ServerValue.timestamp,
       });
 
+      // mark me in call (busy presence)
+      await _setMyInCallPresence(callId: id);
+
       _setStateSafe('ringing');
 
       await _updateCallLogsForBoth(
@@ -895,6 +1014,7 @@ class AudioCallService {
         video: withVideo,
       );
 
+      // Try push (token already exists)
       try {
         await _sendIncomingCallPush(
           calleeUid: calleeUid,
@@ -928,6 +1048,26 @@ class AudioCallService {
         'sdp': offer.sdp,
       });
 
+      // 10s no-answer timeout
+      _cancelRingTimeout();
+      _ringTimeoutTimer = Timer(_ringTimeout, () async {
+        try {
+          final current = callId;
+          final refNow = _callRef;
+          if (current == null || refNow == null) return;
+
+          // Only if still ringing
+          final snap = await refNow.get();
+          final v = snap.value;
+          if (v is Map) {
+            final status = (v['status'] ?? '').toString();
+            if (status == 'ringing') {
+              await _endCall(reason: 'no_answer', localOnly: false);
+            }
+          }
+        } catch (_) {}
+      });
+
       _callSub = _callRef!.onValue.listen((event) async {
         final v = event.snapshot.value;
         if (v is! Map) return;
@@ -935,13 +1075,26 @@ class AudioCallService {
         final status = (v['status'] ?? '').toString();
 
         if (status == 'declined') {
-          _setStateSafe('declined');
-          await hangUp(localOnly: true);
+          _cancelRingTimeout();
+          await _endCall(reason: 'declined', localOnly: true);
           return;
         }
+
+        if (status == 'busy') {
+          _cancelRingTimeout();
+          await _endCall(reason: 'busy', localOnly: true);
+          return;
+        }
+
+        if (status == 'no_answer') {
+          _cancelRingTimeout();
+          await _endCall(reason: 'no_answer', localOnly: true);
+          return;
+        }
+
         if (status == 'ended') {
-          _setStateSafe('ended');
-          await hangUp(localOnly: true);
+          _cancelRingTimeout();
+          await _endCall(reason: 'ended', localOnly: true);
           return;
         }
 
@@ -949,6 +1102,7 @@ class AudioCallService {
         final pc = _pc;
 
         if (status == 'accepted' && callState.value != 'accepted') {
+          _cancelRingTimeout();
           _setStateSafe('accepted');
         }
 
@@ -1004,7 +1158,20 @@ class AudioCallService {
       await _ensureFreshState();
 
       final me = _meUid;
-      if (me.isEmpty) throw Exception('Not logged in.');
+      if (me.isEmpty) throw Exception('You must be logged in to answer a call.');
+
+      // If I'm already in a call, mark this call as busy
+      final iAmBusy = await _isUserBusy(me);
+      if (iAmBusy) {
+        try {
+          await _db.ref('calls/$callId').update({
+            'status': 'busy',
+            'endedAt': ServerValue.timestamp,
+          });
+        } catch (_) {}
+        _setStateSafe('busy');
+        return;
+      }
 
       this.callId = callId;
       _callRef = _db.ref('calls/$callId');
@@ -1013,7 +1180,10 @@ class AudioCallService {
       final data = await _waitForOffer(callRef: _callRef!);
 
       final currentStatus = (data['status'] ?? '').toString();
-      if (currentStatus == 'ended' || currentStatus == 'declined') {
+      if (currentStatus == 'ended' ||
+          currentStatus == 'declined' ||
+          currentStatus == 'busy' ||
+          currentStatus == 'no_answer') {
         _setStateSafe(currentStatus);
         await hangUp(localOnly: true);
         return;
@@ -1031,8 +1201,7 @@ class AudioCallService {
           : (data['calleeName'] ?? '').toString();
 
       final videoFlag = (data['video'] ?? 0);
-      withVideo =
-      (videoFlag is int) ? videoFlag == 1 : videoFlag.toString() == '1';
+      withVideo = (videoFlag is int) ? videoFlag == 1 : videoFlag.toString() == '1';
 
       await _cleanupSignalingSubsOnly();
 
@@ -1064,6 +1233,9 @@ class AudioCallService {
         'status': 'accepted',
         'acceptedAt': ServerValue.timestamp,
       });
+
+      // mark me in call (busy presence)
+      await _setMyInCallPresence(callId: callId);
 
       _setStateSafe('accepted');
 
@@ -1105,13 +1277,19 @@ class AudioCallService {
         final status = (v['status'] ?? '').toString();
 
         if (status == 'declined') {
-          _setStateSafe('declined');
-          await hangUp(localOnly: true);
+          await _endCall(reason: 'declined', localOnly: true);
+          return;
+        }
+        if (status == 'busy') {
+          await _endCall(reason: 'busy', localOnly: true);
+          return;
+        }
+        if (status == 'no_answer') {
+          await _endCall(reason: 'no_answer', localOnly: true);
           return;
         }
         if (status == 'ended') {
-          _setStateSafe('ended');
-          await hangUp(localOnly: true);
+          await _endCall(reason: 'ended', localOnly: true);
           return;
         }
         if (status == 'accepted' && callState.value != 'accepted') {
@@ -1124,77 +1302,7 @@ class AudioCallService {
   }
 
   Future<void> hangUp({bool localOnly = false}) async {
-    if (_ending) return;
-    _ending = true;
-
-    final ref = _callRef;
-    final currentCallId = callId;
-
-    _setStateSafe('ended');
-
-    int? durationSec;
-    String? callerUid;
-    String? callerName;
-    String? calleeUid;
-    String? calleeName;
-
-    if (ref != null) {
-      try {
-        final snap = await ref.get();
-        final v = snap.value;
-        if (v is Map) {
-          callerUid = (v['callerUid'] ?? '').toString();
-          callerName = (v['callerName'] ?? 'Caller').toString();
-          calleeUid = (v['calleeUid'] ?? '').toString();
-          calleeName = (v['calleeName'] ?? '').toString();
-
-          final acceptedAt = v['acceptedAt'];
-          if (acceptedAt is int) {
-            final now = DateTime.now().millisecondsSinceEpoch;
-            durationSec = ((now - acceptedAt) / 1000).floor();
-            if (durationSec < 0) durationSec = 0;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Notify peer before tearing down
-    if (!localOnly && ref != null) {
-      try {
-        await ref.update({
-          'status': 'ended',
-          'endedAt': ServerValue.timestamp,
-        });
-      } catch (_) {}
-    }
-
-    await _cleanupAllSubs();
-    await _disposeMedia();
-    await _closePeer();
-
-    // Update logs
-    if (!localOnly &&
-        currentCallId != null &&
-        callerUid != null &&
-        callerUid!.isNotEmpty &&
-        calleeUid != null &&
-        calleeUid!.isNotEmpty) {
-      await _updateCallLogsForBoth(
-        callId: currentCallId,
-        callerUid: callerUid!,
-        callerName: callerName ?? 'Caller',
-        calleeUid: calleeUid!,
-        calleeName: (calleeName ?? '').trim().isNotEmpty
-            ? calleeName!
-            : await _getDisplayName(calleeUid!),
-        status: 'ended',
-        video: withVideo,
-        endedAt: DateTime.now().millisecondsSinceEpoch,
-        durationSec: durationSec,
-      );
-    }
-
-    await _resetState();
+    await _endCall(reason: 'ended', localOnly: localOnly);
   }
 
   // ---------- audio controls ----------
