@@ -48,6 +48,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // Classes summary (count classes + total learners)
   Future<_ClassesSummary>? _classesSummaryFuture;
 
+  // ✅ Display name (first + last from RTDB)
+  Future<String>? _displayNameFuture;
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +60,24 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _remindersStream = _db.child('reminders/$uid').onValue.asBroadcastStream();
       _mailIndexStream = _db.child('mail_index/$uid').onValue.asBroadcastStream();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
+
+      // ✅ Load teacher name once (used in AppBar + Welcome)
+      _displayNameFuture = _myDisplayName();
     }
+  }
+
+  Future<void> _refreshHome() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() {
+      _displayNameFuture = _myDisplayName();
+      _classesSummaryFuture = _loadClassesSummaryForHome(uid);
+      // Streams already live; no need to reset them.
+    });
+
+    // Give the UI a moment to show refresh feedback (optional)
+    await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
   // ✅ UPDATED: Now deletes FCM token before signing out
@@ -66,12 +86,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     // ✅ stop "single device" listener (so it doesn't run after logout)
     await SessionManager.stopListening();
-
-    // ✅ (optional but recommended) remove session in RTDB
-    if (userId != null && userId.isNotEmpty) {
-      try {
-      } catch (_) {}
-    }
 
     // ✅ remove FCM token record (your existing behavior)
     try {
@@ -87,7 +101,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
-
 
   String _norm(String s) => s.trim().toLowerCase();
 
@@ -217,9 +230,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
+  // ✅ Uses RTDB users/{uid}/first_name + last_name
   Future<String> _myDisplayName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return 'Teacher';
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    final emailPrefix = email.isNotEmpty ? email.split('@').first : '';
+
+    if (uid == null) {
+      return emailPrefix.isNotEmpty ? emailPrefix : 'Teacher';
+    }
 
     try {
       final snap = await _db.child('users/$uid').get();
@@ -230,11 +249,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         final last = (m['last_name'] ?? '').toString().trim();
         final full = ('$first $last').trim();
         if (full.isNotEmpty) return full;
-        final email = (m['email'] ?? '').toString().trim();
-        if (email.isNotEmpty) return email.split('@').first;
+
+        final dbEmail = (m['email'] ?? '').toString().trim();
+        if (dbEmail.isNotEmpty) return dbEmail.split('@').first;
       }
     } catch (_) {}
-    return 'Teacher';
+
+    return emailPrefix.isNotEmpty ? emailPrefix : 'Teacher';
   }
 
   Future<List<_UserPick>> _loadAdmins() async {
@@ -606,8 +627,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -615,20 +634,34 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         centerTitle: true,
-        title: const Text(
-          'Teacher Dashboard',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+
+        leading: IconButton(
+          tooltip: 'Call Logs',
+          icon: const Icon(Icons.history_rounded, color: primaryBlue),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+            );
+          },
         ),
+
+        title: FutureBuilder<String>(
+          future: _displayNameFuture,
+          builder: (context, snap) {
+            final name = (snap.data ?? '').trim();
+            return Text(
+              name.isNotEmpty ? name : 'Teacher',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+            );
+          },
+        ),
+
         actions: [
-          IconButton(
-            tooltip: 'Call Logs',
-            icon: const Icon(Icons.history, color: primaryBlue),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-              );
-            },
-          ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout, color: actionOrange),
@@ -636,6 +669,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           )
         ],
       ),
+
       body: Stack(
         children: [
           Positioned.fill(
@@ -658,98 +692,109 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 24),
-                Text(
-                  'Welcome,',
-                  style: TextStyle(
-                    color: mainText.withOpacity(0.6),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  user?.email?.split('@')[0].toUpperCase() ?? 'TEACHER',
-                  style: const TextStyle(
-                    color: primaryBlue,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Expanded(
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.1,
-                    children: [
-                      _buildQuickCard(
-                        context,
-                        'Schedule',
-                        Icons.calendar_today_rounded,
-                        const TeacherSchedule(),
-                      ),
-                      FutureBuilder<_ClassesSummary>(
-                        future: _classesSummaryFuture,
-                        builder: (context, snap) {
-                          final s = snap.data;
-                          final subtitle = (s == null)
-                              ? ''
-                              : '${s.classesCount} classes • ${s.learnersCount} learners';
-                          return _buildQuickCard(
-                            context,
-                            'My Classes',
-                            Icons.school_rounded,
-                            const TeacherClassesScreen(),
-                            subtitle: subtitle,
-                          );
-                        },
-                      ),
-                      _buildQuickCard(
-                        context,
-                        'Profile',
-                        Icons.person_rounded,
-                        const TeacherProfileScreen(),
-                      ),
-                      StreamBuilder<DatabaseEvent>(
+                const SizedBox(height: 14),
+
+
+
+                // ✅ Live quick stats (no extra assumptions: uses your existing streams)
+                Row(
+                  children: [
+                    Expanded(
+                      child: StreamBuilder<DatabaseEvent>(
                         stream: _mailIndexStream,
                         builder: (context, snap) {
-                          final unreadTotal = _countUnreadMail(snap.data?.snapshot.value);
-                          return _buildQuickCard(
-                            context,
-                            'Mail',
-                            Icons.email_rounded,
-                            const TeacherMailScreen(),
-                            badgeCount: unreadTotal,
+                          final unread = _countUnreadMail(snap.data?.snapshot.value);
+                          return _MiniStatCard(
+                            label: 'Inbox',
+                            value: unread == 0 ? 'Clear ✅' : '$unread unread',
+                            icon: Icons.email_rounded,
+                            badgeCount: unread,
+                            badgeColor: Colors.red,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const TeacherMailScreen()),
+                              );
+                            },
                           );
                         },
                       ),
-                      _buildQuickCard(
-                        context,
-                        'Payment',
-                        Icons.payments_rounded,
-                        const TeacherPaymentScreen(),
-                      ),
-                      StreamBuilder<DatabaseEvent>(
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: StreamBuilder<DatabaseEvent>(
                         stream: _remindersStream,
                         builder: (context, snap) {
-                          final notDone = _countNotDoneReminders(snap.data?.snapshot.value);
-                          return _buildQuickCard(
-                            context,
-                            'Reminders',
-                            Icons.alarm_rounded,
-                            const TeacherReminderScreen(),
-                            badgeCount: notDone,
+                          final pending = _countNotDoneReminders(snap.data?.snapshot.value);
+                          return _MiniStatCard(
+                            label: 'Reminders',
+                            value: pending == 0 ? 'None 🎉' : '$pending pending',
+                            icon: Icons.alarm_rounded,
+                            badgeCount: pending,
+                            badgeColor: actionOrange, // task vibe instead of danger
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const TeacherReminderScreen()),
+                              );
+                            },
                           );
                         },
                       ),
-                      _buildQuickCard(
-                        context,
-                        'Call Logs',
-                        Icons.history_rounded,
-                        const CallLogsScreen(),
-                        subtitle: 'History & duration',
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+
+
+                const SizedBox(height: 18),
+
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _refreshHome,
+                    child: GridView.count(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.1,
+                      children: [
+                        _buildQuickCard(
+                          context,
+                          'Schedule',
+                          Icons.calendar_today_rounded,
+                          const TeacherSchedule(),
+                        ),
+                        FutureBuilder<_ClassesSummary>(
+                          future: _classesSummaryFuture,
+                          builder: (context, snap) {
+                            final s = snap.data;
+                            final subtitle = (s == null)
+                                ? ''
+                                : '${s.classesCount} classes • ${s.learnersCount} learners';
+                            return _buildQuickCard(
+                              context,
+                              'My Classes',
+                              Icons.school_rounded,
+                              const TeacherClassesScreen(),
+                              subtitle: subtitle,
+                            );
+                          },
+                        ),
+                        _buildQuickCard(
+                          context,
+                          'Profile',
+                          Icons.person_rounded,
+                          const TeacherProfileScreen(),
+                        ),
+
+                        _buildQuickCard(
+                          context,
+                          'Payment',
+                          Icons.payments_rounded,
+                          const TeacherPaymentScreen(),
+                        ),
+
+
+                      ],
+                    ),
                   ),
                 ),
                 Center(
@@ -955,3 +1000,122 @@ class _SupportTile extends StatelessWidget {
     );
   }
 }
+
+// ✅ Small reusable stat card (pure UI, no DB assumptions)
+class _MiniStatCard extends StatelessWidget {
+  const _MiniStatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.onTap,
+    this.badgeCount = 0,
+    this.badgeColor,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  final VoidCallback? onTap;
+  final int badgeCount;
+  final Color? badgeColor;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.65)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(color: appBg, shape: BoxShape.circle),
+                child: Icon(icon, color: primaryBlue),
+              ),
+              if (badgeCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: badgeColor ?? Colors.red,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: Text(
+                      badgeCount > 99 ? '99+' : badgeCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: primaryBlue.withOpacity(0.7),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: primaryBlue,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onTap != null)
+            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+        ],
+      ),
+    );
+
+    if (onTap == null) return content;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: content,
+    );
+  }
+}
+
