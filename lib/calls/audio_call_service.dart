@@ -853,6 +853,13 @@ class AudioCallService {
 
       final me = _meUid;
       if (me.isEmpty) throw Exception('Not logged in.');
+// 🔒 Check if callee is logged in (FCM token must exist)
+      if (me.isEmpty) throw Exception('Not logged in.');
+
+// 🔒 Check if callee is logged in (FCM token must exist)
+      final calleeToken = await _getUserFcmToken(calleeUid);
+
+
 
       final id = _db.ref('calls').push().key!;
       callId = id;
