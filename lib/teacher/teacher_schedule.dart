@@ -1,11 +1,15 @@
 // TeacherSchedule.dart
-// Drop-in replacement with safer parsing + debounce scheduling + fewer crash edges.
-// No new dependencies added.
+// Drop-in replacement with:
+// ✅ Shows ONLY logged-in teacher schedule (by instructor_current.uid)
+// ✅ Admin can still see ALL classes (role == "admin" from /users/{uid}/role)
+// ✅ Settings tab removed; Settings is now a ⚙️ gear button (top-right) that opens a bottom sheet
+// ✅ No new dependencies added.
 
 import 'dart:async';
 import 'dart:io';
 
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -44,6 +48,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   bool _didAutoApply = false;
 
+  // Keep latest computed lists so the gear button can open Settings safely.
+  List<_Occ> _latestUpcoming = const [];
+  List<_Occ> _latestAllOcc = const [];
+
   // Debounce / concurrency guards for scheduling
   Timer? _applyDebounce;
   bool _applyInProgress = false;
@@ -77,6 +85,33 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     });
   }
 
+  void _openSettingsSheet() {
+    // If data isn't ready yet, do nothing (prevents crashes).
+    if (!_prefsReady) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            decoration: const BoxDecoration(
+              color: appBg,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: _buildSettingsView(_latestUpcoming, _latestAllOcc),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _showBatteryPopupOnce() async {
     if (!Platform.isAndroid) return;
     if (!_prefsReady) return;
@@ -104,8 +139,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             onPressed: () async {
               Navigator.pop(context);
 
-              // NOTE: Keep your correct package name here.
-              // If you use flavors / change applicationId, update this string.
               const intent = AndroidIntent(
                 action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
                 data: 'package:com.dreamenglish.academy.dream_english_academy',
@@ -175,7 +208,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     _applyInProgress = true;
 
     try {
-      // Snapshot of latest requested lists
       final upcoming = _lastUpcoming;
       final allOcc = _lastAllOcc;
 
@@ -183,8 +215,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         'APPLY reminders: daily=$_dailyEnabled session=$_sessionEnabled upcoming=${upcoming.length} all=${allOcc.length}',
       );
 
-      // If your NotificationService supports selective canceling by id,
-      // it's better than cancelAll. We keep cancelAll for compatibility.
       await NotificationService.I.cancelAll();
       debugPrint('Canceled all notifications');
 
@@ -203,7 +233,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         final filtered = upcoming
             .where((e) => _isClassEnabled(e.classId))
             .where((e) => _isDayEnabled(e.start))
-        // Avoid scheduling reminders in the past
             .where((e) => e.start.isAfter(DateTime.now()))
             .take(30);
 
@@ -223,7 +252,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       _applyInProgress = false;
       if (_applyPending) {
         _applyPending = false;
-        // Run once more with latest changes
         await _applyAllRemindersInternal();
       }
     }
@@ -232,7 +260,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 2, // ✅ only Schedule + Calendar now
       child: Scaffold(
         backgroundColor: appBg,
         appBar: AppBar(
@@ -242,13 +270,19 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             'Teacher Schedule',
             style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings_rounded, color: primaryBlue),
+              onPressed: _openSettingsSheet,
+            ),
+          ],
           bottom: const TabBar(
             labelColor: primaryBlue,
             indicatorColor: actionOrange,
             tabs: [
               Tab(text: 'Schedule', icon: Icon(Icons.format_list_bulleted_rounded)),
               Tab(text: 'Calendar', icon: Icon(Icons.calendar_month_rounded)),
-              Tab(text: 'Settings', icon: Icon(Icons.settings_rounded)),
             ],
           ),
         ),
@@ -278,32 +312,79 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               return const Center(child: Text('No classes found.'));
             }
 
-            final allOcc = <_Occ>[];
-            for (final cls in rawClasses) {
-              allOcc.addAll(_generateOccurrences(cls));
-            }
-            allOcc.sort((a, b) => a.start.compareTo(b.start));
+            // ✅ Logged-in uid
+            final currentUser = FirebaseAuth.instance.currentUser;
+            final myUid = currentUser?.uid;
 
-            final now = DateTime.now();
-            final twoDaysAgo = now.subtract(const Duration(days: 2));
-            final recentAndUpcoming =
-            allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
-
-            // Auto reschedule once after first data load
-            if (_prefsReady && !_didAutoApply) {
-              _didAutoApply = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                _queueApplyAllReminders(upcoming: recentAndUpcoming, allOcc: allOcc);
-              });
+            if (myUid == null || myUid.isEmpty) {
+              return const Center(
+                child: Text('No logged-in user found. Please log out and log in again.'),
+              );
             }
 
-            return TabBarView(
-              children: [
-                _buildGroupedSchedule(recentAndUpcoming, allOcc, rawClasses),
-                _buildCalendarView(allOcc, recentAndUpcoming, rawClasses),
-                _buildSettingsView(recentAndUpcoming, allOcc),
-              ],
+            // ✅ Admin override: role from /users/{uid}/role
+            final roleRef = FirebaseDatabase.instance.ref('users/$myUid/role');
+
+            return FutureBuilder<DataSnapshot>(
+              future: roleRef.get(),
+              builder: (context, roleSnap) {
+                if (!roleSnap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final role = (roleSnap.data?.value ?? '').toString().toLowerCase().trim();
+                final isAdmin = role == 'admin';
+
+                // ✅ Teacher filter: class.instructor_current.uid == myUid
+                final teacherOnlyClasses = rawClasses.where((c) {
+                  final instructorCurrent = c['instructor_current'];
+                  if (instructorCurrent is Map) {
+                    final ic = Map<String, dynamic>.from(instructorCurrent);
+                    final uid = ic['uid']?.toString();
+                    return uid == myUid;
+                  }
+                  return false;
+                }).toList();
+
+                final visibleClasses = isAdmin ? rawClasses : teacherOnlyClasses;
+
+                if (!isAdmin && visibleClasses.isEmpty) {
+                  return const Center(
+                    child: Text('No classes assigned to this teacher.'),
+                  );
+                }
+
+                final allOcc = <_Occ>[];
+                for (final cls in visibleClasses) {
+                  allOcc.addAll(_generateOccurrences(cls));
+                }
+                allOcc.sort((a, b) => a.start.compareTo(b.start));
+
+                final now = DateTime.now();
+                final twoDaysAgo = now.subtract(const Duration(days: 2));
+                final recentAndUpcoming =
+                allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
+
+                // Save latest lists for Settings gear usage
+                _latestAllOcc = allOcc;
+                _latestUpcoming = recentAndUpcoming;
+
+                // Auto reschedule once after first data load
+                if (_prefsReady && !_didAutoApply) {
+                  _didAutoApply = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    _queueApplyAllReminders(upcoming: recentAndUpcoming, allOcc: allOcc);
+                  });
+                }
+
+                return TabBarView(
+                  children: [
+                    _buildGroupedSchedule(recentAndUpcoming, allOcc, visibleClasses),
+                    _buildCalendarView(allOcc, recentAndUpcoming, visibleClasses),
+                  ],
+                );
+              },
             );
           },
         ),
@@ -314,7 +395,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   Widget _buildGroupedSchedule(
       List<_Occ> displayList,
       List<_Occ> allOcc,
-      List<Map<String, dynamic>> rawClasses,
+      List<Map<String, dynamic>> visibleClasses,
       ) {
     if (displayList.isEmpty) {
       return const Center(child: Text('No recent or upcoming classes.'));
@@ -354,8 +435,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 isConflict: isConflict,
                 enabled: _isClassEnabled(o.classId),
                 onToggle: () => _toggleClassNotif(o.classId, displayList, allOcc),
-                onAttendance: () => _openAttendance(o, rawClasses),
-                onHistory: () => _openHistory(o, rawClasses),
+                onAttendance: () => _openAttendance(o, visibleClasses),
+                onHistory: () => _openHistory(o, visibleClasses),
               );
             }),
           ],
@@ -367,7 +448,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   Widget _buildCalendarView(
       List<_Occ> allOcc,
       List<_Occ> upcoming,
-      List<Map<String, dynamic>> rawClasses,
+      List<Map<String, dynamic>> visibleClasses,
       ) {
     final Map<String, List<_Occ>> byDay = {};
     for (final o in allOcc) {
@@ -433,8 +514,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 isConflict: isConflict,
                 enabled: _isClassEnabled(events[i].classId),
                 onToggle: () => _toggleClassNotif(events[i].classId, upcoming, allOcc),
-                onAttendance: () => _openAttendance(events[i], rawClasses),
-                onHistory: () => _openHistory(events[i], rawClasses),
+                onAttendance: () => _openAttendance(events[i], visibleClasses),
+                onHistory: () => _openHistory(events[i], visibleClasses),
               );
             },
           ),
@@ -443,8 +524,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     );
   }
 
-  void _openAttendance(_Occ o, List<Map<String, dynamic>> rawClasses) {
-    final classMap = rawClasses.firstWhere(
+  void _openAttendance(_Occ o, List<Map<String, dynamic>> visibleClasses) {
+    final classMap = visibleClasses.firstWhere(
           (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
     );
@@ -456,8 +537,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     );
   }
 
-  void _openHistory(_Occ o, List<Map<String, dynamic>> rawClasses) {
-    final classMap = rawClasses.firstWhere(
+  void _openHistory(_Occ o, List<Map<String, dynamic>> visibleClasses) {
+    final classMap = visibleClasses.firstWhere(
           (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
     );
@@ -472,12 +553,24 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   Widget _buildSettingsView(List<_Occ> upcoming, List<_Occ> allOcc) {
     return ListView(
       padding: const EdgeInsets.all(20),
+      shrinkWrap: true,
       children: [
-        const Text(
-          "Notifications",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primaryBlue),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                "Notifications",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primaryBlue),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Close',
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -510,7 +603,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   List<_Occ> _generateOccurrences(Map<String, dynamic> cls) {
     if (cls['status']?.toString() != 'active') return [];
 
-    final schedule = (cls['schedule'] is Map) ? Map<String, dynamic>.from(cls['schedule']) : null;
+    final schedule = (cls['schedule'] is Map)
+        ? Map<String, dynamic>.from(cls['schedule'])
+        : null;
     if (schedule == null) return [];
 
     final firstDateRaw = schedule['first_session_date']?.toString() ?? '';
@@ -520,14 +615,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final sessionsRaw = schedule['sessions'];
     if (sessionsRaw is! List) return [];
 
-    final pattern = sessionsRaw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+    final pattern = sessionsRaw
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
     if (pattern.isEmpty) return [];
 
     final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
     int countLimit = int.tryParse(countLimitRaw) ?? 0;
 
-    // If missing/0, choose a safe default so the schedule actually shows.
-    // Adjust this number if you want more/less future sessions.
     if (countLimit <= 0) countLimit = 200;
 
     final classId = (cls['class_id'] ?? cls['id'] ?? '').toString();
@@ -558,7 +654,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
         final start = DateTime(sDate.year, sDate.month, sDate.day, startHour, startMin);
 
-        // Don’t generate before the actual first session date-time
         if (start.isBefore(firstDate)) continue;
 
         final durRaw = (s['duration_min'] ?? '60').toString();
@@ -619,7 +714,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     setState(() => _sessionEnabled = v);
     await _prefs.setBool('reminders_session_enabled', v);
 
-    // Show battery instructions ONLY when enabling, and only once
     if (v == true) {
       await _showBatteryPopupOnce();
     }
@@ -674,14 +768,10 @@ class _SessionCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: isPast
-              ? Colors.grey.shade50
-              : (isConflict ? const Color(0xFFFFEBEE) : Colors.white),
+          color: isPast ? Colors.grey.shade50 : (isConflict ? const Color(0xFFFFEBEE) : Colors.white),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isConflict
-                ? const Color(0xFFD32F2F).withOpacity(0.3)
-                : const Color(0xFFE0E6ED),
+            color: isConflict ? const Color(0xFFD32F2F).withOpacity(0.3) : const Color(0xFFE0E6ED),
           ),
           boxShadow: isLive
               ? [
@@ -714,9 +804,7 @@ class _SessionCard extends StatelessWidget {
                                 fontSize: 16,
                                 color: isPast
                                     ? Colors.grey
-                                    : (isLive
-                                    ? const Color(0xFF1A2B48)
-                                    : const Color(0xFF2D2D2D)),
+                                    : (isLive ? const Color(0xFF1A2B48) : const Color(0xFF2D2D2D)),
                               ),
                             ),
                             const Spacer(),
@@ -737,9 +825,7 @@ class _SessionCard extends StatelessWidget {
                                 constraints: const BoxConstraints(),
                                 padding: const EdgeInsets.only(left: 8),
                                 icon: Icon(
-                                  enabled
-                                      ? Icons.notifications_active
-                                      : Icons.notifications_off_outlined,
+                                  enabled ? Icons.notifications_active : Icons.notifications_off_outlined,
                                   color: enabled ? const Color(0xFFF98D28) : Colors.grey,
                                   size: 20,
                                 ),
