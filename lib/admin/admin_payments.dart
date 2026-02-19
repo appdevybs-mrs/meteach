@@ -403,11 +403,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               ),
 
               // Header row
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                child: _TableHeaderRow(),
-              ),
 
               // Table
               Expanded(
@@ -423,116 +418,139 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       scrollDirection: Axis.horizontal,
                       child: SizedBox(
                         width: tableWidth,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
-                          itemCount: visible.length,
-                          separatorBuilder: (_, __) => Divider(height: 1, color: Colors.black.withOpacity(0.07)),
-                          itemBuilder: (context, i) {
-                            final p = visible[i];
-                            final idx = i + 1;
-
-                            final paymentId = (p['paymentId'] ?? '').toString();
-                            final isSelected = _selectedPaymentIds.contains(paymentId);
-
-                            final paidDate = _fmtDateFromMs(p['paidAt']);
-                            final learnerName = (p['learner_name'] ?? '').toString();
-                            final amount = _asInt(p['amount']);
-                            final teacher = (p['teacherName'] ?? '').toString();
-                            final code = (p['course_code'] ?? '').toString();
-                            final sessionsPaid = _asInt(p['sessionsPaid']);
-                            final startDate = (p['startDate'] ?? '').toString();
-                            final remindBeforeSession = _asInt(p['remindBeforeSession']);
-                            final notes = (p['notes'] ?? '').toString();
-
-                            final baseRowBg = (i % 2 == 0) ? Colors.white : AdminPaymentsScreen.appBg.withOpacity(0.7);
-                            final rowBg = isSelected
-                                ? AdminPaymentsScreen.actionOrange.withOpacity(0.14)
-                                : baseRowBg;
-
-                            // Selection behavior:
-                            // - Long press: toggle select (always)
-                            // - Tap: if selection mode active => toggle; else => edit
-                            final selectionMode = _selectedPaymentIds.isNotEmpty;
-
-                            return InkWell(
-                              onLongPress: () => setState(() {
-                                if (isSelected) {
-                                  _selectedPaymentIds.remove(paymentId);
-                                } else {
-                                  _selectedPaymentIds.add(paymentId);
-                                }
-                              }),
-                              onTap: () async {
-                                if (selectionMode) {
-                                  setState(() {
-                                    if (isSelected) {
-                                      _selectedPaymentIds.remove(paymentId);
-                                    } else {
-                                      _selectedPaymentIds.add(paymentId);
-                                    }
-                                  });
-                                  return;
-                                }
-                                await _openEditPaymentDialog(p);
-                              },
-                              child: Container(
-                                color: rowBg,
-                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-                                child: Row(
-                                  children: [
-                                    // ✅ Tick column
-                                    SizedBox(
-                                      width: 34,
-                                      child: Center(
-                                        child: AnimatedSwitcher(
-                                          duration: const Duration(milliseconds: 120),
-                                          child: isSelected
-                                              ? const Icon(Icons.check_circle, size: 18, color: AdminPaymentsScreen.actionOrange)
-                                              : Icon(Icons.radio_button_unchecked, size: 18, color: AdminPaymentsScreen.primaryBlue.withOpacity(0.25)),
-                                        ),
-                                      ),
-                                    ),
-
-                                    _cell('#$idx', flex: 1, isStrong: true),
-                                    _cell(paidDate.isEmpty ? '—' : paidDate, flex: 2),
-                                    _cell(learnerName.isEmpty ? '—' : learnerName, flex: 3),
-                                    _cell('$amount', flex: 2, isStrong: true),
-                                    _cell(teacher.isEmpty ? '—' : teacher, flex: 3),
-                                    _cell(code.isEmpty ? '—' : code, flex: 2),
-                                    _cell('$sessionsPaid', flex: 2),
-                                    _cell(startDate.isEmpty ? '—' : startDate, flex: 2),
-                                    _cell(remindBeforeSession > 0 ? '$remindBeforeSession' : '—', flex: 2),
-                                    _cell(notes.isEmpty ? '—' : notes, flex: 4),
-
-                                    SizedBox(
-                                      width: 40,
-                                      child: Align(
-                                        alignment: Alignment.centerRight,
-                                        child: PopupMenuButton<String>(
-                                          tooltip: 'Actions',
-                                          onSelected: (a) async {
-                                            if (a == 'edit') {
-                                              await _openEditPaymentDialog(p);
-                                            } else if (a == 'delete') {
-                                              await _deletePayment(p);
-                                            }
-                                          },
-                                          itemBuilder: (_) => const [
-                                            PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                            PopupMenuDivider(),
-                                            PopupMenuItem(value: 'delete', child: Text('Delete')),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                        height: constraints.maxHeight, // ✅ important so Column can contain ListView
+                        child: Column(
+                          children: [
+                            // ✅ Header row now scrolls with table
+                            Container(
+                              color: Colors.white,
+                              alignment: Alignment.center, // ✅ centers the header block
+                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: tableWidth), // ✅ keep same width
+                                child: _TableHeaderRow(),
                               ),
-                            );
-                          },
+                            ),
+
+
+                            Divider(height: 1, color: Colors.black.withOpacity(0.07)),
+
+                            Expanded(
+                              child: ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(0, 0, 0, 18),
+                                itemCount: visible.length,
+                                separatorBuilder: (_, __) =>
+                                    Divider(height: 1, color: Colors.black.withOpacity(0.07)),
+                                itemBuilder: (context, i) {
+                                  final p = visible[i];
+                                  final idx = i + 1;
+
+                                  final paymentId = (p['paymentId'] ?? '').toString();
+                                  final isSelected = _selectedPaymentIds.contains(paymentId);
+
+                                  final paidDate = _fmtDateFromMs(p['paidAt']);
+                                  final startDate = (p['startDate'] ?? '').toString();
+                                  final learnerName = (p['learner_name'] ?? '').toString();
+                                  final amount = _asInt(p['amount']);
+                                  final teacher = (p['teacherName'] ?? '').toString();
+                                  final courseTitle = (p['course_title'] ?? '').toString();
+                                  final notes = (p['notes'] ?? '').toString();
+
+                                  final baseRowBg = (i % 2 == 0)
+                                      ? Colors.white
+                                      : AdminPaymentsScreen.appBg.withOpacity(0.7);
+                                  final rowBg = isSelected
+                                      ? AdminPaymentsScreen.actionOrange.withOpacity(0.14)
+                                      : baseRowBg;
+
+                                  final selectionMode = _selectedPaymentIds.isNotEmpty;
+
+                                  return InkWell(
+                                    onLongPress: () => setState(() {
+                                      if (isSelected) {
+                                        _selectedPaymentIds.remove(paymentId);
+                                      } else {
+                                        _selectedPaymentIds.add(paymentId);
+                                      }
+                                    }),
+                                    onTap: () async {
+                                      if (selectionMode) {
+                                        setState(() {
+                                          if (isSelected) {
+                                            _selectedPaymentIds.remove(paymentId);
+                                          } else {
+                                            _selectedPaymentIds.add(paymentId);
+                                          }
+                                        });
+                                        return;
+                                      }
+                                      await _openEditPaymentDialog(p);
+                                    },
+                                    child: Container(
+                                      color: rowBg,
+                                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                                      child: Row(
+                                        children: [
+                                          // ✅ Tick column
+                                          SizedBox(
+                                            width: 34,
+                                            child: Center(
+                                              child: AnimatedSwitcher(
+                                                duration: const Duration(milliseconds: 120),
+                                                child: isSelected
+                                                    ? const Icon(Icons.check_circle,
+                                                    size: 18,
+                                                    color: AdminPaymentsScreen.actionOrange)
+                                                    : Icon(Icons.radio_button_unchecked,
+                                                    size: 18,
+                                                    color: AdminPaymentsScreen.primaryBlue
+                                                        .withOpacity(0.25)),
+                                              ),
+                                            ),
+                                          ),
+
+                                          _cell('#$idx', flex: 1, isStrong: true),
+                                          _cell(paidDate.isEmpty ? '—' : paidDate, flex: 2),
+                                          _cell(learnerName.isEmpty ? '—' : learnerName, flex: 3),
+                                          _cell('$amount', flex: 2, isStrong: true),
+                                          _cell(teacher.isEmpty ? '—' : teacher, flex: 3),
+                                          _cell(courseTitle.isEmpty ? '—' : courseTitle, flex: 3),
+                                          _cell(startDate.isEmpty ? '—' : startDate, flex: 2),
+                                          _cell(notes.isEmpty ? '—' : notes, flex: 4),
+
+                                          SizedBox(
+                                            width: 40,
+                                            child: Align(
+                                              alignment: Alignment.centerRight,
+                                              child: PopupMenuButton<String>(
+                                                tooltip: 'Actions',
+                                                onSelected: (a) async {
+                                                  if (a == 'edit') {
+                                                    await _openEditPaymentDialog(p);
+                                                  } else if (a == 'delete') {
+                                                    await _deletePayment(p);
+                                                  }
+                                                },
+                                                itemBuilder: (_) => const [
+                                                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                                  PopupMenuDivider(),
+                                                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );
+
                   },
                 ),
               ),
@@ -918,6 +936,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   Future<void> _openEditPaymentDialog(Map<String, dynamic> p) async {
     final paymentId = (p['paymentId'] ?? '').toString();
+    final learnerName = (p['learner_name'] ?? '').toString().trim();
+
+    final titleName = learnerName.isEmpty
+        ? 'Edit'
+        : 'Edit: $learnerName';
+
     if (paymentId.isEmpty) return;
 
     // Keep these so we can recalc correctly if courseKey/uid changes (it usually doesn't)
@@ -949,7 +973,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
           return AlertDialog(
-            title: const Text('Edit payment'),
+            title: Text(titleName),
             content: SizedBox(
               width: 600,
               child: SingleChildScrollView(
@@ -1480,20 +1504,19 @@ class _TableHeaderRow extends StatelessWidget {
 
     return Row(
       children: [
-        const SizedBox(width: 34), // tick column header space
+        const SizedBox(width: 34), // tick space
         h('#', flex: 1, strong: true),
         h('Paid', flex: 2),
         h('Learner', flex: 3, strong: true),
         h('Amount', flex: 2),
         h('Teacher', flex: 3),
-        h('Course', flex: 2),
-        h('Sessions', flex: 2),
+        h('Class', flex: 3),
         h('Start', flex: 2),
-        h('Remind', flex: 2),
         h('Notes', flex: 4),
         const SizedBox(width: 40),
       ],
     );
+
   }
 }
 

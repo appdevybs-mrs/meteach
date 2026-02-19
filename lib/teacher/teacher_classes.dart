@@ -1,17 +1,27 @@
+// teacher_classes_screen.dart
+// ✅ Drop-in replacement for your TeacherClassesScreen
+// Adds:
+// - "Progress" button per class
+// - Progress bar in class card (class taught sessions vs syllabus total)
+// - Uses classes/<classId>/attendance taught.sessionId + syllabi/<course_id>
+// - Keeps your existing Take/History/Stats flow intact
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import '../services/push_client.dart';
+import 'dart:async';
+import 'package:fluttertoast/fluttertoast.dart';
 
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
 import 'attendance_stats_screen.dart';
-import 'dart:async';
-import 'package:fluttertoast/fluttertoast.dart';
 
 import '../calls/audio_call_screen.dart';
 import '../services/push_client.dart';
 import 'teacher_mail_thread_screen.dart';
+
+// ✅ NEW
+import 'teacher_class_progress_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
   const TeacherClassesScreen({super.key});
@@ -29,10 +39,12 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 
   static const String usersNode = "users";
   static const String classesNode = "classes";
+  static const String syllabiNode = "syllabi";
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _classesRef = _db.child(classesNode);
+  late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
 
   bool _busy = true;
   String? _error;
@@ -42,6 +54,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   String _teacherName = '';
 
   List<Map<String, dynamic>> _myClasses = [];
+
+  // ✅ Cache progress per class so cards don't constantly re-fetch
+  final Map<String, _ClassProg> _classProgCache = {};
 
   @override
   void initState() {
@@ -56,6 +71,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return r == "teacher" || r == "teachers" || r == "teacher(s)";
   }
 
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
   Future<void> _loadMyClasses() async {
     setState(() {
       _busy = true;
@@ -64,6 +86,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       _teacherUid = '';
       _teacherSerial = '';
       _teacherName = '';
+      _classProgCache.clear();
     });
 
     try {
@@ -131,7 +154,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 
         if (matchesUid || matchesName || matchesSerial) {
           mine.add({
-            'id': key.toString(),
+            'id': key.toString(), // ✅ add classId for navigation
             ...c.map((k, v) => MapEntry(k.toString(), v)),
           });
         }
@@ -170,31 +193,12 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return 0;
   }
 
-  List<String> _learnerUids(Map<String, dynamic> classData) {
-    final learners = classData['learners'];
-    if (learners is Map) {
-      return learners.keys.map((e) => e.toString()).toList();
-    }
-    return [];
-  }
-
   // NEW: only what we need for the collapsed card
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
     if (schedule is Map) {
       final firstDate = (schedule['first_session_date'] ?? '').toString().trim();
       return firstDate.isEmpty ? '-' : firstDate;
-    }
-    return '-';
-  }
-
-  // Kept (still used? you can remove later if you want)
-  String _scheduleSummary(Map<String, dynamic> classData) {
-    final schedule = classData['schedule'];
-    if (schedule is Map) {
-      final firstDate = (schedule['first_session_date'] ?? '').toString();
-      final sessionsCount = (schedule['sessions_count'] ?? '').toString();
-      return 'First: ${firstDate.isEmpty ? '-' : firstDate} • Sessions: ${sessionsCount.isEmpty ? '-' : sessionsCount}';
     }
     return '-';
   }
@@ -219,7 +223,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   }
 
   // ----------------------------
-  // Teacher -> Learner quick actions (safe add-on)
+  // Teacher -> Learner quick actions (your existing logic)
   // ----------------------------
 
   void _toast(String msg) {
@@ -284,7 +288,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       return;
     }
 
-    // 2) Push (same logic style as admin)
+    // 2) Push
     final token = await _getLearnerFcmToken(learnerUid);
 
     await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
@@ -378,22 +382,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     required String learnerUid,
     required String learnerName,
   }) async {
-    // ✅ We will create a threadId that is stable for teacher<->learner
-    // so you don't end up with many duplicate threads from the quick action.
     final meUid = FirebaseAuth.instance.currentUser!.uid;
     final a = meUid.compareTo(learnerUid) < 0 ? meUid : learnerUid;
     final b = meUid.compareTo(learnerUid) < 0 ? learnerUid : meUid;
 
-    final threadId = 't_${a}_$b'; // safe deterministic key
+    final threadId = 't_${a}_$b';
 
     final threadRef = FirebaseDatabase.instance.ref('mail_threads/$threadId');
-    final msgsRef = FirebaseDatabase.instance.ref('mail_messages/$threadId');
     final indexRef = FirebaseDatabase.instance.ref('mail_index');
 
-    // topic/subject (you can change later, but we won't assume more)
     const subject = 'Mail';
 
-    // ensure thread exists (do not overwrite if already exists)
     final tSnap = await threadRef.get();
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -406,7 +405,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       });
     }
 
-    // ensure index rows exist (do not break existing)
     await indexRef.child(meUid).child(threadId).update({
       'subject': subject,
       'updatedAt': now,
@@ -466,7 +464,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         false;
 
     if (!ok) return;
-
     if (!mounted) return;
 
     await Navigator.of(context).push(
@@ -561,6 +558,69 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     }
   }
 
+  // ----------------------------
+  // ✅ Class progress (class attendance taught.sessionId vs syllabi sessions)
+  // ----------------------------
+
+  Future<_ClassProg> _loadClassProgress(String classId, Map<String, dynamic> classData) async {
+    // cache hit
+    if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
+
+    // total sessions from syllabi/<course_id>
+    final courseId = (classData['course_id'] ?? '').toString().trim();
+    int totalSessions = 0;
+
+    if (courseId.isNotEmpty) {
+      final sSnap = await _syllabiRef.child(courseId).get();
+      if (sSnap.exists && sSnap.value is Map) {
+        final s = Map<String, dynamic>.from(sSnap.value as Map);
+        final units = s['units'];
+        if (units is List) {
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final sessions = unit['sessions'];
+            if (sessions is List) totalSessions += sessions.length;
+          }
+        }
+      }
+    }
+
+    // covered sessions from classes/<classId>/attendance/*/taught/sessionId
+    final att = classData['attendance'];
+    final Set<String> covered = {};
+    int held = 0;
+
+    if (att is Map) {
+      final m = Map<String, dynamic>.from(att);
+      held = m.length;
+
+      for (final entry in m.entries) {
+        final rec = entry.value;
+        if (rec is! Map) continue;
+        final r = Map<String, dynamic>.from(rec);
+        final taught = r['taught'];
+        if (taught is Map) {
+          final tm = Map<String, dynamic>.from(taught);
+          final sid = (tm['sessionId'] ?? '').toString().trim();
+          if (sid.isNotEmpty) covered.add(sid);
+        }
+      }
+    }
+
+    final coveredCount = covered.length;
+    final pct = totalSessions <= 0 ? 0 : ((coveredCount / totalSessions) * 100).round().clamp(0, 100);
+
+    final prog = _ClassProg(
+      percent: pct,
+      coveredCount: coveredCount,
+      totalSessions: totalSessions,
+      sessionsHeld: held,
+    );
+
+    _classProgCache[classId] = prog;
+    return prog;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -673,11 +733,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   }
 
   Widget _classCard(Map<String, dynamic> c) {
+    final classId = (c['id'] ?? c['class_id'] ?? '').toString().trim();
     final title = (c['course_title'] ?? 'Class').toString();
     final duration = (c['course_duration'] ?? '').toString();
-
     final learnersCount = _learnersCount(c);
-    final learnersUids = _learnerUids(c);
 
     return Card(
       elevation: 0,
@@ -693,7 +752,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         collapsedIconColor: primaryBlue,
         iconColor: primaryBlue,
         title: Text(title, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
-        // UPDATED: collapsed card shows only Duration + First session + Learners count
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Column(
@@ -713,13 +771,49 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                 'Learners: $learnersCount',
                 style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
               ),
+
+              // ✅ NEW: class progress bar (loads safely)
+              const SizedBox(height: 10),
+              FutureBuilder<_ClassProg>(
+                future: (classId.isEmpty) ? Future.value(_ClassProg.zero()) : _loadClassProgress(classId, c),
+                builder: (context, snap) {
+                  final p = snap.data ?? _ClassProg.zero();
+                  final pct = p.percent.clamp(0, 100);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.insights_rounded, size: 16, color: actionOrange),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Progress: $pct%  •  ${p.coveredCount}/${p.totalSessions <= 0 ? '-' : p.totalSessions} covered',
+                            style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: p.totalSessions <= 0 ? 0 : (p.coveredCount / p.totalSessions).clamp(0, 1),
+                          minHeight: 8,
+                          backgroundColor: primaryBlue.withOpacity(0.10),
+                          valueColor: const AlwaysStoppedAnimation(actionOrange),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
         children: [
           const SizedBox(height: 8),
 
-          // Buttons: Take + History + Stats
+          // Buttons row 1: Take / History / Stats
           Row(
             children: [
               Expanded(
@@ -770,6 +864,35 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ],
           ),
 
+          const SizedBox(height: 10),
+
+          // ✅ NEW: Progress button (full width, clean)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.insights_rounded, color: primaryBlue),
+              label: const Text("Progress", style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: classId.isEmpty
+                  ? null
+                  : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeacherClassProgressScreen(
+                      classId: classId,
+                      classData: c,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
           const SizedBox(height: 14),
 
           Row(
@@ -780,14 +903,24 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          if (learnersUids.isEmpty)
-            Text('No learners in this class yet.',
-                style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700))
-          else
-            Column(children: learnersUids.map((uid) => _learnerTile(uid)).toList()),
+
+          _learnersList(c),
         ],
       ),
     );
+  }
+
+  Widget _learnersList(Map<String, dynamic> c) {
+    final learners = c['learners'];
+    if (learners is! Map || learners.isEmpty) {
+      return Text('No learners in this class yet.',
+          style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700));
+    }
+
+    final m = Map<String, dynamic>.from(learners);
+    final uids = m.keys.map((e) => e.toString()).toList();
+
+    return Column(children: uids.map((uid) => _learnerTile(uid)).toList());
   }
 
   Widget _learnerTile(String uid) {
@@ -826,7 +959,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                 child: const Icon(Icons.person_rounded, color: primaryBlue),
               ),
             ),
-
             title: Text(
               loading ? 'Loading...' : (name.isEmpty ? 'Learner: $uid' : name),
               style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
@@ -845,4 +977,25 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       },
     );
   }
+}
+
+class _ClassProg {
+  final int percent;
+  final int coveredCount;
+  final int totalSessions;
+  final int sessionsHeld;
+
+  const _ClassProg({
+    required this.percent,
+    required this.coveredCount,
+    required this.totalSessions,
+    required this.sessionsHeld,
+  });
+
+  factory _ClassProg.zero() => const _ClassProg(
+    percent: 0,
+    coveredCount: 0,
+    totalSessions: 0,
+    sessionsHeld: 0,
+  );
 }
