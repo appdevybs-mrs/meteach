@@ -6,11 +6,11 @@ import 'package:firebase_database/firebase_database.dart';
 
 import 'teacher_profile.dart';
 import 'teacher_classes.dart';
-import 'teacher_payment.dart';
 import 'teacher_mail.dart';
 import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
 import '../shared/session_manager.dart';
+import 'teacher_wages_screen.dart';
 
 // ✅ Call logs
 import '../calls/call_logs_screen.dart';
@@ -785,11 +785,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           const TeacherProfileScreen(),
                         ),
 
+
                         _buildQuickCard(
                           context,
-                          'Payment',
-                          Icons.payments_rounded,
-                          const TeacherPaymentScreen(),
+                          'Wages',
+                          Icons.wallet_rounded,
+                          const TeacherWagesScreen(),
                         ),
 
 

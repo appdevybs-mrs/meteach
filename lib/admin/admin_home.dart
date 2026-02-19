@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'admin_wages_screen.dart';
 
 import 'admin_payments.dart';
 import 'admin_courses.dart';
@@ -257,13 +258,14 @@ class AdminHome extends StatelessWidget {
                         ),
                         _DashCard(
                           title: 'Wages',
-                          subtitle: 'Staff salaries',
-                          icon: Icons.account_balance_wallet_rounded,
+                          subtitle: 'Teacher payments',
+                          icon: Icons.wallet_rounded,
                           color: primaryBlue,
-                          onTap: () {
-                            // TODO: Create AdminWagesScreen later
-                          },
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminWagesScreen()),
+                          ),
                         ),
+
 
 
                       ],
