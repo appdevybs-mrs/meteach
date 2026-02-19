@@ -24,6 +24,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   String _search = '';
 
+  // ✅ Compact filters
+  String? _selectedMonthYyyyMm; // "2026-02"
+  String? _selectedDayYmd; // "2026-02-19" (optional, only when month selected)
+
+  // ✅ Multi-select (ticks)
+  final Set<String> _selectedPaymentIds = {};
+
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
 
   void _toast(String msg) {
@@ -33,12 +40,27 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     );
   }
 
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
   String _fmtDateFromMs(dynamic ms) {
     final t = _asInt(ms);
     if (t <= 0) return '';
     final d = DateTime.fromMillisecondsSinceEpoch(t);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  String _fmtMonthFromMs(dynamic ms) {
+    final t = _asInt(ms);
+    if (t <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(t);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}';
   }
 
   String _todayYmd() {
@@ -90,209 +112,434 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     return '${picked.year}-${two(picked.month)}-${two(picked.day)}';
   }
 
+  int _sumAmount(Iterable<Map<String, dynamic>> items) {
+    var total = 0;
+    for (final p in items) {
+      total += _asInt(p['amount']);
+    }
+    return total;
+  }
+
+  String _fmtMoneyDa(int v) {
+    final neg = v < 0;
+    var s = (neg ? -v : v).toString();
+    final out = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final posFromEnd = s.length - i;
+      out.write(s[i]);
+      if (posFromEnd > 1 && posFromEnd % 3 == 1) out.write(' ');
+    }
+    return '${neg ? '-' : ''}${out.toString()} DA';
+  }
+
   // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AdminPaymentsScreen.appBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: AdminPaymentsScreen.primaryBlue),
-        title: const Text(
-          'Payments',
-          style: TextStyle(
-            color: AdminPaymentsScreen.primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Add payment',
-            icon: const Icon(Icons.add_card_rounded, color: AdminPaymentsScreen.actionOrange),
-            onPressed: () => _openAddPaymentDialog(),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search bar
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: TextField(
-              onChanged: (v) => setState(() => _search = v),
-              decoration: InputDecoration(
-                hintText: 'Search: learner, serial, teacher, course, notes, dates…',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: AdminPaymentsScreen.appBg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    return StreamBuilder<DatabaseEvent>(
+      stream: _paymentsRef.onValue,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return const Scaffold(body: Center(child: Text('Error loading payments.')));
+        }
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+
+        // Build list
+        final raw = snap.data?.snapshot.value;
+        final all = <Map<String, dynamic>>[];
+        if (raw is Map) {
+          raw.forEach((k, val) {
+            if (val is Map) {
+              final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+              m['paymentId'] = k.toString();
+              all.add(m.cast<String, dynamic>());
+            }
+          });
+        }
+
+        // Sort newest first
+        all.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+
+        // Month options
+        final monthsSet = <String>{};
+        for (final p in all) {
+          final mm = _fmtMonthFromMs(p['paidAt']);
+          if (mm.isNotEmpty) monthsSet.add(mm);
+        }
+        final months = monthsSet.toList()..sort((a, b) => b.compareTo(a));
+
+        // If selected month disappeared, reset
+        if (_selectedMonthYyyyMm != null && !monthsSet.contains(_selectedMonthYyyyMm)) {
+          _selectedMonthYyyyMm = null;
+          _selectedDayYmd = null;
+        }
+
+        // Search filter
+        final s = _search.trim().toLowerCase();
+        final searchFiltered = s.isEmpty
+            ? all
+            : all.where((p) {
+          final learnerName = (p['learner_name'] ?? '').toString().toLowerCase();
+          final serial = (p['learner_serial'] ?? '').toString().toLowerCase();
+          final code = (p['course_code'] ?? '').toString().toLowerCase();
+          final title = (p['course_title'] ?? '').toString().toLowerCase();
+          final teacher = (p['teacherName'] ?? '').toString().toLowerCase();
+          final notes = (p['notes'] ?? '').toString().toLowerCase();
+          final paidDate = _fmtDateFromMs(p['paidAt']).toLowerCase();
+          final startDate = (p['startDate'] ?? '').toString().toLowerCase();
+          return learnerName.contains(s) ||
+              serial.contains(s) ||
+              code.contains(s) ||
+              title.contains(s) ||
+              teacher.contains(s) ||
+              notes.contains(s) ||
+              paidDate.contains(s) ||
+              startDate.contains(s);
+        }).toList();
+
+        // Month filter (paidAt-based)
+        final monthFiltered = (_selectedMonthYyyyMm == null)
+            ? searchFiltered
+            : searchFiltered.where((p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm).toList();
+
+        // Day filter (dayKey-based; only used when set)
+        final visible = (_selectedDayYmd == null)
+            ? monthFiltered
+            : monthFiltered.where((p) => (p['dayKey'] ?? '') == _selectedDayYmd).toList();
+
+        // ✅ Today total (global; ignores filters/search)
+        final today = _todayYmd();
+        final todayTotal = _sumAmount(all.where((p) => (p['dayKey'] ?? '') == today));
+
+        // ✅ Totals (compact)
+        final visibleTotal = _sumAmount(visible);
+        final monthTotal = _sumAmount(monthFiltered);
+
+        // ✅ Selected total (only from visible rows)
+        int selectedTotal = 0;
+        int selectedCount = 0;
+        if (_selectedPaymentIds.isNotEmpty) {
+          final visibleById = <String, Map<String, dynamic>>{};
+          for (final p in visible) {
+            visibleById[(p['paymentId'] ?? '').toString()] = p;
+          }
+
+          // If some selections are not visible anymore, drop them
+          final toRemove = <String>[];
+          for (final id in _selectedPaymentIds) {
+            final p = visibleById[id];
+            if (p == null) {
+              toRemove.add(id);
+            } else {
+              selectedCount++;
+              selectedTotal += _asInt(p['amount']);
+            }
+          }
+          if (toRemove.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() {
+                _selectedPaymentIds.removeAll(toRemove);
+              });
+            });
+          }
+        }
+
+        // App bar actions: today pill + add button
+        final todayPill = _Pill(
+          icon: Icons.today_rounded,
+          text: 'Today: ${_fmtMoneyDa(todayTotal)}',
+          strong: true,
+        );
+
+        return Scaffold(
+          backgroundColor: AdminPaymentsScreen.appBg,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            surfaceTintColor: Colors.white,
+            iconTheme: const IconThemeData(color: AdminPaymentsScreen.primaryBlue),
+            title: const Text(
+              'Payments',
+              style: TextStyle(
+                color: AdminPaymentsScreen.primaryBlue,
+                fontWeight: FontWeight.w900,
               ),
             ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: todayPill),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Add payment',
+                icon: const Icon(Icons.add_card_rounded, color: AdminPaymentsScreen.actionOrange),
+                onPressed: () => _openAddPaymentDialog(),
+              ),
+              const SizedBox(width: 6),
+            ],
           ),
+          body: Column(
+            children: [
+              // Search bar
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                child: TextField(
+                  onChanged: (v) => setState(() => _search = v),
+                  decoration: InputDecoration(
+                    hintText: 'Search: learner, serial, teacher, course, notes, dates…',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: AdminPaymentsScreen.appBg,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
 
-          // Horizontal-scroll table
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final tableWidth = constraints.maxWidth < 1100 ? 1100.0 : constraints.maxWidth;
-
-                return SingleChildScrollView(
+              // ✅ Compact toolbar row (Option A)
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: tableWidth,
-                    child: Column(
-                      children: [
-                        Container(
-                          color: Colors.white,
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                          child: _TableHeaderRow(),
-                        ),
-
-                        Expanded(
-                          child: StreamBuilder<DatabaseEvent>(
-                            stream: _paymentsRef.onValue,
-                            builder: (context, snap) {
-                              if (snap.hasError) {
-                                return const Center(child: Text('Error loading payments.'));
-                              }
-                              if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-                                return const Center(child: CircularProgressIndicator());
-                              }
-
-                              final v = snap.data?.snapshot.value;
-                              final list = <Map<String, dynamic>>[];
-
-                              if (v is Map) {
-                                v.forEach((k, val) {
-                                  if (val is Map) {
-                                    final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
-                                    m['paymentId'] = k.toString();
-                                    list.add(m.cast<String, dynamic>());
-                                  }
-                                });
-                              }
-
-                              list.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
-
-                              final s = _search.trim().toLowerCase();
-                              final filtered = s.isEmpty
-                                  ? list
-                                  : list.where((p) {
-                                final learnerName =
-                                (p['learner_name'] ?? '').toString().toLowerCase();
-                                final serial =
-                                (p['learner_serial'] ?? '').toString().toLowerCase();
-                                final code = (p['course_code'] ?? '').toString().toLowerCase();
-                                final title =
-                                (p['course_title'] ?? '').toString().toLowerCase();
-                                final teacher =
-                                (p['teacherName'] ?? '').toString().toLowerCase();
-                                final notes = (p['notes'] ?? '').toString().toLowerCase();
-                                final paidDate =
-                                _fmtDateFromMs(p['paidAt']).toLowerCase();
-                                final startDate =
-                                (p['startDate'] ?? '').toString().toLowerCase();
-                                return learnerName.contains(s) ||
-                                    serial.contains(s) ||
-                                    code.contains(s) ||
-                                    title.contains(s) ||
-                                    teacher.contains(s) ||
-                                    notes.contains(s) ||
-                                    paidDate.contains(s) ||
-                                    startDate.contains(s);
-                              }).toList();
-
-                              if (filtered.isEmpty) {
-                                return const Center(child: Text('No payments found.'));
-                              }
-
-                              return ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
-                                itemCount: filtered.length,
-                                separatorBuilder: (_, __) =>
-                                    Divider(height: 1, color: Colors.black.withOpacity(0.07)),
-                                itemBuilder: (context, i) {
-                                  final p = filtered[i];
-                                  final idx = i + 1;
-
-                                  final paidDate = _fmtDateFromMs(p['paidAt']);
-                                  final learnerName = (p['learner_name'] ?? '').toString();
-                                  final amount = _asInt(p['amount']);
-                                  final teacher = (p['teacherName'] ?? '').toString();
-                                  final code = (p['course_code'] ?? '').toString();
-                                  final sessionsPaid = _asInt(p['sessionsPaid']);
-                                  final startDate = (p['startDate'] ?? '').toString();
-                                  final remindBeforeSession = _asInt(p['remindBeforeSession']);
-                                  final notes = (p['notes'] ?? '').toString();
-
-                                  final rowBg = (i % 2 == 0)
-                                      ? Colors.white
-                                      : AdminPaymentsScreen.appBg.withOpacity(0.7);
-
-                                  return InkWell(
-                                    onTap: () async => _openEditPaymentDialog(p),
-                                    child: Container(
-                                      color: rowBg,
-                                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-                                      child: Row(
-                                        children: [
-                                          _cell('#$idx', flex: 1, isStrong: true),
-                                          _cell(paidDate.isEmpty ? '—' : paidDate, flex: 2),
-                                          _cell(learnerName.isEmpty ? '—' : learnerName, flex: 3),
-                                          _cell('$amount', flex: 2, isStrong: true),
-                                          _cell(teacher.isEmpty ? '—' : teacher, flex: 3),
-                                          _cell(code.isEmpty ? '—' : code, flex: 2),
-                                          _cell('$sessionsPaid', flex: 2),
-                                          _cell(startDate.isEmpty ? '—' : startDate, flex: 2),
-                                          _cell(remindBeforeSession > 0 ? '$remindBeforeSession' : '—', flex: 2),
-                                          _cell(notes.isEmpty ? '—' : notes, flex: 4),
-                                          SizedBox(
-                                            width: 40,
-                                            child: Align(
-                                              alignment: Alignment.centerRight,
-                                              child: PopupMenuButton<String>(
-                                                tooltip: 'Actions',
-                                                onSelected: (a) async {
-                                                  if (a == 'edit') {
-                                                    await _openEditPaymentDialog(p);
-                                                  } else if (a == 'delete') {
-                                                    await _deletePayment(p);
-                                                  }
-                                                },
-                                                itemBuilder: (_) => const [
-                                                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                                  PopupMenuDivider(),
-                                                  PopupMenuItem(value: 'delete', child: Text('Delete')),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
+                  child: Row(
+                    children: [
+                      _SmallDropdown<String?>(
+                        label: 'Month',
+                        value: _selectedMonthYyyyMm,
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('All'),
                           ),
+                          ...months.map((m) => DropdownMenuItem<String?>(
+                            value: m,
+                            child: Text(m),
+                          )),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _selectedMonthYyyyMm = v;
+                          _selectedDayYmd = null;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+
+                      _SmallButton(
+                        enabled: _selectedMonthYyyyMm != null,
+                        label: _selectedDayYmd ?? 'Day: All',
+                        icon: Icons.calendar_month_rounded,
+                        onTap: () async {
+                          if (_selectedMonthYyyyMm == null) return;
+
+                          final picked = await _pickDateYmd(
+                            context: context,
+                            initialYmd: _selectedDayYmd ?? _todayYmd(),
+                            helpText: 'Pick day (paid date)',
+                          );
+                          if (picked == null) return;
+
+                          setState(() {
+                            // keep month consistent with picked day
+                            _selectedMonthYyyyMm = picked.substring(0, 7);
+                            _selectedDayYmd = picked;
+                          });
+                        },
+                        onClear: (_selectedDayYmd == null)
+                            ? null
+                            : () => setState(() => _selectedDayYmd = null),
+                      ),
+
+                      const SizedBox(width: 10),
+                      _Pill(
+                        icon: Icons.summarize_rounded,
+                        text: 'Total: ${_fmtMoneyDa(visibleTotal)}',
+                        strong: true,
+                      ),
+                      const SizedBox(width: 8),
+                      _Pill(
+                        icon: Icons.calendar_view_month_rounded,
+                        text: 'Month: ${_fmtMoneyDa(monthTotal)}',
+                      ),
+
+                      // ✅ Selected appears ONLY when selected
+                      if (selectedCount > 0) ...[
+                        const SizedBox(width: 8),
+                        _Pill(
+                          icon: Icons.check_circle_rounded,
+                          text: 'Selected ($selectedCount): ${_fmtMoneyDa(selectedTotal)}',
+                          color: AdminPaymentsScreen.actionOrange.withOpacity(0.18),
+                          borderColor: AdminPaymentsScreen.actionOrange.withOpacity(0.35),
+                        ),
+                        IconButton(
+                          tooltip: 'Clear selection',
+                          onPressed: () => setState(() => _selectedPaymentIds.clear()),
+                          icon: const Icon(Icons.close, size: 18),
                         ),
                       ],
-                    ),
+
+                      const SizedBox(width: 6),
+                      IconButton(
+                        tooltip: 'Clear filters',
+                        onPressed: () {
+                          setState(() {
+                            _selectedMonthYyyyMm = null;
+                            _selectedDayYmd = null;
+                            _selectedPaymentIds.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.filter_alt_off),
+                      ),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+
+              // Header row
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: _TableHeaderRow(),
+              ),
+
+              // Table
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tableWidth = constraints.maxWidth < 1100 ? 1100.0 : constraints.maxWidth;
+
+                    if (visible.isEmpty) {
+                      return const Center(child: Text('No payments found.'));
+                    }
+
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: tableWidth,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) => Divider(height: 1, color: Colors.black.withOpacity(0.07)),
+                          itemBuilder: (context, i) {
+                            final p = visible[i];
+                            final idx = i + 1;
+
+                            final paymentId = (p['paymentId'] ?? '').toString();
+                            final isSelected = _selectedPaymentIds.contains(paymentId);
+
+                            final paidDate = _fmtDateFromMs(p['paidAt']);
+                            final learnerName = (p['learner_name'] ?? '').toString();
+                            final amount = _asInt(p['amount']);
+                            final teacher = (p['teacherName'] ?? '').toString();
+                            final code = (p['course_code'] ?? '').toString();
+                            final sessionsPaid = _asInt(p['sessionsPaid']);
+                            final startDate = (p['startDate'] ?? '').toString();
+                            final remindBeforeSession = _asInt(p['remindBeforeSession']);
+                            final notes = (p['notes'] ?? '').toString();
+
+                            final baseRowBg = (i % 2 == 0) ? Colors.white : AdminPaymentsScreen.appBg.withOpacity(0.7);
+                            final rowBg = isSelected
+                                ? AdminPaymentsScreen.actionOrange.withOpacity(0.14)
+                                : baseRowBg;
+
+                            // Selection behavior:
+                            // - Long press: toggle select (always)
+                            // - Tap: if selection mode active => toggle; else => edit
+                            final selectionMode = _selectedPaymentIds.isNotEmpty;
+
+                            return InkWell(
+                              onLongPress: () => setState(() {
+                                if (isSelected) {
+                                  _selectedPaymentIds.remove(paymentId);
+                                } else {
+                                  _selectedPaymentIds.add(paymentId);
+                                }
+                              }),
+                              onTap: () async {
+                                if (selectionMode) {
+                                  setState(() {
+                                    if (isSelected) {
+                                      _selectedPaymentIds.remove(paymentId);
+                                    } else {
+                                      _selectedPaymentIds.add(paymentId);
+                                    }
+                                  });
+                                  return;
+                                }
+                                await _openEditPaymentDialog(p);
+                              },
+                              child: Container(
+                                color: rowBg,
+                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                                child: Row(
+                                  children: [
+                                    // ✅ Tick column
+                                    SizedBox(
+                                      width: 34,
+                                      child: Center(
+                                        child: AnimatedSwitcher(
+                                          duration: const Duration(milliseconds: 120),
+                                          child: isSelected
+                                              ? const Icon(Icons.check_circle, size: 18, color: AdminPaymentsScreen.actionOrange)
+                                              : Icon(Icons.radio_button_unchecked, size: 18, color: AdminPaymentsScreen.primaryBlue.withOpacity(0.25)),
+                                        ),
+                                      ),
+                                    ),
+
+                                    _cell('#$idx', flex: 1, isStrong: true),
+                                    _cell(paidDate.isEmpty ? '—' : paidDate, flex: 2),
+                                    _cell(learnerName.isEmpty ? '—' : learnerName, flex: 3),
+                                    _cell('$amount', flex: 2, isStrong: true),
+                                    _cell(teacher.isEmpty ? '—' : teacher, flex: 3),
+                                    _cell(code.isEmpty ? '—' : code, flex: 2),
+                                    _cell('$sessionsPaid', flex: 2),
+                                    _cell(startDate.isEmpty ? '—' : startDate, flex: 2),
+                                    _cell(remindBeforeSession > 0 ? '$remindBeforeSession' : '—', flex: 2),
+                                    _cell(notes.isEmpty ? '—' : notes, flex: 4),
+
+                                    SizedBox(
+                                      width: 40,
+                                      child: Align(
+                                        alignment: Alignment.centerRight,
+                                        child: PopupMenuButton<String>(
+                                          tooltip: 'Actions',
+                                          onSelected: (a) async {
+                                            if (a == 'edit') {
+                                              await _openEditPaymentDialog(p);
+                                            } else if (a == 'delete') {
+                                              await _deletePayment(p);
+                                            }
+                                          },
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                            PopupMenuDivider(),
+                                            PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -388,8 +635,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         final totalSessions =
                         _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
                         sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
-                        amountC.text =
-                            _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                        amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                         remindBeforeSession = sessionsPaid;
 
@@ -490,8 +736,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               final maxS = (totalSessions > 0) ? totalSessions : 24;
                               if (sessionsPaid > maxS) sessionsPaid = maxS;
 
-                              amountC.text =
-                                  _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                              amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                               if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
                               if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
@@ -521,8 +766,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         sessionsPaid = v;
                         final totalSessions =
                         _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
-                        amountC.text =
-                            _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                        amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                         if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
                         if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
@@ -606,11 +850,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     final courseCode = (pickedCourse['course_code'] ?? '').toString();
                     final courseTitle = (pickedCourse['title'] ?? '').toString();
                     final learnerName =
-                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
-                        .trim();
+                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'.trim();
                     final learnerSerial = (pickedLearner['serial'] ?? '').toString();
 
                     final remind = (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
+
+                    final monthKey = paidDateYmd.substring(0, 7); // safe extra field
 
                     await newRef.set({
                       'uid': pickedUid,
@@ -631,6 +876,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       'learner_name': learnerName,
                       'learner_serial': learnerSerial,
                       'dayKey': dayKey,
+                      'monthKey': monthKey,
                     });
 
                     await _updateLearnerSummary(
@@ -816,6 +1062,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                   }
 
                   try {
+                    final monthKey = paidDateYmd.substring(0, 7);
+
                     await _paymentsRef.child(paymentId).update({
                       'sessionsPaid': sessionsPaid,
                       'remindBeforeSession': remindBeforeSession,
@@ -827,15 +1075,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       'notes': notesC.text.trim(),
                       'paidAt': paidAtMs,
                       'dayKey': paidDateYmd,
+                      'monthKey': monthKey,
                       'updatedAt': ServerValue.timestamp,
                     });
 
-                    // ✅ FIX: keep payment_summary correct after edit
-                    final uidNow = oldUid; // uid/courseKey typically never change on edit
-                    final courseKeyNow = oldCourseKey;
-
-                    if (uidNow.isNotEmpty && courseKeyNow.isNotEmpty) {
-                      await _recalcLearnerSummaryForCourse(uid: uidNow, courseKey: courseKeyNow);
+                    // ✅ keep summary correct after edit
+                    if (oldUid.isNotEmpty && oldCourseKey.isNotEmpty) {
+                      await _recalcLearnerSummaryForCourse(uid: oldUid, courseKey: oldCourseKey);
                     }
 
                     if (context.mounted) Navigator.pop(context);
@@ -879,13 +1125,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     try {
       await _paymentsRef.child(paymentId).remove();
 
-      // ✅ optional but safe: keep summary correct after delete too
+      // ✅ keep summary correct after delete
       final uid = (p['uid'] ?? '').toString().trim();
       final courseKey = (p['courseKey'] ?? '').toString().trim();
       if (uid.isNotEmpty && courseKey.isNotEmpty) {
         await _recalcLearnerSummaryForCourse(uid: uid, courseKey: courseKey);
       }
 
+      setState(() => _selectedPaymentIds.remove(paymentId));
       _toast('Deleted ✅');
     } catch (e) {
       _toast('Failed: $e');
@@ -933,7 +1180,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
 
     await sumRef.runTransaction((current) {
-      final cur = current is Map ? current.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+      final cur =
+      current is Map ? current.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
       final oldTotalPaid = _asInt(cur['totalPaid']);
       final oldSessionsPaid = _asInt(cur['sessionsPaidTotal']);
@@ -957,20 +1205,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     });
   }
 
-  // ✅ NEW: Recalculate summary totals so edits/deletes never break totals
   Future<void> _recalcLearnerSummaryForCourse({
     required String uid,
     required String courseKey,
   }) async {
-    // Keep existing summary fields (so we don't accidentally wipe extra data)
     final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
     final oldSnap = await sumRef.get();
     final oldRaw = oldSnap.value;
-    final oldSum = oldRaw is Map
-        ? oldRaw.map((k, v) => MapEntry(k.toString(), v))
-        : <String, dynamic>{};
+    final oldSum = oldRaw is Map ? oldRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
 
-    // Load ALL payments for this learner (safer than limitToLast)
     final snap = await _paymentsRef.orderByChild('uid').equalTo(uid).get();
     final v = snap.value;
 
@@ -1010,8 +1253,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       }
     }
 
-    // Calculate remindBeforeSession safely:
-    // Prefer latest payment's remind; else keep old summary; else sessionsTotal
     int remindBeforeSession =
     (lastRemind > 0) ? lastRemind : _asInt(oldSum['remindBeforeSession']);
 
@@ -1023,52 +1264,16 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     }
 
     await sumRef.update({
-      ...oldSum, // keep extra fields that might exist
+      ...oldSum,
       'totalPaid': totalPaid,
       'sessionsPaidTotal': sessionsTotal,
       'remindBeforeSession': remindBeforeSession,
-      'lastPaymentAt': lastPaidAt, // reflects actual latest paidAt
+      'lastPaymentAt': lastPaidAt,
       'lastPaymentId': lastPaymentId,
       'lastMethod': lastMethod,
       'lastAmount': lastAmount,
       'updatedAt': ServerValue.timestamp,
     });
-  }
-
-
-  Future<void> _sendPaymentPushToLearner({
-    required String learnerUid,
-    required String courseTitle,
-    required int amount,
-    required int sessionsPaid,
-    required String paidDateYmd,
-  }) async {
-    try {
-      final snap = await FirebaseDatabase.instance.ref('fcm_tokens/$learnerUid/token').get();
-      final token = (snap.value ?? '').toString().trim();
-      if (token.isEmpty) return;
-
-      await PushClient.sendToToken(
-        token: token,
-        title: 'Payment received ✅',
-        message: '$courseTitle • $sessionsPaid sessions • $amount DA • $paidDateYmd',
-        data: {
-          'type': 'payment',
-          'uid': learnerUid,
-          'courseTitle': courseTitle,
-          'amount': amount,
-          'sessionsPaid': sessionsPaid,
-          'paidDate': paidDateYmd,
-        },
-      );
-    } catch (_) {}
-  }
-
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
   }
 
   static int _parseTotalSessions(String duration) {
@@ -1096,6 +1301,162 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   }
 }
 
+// ------------------ Compact UI pieces ------------------
+
+class _Pill extends StatelessWidget {
+  const _Pill({
+    required this.icon,
+    required this.text,
+    this.strong = false,
+    this.color,
+    this.borderColor,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool strong;
+  final Color? color;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color ?? AdminPaymentsScreen.appBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor ?? Colors.black.withOpacity(0.06)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85)),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+              color: AdminPaymentsScreen.primaryBlue.withOpacity(0.92),
+              fontSize: 12.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallDropdown<T> extends StatelessWidget {
+  const _SmallDropdown({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final T value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: AdminPaymentsScreen.appBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label:',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 8),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              value: value,
+              items: items,
+              onChanged: onChanged,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: AdminPaymentsScreen.primaryBlue.withOpacity(0.92),
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallButton extends StatelessWidget {
+  const _SmallButton({
+    required this.enabled,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.onClear,
+  });
+
+  final bool enabled;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AdminPaymentsScreen.appBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.black.withOpacity(0.06)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: enabled ? onTap : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85)),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: AdminPaymentsScreen.primaryBlue.withOpacity(0.92),
+                    fontSize: 12.5,
+                  ),
+                ),
+                if (onClear != null) ...[
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: onClear,
+                    child: const Icon(Icons.close, size: 16),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ------------------ Table header ------------------
 
 class _TableHeaderRow extends StatelessWidget {
@@ -1119,6 +1480,7 @@ class _TableHeaderRow extends StatelessWidget {
 
     return Row(
       children: [
+        const SizedBox(width: 34), // tick column header space
         h('#', flex: 1, strong: true),
         h('Paid', flex: 2),
         h('Learner', flex: 3, strong: true),
