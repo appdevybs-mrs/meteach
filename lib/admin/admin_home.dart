@@ -69,6 +69,20 @@ class AdminHome extends StatelessWidget {
         elevation: 0,
         surfaceTintColor: Colors.white,
         automaticallyImplyLeading: false,
+
+        // ✅ LEFT SIDE
+        leading: IconButton(
+          tooltip: 'Call Logs',
+          icon: const Icon(Icons.history, color: primaryBlue),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+            );
+          },
+        ),
+
+        // ✅ CENTER TITLE
+        centerTitle: true,
         title: const Text(
           'Admin Dashboard',
           style: TextStyle(
@@ -76,16 +90,9 @@ class AdminHome extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
+
+        // ✅ RIGHT SIDE
         actions: [
-          IconButton(
-            tooltip: 'Call Logs',
-            icon: const Icon(Icons.history, color: primaryBlue),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-              );
-            },
-          ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout, color: actionOrange),
@@ -94,6 +101,7 @@ class AdminHome extends StatelessWidget {
           const SizedBox(width: 6),
         ],
       ),
+
       body: Stack(
         children: [
           Positioned.fill(
@@ -248,14 +256,16 @@ class AdminHome extends StatelessWidget {
                           ),
                         ),
                         _DashCard(
-                          title: 'Call Logs',
-                          subtitle: 'History & duration',
-                          icon: Icons.history_rounded,
+                          title: 'Wages',
+                          subtitle: 'Staff salaries',
+                          icon: Icons.account_balance_wallet_rounded,
                           color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-                          ),
+                          onTap: () {
+                            // TODO: Create AdminWagesScreen later
+                          },
                         ),
+
+
                       ],
                     ),
                   ),

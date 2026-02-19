@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 
 import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
@@ -510,47 +510,144 @@ class ClassroomLoginSection extends StatefulWidget {
   State<ClassroomLoginSection> createState() => _ClassroomLoginSectionState();
 }
 
+
 class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
+  // ========= Support config (fill these, otherwise buttons stay hidden) =========
+  // ⚠️ Put YOUR real values here:
+  // - WhatsApp format: "2136xxxxxxx" (countrycode+number, no +, no spaces) OR "0668472488"
+  static const String supportWhatsAppNumber = ''; // e.g. "213668472488"
+  static const String supportPhoneNumber = ''; // e.g. "0668472488"
+  static const String supportEmail = ''; // e.g. "support@yourschool.com"
+
+  // ========= Controllers =========
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
-  bool rememberMe = false;
+  final captchaCtrl = TextEditingController();
 
   bool loading = false;
+  bool showPass = false;
+
   String error = '';
 
-  // ✅ Captcha state (still "easy", but now actually checked)
+  // ========= Captcha (progressive) =========
+  bool showCaptcha = true; // ✅ ALWAYS required
   int a = 2, b = 3;
-  final captchaCtrl = TextEditingController();
+
+  // ========= Security / abuse resistance =========
+  int failedAttempts = 0;
+  DateTime? cooldownUntil;
+  Timer? _cooldownTicker;
+
+  // forgot-password throttle
+  DateTime? _lastResetRequestAt;
 
   @override
   void initState() {
     super.initState();
     _refreshCaptcha();
-    _loadRememberedEmail();
   }
 
-  Future<void> _loadRememberedEmail() async {
-    final p = await SharedPreferences.getInstance();
+  @override
+  void dispose() {
+    _cooldownTicker?.cancel();
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    captchaCtrl.dispose();
+    super.dispose();
+  }
 
-    final savedRemember = p.getBool('rememberMe') ?? false;
-    final savedEmail = p.getString('rememberEmail') ?? '';
 
-    if (!mounted) return;
 
-    setState(() {
-      rememberMe = savedRemember;
-      if (savedRemember && savedEmail.isNotEmpty) {
-        emailCtrl.text = savedEmail;
+  void _refreshCaptcha() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    a = (now % 8) + 1; // 1..9
+    b = ((now ~/ 7) % 8) + 1; // 1..9
+    captchaCtrl.clear();
+  }
+
+  bool _isValidEmail(String email) {
+    final e = email.trim();
+    if (e.isEmpty) return false;
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e);
+  }
+
+  bool get _isCoolingDown {
+    if (cooldownUntil == null) return false;
+    return DateTime.now().isBefore(cooldownUntil!);
+  }
+
+  int get _cooldownSecondsLeft {
+    if (cooldownUntil == null) return 0;
+    final diff = cooldownUntil!.difference(DateTime.now()).inSeconds;
+    return diff < 0 ? 0 : diff;
+  }
+
+  void _startCooldown({int seconds = 20}) {
+    cooldownUntil = DateTime.now().add(Duration(seconds: seconds));
+    _cooldownTicker?.cancel();
+
+    // update UI every second while cooling down
+    _cooldownTicker = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      if (!_isCoolingDown) {
+        t.cancel();
+        setState(() {});
+      } else {
+        setState(() {});
       }
     });
 
-    // ✅ No auto-login here.
-    // Firebase auto-login happens via AuthGate at app start.
+    setState(() {});
   }
 
-  Future<void> _signInWithFirebase(String email, String pass,
-      {bool fromAutoLogin = false}) async {
+  String _friendlyAuthMsg(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'user-disabled':
+        return 'This account is disabled.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait and try again.';
+      case 'wrong-password':
+      case 'user-not-found':
+      case 'invalid-credential':
+      // ✅ Security: do not reveal whether the user exists
+        return 'Email or password is incorrect.';
+      default:
+        return 'Login failed. Please try again.';
+    }
+  }
+
+  bool _validateInputs({required bool enforceCaptcha}) {
+    final email = emailCtrl.text.trim().toLowerCase();
+    final pass = passCtrl.text;
+
+    if (!_isValidEmail(email)) {
+      setState(() => error = 'Please enter a valid email.');
+      return false;
+    }
+    if (pass.isEmpty) {
+      setState(() => error = 'Please enter your password.');
+      return false;
+    }
+
+    if (enforceCaptcha) {
+      final expected = (a + b).toString();
+      final cap = captchaCtrl.text.trim();
+      if (cap != expected) {
+        setState(() => error = 'Captcha is incorrect. Try again.');
+        _refreshCaptcha();
+        return false;
+      }
+    }
+
+    setState(() => error = '');
+    return true;
+  }
+
+  Future<void> _signInWithFirebase(String email, String pass) async {
     if (!mounted) return;
+
     setState(() {
       loading = true;
       error = '';
@@ -562,109 +659,276 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         password: pass,
       );
 
-      // save remember me
-      final p = await SharedPreferences.getInstance();
-      if (rememberMe) {
-        await p.setBool('rememberMe', true);
-        await p.setString('rememberEmail', email);
-      } else {
-        await p.setBool('rememberMe', false);
-        await p.remove('rememberEmail');
+
+
+      // ✅ IMPORTANT: no Navigator here (AuthGate will route)
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        failedAttempts = 0;
+        // keep captcha hidden after success
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Welcome back!')),
+      );
+    } on FirebaseAuthException catch (e) {
+      failedAttempts += 1;
+
+      // ✅ Progressive captcha: show after first failure
+      showCaptcha = true;
+      _refreshCaptcha();
+
+      // ✅ Cooldown after 3 failures
+      if (failedAttempts >= 3) {
+        _startCooldown(seconds: 20);
       }
 
-      // IMPORTANT: no Navigator here.
-      // AuthGate will rebuild and route (Learner/Teacher/Admin/Blocked/Paused/Deleted)
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = _friendlyAuthMsg(e);
+      });
+    } catch (_) {
+      failedAttempts += 1;
+      showCaptcha = true;
+      _refreshCaptcha();
+
+      if (failedAttempts >= 3) {
+        _startCooldown(seconds: 20);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = 'Login failed. Please try again.';
+      });
+    }
+  }
+
+  Future<void> _manualLogin() async {
+    FocusScope.of(context).unfocus();
+    if (loading) return;
+
+    // cooldown check
+    if (_isCoolingDown) {
+      setState(() => error = 'Please wait $_cooldownSecondsLeft seconds and try again.');
+      return;
+    }
+
+    // Progressive captcha rule:
+    // - before any failures, no captcha required
+    // - after first failure, captcha required
+    final requireCaptchaNow = true;
+
+
+    // validate (captcha only if required)
+    if (!_validateInputs(enforceCaptcha: requireCaptchaNow)) return;
+
+    final email = emailCtrl.text.trim().toLowerCase();
+    final pass = passCtrl.text;
+
+    await _signInWithFirebase(email, pass);
+  }
+
+  Future<void> _forgotPassword() async {
+    if (loading) return;
+
+    // light throttle: 1 request per 10 seconds
+    final now = DateTime.now();
+    if (_lastResetRequestAt != null &&
+        now.difference(_lastResetRequestAt!).inSeconds < 10) {
+      setState(() => error = 'Please wait a few seconds and try again.');
+      return;
+    }
+
+    final prefill = emailCtrl.text.trim();
+    final ctrl = TextEditingController(text: prefill);
+
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Enter your email. If an account exists, we will send a reset link.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+            child: const Text('Send link'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (email == null) return;
+
+    final normalized = email.trim().toLowerCase();
+    if (!_isValidEmail(normalized)) {
+      setState(() => error = 'Please enter a valid email address.');
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = '';
+    });
+
+    try {
+      _lastResetRequestAt = DateTime.now();
+
+      // ✅ Security: never reveal if account exists
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: normalized);
 
       if (!mounted) return;
       setState(() => loading = false);
-    } on FirebaseAuthException catch (e) {
-      String msg = 'Login failed.';
-      if (e.code == 'user-not-found') msg = 'No user found for that email.';
-      if (e.code == 'wrong-password') msg = 'Wrong password.';
-      if (e.code == 'invalid-email') msg = 'Invalid email.';
-      if (e.code == 'user-disabled') msg = 'This account is disabled.';
 
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('If an account exists for that email, a reset link has been sent.'),
+        ),
+      );
+    } on FirebaseAuthException catch (_) {
       if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = msg;
-      });
-      if (!fromAutoLogin) _refreshCaptcha();
-    } catch (e) {
+      setState(() => loading = false);
+
+      // ✅ same message always
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('If an account exists for that email, a reset link has been sent.'),
+        ),
+      );
+    } catch (_) {
       if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = 'Error: $e';
-      });
-      if (!fromAutoLogin) _refreshCaptcha();
+      setState(() => loading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('If an account exists for that email, a reset link has been sent.'),
+        ),
+      );
     }
   }
 
-  void _refreshCaptcha() {
-    // Simple deterministic random-like without extra packages
-    final now = DateTime.now().millisecondsSinceEpoch;
-    a = (now % 8) + 1; // 1..9
-    b = ((now ~/ 7) % 8) + 1; // 1..9
-    captchaCtrl.text = '';
+  Future<void> _openWhatsApp() async {
+    if (supportWhatsAppNumber.trim().isEmpty) return;
+
+    final n = supportWhatsAppNumber.trim();
+    // wa.me works widely
+    final uri = Uri.parse('https://wa.me/$n');
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open WhatsApp.')),
+      );
+    }
   }
 
-  @override
-  void dispose() {
-    emailCtrl.dispose();
-    passCtrl.dispose();
-    captchaCtrl.dispose();
-    super.dispose();
+  Future<void> _callSupport() async {
+    if (supportPhoneNumber.trim().isEmpty) return;
+    final uri = Uri.parse('tel:${supportPhoneNumber.trim()}');
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start a call.')),
+      );
+    }
   }
 
-  bool _validate() {
-    final email = emailCtrl.text.trim();
-    final pass = passCtrl.text.trim();
-    final cap = captchaCtrl.text.trim();
-
-    if (email.isEmpty || !email.contains('@')) {
-      setState(() => error = 'Please enter a valid email.');
-      return false;
+  Future<void> _emailSupport() async {
+    if (supportEmail.trim().isEmpty) return;
+    final uri = Uri.parse('mailto:${supportEmail.trim()}?subject=Support%20Request');
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open email app.')),
+      );
     }
-    if (pass.length < 4) {
-      setState(() => error = 'Password looks too short.');
-      return false;
-    }
-    final expected = (a + b).toString();
-    if (cap != expected) {
-      setState(() => error = 'Captcha is incorrect. Try again.');
-      _refreshCaptcha();
-      return false;
-    }
-
-    setState(() => error = '');
-    return true;
   }
 
-  Future<void> _fakeLoginForNow() async {
-    FocusScope.of(context).unfocus();
+  Widget _supportRow() {
+    final hasWhatsApp = supportWhatsAppNumber.trim().isNotEmpty;
+    final hasPhone = supportPhoneNumber.trim().isNotEmpty;
+    final hasEmail = supportEmail.trim().isNotEmpty;
 
-    // ✅ If user is clicking manually, validate captcha as before
-    if (!_validate()) return;
+    if (!hasWhatsApp && !hasPhone && !hasEmail) return const SizedBox.shrink();
 
-    final email = emailCtrl.text.trim();
-    final pass = passCtrl.text.trim();
-
-    await _signInWithFirebase(email, pass, fromAutoLogin: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 6),
+        Text(
+          'Need help?',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: Brand.mainText.withOpacity(0.75),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            if (hasWhatsApp)
+              OutlinedButton.icon(
+                onPressed: loading ? null : _openWhatsApp,
+                icon: const Text('💬', style: TextStyle(fontSize: 16)),
+                label: const Text('WhatsApp'),
+              ),
+            if (hasPhone)
+              OutlinedButton.icon(
+                onPressed: loading ? null : _callSupport,
+                icon: const Icon(Icons.call_rounded, size: 18),
+                label: const Text('Call'),
+              ),
+            if (hasEmail)
+              OutlinedButton.icon(
+                onPressed: loading ? null : _emailSupport,
+                icon: const Icon(Icons.email_rounded, size: 18),
+                label: const Text('Email'),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ✅ Logo + Title
+        // ✅ Brand header (logo + title + subtitle)
         Center(
           child: Column(
             children: [
               Container(
-                width: 84,
-                height: 84,
+                width: 130,
+                height: 130,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(22),
@@ -690,20 +954,14 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Admin Login',
+                'Sign in',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w900,
                   color: Brand.primaryBlue,
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                'Sign in to manage classrooms & attendance',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Brand.mainText.withOpacity(0.70),
-                ),
-              ),
+
             ],
           ),
         ),
@@ -713,6 +971,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         // ✅ Email
         TextField(
           controller: emailCtrl,
+          enabled: !loading,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
@@ -722,81 +981,134 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         ),
         const SizedBox(height: 12),
 
-        // ✅ Password
+        // ✅ Password (show/hide)
         TextField(
           controller: passCtrl,
-          obscureText: true,
+          enabled: !loading,
+          obscureText: !showPass,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Password',
-            prefixIcon: Icon(Icons.lock_rounded),
+            prefixIcon: const Icon(Icons.lock_rounded),
+            suffixIcon: IconButton(
+              tooltip: 'Show/Hide password',
+              onPressed: loading ? null : () => setState(() => showPass = !showPass),
+              icon: Icon(showPass ? Icons.visibility_off : Icons.visibility),
+            ),
           ),
-          onSubmitted: (_) => loading ? null : _fakeLoginForNow(),
+          onSubmitted: (_) => loading ? null : _manualLogin(),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 6),
 
-        // ✅ Captcha (better UI)
+        // ✅ Forgot password (secure)
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: loading ? null : _forgotPassword,
+            child: const Text('Forgot password?'),
+          ),
+        ),
+
+
+
+        const SizedBox(height: 6),
+
+        // ✅ Cooldown banner (after 3 fails)
+        if (_isCoolingDown) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Brand.actionOrange.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Brand.actionOrange.withOpacity(0.35)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.timer_rounded, color: Brand.actionOrange),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Too many attempts. Try again in $_cooldownSecondsLeft seconds.',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Brand.actionOrange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Brand.accentCyan.withOpacity(0.08),
+            color: Brand.accentCyan.withOpacity(0.06),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Brand.uiBorder),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.verified_user_rounded,
-                      color: Brand.primaryBlue, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Quick check',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: Brand.primaryBlue,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: loading
-                        ? null
-                        : () {
-                      setState(() => _refreshCaptcha());
-                    },
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text('New'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'What is $a + $b ?',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Brand.mainText.withOpacity(0.85),
-                  fontWeight: FontWeight.w700,
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: Brand.primaryBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Brand.uiBorder),
+                ),
+                child: const Icon(
+                  Icons.verified_user_rounded,
+                  size: 18,
+                  color: Brand.primaryBlue,
                 ),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: captchaCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  hintText: 'Answer',
-                  prefixIcon: Icon(Icons.calculate_rounded),
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Text(
+                  '$a + $b =',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Brand.primaryBlue,
+                  ),
                 ),
+              ),
+
+              SizedBox(
+                width: 90,
+                child: TextField(
+                  controller: captchaCtrl,
+                  enabled: !loading,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                    hintText: '...',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              IconButton(
+                tooltip: 'New captcha',
+                onPressed: loading ? null : () => setState(_refreshCaptcha),
+                icon: const Icon(Icons.refresh_rounded),
+                color: Brand.primaryBlue,
               ),
             ],
           ),
         ),
 
-        const SizedBox(height: 14),
 
-        // ✅ Main sign in button (Action Orange)
+
+        // ✅ Sign in button
         FilledButton.icon(
-          onPressed: loading ? null : _fakeLoginForNow,
+          onPressed: (loading || _isCoolingDown) ? null : _manualLogin,
           style: FilledButton.styleFrom(
             backgroundColor: Brand.actionOrange,
             foregroundColor: Colors.white,
@@ -810,54 +1122,36 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             width: 18,
             height: 18,
             child: CircularProgressIndicator(
-                strokeWidth: 2, color: Colors.white),
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
           )
               : const Icon(Icons.login_rounded),
           label: Text(loading ? 'Signing in...' : 'Sign in'),
         ),
 
-        const SizedBox(height: 10),
+        // ✅ Support links row (only if configured)
+        _supportRow(),
 
-        // ✅ Secondary button (Blue outline)
-        OutlinedButton.icon(
-          onPressed: loading
-              ? null
-              : () {
-            setState(() => error = 'Google sign-in: not wired yet');
-          },
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Brand.primaryBlue,
-            side: const BorderSide(color: Brand.uiBorder),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          icon: const Icon(Icons.g_mobiledata_rounded),
-          label: const Text('Continue with Google'),
-        ),
-
+        // ✅ Error box
         if (error.isNotEmpty) ...[
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.error.withOpacity(0.08),
+              color: cs.error.withOpacity(0.08),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color:
-                  Theme.of(context).colorScheme.error.withOpacity(0.35)),
+              border: Border.all(color: cs.error.withOpacity(0.35)),
             ),
             child: Row(
               children: [
-                Icon(Icons.error_outline_rounded,
-                    color: Theme.of(context).colorScheme.error),
+                Icon(Icons.error_outline_rounded, color: cs.error),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     error,
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                      color: cs.error,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -870,6 +1164,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     );
   }
 }
+
 
 class StoriesHome extends StatelessWidget {
   const StoriesHome({super.key});
