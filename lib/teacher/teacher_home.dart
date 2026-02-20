@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-
+import 'teacher_regulations_screen.dart';
 import 'teacher_profile.dart';
 import 'teacher_classes.dart';
 import 'teacher_mail.dart';
@@ -11,7 +11,7 @@ import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
 import '../shared/session_manager.dart';
 import 'teacher_wages_screen.dart';
-
+import 'teacher_syllabi_screen.dart';
 // ✅ Call logs
 import '../calls/call_logs_screen.dart';
 
@@ -792,7 +792,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           Icons.wallet_rounded,
                           const TeacherWagesScreen(),
                         ),
-
+                        _buildQuickCard(
+                          context,
+                          'Regulations',
+                          Icons.policy_rounded,
+                          const TeacherRegulationsScreen(),
+                        ),
+                        _buildQuickCard(
+                          context,
+                          'Syllabi',
+                          Icons.menu_book_rounded,
+                          TeacherSyllabiScreen(),
+                        ),
 
                       ],
                     ),
