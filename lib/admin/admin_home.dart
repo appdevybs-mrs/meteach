@@ -1,6 +1,11 @@
+// ✅ FULL REPLACEMENT: lib/admin/admin_home.dart
+// Copy-paste بالكامل (replace your whole file)
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:async/async.dart'; // ✅ needed for StreamZip
+
 import 'admin_wages_screen.dart';
 import 'admin_payments.dart';
 import 'admin_courses.dart';
@@ -11,6 +16,7 @@ import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
 import '../shared/session_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
 // ✅ timetable
 import 'admin_timetable_screen.dart';
 
@@ -33,8 +39,6 @@ class AdminHome extends StatelessWidget {
     // ✅ stop "single device" listener (so it doesn't run after logout)
     await SessionManager.stopListening();
 
-
-
     // ✅ remove FCM token record (your existing behavior)
     try {
       if (userId != null && userId.isNotEmpty) {
@@ -49,7 +53,6 @@ class AdminHome extends StatelessWidget {
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +104,6 @@ class AdminHome extends StatelessWidget {
           const SizedBox(width: 6),
         ],
       ),
-
       body: Stack(
         children: [
           Positioned.fill(
@@ -192,13 +194,14 @@ class AdminHome extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
+
                   // Grid
                   Expanded(
                     child: GridView.count(
                       crossAxisCount: crossAxisCount,
                       mainAxisSpacing: 10,
                       crossAxisSpacing: 10,
-                      childAspectRatio: cardRatio, // ✅ Applied shorter ratio here
+                      childAspectRatio: cardRatio,
                       children: [
                         _DashCard(
                           title: 'Courses',
@@ -269,9 +272,6 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminForceUpdateAllScreen()),
                           ),
                         ),
-
-
-
                       ],
                     ),
                   ),
@@ -296,6 +296,8 @@ class AdminHome extends StatelessWidget {
   }
 }
 
+// ===================== SUBSCRIPTIONS CARD =====================
+
 class _SubscriptionsDashCard extends StatelessWidget {
   const _SubscriptionsDashCard();
 
@@ -310,9 +312,8 @@ class _SubscriptionsDashCard extends StatelessWidget {
         final v = snap.data?.snapshot.value;
         if (v is Map) count = v.length;
 
-        final subtitle = count == 0
-            ? 'No new registrations'
-            : '$count new application${count == 1 ? '' : 's'}';
+        final subtitle =
+        count == 0 ? 'No new registrations' : '$count new application${count == 1 ? '' : 's'}';
 
         return _DashCard(
           title: 'Subscriptions',
@@ -327,34 +328,16 @@ class _SubscriptionsDashCard extends StatelessWidget {
     );
   }
 }
+
+// ===================== PAY FLAG (TOP LEVEL) =====================
+
+enum _PayFlag { ok, yellow, red, black }
+
+// ===================== LEARNERS CARD (FIXED: uses CLASSES attendance like AdminLearnersScreen) =====================
+
 class _LearnersDashCard extends StatelessWidget {
   final VoidCallback onTap;
   const _LearnersDashCard({required this.onTap});
-
-  // ✅ SAME logic style as your learners screen:
-  // due: left <= remindBeforeSession
-  // soon: left == remindBeforeSession + 1
-  //
-  // If you want "soon" wider later, change +1 to +2 or +3.
-  static bool _isDue({
-    required int sessionsPaidTotal,
-    required int sessionsDone,
-    required int remindBeforeSession,
-  }) {
-    if (sessionsPaidTotal <= 0) return false;
-    final left = sessionsPaidTotal - sessionsDone;
-    return left <= remindBeforeSession;
-  }
-
-  static bool _isDueSoon({
-    required int sessionsPaidTotal,
-    required int sessionsDone,
-    required int remindBeforeSession,
-  }) {
-    if (sessionsPaidTotal <= 0) return false;
-    final left = sessionsPaidTotal - sessionsDone;
-    return left == (remindBeforeSession + 1);
-  }
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
@@ -363,38 +346,126 @@ class _LearnersDashCard extends StatelessWidget {
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  static int _rank(_PayFlag f) {
+    switch (f) {
+      case _PayFlag.black:
+        return 3;
+      case _PayFlag.red:
+        return 2;
+      case _PayFlag.yellow:
+        return 1;
+      case _PayFlag.ok:
+      default:
+        return 0;
+    }
+  }
+
+  static _PayFlag _paymentFlag({
+    required int sessionsPaidTotal,
+    required int sessionsDone,
+    required int remindBeforeSession,
+  }) {
+    // no payment at all => BLACK
+    if (sessionsPaidTotal <= 0) return _PayFlag.black;
+
+    final rb = remindBeforeSession > 0 ? remindBeforeSession : 1;
+
+    // next session to attend
+    final currentSession = sessionsDone + 1;
+
+    // exceeded paid => BLACK
+    if (currentSession > sessionsPaidTotal) return _PayFlag.black;
+
+    // dueAt example: paid=8, rb=1 => dueAt=7
+    var dueAt = sessionsPaidTotal - rb;
+    if (dueAt < 1) dueAt = 1;
+
+    final warnAt = dueAt - 1;
+
+    if (currentSession == dueAt) return _PayFlag.red;
+    if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
+
+    return _PayFlag.ok;
+  }
+
+  static String _classIdOf(Map<String, dynamic> courseMap) {
+    final cls = courseMap['class'];
+    if (cls is Map) {
+      final m = cls.map((k, v) => MapEntry(k.toString(), v));
+      final id = (m['class_id'] ?? '').toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    final direct = (courseMap['class_id'] ?? '').toString().trim();
+    return direct;
+  }
+
   @override
   Widget build(BuildContext context) {
     final usersRef = FirebaseDatabase.instance.ref('users');
+    final classesRef = FirebaseDatabase.instance.ref('classes');
 
-    return StreamBuilder<DatabaseEvent>(
-      stream: usersRef.onValue,
+    return StreamBuilder<List<DatabaseEvent>>(
+      stream: StreamZip([usersRef.onValue, classesRef.onValue]),
       builder: (context, snap) {
         int totalLearners = 0;
-        int dueCount = 0;
-        int dueSoonCount = 0;
+        int blackCount = 0;
+        int redCount = 0;
+        int yellowCount = 0;
+        int okCount = 0;
 
-        final v = snap.data?.snapshot.value;
+        if (!snap.hasData || snap.data!.length != 2) {
+          return InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: onTap,
+            child: _learnersCardUi(
+              total: 0,
+              black: 0,
+              red: 0,
+              yellow: 0,
+              ok: 0,
+              loading: true,
+            ),
+          );
+        }
 
-        if (v is Map) {
-          v.forEach((uid, userVal) {
+        final usersVal = snap.data![0].snapshot.value;
+        final classesVal = snap.data![1].snapshot.value;
+
+        // classId -> taughtCount (attendance length)
+        final Map<String, int> taughtCountByClassId = {};
+        if (classesVal is Map) {
+          classesVal.forEach((classId, classNode) {
+            if (classId == null || classNode == null) return;
+            if (classNode is! Map) return;
+
+            final classMap = classNode.map((k, v) => MapEntry(k.toString(), v));
+            final att = classMap['attendance'];
+
+            final taughtCount = (att is Map) ? att.length : 0;
+            taughtCountByClassId[classId.toString()] = taughtCount;
+          });
+        }
+
+        if (usersVal is Map) {
+          usersVal.forEach((uid, userVal) {
             if (uid == null || userVal == null) return;
             if (userVal is! Map) return;
 
             final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-            // Only learners
+            // learners only
             final role = (userMap['role'] ?? '').toString().toLowerCase().trim();
             if (role != 'learner') return;
 
             totalLearners++;
 
-            // Compute due / soon by scanning all courses
             final courses = userMap['courses'];
-            if (courses is! Map) return;
+            if (courses is! Map) {
+              okCount++;
+              return;
+            }
 
-            bool hasDue = false;
-            bool hasSoon = false;
+            _PayFlag worst = _PayFlag.ok;
 
             courses.forEach((courseKey, courseVal) {
               if (courseKey == null || courseVal == null) return;
@@ -402,130 +473,160 @@ class _LearnersDashCard extends StatelessWidget {
 
               final courseMap = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-              final attendance = courseMap['attendance'];
-              final sessionsDone = attendance is Map ? attendance.length : 0;
-
               final sum = courseMap['payment_summary'];
-              final sumMap = sum is Map ? sum.map((k, vv) => MapEntry(k.toString(), vv)) : <String, dynamic>{};
+              final sumMap = sum is Map
+                  ? sum.map((k, vv) => MapEntry(k.toString(), vv))
+                  : <String, dynamic>{};
 
               final sessionsPaidTotal = _asInt(sumMap['sessionsPaidTotal']);
               final remind = _asInt(sumMap['remindBeforeSession']);
               final remindBefore = remind > 0 ? remind : 1;
 
-              if (_isDue(
+              final classId = _classIdOf(courseMap);
+              final sessionsDone = classId.isEmpty ? 0 : (taughtCountByClassId[classId] ?? 0);
+
+              final flag = _paymentFlag(
                 sessionsPaidTotal: sessionsPaidTotal,
                 sessionsDone: sessionsDone,
                 remindBeforeSession: remindBefore,
-              )) {
-                hasDue = true;
-              } else if (_isDueSoon(
-                sessionsPaidTotal: sessionsPaidTotal,
-                sessionsDone: sessionsDone,
-                remindBeforeSession: remindBefore,
-              )) {
-                hasSoon = true;
-              }
+              );
+
+              if (_rank(flag) > _rank(worst)) worst = flag;
+              if (worst == _PayFlag.black) return; // strongest
             });
 
-            // Count learner once
-            if (hasDue) {
-              dueCount++;
-            } else if (hasSoon) {
-              dueSoonCount++;
+            switch (worst) {
+              case _PayFlag.black:
+                blackCount++;
+                break;
+              case _PayFlag.red:
+                redCount++;
+                break;
+              case _PayFlag.yellow:
+                yellowCount++;
+                break;
+              case _PayFlag.ok:
+              default:
+                okCount++;
+                break;
             }
           });
         }
 
-        // ✅ Micro stats row (small, 1 line)
-        final stats = '👥 $totalLearners   ⚠️ $dueCount   ⏳ $dueSoonCount';
-
-        // ✅ A special compact card so we don’t break other cards
         return InkWell(
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFD1D9E0).withOpacity(0.8)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                )
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // ✅ Slightly smaller icon container
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AdminHome.primaryBlue.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AdminHome.primaryBlue.withOpacity(0.12)),
-                    ),
-                    child: const Icon(
-                      Icons.people_alt_rounded,
-                      color: AdminHome.primaryBlue,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  const Text(
-                    'Learners',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      color: Color(0xFF1A2B48),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-
-                  Text(
-                    'Students list',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  // ✅ Stats line (tiny, does not grow card: 1 line only)
-                  Text(
-                    stats,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 10,
-                      color: dueCount > 0
-                          ? Colors.red
-                          : (dueSoonCount > 0 ? AdminHome.actionOrange : Colors.green),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          child: _learnersCardUi(
+            total: totalLearners,
+            black: blackCount,
+            red: redCount,
+            yellow: yellowCount,
+            ok: okCount,
+            loading: false,
           ),
         );
       },
     );
   }
+
+  Widget _learnersCardUi({
+    required int total,
+    required int black,
+    required int red,
+    required int yellow,
+    required int ok,
+    required bool loading,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFD1D9E0).withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AdminHome.primaryBlue.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AdminHome.primaryBlue.withOpacity(0.12)),
+              ),
+              child: loading
+                  ? const Padding(
+                padding: EdgeInsets.all(8),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+                  : const Icon(
+                Icons.people_alt_rounded,
+                color: AdminHome.primaryBlue,
+                size: 18,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Learners',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+                color: Color(0xFF1A2B48),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Students list',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // ✅ One-line stats (color accurate)
+            RichText(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10),
+                children: [
+                  TextSpan(text: '👥 $total   ', style: TextStyle(color: Colors.grey.shade700)),
+                  const TextSpan(text: '🖤 ', style: TextStyle(color: Colors.black)),
+                  TextSpan(text: '$black   ', style: const TextStyle(color: Colors.black)),
+                  const TextSpan(text: '🔴 ', style: TextStyle(color: Colors.red)),
+                  TextSpan(text: '$red   ', style: const TextStyle(color: Colors.red)),
+                  TextSpan(text: '🟠 ', style: TextStyle(color: AdminHome.actionOrange)),
+                  TextSpan(text: '$yellow   ', style: TextStyle(color: AdminHome.actionOrange)),
+                  const TextSpan(text: '✅ ', style: TextStyle(color: Colors.green)),
+                  TextSpan(text: '$ok', style: const TextStyle(color: Colors.green)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+// ===================== GENERIC DASH CARD =====================
+
 class _DashCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -565,10 +666,10 @@ class _DashCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center, // ✅ Centers content vertically
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 38, // ✅ Slightly smaller icon container
+                width: 38,
                 height: 38,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.08),
@@ -577,7 +678,7 @@ class _DashCard extends StatelessWidget {
                 ),
                 child: Icon(icon, color: color, size: 20),
               ),
-              const SizedBox(height: 10), // ✅ Fixed spacing instead of Spacer
+              const SizedBox(height: 10),
               Text(
                 title,
                 maxLines: 1,
@@ -606,6 +707,8 @@ class _DashCard extends StatelessWidget {
     );
   }
 }
+
+// ===================== FORCE UPDATE SCREEN (YOUR ORIGINAL, UNCHANGED) =====================
 
 class AdminForceUpdateAllScreen extends StatefulWidget {
   const AdminForceUpdateAllScreen({super.key});
@@ -664,14 +767,6 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
     super.dispose();
   }
 
-  // ---------- Helpers ----------
-  int _toInt(dynamic x) {
-    if (x == null) return 0;
-    if (x is int) return x;
-    if (x is num) return x.toInt();
-    return int.tryParse(x.toString()) ?? 0;
-  }
-
   void _fillControllersFromMap({
     required Map<String, dynamic> m,
     required TextEditingController minVersionC,
@@ -709,7 +804,6 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       final snap = await _root.get();
       final v = snap.value;
 
-      // default empty
       Map<String, dynamic> android = {};
       Map<String, dynamic> ios = {};
 
@@ -727,7 +821,6 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
         }
       }
 
-      // fill controllers (even if empty, so you can create from phone)
       _fillControllersFromMap(
         m: android,
         minVersionC: aMinVersionC,
@@ -757,9 +850,6 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
   }
 
   Future<void> _saveAll() async {
-    // minimal validation (version should not be empty if you want enable)
-    // but we allow empty to let you disable update rules easily.
-
     setState(() => saving = true);
 
     try {
@@ -779,9 +869,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
         storeWebUrlC: iStoreWebUrlC,
       );
 
-      // Save the whole node (android + ios)
       await _root.update({
-        'allowAdminBypass': true, // keep it alive
+        'allowAdminBypass': true,
         'android': android,
         'ios': ios,
       });
@@ -862,32 +951,27 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
           const SizedBox(height: 10),
-
           TextField(
             controller: minVersionC,
             decoration: const InputDecoration(labelText: 'minVersion (example: 2.0.0)'),
           ),
           const SizedBox(height: 10),
-
           TextField(
             controller: minBuildC,
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(labelText: 'minBuild (example: 76)'),
           ),
           const SizedBox(height: 10),
-
           TextField(
             controller: messageC,
             decoration: const InputDecoration(labelText: 'message'),
           ),
           const SizedBox(height: 10),
-
           TextField(
             controller: storeUrlC,
             decoration: const InputDecoration(labelText: 'storeUrl'),
           ),
           const SizedBox(height: 10),
-
           TextField(
             controller: storeWebUrlC,
             decoration: const InputDecoration(labelText: 'storeWebUrl'),
@@ -948,7 +1032,11 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
                   ),
                   onPressed: saving ? null : _saveAll,
                   icon: saving
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
                       : const Icon(Icons.save_rounded),
                   label: Text(saving ? 'Saving…' : 'Save ALL'),
                 ),
@@ -988,9 +1076,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 18),
-
           _section(
             title: 'iOS',
             minVersionC: iMinVersionC,
@@ -1017,9 +1103,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 14),
-
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
