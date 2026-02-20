@@ -21,6 +21,7 @@ dependencies:
   flutter_local_notifications: ^20.0.0
   timezone: ^0.10.0
   flutter_timezone: ^5.0.1
+  firebase_crashlytics: ^5.0.7
 
   # 🔐 Permissions & storage
   permission_handler: ^11.3.1

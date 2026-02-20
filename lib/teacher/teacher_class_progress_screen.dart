@@ -624,7 +624,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
           [
             if (unitTitle.isNotEmpty) unitTitle,
             if (skill.isNotEmpty) skill,
-            covered ? 'Covered' : 'Not covered yet',
+            covered ? 'Covered' : 'Not covered',
           ].join(' • '),
           style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
           maxLines: 2,

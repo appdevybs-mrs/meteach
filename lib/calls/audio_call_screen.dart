@@ -204,6 +204,9 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       });
       _bindStreams();
       if (_timer == null) _startTimer();
+      // 🔊 Force speaker ON on Android (debug / stability)
+      _speakerOn = true;
+      await AudioCallService.I.setSpeakerOn(true);
       return;
     }
 

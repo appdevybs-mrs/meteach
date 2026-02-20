@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'dart:ui';
 
 import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
@@ -20,11 +22,26 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(); // uses google-services.json on Android
+
+  // ✅ 1) Catch Flutter UI errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+  };
+
+  // ✅ 2) Catch async errors (background errors)
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+
   await FCMService.I.init();
 
   runApp(const DreamEnglishAcademyApp());
 }
+
 
 /// ===== Brand Colors =====
 class Brand {

@@ -40,7 +40,7 @@
         </receiver>
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.yourbridgeschool.dreamenglish.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

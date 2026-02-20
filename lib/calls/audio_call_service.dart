@@ -82,7 +82,8 @@ class AudioCallService {
   // call timeout (ringing)
   Timer? _ringTimeoutTimer;
   static const Duration _ringTimeout = Duration(seconds: 10);
-
+  Timer? _disconnectGraceTimer;
+  static const Duration _disconnectGrace = Duration(seconds: 8);
   // values: idle | ringing | accepted | declined | busy | no_answer | ended
   final ValueNotifier<String> callState = ValueNotifier<String>('idle');
 
@@ -271,23 +272,55 @@ class AudioCallService {
     }
 
     pc.onConnectionState = (RTCPeerConnectionState state) async {
-      if (state ==
-          RTCPeerConnectionState
-              .RTCPeerConnectionStateDisconnected ||
-          state ==
-              RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state ==
-              RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+      debugPrint('📡 onConnectionState=$state');
+
+      // Fail/Closed -> end immediately
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+          state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
         await endNow();
+        return;
+      }
+
+      // Disconnected can be temporary (screen off, network switch) -> grace period
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = Timer(_disconnectGrace, () async {
+          final nowState = _pc?.connectionState;
+          debugPrint('⏳ disconnect grace done, connectionState=$nowState');
+          if (nowState ==
+              RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+            await endNow();
+          }
+        });
+      } else {
+        // back to connected -> cancel pending hangup
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = null;
       }
     };
 
     pc.onIceConnectionState = (RTCIceConnectionState state) async {
-      if (state ==
-          RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
-          state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
+      debugPrint('🧊 onIceConnectionState=$state');
+
+      if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
           state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
         await endNow();
+        return;
+      }
+
+      if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = Timer(_disconnectGrace, () async {
+          final nowState = _pc?.iceConnectionState;
+          debugPrint('⏳ disconnect grace done, iceConnectionState=$nowState');
+          if (nowState ==
+              RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+            await endNow();
+          }
+        });
+      } else {
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = null;
       }
     };
   }
@@ -869,7 +902,8 @@ class AudioCallService {
     _ending = true;
 
     _cancelRingTimeout();
-
+    _disconnectGraceTimer?.cancel();
+    _disconnectGraceTimer = null;
     final ref = _callRef;
     final currentCallId = callId;
 
