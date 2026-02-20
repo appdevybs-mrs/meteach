@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:async/async.dart'; // ✅ needed for StreamZip
-
+import 'admin_contract_screen.dart';
 import 'admin_wages_screen.dart';
 import 'admin_payments.dart';
 import 'admin_courses.dart';
@@ -270,6 +270,15 @@ class AdminHome extends StatelessWidget {
                           color: primaryBlue,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const AdminForceUpdateAllScreen()),
+                          ),
+                        ),
+                        _DashCard(
+                          title: 'Contract',
+                          subtitle: 'Contracts & documents',
+                          icon: Icons.description_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminContractScreen()),
                           ),
                         ),
                       ],

@@ -1,0 +1,800 @@
+// ✅ FULL REPLACEMENT: lib/admin/admin_contract_screen.dart
+// Copy-paste بالكامل (replace your whole file)
+
+import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
+
+class AdminContractScreen extends StatefulWidget {
+  const AdminContractScreen({super.key});
+
+  @override
+  State<AdminContractScreen> createState() => _AdminContractScreenState();
+}
+
+class _AdminContractScreenState extends State<AdminContractScreen>
+    with SingleTickerProviderStateMixin {
+  // ===== Brand colors (match your admin theme) =====
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const actionOrange = Color(0xFFF98D28);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  late final TabController _tab;
+
+  // RTDB roots (your structure)
+  DatabaseReference get _teacherRoot => FirebaseDatabase.instance.ref('contract/teacher');
+  DatabaseReference get _learnerRoot => FirebaseDatabase.instance.ref('contract/learner');
+
+  bool _ensuring = true;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _tab = TabController(length: 2, vsync: this);
+
+    // ✅ IMPORTANT: make FAB label update when tab changes
+    _tab.addListener(() {
+      if (!mounted) return;
+      setState(() {});
+    });
+
+    _ensureBaseNodes();
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
+  // ✅ Create empty nodes if they don't exist yet
+  Future<void> _ensureBaseNodes() async {
+    setState(() => _ensuring = true);
+    try {
+      final t = await _teacherRoot.get();
+      if (t.value == null) await _teacherRoot.set({});
+
+      final l = await _learnerRoot.get();
+      if (l.value == null) await _learnerRoot.set({});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('RTDB init failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _ensuring = false);
+    }
+  }
+
+  DatabaseReference _activeRoot() => _tab.index == 0 ? _teacherRoot : _learnerRoot;
+  String _activeLabel() => _tab.index == 0 ? 'Teachers' : 'Learners';
+
+  // ---------- Helpers ----------
+  static Map<String, dynamic> _asMap(dynamic v) {
+    if (v is Map) {
+      return v.map((k, val) => MapEntry(k.toString(), val));
+    }
+    return {};
+  }
+
+  static List<String> _asStringList(dynamic v) {
+    if (v is List) {
+      return v
+          .map((e) => (e ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    }
+    if (v is Map) {
+      final m = v.map((k, val) => MapEntry(k.toString(), val));
+      final keys = m.keys.toList()..sort();
+      return keys
+          .map((k) => (m[k] ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    }
+    return [];
+  }
+
+  // ---------- UI actions ----------
+  Future<void> _openAddDialog() async {
+    await _openEditDialog(
+      title: '',
+      itemsText: '',
+      existingId: null,
+      root: _activeRoot(),
+      kindLabel: _activeLabel(),
+    );
+  }
+
+  Future<void> _openEditDialog({
+    required String title,
+    required String itemsText,
+    required String? existingId,
+    required DatabaseReference root,
+    required String kindLabel,
+  }) async {
+    final titleC = TextEditingController(text: title);
+    final itemsC = TextEditingController(text: itemsText);
+
+    bool saving = false;
+
+    Future<void> save() async {
+      final t = titleC.text.trim();
+      final raw = itemsC.text;
+
+      final items = raw
+          .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      if (t.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Title is required')),
+        );
+        return;
+      }
+      if (items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add at least 1 item (one per line)')),
+        );
+        return;
+      }
+
+      if (saving) return;
+      saving = true;
+
+      try {
+        final now = DateTime.now().millisecondsSinceEpoch;
+
+        if (existingId == null) {
+          final newRef = root.push();
+          await newRef.set({
+            'title': t,
+            'items': items,
+            'updatedAt': now,
+          });
+        } else {
+          await root.child(existingId).update({
+            'title': t,
+            'items': items,
+            'updatedAt': now,
+          });
+        }
+
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              existingId == null ? '$kindLabel contract added ✅' : 'Updated ✅',
+            ),
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save failed: $e')),
+        );
+      } finally {
+        saving = false;
+      }
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 12 + bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: primaryBlue.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                      ),
+                      child: Icon(
+                        existingId == null ? Icons.add_rounded : Icons.edit_rounded,
+                        color: primaryBlue,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        existingId == null
+                            ? 'Add $kindLabel Contract'
+                            : 'Edit $kindLabel Contract',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: titleC,
+                  textInputAction: TextInputAction.next,
+                  decoration: InputDecoration(
+                    labelText: 'Contract title',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: itemsC,
+                  minLines: 6,
+                  maxLines: 12,
+                  decoration: InputDecoration(
+                    labelText: 'Items (one per line)',
+                    alignLabelWithHint: true,
+                    hintText: 'Example:\nRule 1\nRule 2\nRule 3',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: appBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: uiBorder),
+                  ),
+                  child: const Text(
+                    'Tip: Write each bullet on a new line.\nWe store them as a list.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primaryBlue,
+                          side: BorderSide(color: primaryBlue.withOpacity(0.5)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: actionOrange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: save,
+                        icon: Icon(existingId == null ? Icons.add_rounded : Icons.save_rounded),
+                        label: Text(existingId == null ? 'Add' : 'Save'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    // ✅ IMPORTANT: we DO NOT dispose controllers here (prevents disposed-controller crash)
+  }
+
+  Future<bool> _confirmDelete(String title) async {
+    return (await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete contract?'),
+        content: Text('This will permanently delete:\n\n"$title"'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    )) ??
+        false;
+  }
+
+  void _openContractActionsSheet({
+    required DatabaseReference root,
+    required String id,
+    required String title,
+    required List<String> items,
+    required String kindLabel,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 46,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: primaryBlue.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                    ),
+                    child: const Icon(Icons.edit_rounded, color: primaryBlue),
+                  ),
+                  title: const Text('Edit', style: TextStyle(fontWeight: FontWeight.w900)),
+                  subtitle: const Text('Update title or items'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _openEditDialog(
+                      title: title,
+                      itemsText: items.join('\n'),
+                      existingId: id,
+                      root: root,
+                      kindLabel: kindLabel,
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.red.withOpacity(0.12)),
+                    ),
+                    child: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                  ),
+                  title: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w900)),
+                  subtitle: const Text('Remove this contract'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final ok = await _confirmDelete(title);
+                    if (!ok) return;
+
+                    try {
+                      await root.child(id).remove();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Deleted ✅')),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Delete failed: $e')),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 6),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _emptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: uiBorder.withOpacity(0.85)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: primaryBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                ),
+                child: Icon(icon, color: primaryBlue, size: 26),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                  color: primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeLabel = _activeLabel();
+
+    return Scaffold(
+      backgroundColor: appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: primaryBlue),
+        title: const Text(
+          'Contract',
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Reload',
+            onPressed: _ensuring ? null : _ensureBaseNodes,
+            icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
+          ),
+          const SizedBox(width: 6),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(54),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: appBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: uiBorder),
+              ),
+              child: TabBar(
+                controller: _tab,
+                indicator: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: uiBorder.withOpacity(0.9)),
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelColor: primaryBlue,
+                unselectedLabelColor: Colors.grey.shade700,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w900),
+                tabs: const [
+                  Tab(text: 'Teachers'),
+                  Tab(text: 'Learners'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: actionOrange,
+        foregroundColor: Colors.white,
+        onPressed: _ensuring ? null : _openAddDialog,
+        icon: const Icon(Icons.add_rounded),
+        label: Text('Add ($activeLabel)'),
+      ),
+
+      body: _ensuring
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+        controller: _tab,
+        children: [
+          _ContractsTab(
+            root: _teacherRoot,
+            kindLabel: 'Teachers',
+            emptyIcon: Icons.badge_rounded,
+            openActions: _openContractActionsSheet,
+            emptyState: _emptyState,
+          ),
+          _ContractsTab(
+            root: _learnerRoot,
+            kindLabel: 'Learners',
+            emptyIcon: Icons.school_rounded,
+            openActions: _openContractActionsSheet,
+            emptyState: _emptyState,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContractEntry {
+  final String id;
+  final String title;
+  final List<String> items;
+  final int updatedAt;
+
+  _ContractEntry({
+    required this.id,
+    required this.title,
+    required this.items,
+    required this.updatedAt,
+  });
+}
+
+/// ✅ A tab that stays alive when switching (fixes "loading forever")
+class _ContractsTab extends StatefulWidget {
+  final DatabaseReference root;
+  final String kindLabel;
+  final IconData emptyIcon;
+
+  final void Function({
+  required DatabaseReference root,
+  required String id,
+  required String title,
+  required List<String> items,
+  required String kindLabel,
+  }) openActions;
+
+  final Widget Function({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  }) emptyState;
+
+  const _ContractsTab({
+    required this.root,
+    required this.kindLabel,
+    required this.emptyIcon,
+    required this.openActions,
+    required this.emptyState,
+  });
+
+  @override
+  State<_ContractsTab> createState() => _ContractsTabState();
+}
+
+class _ContractsTabState extends State<_ContractsTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  // ✅ create stream once per tab
+  late final Stream<DatabaseEvent> _stream = widget.root.onValue.asBroadcastStream();
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  static Map<String, dynamic> _asMap(dynamic v) {
+    if (v is Map) return v.map((k, val) => MapEntry(k.toString(), val));
+    return {};
+  }
+
+  static List<String> _asStringList(dynamic v) {
+    if (v is List) {
+      return v
+          .map((e) => (e ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    }
+    if (v is Map) {
+      final m = v.map((k, val) => MapEntry(k.toString(), val));
+      final keys = m.keys.toList()..sort();
+      return keys
+          .map((k) => (m[k] ?? '').toString())
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+    }
+    return [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: _stream,
+      builder: (context, snap) {
+        // ✅ loader only on first connect
+        if (snap.connectionState == ConnectionState.waiting && snap.data == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final v = snap.data?.snapshot.value;
+        final map = _asMap(v);
+
+        if (map.isEmpty) {
+          return widget.emptyState(
+            icon: widget.emptyIcon,
+            title: 'No ${widget.kindLabel} contracts yet',
+            subtitle: 'Tap the + button to add your first contract.',
+          );
+        }
+
+        final entries = <_ContractEntry>[];
+        map.forEach((id, raw) {
+          if (id.isEmpty) return;
+          final m = _asMap(raw);
+          final title = (m['title'] ?? '').toString().trim();
+          final items = _asStringList(m['items']);
+          final updatedAt = (m['updatedAt'] is num) ? (m['updatedAt'] as num).toInt() : 0;
+          if (title.isEmpty) return;
+
+          entries.add(_ContractEntry(id: id, title: title, items: items, updatedAt: updatedAt));
+        });
+
+        entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+          itemCount: entries.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, i) {
+            final c = entries[i];
+
+            return InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onLongPress: () => widget.openActions(
+                root: widget.root,
+                id: c.id,
+                title: c.title,
+                items: c.items,
+                kindLabel: widget.kindLabel,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: primaryBlue.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                        ),
+                        child: const Icon(Icons.description_rounded, color: primaryBlue, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              c.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                                color: primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: appBg,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(color: uiBorder),
+                                  ),
+                                  child: Text(
+                                    '${c.items.length} item${c.items.length == 1 ? '' : 's'}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Long-press to Edit or Delete',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      // ✅ No 3 dots icon (removed)
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
