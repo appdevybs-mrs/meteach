@@ -331,8 +331,7 @@ class _SubscriptionsDashCard extends StatelessWidget {
 
 // ===================== PAY FLAG (TOP LEVEL) =====================
 
-enum _PayFlag { ok, yellow, red, black }
-
+enum _PayFlag { ok, yellow, red, black, noCourse }
 // ===================== LEARNERS CARD (FIXED: uses CLASSES attendance like AdminLearnersScreen) =====================
 
 class _LearnersDashCard extends StatelessWidget {
@@ -345,17 +344,30 @@ class _LearnersDashCard extends StatelessWidget {
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
   }
+  static int _countUniqueAttendanceDates(dynamic attendance) {
+    if (attendance is! Map) return 0;
 
+    final Set<String> dates = {};
+    attendance.forEach((_, v) {
+      if (v is! Map) return;
+      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+      final d = (m['date'] ?? '').toString().trim();
+      if (d.isNotEmpty) dates.add(d);
+    });
+
+    return dates.length;
+  }
   static int _rank(_PayFlag f) {
     switch (f) {
       case _PayFlag.black:
-        return 3;
+        return 4;
       case _PayFlag.red:
-        return 2;
+        return 3;
       case _PayFlag.yellow:
-        return 1;
+        return 2;
       case _PayFlag.ok:
-      default:
+        return 1;
+      case _PayFlag.noCourse:
         return 0;
     }
   }
@@ -402,18 +414,17 @@ class _LearnersDashCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final usersRef = FirebaseDatabase.instance.ref('users');
-    final classesRef = FirebaseDatabase.instance.ref('classes');
 
     return StreamBuilder<List<DatabaseEvent>>(
-      stream: StreamZip([usersRef.onValue, classesRef.onValue]),
-      builder: (context, snap) {
+      stream: StreamZip([usersRef.onValue]),      builder: (context, snap) {
         int totalLearners = 0;
         int blackCount = 0;
         int redCount = 0;
         int yellowCount = 0;
         int okCount = 0;
+        int blueCount = 0;
 
-        if (!snap.hasData || snap.data!.length != 2) {
+        if (!snap.hasData || snap.data!.isEmpty) {
           return InkWell(
             borderRadius: BorderRadius.circular(18),
             onTap: onTap,
@@ -423,28 +434,14 @@ class _LearnersDashCard extends StatelessWidget {
               red: 0,
               yellow: 0,
               ok: 0,
+              blue: 0,
               loading: true,
             ),
           );
         }
 
         final usersVal = snap.data![0].snapshot.value;
-        final classesVal = snap.data![1].snapshot.value;
 
-        // classId -> taughtCount (attendance length)
-        final Map<String, int> taughtCountByClassId = {};
-        if (classesVal is Map) {
-          classesVal.forEach((classId, classNode) {
-            if (classId == null || classNode == null) return;
-            if (classNode is! Map) return;
-
-            final classMap = classNode.map((k, v) => MapEntry(k.toString(), v));
-            final att = classMap['attendance'];
-
-            final taughtCount = (att is Map) ? att.length : 0;
-            taughtCountByClassId[classId.toString()] = taughtCount;
-          });
-        }
 
         if (usersVal is Map) {
           usersVal.forEach((uid, userVal) {
@@ -460,8 +457,8 @@ class _LearnersDashCard extends StatelessWidget {
             totalLearners++;
 
             final courses = userMap['courses'];
-            if (courses is! Map) {
-              okCount++;
+            if (courses is! Map || courses.isEmpty) {
+              blueCount++;
               return;
             }
 
@@ -482,8 +479,8 @@ class _LearnersDashCard extends StatelessWidget {
               final remind = _asInt(sumMap['remindBeforeSession']);
               final remindBefore = remind > 0 ? remind : 1;
 
-              final classId = _classIdOf(courseMap);
-              final sessionsDone = classId.isEmpty ? 0 : (taughtCountByClassId[classId] ?? 0);
+              final attendance = courseMap['attendance'];
+              final sessionsDone = _countUniqueAttendanceDates(attendance);
 
               final flag = _paymentFlag(
                 sessionsPaidTotal: sessionsPaidTotal,
@@ -522,6 +519,7 @@ class _LearnersDashCard extends StatelessWidget {
             red: redCount,
             yellow: yellowCount,
             ok: okCount,
+            blue: blueCount,
             loading: false,
           ),
         );
@@ -535,6 +533,7 @@ class _LearnersDashCard extends StatelessWidget {
     required int red,
     required int yellow,
     required int ok,
+    required int blue,
     required bool loading,
   }) {
     return Container(
@@ -607,6 +606,8 @@ class _LearnersDashCard extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10),
                 children: [
                   TextSpan(text: '👥 $total   ', style: TextStyle(color: Colors.grey.shade700)),
+                  const TextSpan(text: '🔵 ', style: TextStyle(color: Colors.blue)),
+                  TextSpan(text: '$blue   ', style: const TextStyle(color: Colors.blue)),
                   const TextSpan(text: '🖤 ', style: TextStyle(color: Colors.black)),
                   TextSpan(text: '$black   ', style: const TextStyle(color: Colors.black)),
                   const TextSpan(text: '🔴 ', style: TextStyle(color: Colors.red)),
