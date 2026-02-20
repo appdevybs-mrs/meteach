@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'learner_homework_screen.dart';
 import '../shared/session_manager.dart';
-
+import 'learner_regulations_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_screen.dart';
@@ -576,7 +576,17 @@ class _LearnerHomeState extends State<LearnerHome> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         centerTitle: true,
+        leading: IconButton(
+          tooltip: 'Regulations',
+          icon: const Icon(Icons.policy_rounded, color: UiK.primaryBlue),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LearnerRegulationsScreen()),
+            );
+          },
+        ),
         title: Text(
+
           _titles[safeIndex],
           style: const TextStyle(
             color: UiK.primaryBlue,
