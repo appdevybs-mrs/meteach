@@ -431,7 +431,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
     );
   }
 }
-enum _PayFlag { ok, yellow, red, black }
+enum _PayFlag { ok, yellow, red, black, noCourse }
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 enum _QuickLearnerReminder { payment, absence, empty }
 
@@ -740,7 +740,7 @@ class _LearnersListState extends State<_LearnersList>
       builder: (context, snap) {
         final v = snap.data?.snapshot.value;
 
-        if (v is! Map) return builder(_PayFlag.ok);
+        if (v is! Map) return builder(_PayFlag.noCourse);
 
         final courseMaps = <Map<String, dynamic>>[];
         v.forEach((_, courseVal) {
@@ -750,8 +750,7 @@ class _LearnersListState extends State<_LearnersList>
           );
         });
 
-        if (courseMaps.isEmpty) return builder(_PayFlag.ok);
-
+        if (courseMaps.isEmpty) return builder(_PayFlag.noCourse);
         _PayFlag best = _PayFlag.ok;
 
         int rank(_PayFlag f) {
@@ -908,6 +907,10 @@ class _LearnersListState extends State<_LearnersList>
                       Color avatarFg;
 
                       switch (flag) {
+                        case _PayFlag.noCourse:
+                          avatarBg = Colors.blue;
+                          avatarFg = Colors.white;
+                          break;
                         case _PayFlag.black:
                           avatarBg = Colors.black;
                           avatarFg = Colors.white;
