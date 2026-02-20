@@ -6,7 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
-
+import 'dart:io';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
 import 'teacher/teacher_home.dart';
@@ -106,8 +107,10 @@ class DreamEnglishAcademyApp extends StatelessWidget {
           const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         ),
       ),
-      home: const AuthGate(
-        signedOutHome: HomeShell(),
+      home: ForceUpdateGate(
+        child: const AuthGate(
+          signedOutHome: HomeShell(),
+        ),
       ),
     );
   }
@@ -373,7 +376,7 @@ class AssistantHome extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: const [
                                   Text(
-                                    'Test Your Level / Certificate',
+                                    'Test Your Level & Get Certified',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w900,
                                       fontSize: 16,
@@ -381,7 +384,7 @@ class AssistantHome extends StatelessWidget {
                                   ),
                                   SizedBox(height: 4),
                                   Text(
-                                    'Tap here to open MyCert English on Play Store.',
+                                    'Tap here to open My Cert English.',
                                     style: TextStyle(fontWeight: FontWeight.w600),
                                   ),
                                 ],
@@ -1433,9 +1436,6 @@ class _CoursesByCategory extends StatelessWidget {
 
         final raw = snap.data!.snapshot.value;
         final items = _parseCoursesLite(raw);
-        debugPrint(
-            'Loaded ${items.length} courses. First: ${items.isNotEmpty ? items.first.title : "none"} | pm=${items.isNotEmpty ? items.first.pricePerMonth : null} | cat=${items.isNotEmpty ? items.first.category : null}');
-
         final published = items
             .where((c) => c.status.toLowerCase().trim() == 'published')
             .toList();
@@ -1444,7 +1444,6 @@ class _CoursesByCategory extends StatelessWidget {
           return const CardShell(child: Text('No courses available right now.'));
         }
 
-        // ✅ Group by category
         final Map<String, List<_CourseLite>> grouped = {};
         for (final c in published) {
           final cat = (c.category.trim().isEmpty) ? 'Other' : c.category.trim();
@@ -1452,17 +1451,13 @@ class _CoursesByCategory extends StatelessWidget {
           grouped[cat]!.add(c);
         }
 
-        // ✅ sort category names
         final cats = grouped.keys.toList()..sort();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final cat in cats) ...[
-              _CategoryRow(
-                title: cat,
-                courses: grouped[cat]!,
-              ),
+              _CategoryRow(title: cat, courses: grouped[cat]!),
               const SizedBox(height: 18),
             ],
           ],
@@ -1671,10 +1666,12 @@ class _InfoTile extends StatelessWidget {
         color: highlight ? Brand.actionOrange.withOpacity(0.12) : Brand.appBg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: highlight ? Brand.actionOrange : Brand.uiBorder),
+          color: highlight ? Brand.actionOrange : Brand.uiBorder,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start, // ✅
         children: [
           Icon(
             icon,
@@ -1682,11 +1679,17 @@ class _InfoTile extends StatelessWidget {
             color: highlight ? Brand.actionOrange : Brand.primaryBlue,
           ),
           const SizedBox(width: 8),
-          Text(
-            text,
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: highlight ? Brand.actionOrange : Brand.primaryBlue,
+
+          // ✅ IMPORTANT FIX
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2, // ✅ change to 3 if you want
+              overflow: TextOverflow.ellipsis, // ✅ prevents overflow
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: highlight ? Brand.actionOrange : Brand.primaryBlue,
+              ),
             ),
           ),
         ],
@@ -1817,7 +1820,7 @@ class _CourseDetailsSheet extends StatelessWidget {
 
               const SizedBox(height: 18),
 
-              // ✅ Info tiles (category / access / instructors)
+              // ✅ Info tiles (category / access)
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -1825,14 +1828,29 @@ class _CourseDetailsSheet extends StatelessWidget {
                   if (course.category.trim().isNotEmpty)
                     _InfoTile(icon: Icons.category_rounded, text: course.category),
                   if (course.accessType.trim().isNotEmpty)
-                    _InfoTile(
-                        icon: Icons.lock_open_rounded, text: course.accessType),
-                  if (course.instructors.isNotEmpty)
-                    _InfoTile(
-                        icon: Icons.people_alt_rounded,
-                        text: course.instructors.join(', ')),
+                    _InfoTile(icon: Icons.lock_open_rounded, text: course.accessType),
                 ],
               ),
+
+// ✅ Instructors as chips (separate, cleaner)
+              if (course.instructors.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Instructors',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Brand.primaryBlue,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: course.instructors
+                      .map((name) => _PrettyChip(icon: Icons.person_rounded, label: name))
+                      .toList(),
+                ),
+              ],
 
               const SizedBox(height: 18),
 
@@ -1989,6 +2007,250 @@ class _CourseDetailsSheet extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class ForceUpdateGate extends StatefulWidget {
+  final Widget child;
+  const ForceUpdateGate({super.key, required this.child});
+
+  @override
+  State<ForceUpdateGate> createState() => _ForceUpdateGateState();
+}
+
+class _ForceUpdateGateState extends State<ForceUpdateGate> {
+  String? _myVersion;
+  int? _myBuild;
+  bool _isAdmin = false;
+  StreamSubscription<User?>? _authSub;
+  DatabaseReference get _ref => FirebaseDatabase.instance.ref('appConfig/forceUpdate');
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBuildAndAdmin();
+
+    // ✅ if user logs in/out later, re-check admin + version/build
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((_) {
+      _loadBuildAndAdmin();
+    });
+  }
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+  Future<void> _loadBuildAndAdmin() async {
+    final info = await PackageInfo.fromPlatform();
+    final version = info.version.trim(); // "2.0.0"
+    final build = int.tryParse(info.buildNumber) ?? 0;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    bool isAdmin = false;
+
+    if (uid != null && uid.isNotEmpty) {
+      final adminSnap = await FirebaseDatabase.instance.ref('admins/$uid').get();
+      isAdmin = adminSnap.value == true;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _myVersion = version.isEmpty ? '0.0.0' : version;
+      _myBuild = build;
+      _isAdmin = isAdmin;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_myBuild == null || _myVersion == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final platformKey = Platform.isIOS ? 'ios' : 'android';
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: _ref.onValue, // ✅ listen to whole node so we can read allowAdminBypass
+      builder: (context, snap) {
+        if (snap.hasError) return widget.child;
+        if (!snap.hasData) return widget.child;
+
+        final rootVal = snap.data!.snapshot.value;
+        if (rootVal is! Map) return widget.child;
+
+        final root = rootVal.map((k, v) => MapEntry(k.toString(), v));
+
+        final allowAdminBypass = (root['allowAdminBypass'] == true);
+
+        final platformVal = root[platformKey];
+        if (platformVal is! Map) return widget.child;
+
+        final m = platformVal.map((k, v) => MapEntry(k.toString(), v));
+
+        final minBuild = _toInt(m['minBuild']) ?? 0;
+        final minVersion = (m['minVersion'] ?? '').toString().trim();
+        final message = (m['message'] ?? '').toString().trim();
+
+        final storeUrl = (m['storeUrl'] ?? '').toString().trim();
+        final storeWebUrl = (m['storeWebUrl'] ?? '').toString().trim();
+
+        final requiredVersion = minVersion.isEmpty ? '0.0.0' : minVersion;
+
+        final mustUpdate = isOlderThan(
+          currentVersion: _myVersion!,
+          currentBuild: _myBuild!,
+          minVersion: requiredVersion,
+          minBuild: minBuild,
+        );
+
+        // ✅ BYPASS RULE (admin only)
+        if (mustUpdate && allowAdminBypass && _isAdmin) {
+          return widget.child;
+        }
+
+        if (!mustUpdate) return widget.child;
+
+        return UpdateRequiredScreen(
+          message: message.isEmpty
+              ? 'A new version is available. Please update to continue.'
+              : message,
+          storeUrl: storeUrl,
+          storeWebUrl: storeWebUrl,
+        );
+      },
+    );
+  }
+
+  int? _toInt(dynamic x) {
+    if (x == null) return null;
+    if (x is int) return x;
+    if (x is num) return x.toInt();
+    return int.tryParse(x.toString());
+  }
+}
+bool isOlderThan({
+  required String currentVersion,
+  required int currentBuild,
+  required String minVersion,
+  required int minBuild,
+}) {
+  // If build is below minBuild -> must update
+  if (currentBuild < minBuild) return true;
+
+  // Compare semantic versions like 2.1.0
+  List<int> parse(String v) {
+    return v
+        .split('.')
+        .map((e) => int.tryParse(e.trim()) ?? 0)
+        .toList();
+  }
+
+  final c = parse(currentVersion);
+  final m = parse(minVersion);
+
+  // normalize length to 3 parts
+  while (c.length < 3) c.add(0);
+  while (m.length < 3) m.add(0);
+
+  for (int i = 0; i < 3; i++) {
+    if (c[i] < m[i]) return true;
+    if (c[i] > m[i]) return false;
+  }
+
+  // same version -> build already checked above
+  return false;
+}
+class UpdateRequiredScreen extends StatelessWidget {
+  final String message;
+  final String storeUrl;     // market:// or ios scheme
+  final String storeWebUrl;  // https:// link fallback
+
+  const UpdateRequiredScreen({
+    super.key,
+    required this.message,
+    required this.storeUrl,
+    required this.storeWebUrl,
+  });
+
+  Future<void> _openStore(BuildContext context) async {
+    Future<bool> tryLaunch(String url) async {
+      if (url.trim().isEmpty) return false;
+      final uri = Uri.tryParse(url.trim());
+      if (uri == null) return false;
+      return launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+
+    // 1) Try storeUrl first (best)
+    final ok1 = await tryLaunch(storeUrl);
+    if (ok1) return;
+
+    // 2) fallback to web
+    final ok2 = await tryLaunch(storeWebUrl);
+    if (ok2) return;
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open store link.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Brand.appBg,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: CardShell(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.system_update_rounded,
+                      size: 52, color: Brand.actionOrange),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Update Required',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: Brand.primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.4,
+                      color: Brand.mainText.withOpacity(0.85),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _openStore(context),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Brand.actionOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Update now'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

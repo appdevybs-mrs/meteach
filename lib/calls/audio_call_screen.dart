@@ -182,7 +182,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     });
   }
 
-  void _onCallState() {
+  Future<void> _onCallState() async {
     if (!mounted) return;
     final s = AudioCallService.I.callState.value;
 

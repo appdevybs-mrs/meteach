@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'admin_learners.dart'; // so we can open LearnerEditorScreen
+import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
+
+// =======================================================
+// ADMIN SUBSCRIPTIONS (FULL REPLACEMENT FILE)
+// - Supports DB that stores: fullName + phone (+ courseId/courseTitle/createdAt)
+// - Still supports old data: firstName + lastName
+// - Phone is clickable (tap to call) in list + details
+// - "Create Learner" splits fullName into first/last
+// =======================================================
 
 class AdminSubscriptionsScreen extends StatelessWidget {
   const AdminSubscriptionsScreen({super.key});
@@ -44,8 +53,9 @@ class AdminSubscriptionsScreen extends StatelessWidget {
           if (snap.hasError) {
             return const Center(child: Text('Error loading subscriptions.'));
           }
+
           final v = snap.data?.snapshot.value;
-          final items = _parseSubscriptions(v);
+          final items = parseSubscriptions(v);
 
           if (items.isEmpty) {
             return const Center(child: Text('No subscriptions yet.'));
@@ -75,7 +85,7 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                       CircleAvatar(
                         backgroundColor: appBg,
                         child: Text(
-                          (s.firstName.isNotEmpty ? s.firstName[0].toUpperCase() : 'S'),
+                          (s.displayName.isNotEmpty ? s.displayName[0].toUpperCase() : 'S'),
                           style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
                         ),
                       ),
@@ -85,21 +95,32 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${s.firstName} ${s.lastName}'.trim().isEmpty ? '(No name)' : '${s.firstName} ${s.lastName}'.trim(),
+                              s.displayName,
                               style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              '${s.courseTitle}  •  ${s.phone}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black.withOpacity(0.65),
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${s.courseTitle}  •  ${s.phone}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black.withOpacity(0.65),
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Call',
+                                  icon: const Icon(Icons.call, color: actionOrange),
+                                  onPressed: s.phone.trim().isEmpty ? null : () => callPhone(s.phone),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -146,11 +167,14 @@ class SubscriptionDetailsScreen extends StatelessWidget {
           ),
         ],
       ),
-    )) ?? false;
+    )) ??
+        false;
   }
 
   @override
   Widget build(BuildContext context) {
+    final split = splitFullName(sub.fullName);
+
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -198,14 +222,13 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                   onPressed: () async {
-                    // ✅ Open your Add Learner screen with prefilled data
                     await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => LearnerEditorScreen(
                           mode: EditorMode.create,
                           prefill: LearnerPrefill(
-                            firstName: sub.firstName,
-                            lastName: sub.lastName,
+                            firstName: split.first,
+                            lastName: split.last,
                             phone1: sub.phone,
                             selectedCourseIds: {sub.courseId},
                           ),
@@ -226,8 +249,8 @@ class SubscriptionDetailsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _line('Name', '${sub.firstName} ${sub.lastName}'.trim()),
-              _line('Phone', sub.phone),
+              _line('Name', sub.displayName),
+              _phoneLine(context, sub.phone),
               _line('Course', sub.courseTitle),
               _line('CourseId', sub.courseId),
               _line('CreatedAt', sub.createdAt.toString()),
@@ -235,6 +258,40 @@ class SubscriptionDetailsScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _phoneLine(BuildContext context, String phone) {
+    final p = phone.trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 110,
+            child: Text('Phone', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: p.isEmpty ? null : () => callPhone(p),
+              child: Text(
+                p.isEmpty ? '-' : p,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: p.isEmpty ? Colors.black.withOpacity(0.7) : actionOrange,
+                  decoration: p.isEmpty ? TextDecoration.none : TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Call',
+            icon: const Icon(Icons.call, color: actionOrange),
+            onPressed: p.isEmpty ? null : () => callPhone(p),
+          ),
+        ],
       ),
     );
   }
@@ -250,7 +307,10 @@ class SubscriptionDetailsScreen extends StatelessWidget {
             child: Text(k, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
           ),
           Expanded(
-            child: Text(v.isEmpty ? '-' : v, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black.withOpacity(0.7))),
+            child: Text(
+              v.trim().isEmpty ? '-' : v,
+              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black.withOpacity(0.7)),
+            ),
           ),
         ],
       ),
@@ -375,8 +435,12 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
         'courseId': selectedCourseId,
         'courseTitle': selectedCourseTitle,
         'createdAt': ServerValue.timestamp,
+
+        // ✅ store both formats (compatible with your current DB + your UI)
         'firstName': fn,
         'lastName': ln,
+        'fullName': '$fn $ln'.trim(),
+
         'phone': ph,
       });
 
@@ -456,7 +520,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
   }
 }
 
-// -------------------- MODEL + PARSE --------------------
+// -------------------- MODEL + HELPERS --------------------
 
 class SubscriptionItem {
   SubscriptionItem({
@@ -464,8 +528,7 @@ class SubscriptionItem {
     required this.courseId,
     required this.courseTitle,
     required this.createdAt,
-    required this.firstName,
-    required this.lastName,
+    required this.fullName,
     required this.phone,
   });
 
@@ -473,12 +536,13 @@ class SubscriptionItem {
   final String courseId;
   final String courseTitle;
   final int createdAt;
-  final String firstName;
-  final String lastName;
+  final String fullName;
   final String phone;
+
+  String get displayName => fullName.trim().isEmpty ? '(No name)' : fullName.trim();
 }
 
-List<SubscriptionItem> _parseSubscriptions(dynamic v) {
+List<SubscriptionItem> parseSubscriptions(dynamic v) {
   if (v is! Map) return [];
 
   int asInt(dynamic x) {
@@ -495,20 +559,42 @@ List<SubscriptionItem> _parseSubscriptions(dynamic v) {
 
     final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
 
+    // ✅ Prefer fullName; fallback to old firstName+lastName
+    final dbFullName = (m['fullName'] ?? '').toString().trim();
+    final fn = (m['firstName'] ?? '').toString().trim();
+    final ln = (m['lastName'] ?? '').toString().trim();
+    final computedName = dbFullName.isNotEmpty ? dbFullName : ('$fn $ln').trim();
+
     out.add(
       SubscriptionItem(
         id: k.toString(),
         courseId: (m['courseId'] ?? '').toString(),
         courseTitle: (m['courseTitle'] ?? '').toString(),
         createdAt: asInt(m['createdAt']),
-        firstName: (m['firstName'] ?? '').toString(),
-        lastName: (m['lastName'] ?? '').toString(),
+        fullName: computedName,
         phone: (m['phone'] ?? '').toString(),
       ),
     );
   });
 
-  // newest first
   out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return out;
+}
+
+({String first, String last}) splitFullName(String fullName) {
+  final cleaned = fullName.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (cleaned.isEmpty) return (first: '', last: '');
+
+  final parts = cleaned.split(' ');
+  if (parts.length == 1) return (first: parts[0], last: '');
+
+  return (first: parts.first, last: parts.sublist(1).join(' '));
+}
+
+Future<void> callPhone(String phone) async {
+  final cleaned = phone.trim();
+  if (cleaned.isEmpty) return;
+
+  final uri = Uri(scheme: 'tel', path: cleaned);
+  await launchUrl(uri);
 }

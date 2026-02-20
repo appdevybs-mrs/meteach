@@ -219,12 +219,30 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         if (!cSnap.exists) continue;
         final courses = Map<String, dynamic>.from(cSnap.value as Map);
         String? targetKey;
-        for (var entry in courses.entries) {
-          if (entry.value['class']?['class_id']?.toString() == _classId) { targetKey = entry.key; break; }
+        for (final entry in courses.entries) {
+          final val = entry.value;
+          if (val is! Map) continue;
+
+          final classNode = val['class'];
+          if (classNode is! Map) continue;
+
+          final cid = (classNode['class_id'] ?? '').toString();
+          if (cid == _classId) {
+            targetKey = entry.key.toString();
+            break;
+          }
         }
         if (targetKey != null) {
           updates['users/$lUid/courses/$targetKey/attendance/$sessionId'] = {
-            ...classRecord, 'status': (_present[lUid] ?? false) ? 'present' : 'absent',
+            ...classRecord,
+
+            // ✅ CRITICAL: stamp the class so counts never mix across class changes
+            'class_id': _classId,
+
+            // (optional but nice for debugging / filtering)
+            'course_id': _courseId,
+
+            'status': (_present[lUid] ?? false) ? 'present' : 'absent',
             'homework': homeworkObj != null ? {'text': hwText, 'dueDate': _homeworkDueDate} : null,
           };
         }
