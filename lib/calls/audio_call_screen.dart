@@ -596,6 +596,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       ),
       body: Stack(
         children: [
+
           Positioned.fill(
             child: showRemoteVideo
                 ? RTCVideoView(

@@ -37,12 +37,14 @@ Future<void> main() async {
     return true;
   };
 
-
-  await FCMService.I.init();
-
+  // ✅ FAST START: show first screen immediately
   runApp(const DreamEnglishAcademyApp());
-}
 
+  // ✅ Heavy work AFTER first frame (do not block startup)
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    FCMService.I.init();
+  });
+}
 
 /// ===== Brand Colors =====
 class Brand {
@@ -385,7 +387,8 @@ class AssistantHome extends StatelessWidget {
                                   SizedBox(height: 4),
                                   Text(
                                     'Tap here to open My Cert English.',
-                                    style: TextStyle(fontWeight: FontWeight.w600),
+                                    style:
+                                    TextStyle(fontWeight: FontWeight.w600),
                                   ),
                                 ],
                               ),
@@ -399,7 +402,6 @@ class AssistantHome extends StatelessWidget {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 14),
                   const _CoursesByCategory(),
                 ],
@@ -411,7 +413,6 @@ class AssistantHome extends StatelessWidget {
     );
   }
 }
-
 
 class ClassroomHome extends StatefulWidget {
   const ClassroomHome({super.key});
@@ -530,7 +531,6 @@ class ClassroomLoginSection extends StatefulWidget {
   State<ClassroomLoginSection> createState() => _ClassroomLoginSectionState();
 }
 
-
 class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
   // ========= Support config (fill these, otherwise buttons stay hidden) =========
   // ⚠️ Put YOUR real values here:
@@ -575,8 +575,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     captchaCtrl.dispose();
     super.dispose();
   }
-
-
 
   void _refreshCaptcha() {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -679,8 +677,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         password: pass,
       );
 
-
-
       // ✅ IMPORTANT: no Navigator here (AuthGate will route)
       if (!mounted) return;
       setState(() {
@@ -732,7 +728,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
     // cooldown check
     if (_isCoolingDown) {
-      setState(() => error = 'Please wait $_cooldownSecondsLeft seconds and try again.');
+      setState(() =>
+      error = 'Please wait $_cooldownSecondsLeft seconds and try again.');
       return;
     }
 
@@ -740,7 +737,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     // - before any failures, no captcha required
     // - after first failure, captcha required
     final requireCaptchaNow = true;
-
 
     // validate (captcha only if required)
     if (!_validateInputs(enforceCaptcha: requireCaptchaNow)) return;
@@ -824,7 +820,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('If an account exists for that email, a reset link has been sent.'),
+          content: Text(
+              'If an account exists for that email, a reset link has been sent.'),
         ),
       );
     } on FirebaseAuthException catch (_) {
@@ -834,7 +831,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       // ✅ same message always
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('If an account exists for that email, a reset link has been sent.'),
+          content: Text(
+              'If an account exists for that email, a reset link has been sent.'),
         ),
       );
     } catch (_) {
@@ -843,7 +841,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('If an account exists for that email, a reset link has been sent.'),
+          content: Text(
+              'If an account exists for that email, a reset link has been sent.'),
         ),
       );
     }
@@ -876,7 +875,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
   Future<void> _emailSupport() async {
     if (supportEmail.trim().isEmpty) return;
-    final uri = Uri.parse('mailto:${supportEmail.trim()}?subject=Support%20Request');
+    final uri = Uri.parse(
+        'mailto:${supportEmail.trim()}?subject=Support%20Request');
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -981,11 +981,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                 ),
               ),
               const SizedBox(height: 6),
-
             ],
           ),
         ),
-
         const SizedBox(height: 18),
 
         // ✅ Email
@@ -1012,7 +1010,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             prefixIcon: const Icon(Icons.lock_rounded),
             suffixIcon: IconButton(
               tooltip: 'Show/Hide password',
-              onPressed: loading ? null : () => setState(() => showPass = !showPass),
+              onPressed:
+              loading ? null : () => setState(() => showPass = !showPass),
               icon: Icon(showPass ? Icons.visibility_off : Icons.visibility),
             ),
           ),
@@ -1029,8 +1028,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             child: const Text('Forgot password?'),
           ),
         ),
-
-
 
         const SizedBox(height: 6),
 
@@ -1086,7 +1083,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                 ),
               ),
               const SizedBox(width: 10),
-
               Expanded(
                 child: Text(
                   '$a + $b =',
@@ -1096,7 +1092,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                   ),
                 ),
               ),
-
               SizedBox(
                 width: 90,
                 child: TextField(
@@ -1107,13 +1102,12 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                   decoration: const InputDecoration(
                     hintText: '...',
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   ),
                 ),
               ),
-
               const SizedBox(width: 8),
-
               IconButton(
                 tooltip: 'New captcha',
                 onPressed: loading ? null : () => setState(_refreshCaptcha),
@@ -1123,8 +1117,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             ],
           ),
         ),
-
-
 
         // ✅ Sign in button
         FilledButton.icon(
@@ -1184,8 +1176,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     );
   }
 }
-
-
 class StoriesHome extends StatelessWidget {
   const StoriesHome({super.key});
 
@@ -1213,8 +1203,10 @@ class StoriesHome extends StatelessWidget {
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: Brand.uiBorder),
                           ),
-                          child: const Icon(Icons.menu_book_rounded,
-                              color: Brand.primaryBlue),
+                          child: const Icon(
+                            Icons.menu_book_rounded,
+                            color: Brand.primaryBlue,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -1227,8 +1219,7 @@ class StoriesHome extends StatelessWidget {
                         Text(
                           'Next step: story levels, audio player, and quizzes.',
                           textAlign: TextAlign.center,
-                          style:
-                          Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Brand.mainText.withOpacity(0.75),
                             height: 1.4,
                           ),
@@ -1248,7 +1239,6 @@ class StoriesHome extends StatelessWidget {
 
 class _CourseLite {
   _CourseLite({
-
     required this.id,
     required this.title,
     required this.thumb,
@@ -1361,7 +1351,9 @@ class _CourseLite {
 
       // ✅ include more variants just in case
       title: pickString(['title']),
-      thumb: _fixUrl(pickString(['thumbnail', 'thumb', 'image', 'thumbnailUrl'])),
+      thumb: _fixUrl(
+        pickString(['thumbnail', 'thumb', 'image', 'thumbnailUrl']),
+      ),
 
       shortDesc: pickString(['short_description', 'shortDesc']),
       longDesc: pickString(['long_description', 'longDesc']),
@@ -1493,7 +1485,6 @@ class _CategoryRow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-
         SizedBox(
           height: 230, // ✅ smaller cards height overall
           child: ListView.separated(
@@ -1559,7 +1550,6 @@ class _CourseCardMini extends StatelessWidget {
                 ),
               ),
             ),
-
             const SizedBox(height: 10),
 
             // Title
@@ -1579,8 +1569,11 @@ class _CourseCardMini extends StatelessWidget {
             if (course.duration.trim().isNotEmpty)
               Row(
                 children: [
-                  const Icon(Icons.schedule_rounded,
-                      size: 16, color: Brand.primaryBlue),
+                  const Icon(
+                    Icons.schedule_rounded,
+                    size: 16,
+                    color: Brand.primaryBlue,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1750,8 +1743,11 @@ class _CourseDetailsSheet extends StatelessWidget {
           border: Border.all(color: Brand.uiBorder),
         ),
         child: const Center(
-          child: Icon(Icons.school_rounded,
-              size: 44, color: Brand.primaryBlue),
+          child: Icon(
+            Icons.school_rounded,
+            size: 44,
+            color: Brand.primaryBlue,
+          ),
         ),
       );
     }
@@ -1804,17 +1800,13 @@ class _CourseDetailsSheet extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   if (course.level.trim().isNotEmpty)
-                    _PrettyChip(
-                        icon: Icons.bar_chart_rounded, label: course.level),
+                    _PrettyChip(icon: Icons.bar_chart_rounded, label: course.level),
                   if (course.language.trim().isNotEmpty)
-                    _PrettyChip(
-                        icon: Icons.language_rounded, label: course.language),
+                    _PrettyChip(icon: Icons.language_rounded, label: course.language),
                   if (deliveryText.isNotEmpty)
-                    _PrettyChip(
-                        icon: Icons.videocam_rounded, label: deliveryText),
+                    _PrettyChip(icon: Icons.videocam_rounded, label: deliveryText),
                   if (course.duration.trim().isNotEmpty)
-                    _PrettyChip(
-                        icon: Icons.schedule_rounded, label: course.duration),
+                    _PrettyChip(icon: Icons.schedule_rounded, label: course.duration),
                 ],
               ),
 
@@ -1832,7 +1824,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                 ],
               ),
 
-// ✅ Instructors as chips (separate, cleaner)
+              // ✅ Instructors as chips (separate, cleaner)
               if (course.instructors.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -1876,30 +1868,30 @@ class _CourseDetailsSheet extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Brand.actionOrange.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(18),
-                    border:
-                    Border.all(color: Brand.actionOrange.withOpacity(0.45)),
+                    border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.payments_rounded,
-                          color: Brand.actionOrange),
+                      const Icon(Icons.payments_rounded, color: Brand.actionOrange),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: prices
-                              .map((p) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(
-                              p,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: Brand.actionOrange,
-                                fontSize: 16,
+                              .map(
+                                (p) => Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                p,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Brand.actionOrange,
+                                  fontSize: 16,
+                                ),
                               ),
                             ),
-                          ))
+                          )
                               .toList(),
                         ),
                       ),
@@ -1921,8 +1913,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                   ),
                 ),
 
-              if (course.longDesc.trim().isEmpty &&
-                  course.shortDesc.trim().isNotEmpty)
+              if (course.longDesc.trim().isEmpty && course.shortDesc.trim().isNotEmpty)
                 _Section(
                   title: 'Overview',
                   child: Text(
@@ -1951,9 +1942,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: course.tags
-                        .map((t) => _PrettyChip(label: t))
-                        .toList(),
+                    children: course.tags.map((t) => _PrettyChip(label: t)).toList(),
                   ),
                 ),
 
@@ -1967,7 +1956,8 @@ class _CourseDetailsSheet extends StatelessWidget {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                   onPressed: () async {
                     // Build delivery options exactly like before
@@ -2013,6 +2003,7 @@ class _CourseDetailsSheet extends StatelessWidget {
     );
   }
 }
+
 class ForceUpdateGate extends StatefulWidget {
   final Widget child;
   const ForceUpdateGate({super.key, required this.child});
@@ -2026,7 +2017,8 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
   int? _myBuild;
   bool _isAdmin = false;
   StreamSubscription<User?>? _authSub;
-  DatabaseReference get _ref => FirebaseDatabase.instance.ref('appConfig/forceUpdate');
+  DatabaseReference get _ref =>
+      FirebaseDatabase.instance.ref('appConfig/forceUpdate');
 
   @override
   void initState() {
@@ -2038,12 +2030,15 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
       _loadBuildAndAdmin();
     });
   }
+
   @override
   void dispose() {
     _authSub?.cancel();
     super.dispose();
   }
+
   Future<void> _loadBuildAndAdmin() async {
+    // ✅ FAST START: if this is slow on some devices, it runs after first screen already.
     final info = await PackageInfo.fromPlatform();
     final version = info.version.trim(); // "2.0.0"
     final build = int.tryParse(info.buildNumber) ?? 0;
@@ -2084,7 +2079,6 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
         if (rootVal is! Map) return widget.child;
 
         final root = rootVal.map((k, v) => MapEntry(k.toString(), v));
-
         final allowAdminBypass = (root['allowAdminBypass'] == true);
 
         final platformVal = root[platformKey];
@@ -2133,6 +2127,7 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
     return int.tryParse(x.toString());
   }
 }
+
 bool isOlderThan({
   required String currentVersion,
   required int currentBuild,
@@ -2144,10 +2139,7 @@ bool isOlderThan({
 
   // Compare semantic versions like 2.1.0
   List<int> parse(String v) {
-    return v
-        .split('.')
-        .map((e) => int.tryParse(e.trim()) ?? 0)
-        .toList();
+    return v.split('.').map((e) => int.tryParse(e.trim()) ?? 0).toList();
   }
 
   final c = parse(currentVersion);
@@ -2165,10 +2157,11 @@ bool isOlderThan({
   // same version -> build already checked above
   return false;
 }
+
 class UpdateRequiredScreen extends StatelessWidget {
   final String message;
-  final String storeUrl;     // market:// or ios scheme
-  final String storeWebUrl;  // https:// link fallback
+  final String storeUrl; // market:// or ios scheme
+  final String storeWebUrl; // https:// link fallback
 
   const UpdateRequiredScreen({
     super.key,
@@ -2211,8 +2204,11 @@ class UpdateRequiredScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.system_update_rounded,
-                      size: 52, color: Brand.actionOrange),
+                  const Icon(
+                    Icons.system_update_rounded,
+                    size: 52,
+                    color: Brand.actionOrange,
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'Update Required',
