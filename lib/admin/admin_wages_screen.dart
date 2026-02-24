@@ -63,6 +63,206 @@ class AdminWagesScreen extends StatelessWidget {
     return '$name $y';
   }
 
+  static Map<String, _LearnerInfo> _parseLearners(dynamic raw) {
+    // Expected common RTDB structure: learners/<uid> => { learner_name/name, learner_serial/serial, ... }
+    final out = <String, _LearnerInfo>{};
+    if (raw is! Map) return out;
+
+    raw.forEach((k, v) {
+      final uid = (k ?? '').toString().trim();
+      if (uid.isEmpty || v is! Map) return;
+
+      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+
+      final name = (m['learner_name'] ??
+          m['name'] ??
+          m['fullName'] ??
+          m['displayName'] ??
+          '')
+          .toString()
+          .trim();
+
+      final serial = (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '')
+          .toString()
+          .trim();
+
+      out[uid] = _LearnerInfo(uid: uid, name: name, serial: serial);
+    });
+
+    return out;
+  }
+
+  static Map<String, Set<String>> _parseStudyingFromClasses(dynamic raw) {
+    // Returns: teacherKey -> set(uid)
+    // teacherKey prefers: class.teacherId OR instructor_current(...) OR instructor name
+    final out = <String, Set<String>>{};
+    if (raw is! Map) return out;
+
+    raw.forEach((ck, cv) {
+      if (cv is! Map) return;
+      final c = cv.map((kk, vv) => MapEntry(kk.toString(), vv));
+
+      final status = (c['status'] ?? '').toString().trim().toLowerCase();
+      final isOpen = _asBool(c['is_open']);
+      final active = status == 'active' && isOpen;
+      if (!active) return;
+
+      String teacherKey = '';
+      final t1 = (c['teacherId'] ?? '').toString().trim();
+      if (t1.isNotEmpty) {
+        teacherKey = t1;
+      } else {
+        final ic = c['instructor_current'];
+        if (ic is String && ic.trim().isNotEmpty) {
+          teacherKey = ic.trim();
+        } else if (ic is Map) {
+          final icm = ic.map((kk, vv) => MapEntry(kk.toString(), vv));
+          final tid = (icm['teacherId'] ?? icm['uid'] ?? icm['id'] ?? '')
+              .toString()
+              .trim();
+          if (tid.isNotEmpty) teacherKey = tid;
+        }
+        if (teacherKey.isEmpty) {
+          final name = (c['instructor'] ?? '').toString().trim();
+          if (name.isNotEmpty) teacherKey = name;
+        }
+      }
+      if (teacherKey.isEmpty) return;
+
+      final learners = c['learners'];
+      final uids = <String>[];
+
+      if (learners is Map) {
+        for (final k in learners.keys) {
+          final uid = k.toString().trim();
+          if (uid.isNotEmpty) uids.add(uid);
+        }
+      } else if (learners is List) {
+        for (final it in learners) {
+          final uid = it.toString().trim();
+          if (uid.isNotEmpty) uids.add(uid);
+        }
+      }
+
+      if (uids.isEmpty) return;
+
+      out.putIfAbsent(teacherKey, () => <String>{});
+      out[teacherKey]!.addAll(uids);
+    });
+
+    return out;
+  }
+
+  static Set<String>? _tryMatchStudyingByTeacherName({
+    required String teacherName,
+    required Map<String, Set<String>> studyingByTeacher,
+  }) {
+    final name = teacherName.trim();
+    if (name.isEmpty) return null;
+
+    if (studyingByTeacher.containsKey(name)) return studyingByTeacher[name];
+
+    for (final entry in studyingByTeacher.entries) {
+      if (entry.key.toLowerCase().trim() == name.toLowerCase().trim()) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  static void _showMissingBottomSheet({
+    required BuildContext context,
+    required String title,
+    required List<_LearnerInfo> learners,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          color: primaryBlue,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (learners.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    child: Text(
+                      'Nothing to show 🎉',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black.withOpacity(0.65),
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: learners.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final l = learners[i];
+                        final displayName =
+                        l.name.isNotEmpty ? l.name : '(No name)';
+                        final sub = [
+                          if (l.serial.isNotEmpty) l.serial,
+                          l.uid,
+                        ].join(' • ');
+
+                        return ListTile(
+                          dense: true,
+                          contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 4),
+                          title: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: Text(
+                            sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _togglePaid({
     required BuildContext context,
     required String paymentId,
@@ -83,7 +283,10 @@ class AdminWagesScreen extends StatelessWidget {
               : 'This will mark it as not paid to the teacher yet.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: makePaid ? Colors.green : Colors.red,
@@ -137,10 +340,13 @@ class AdminWagesScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Remove teacher confirmation?'),
-        content: const Text('This will undo the teacher confirmation for this payment.'),
+        title: const Text('Remove confirmation?'),
+        content: const Text('This will undo the confirmation for this payment.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
@@ -163,7 +369,7 @@ class AdminWagesScreen extends StatelessWidget {
 
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Teacher confirmation removed ✅')),
+        const SnackBar(content: Text('Confirmation removed ✅')),
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -176,6 +382,8 @@ class AdminWagesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paymentsRef = FirebaseDatabase.instance.ref('payments');
+    final classesRef = FirebaseDatabase.instance.ref('classes');
+    final learnersRef = FirebaseDatabase.instance.ref('learners'); // <-- assumed path
 
     return Scaffold(
       backgroundColor: appBg,
@@ -190,29 +398,26 @@ class AdminWagesScreen extends StatelessWidget {
       ),
       body: StreamBuilder<DatabaseEvent>(
         stream: paymentsRef.onValue,
-        builder: (context, snap) {
-          final raw = snap.data?.snapshot.value;
+        builder: (context, paySnap) {
+          final payRaw = paySnap.data?.snapshot.value;
 
-          if (snap.hasError) {
+          if (paySnap.hasError) {
             return const Center(child: Text('Could not load wages.'));
           }
-          if (!snap.hasData) {
+          if (!paySnap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (raw is! Map) {
+          if (payRaw is! Map) {
             return const Center(child: Text('No payments found.'));
           }
 
-          // Flatten payments into a list with paymentId
+          // Payments list
           final payments = <Map<String, dynamic>>[];
-          raw.forEach((k, v) {
+          payRaw.forEach((k, v) {
             if (k == null || v == null) return;
             if (v is! Map) return;
             final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-            payments.add({
-              'paymentId': k.toString(),
-              ...m,
-            });
+            payments.add({'paymentId': k.toString(), ...m});
           });
 
           // Sort newest first by paidAt
@@ -220,111 +425,178 @@ class AdminWagesScreen extends StatelessWidget {
 
           // Group: month -> teacherId -> list
           final Map<String, Map<String, List<Map<String, dynamic>>>> grouped = {};
-
           for (final p in payments) {
             final paidAtMs = _asInt(p['paidAt']);
             final monthKey = _monthKeyFromPaidAtMs(paidAtMs);
 
             final teacherId = (p['teacherId'] ?? '').toString().trim();
-            final teacherKey = teacherId.isEmpty ? 'UNKNOWN_TEACHER' : teacherId;
+            final teacherKey = teacherId.isEmpty ? 'Unknown' : teacherId;
 
             grouped.putIfAbsent(monthKey, () => {});
             grouped[monthKey]!.putIfAbsent(teacherKey, () => []);
             grouped[monthKey]![teacherKey]!.add(p);
           }
 
-          // Sort month keys desc
           final monthKeys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-
           if (monthKeys.isEmpty) {
             return const Center(child: Text('No payments found.'));
           }
 
-          // -------- Option A: Stats header (THIS MONTH) computed from existing payments ----------
-          final nowMonthKey = _monthKeyNow();
-          final monthPayments = payments.where((p) {
-            final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
-            return mk == nowMonthKey;
-          }).toList();
+          return StreamBuilder<DatabaseEvent>(
+            stream: classesRef.onValue,
+            builder: (context, classSnap) {
+              final classRaw = classSnap.data?.snapshot.value;
 
-          final stats = _StatsData.fromPayments(
-            monthLabel: _prettyMonthLabel(nowMonthKey),
-            payments: monthPayments,
-            asInt: _asInt,
-            asBool: _asBool,
-          );
-
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-            itemCount: monthKeys.length + 1, // +1 for header card
-            itemBuilder: (context, i) {
-              // Header stats card at the very top
-              if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _StatsHeaderCard(data: stats),
-                );
+              final studyingByTeacher = _parseStudyingFromClasses(classRaw);
+              final studyingAll = <String>{};
+              for (final s in studyingByTeacher.values) {
+                studyingAll.addAll(s);
               }
 
-              final monthKey = monthKeys[i - 1];
-              final teacherMap = grouped[monthKey] ?? {};
+              return StreamBuilder<DatabaseEvent>(
+                stream: learnersRef.onValue,
+                builder: (context, learnersSnap) {
+                  final learnersRaw = learnersSnap.data?.snapshot.value;
+                  final learnerMap = _parseLearners(learnersRaw);
 
-              // Sort teachers by teacherName (fallback teacherId)
-              final teacherKeys = teacherMap.keys.toList()
-                ..sort((a, b) {
-                  final aName = (teacherMap[a]!.isNotEmpty ? (teacherMap[a]!.first['teacherName'] ?? '') : '')
-                      .toString();
-                  final bName = (teacherMap[b]!.isNotEmpty ? (teacherMap[b]!.first['teacherName'] ?? '') : '')
-                      .toString();
-                  final aa = aName.trim().isEmpty ? a : aName;
-                  final bb = bName.trim().isEmpty ? b : bName;
-                  return aa.toLowerCase().compareTo(bb.toLowerCase());
-                });
+                  // Option A stats: THIS MONTH
+                  final nowMonthKey = _monthKeyNow();
+                  final monthPayments = payments.where((p) {
+                    final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
+                    return mk == nowMonthKey;
+                  }).toList();
 
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: uiBorder.withOpacity(0.8)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 6),
-                    )
-                  ],
-                ),
-                child: ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-                  title: Text(
-                    _prettyMonthLabel(monthKey),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: primaryBlue,
-                      fontSize: 15,
-                    ),
-                  ),
-                  children: [
-                    for (final tKey in teacherKeys) ...[
-                      _TeacherSection(
-                        teacherId: tKey,
-                        payments: teacherMap[tKey] ?? const [],
-                        onTogglePaid: (paymentId, makePaid) => _togglePaid(
-                          context: context,
-                          paymentId: paymentId,
-                          makePaid: makePaid,
+                  final stats = _StatsData.fromMonth(
+                    monthLabel: _prettyMonthLabel(nowMonthKey),
+                    monthPayments: monthPayments,
+                    studyingAllUids: studyingAll,
+                    asInt: _asInt,
+                    asBool: _asBool,
+                  );
+
+                  // Compute missing uids (global) for this month
+                  final paidUidsThisMonth = <String>{};
+                  for (final p in monthPayments) {
+                    final uid = (p['uid'] ?? '').toString().trim();
+                    if (uid.isNotEmpty) paidUidsThisMonth.add(uid);
+                  }
+                  final missingUidsThisMonth = <String>{...studyingAll}
+                    ..removeAll(paidUidsThisMonth);
+
+                  List<_LearnerInfo> missingGlobalList() {
+                    final list = <_LearnerInfo>[];
+                    for (final uid in missingUidsThisMonth) {
+                      list.add(learnerMap[uid] ?? _LearnerInfo(uid: uid, name: '', serial: ''));
+                    }
+                    list.sort((a, b) {
+                      final aa = a.name.trim().isEmpty ? a.uid : a.name.trim();
+                      final bb = b.name.trim().isEmpty ? b.uid : b.name.trim();
+                      return aa.toLowerCase().compareTo(bb.toLowerCase());
+                    });
+                    return list;
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+                    itemCount: monthKeys.length + 1,
+                    itemBuilder: (context, i) {
+                      if (i == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _StatsHeaderCard(
+                            data: stats,
+                            onTapMissing: () {
+                              _showMissingBottomSheet(
+                                context: context,
+                                title: 'Not paid yet • ${stats.monthLabel}',
+                                learners: missingGlobalList(),
+                              );
+                            },
+                          ),
+                        );
+                      }
+
+                      final monthKey = monthKeys[i - 1];
+                      final teacherMap = grouped[monthKey] ?? {};
+
+                      // Sort teachers by teacherName (fallback teacherId)
+                      final teacherKeys = teacherMap.keys.toList()
+                        ..sort((a, b) {
+                          final aName = (teacherMap[a]!.isNotEmpty
+                              ? (teacherMap[a]!.first['teacherName'] ?? '')
+                              : '')
+                              .toString();
+                          final bName = (teacherMap[b]!.isNotEmpty
+                              ? (teacherMap[b]!.first['teacherName'] ?? '')
+                              : '')
+                              .toString();
+                          final aa = aName.trim().isEmpty ? a : aName;
+                          final bb = bName.trim().isEmpty ? b : bName;
+                          return aa.toLowerCase().compareTo(bb.toLowerCase());
+                        });
+
+                      final isCurrentMonth = monthKey == nowMonthKey;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: uiBorder.withOpacity(0.8)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.03),
+                              blurRadius: 10,
+                              offset: const Offset(0, 6),
+                            )
+                          ],
                         ),
-                        onRemoveTeacherConfirm: (paymentId) => _adminRemoveTeacherConfirmation(
-                          context: context,
-                          paymentId: paymentId,
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                          title: Text(
+                            _prettyMonthLabel(monthKey),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: primaryBlue,
+                              fontSize: 15,
+                            ),
+                          ),
+                          children: [
+                            for (final tKey in teacherKeys) ...[
+                              _TeacherSection(
+                                teacherId: tKey,
+                                payments: teacherMap[tKey] ?? const [],
+                                isCurrentMonth: isCurrentMonth,
+                                studyingLearnerUids: studyingByTeacher[tKey] ??
+                                    _tryMatchStudyingByTeacherName(
+                                      teacherName: (teacherMap[tKey]!.isNotEmpty
+                                          ? (teacherMap[tKey]!.first['teacherName'] ?? '')
+                                          : '')
+                                          .toString()
+                                          .trim(),
+                                      studyingByTeacher: studyingByTeacher,
+                                    ),
+                                learnerMap: learnerMap,
+                                monthLabel: _prettyMonthLabel(monthKey),
+                                onTogglePaid: (paymentId, makePaid) => _togglePaid(
+                                  context: context,
+                                  paymentId: paymentId,
+                                  makePaid: makePaid,
+                                ),
+                                onRemoveTeacherConfirm: (paymentId) => _adminRemoveTeacherConfirmation(
+                                  context: context,
+                                  paymentId: paymentId,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  ],
-                ),
+                      );
+                    },
+                  );
+                },
               );
             },
           );
@@ -334,27 +606,46 @@ class AdminWagesScreen extends StatelessWidget {
   }
 }
 
-// ---------------- Option A widgets/data ----------------
+// ---------------- Data models ----------------
+
+class _LearnerInfo {
+  const _LearnerInfo({
+    required this.uid,
+    required this.name,
+    required this.serial,
+  });
+
+  final String uid;
+  final String name;
+  final String serial;
+}
 
 class _StatsData {
   _StatsData({
     required this.monthLabel,
     required this.paymentsCount,
-    required this.teachersCount,
-    required this.learnersCount,
+    required this.paidLearnersCount,
+    required this.studyingLearnersCount,
+    required this.notPaidYetCount,
     required this.totalAmount,
     required this.unpaidCount,
     required this.unpaidAmount,
     required this.notConfirmedCount,
-    required this.missingLearnerInfoCount,
-    required this.missingTeacherCount,
+    required this.incompleteCount,
   });
 
   final String monthLabel;
 
   final int paymentsCount;
-  final int teachersCount;
-  final int learnersCount;
+
+  // unique learners (uid) in payments
+  final int paidLearnersCount;
+
+  // unique learners (uid) studying now
+  final int studyingLearnersCount;
+
+  // studying - paid
+  final int notPaidYetCount;
 
   final int totalAmount;
 
@@ -363,43 +654,30 @@ class _StatsData {
 
   final int notConfirmedCount;
 
-  final int missingLearnerInfoCount;
-  final int missingTeacherCount;
+  // Human-friendly: "some records missing info"
+  final int incompleteCount;
 
-  static _StatsData fromPayments({
+  static _StatsData fromMonth({
     required String monthLabel,
-    required List<Map<String, dynamic>> payments,
+    required List<Map<String, dynamic>> monthPayments,
+    required Set<String> studyingAllUids,
     required int Function(dynamic) asInt,
     required bool Function(dynamic) asBool,
   }) {
-    final teacherIds = <String>{};
-    final learnerKeys = <String>{};
+    final paidUids = <String>{};
 
     int totalAmount = 0;
-
     int unpaidCount = 0;
     int unpaidAmount = 0;
-
     int notConfirmedCount = 0;
+    int incompleteCount = 0;
 
-    int missingLearnerInfoCount = 0;
-    int missingTeacherCount = 0;
-
-    for (final p in payments) {
-      final teacherId = (p['teacherId'] ?? '').toString().trim();
-      if (teacherId.isNotEmpty) {
-        teacherIds.add(teacherId);
+    for (final p in monthPayments) {
+      final uid = (p['uid'] ?? '').toString().trim();
+      if (uid.isNotEmpty) {
+        paidUids.add(uid);
       } else {
-        missingTeacherCount++;
-      }
-
-      final learnerName = (p['learner_name'] ?? '').toString().trim();
-      final learnerSerial = (p['learner_serial'] ?? '').toString().trim();
-      final learnerKey = learnerSerial.isNotEmpty ? learnerSerial : learnerName;
-      if (learnerKey.isNotEmpty) {
-        learnerKeys.add(learnerKey);
-      } else {
-        missingLearnerInfoCount++;
+        incompleteCount++;
       }
 
       final amount = asInt(p['amount']);
@@ -415,37 +693,51 @@ class _StatsData {
       if (!teacherConfirmed) {
         notConfirmedCount++;
       }
+
+      final learnerName = (p['learner_name'] ?? '').toString().trim();
+      if (learnerName.isEmpty) incompleteCount++;
     }
+
+    final notPaidYet = <String>{...studyingAllUids}..removeAll(paidUids);
 
     return _StatsData(
       monthLabel: monthLabel,
-      paymentsCount: payments.length,
-      teachersCount: teacherIds.length,
-      learnersCount: learnerKeys.length,
+      paymentsCount: monthPayments.length,
+      paidLearnersCount: paidUids.length,
+      studyingLearnersCount: studyingAllUids.length,
+      notPaidYetCount: notPaidYet.length,
       totalAmount: totalAmount,
       unpaidCount: unpaidCount,
       unpaidAmount: unpaidAmount,
       notConfirmedCount: notConfirmedCount,
-      missingLearnerInfoCount: missingLearnerInfoCount,
-      missingTeacherCount: missingTeacherCount,
+      incompleteCount: incompleteCount,
     );
   }
 }
 
+// ---------------- Option A widget ----------------
+
 class _StatsHeaderCard extends StatelessWidget {
-  const _StatsHeaderCard({required this.data});
+  const _StatsHeaderCard({
+    required this.data,
+    required this.onTapMissing,
+  });
 
   final _StatsData data;
+  final VoidCallback onTapMissing;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const uiBorder = Color(0xFFD1D9E0);
+
+  String _fmtDa(int n) => '$n DA';
 
   Widget _tile({
     required String label,
     required String value,
     IconData? icon,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final child = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFF4F7F9),
@@ -486,12 +778,37 @@ class _StatsHeaderCard extends StatelessWidget {
               ],
             ),
           ),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: Colors.black.withOpacity(0.35)),
+          ],
         ],
       ),
     );
+
+    if (onTap == null) return child;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: child,
+    );
   }
 
-  String _fmtDa(int n) => '$n DA';
+  Widget _smallNotice(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7F9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -529,11 +846,20 @@ class _StatsHeaderCard extends StatelessWidget {
             crossAxisSpacing: 10,
             childAspectRatio: 2.6,
             children: [
-              _tile(label: 'Learners', value: '${data.learnersCount}', icon: Icons.school_rounded),
+              _tile(label: 'Studying', value: '${data.studyingLearnersCount}', icon: Icons.groups_rounded),
+              _tile(label: 'Paid learners', value: '${data.paidLearnersCount}', icon: Icons.verified_rounded),
+              _tile(
+                label: 'Not paid yet',
+                value: '${data.notPaidYetCount}',
+                icon: Icons.person_off_rounded,
+                onTap: onTapMissing,
+              ),
               _tile(label: 'Payments', value: '${data.paymentsCount}', icon: Icons.receipt_long_rounded),
-              _tile(label: 'Teachers', value: '${data.teachersCount}', icon: Icons.badge_rounded),
-              _tile(label: 'Not confirmed', value: '${data.notConfirmedCount}', icon: Icons.warning_amber_rounded),
-              _tile(label: 'Teacher unpaid', value: '${data.unpaidCount} • ${_fmtDa(data.unpaidAmount)}', icon: Icons.payments_rounded),
+              _tile(
+                label: 'Unpaid (to staff)',
+                value: '${data.unpaidCount} • ${_fmtDa(data.unpaidAmount)}',
+                icon: Icons.payments_rounded,
+              ),
               _tile(label: 'Total', value: _fmtDa(data.totalAmount), icon: Icons.account_balance_wallet_rounded),
             ],
           ),
@@ -542,9 +868,8 @@ class _StatsHeaderCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              if (data.missingLearnerInfoCount > 0)
-                _smallNotice('Missing learner info: ${data.missingLearnerInfoCount}'),
-              if (data.missingTeacherCount > 0) _smallNotice('Missing teacherId: ${data.missingTeacherCount}'),
+              if (data.notConfirmedCount > 0) _smallNotice('Waiting confirmation: ${data.notConfirmedCount}'),
+              if (data.incompleteCount > 0) _smallNotice('Some records incomplete: ${data.incompleteCount}'),
               if (data.paymentsCount == 0) _smallNotice('No payments in this month yet.'),
             ],
           ),
@@ -552,33 +877,31 @@ class _StatsHeaderCard extends StatelessWidget {
       ),
     );
   }
-
-  Widget _smallNotice(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-      ),
-    );
-  }
 }
+
+// ---------------- Option C widget ----------------
 
 class _TeacherSection extends StatelessWidget {
   const _TeacherSection({
     required this.teacherId,
     required this.payments,
+    required this.isCurrentMonth,
+    required this.studyingLearnerUids,
+    required this.learnerMap,
+    required this.monthLabel,
     required this.onTogglePaid,
     required this.onRemoveTeacherConfirm,
   });
 
   final String teacherId;
   final List<Map<String, dynamic>> payments;
+
+  // Only show studying/paid/not paid yet for current month
+  final bool isCurrentMonth;
+
+  final Set<String>? studyingLearnerUids;
+  final Map<String, _LearnerInfo> learnerMap;
+  final String monthLabel;
 
   final Future<void> Function(String paymentId, bool makePaid) onTogglePaid;
   final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
@@ -600,31 +923,151 @@ class _TeacherSection extends StatelessWidget {
     return s == 'true' || s == '1' || s == 'yes';
   }
 
+  static void _showMissingList({
+    required BuildContext context,
+    required String title,
+    required List<_LearnerInfo> learners,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          color: primaryBlue,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (learners.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    child: Text(
+                      'Nothing to show 🎉',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black.withOpacity(0.65),
+                      ),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: learners.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final l = learners[i];
+                        final displayName =
+                        l.name.isNotEmpty ? l.name : '(No name)';
+                        final sub = [
+                          if (l.serial.isNotEmpty) l.serial,
+                          l.uid,
+                        ].join(' • ');
+
+                        return ListTile(
+                          dense: true,
+                          contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 4),
+                          title: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: Text(
+                            sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final teacherName = (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '').toString().trim();
+    final teacherName =
+    (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '')
+        .toString()
+        .trim();
     final header = teacherName.isNotEmpty ? teacherName : teacherId;
 
-    // Sort by paidAt desc inside teacher
-    final items = [...payments]..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    final items = [...payments]
+      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
 
-    // ---------------- Option C: per-teacher stats ----------------
+    // totals + paid uids
     int total = 0;
     int unpaidCount = 0;
-    int unpaidAmount = 0;
+    final paidUids = <String>{};
 
     for (final p in items) {
       final amount = _asInt(p['amount']);
       total += amount;
 
-      final teacherPaid = _asBool(p['teacherPaid']);
-      if (!teacherPaid) {
-        unpaidCount++;
-        unpaidAmount += amount;
-      }
+      final staffPaid = _asBool(p['teacherPaid']);
+      if (!staffPaid) unpaidCount++;
+
+      final uid = (p['uid'] ?? '').toString().trim();
+      if (uid.isNotEmpty) paidUids.add(uid);
     }
 
-    final subtitle = 'Payments: ${items.length} • Unpaid: $unpaidCount • Total: $total DA';
+    String subtitle;
+    int notPaidYet = 0;
+    List<_LearnerInfo> missingList = const [];
+
+    if (isCurrentMonth) {
+      final studying = studyingLearnerUids ?? <String>{};
+      final missingUids = <String>{...studying}..removeAll(paidUids);
+      notPaidYet = missingUids.length;
+
+      final list = <_LearnerInfo>[];
+      for (final uid in missingUids) {
+        list.add(learnerMap[uid] ?? _LearnerInfo(uid: uid, name: '', serial: ''));
+      }
+      list.sort((a, b) {
+        final aa = a.name.trim().isEmpty ? a.uid : a.name.trim();
+        final bb = b.name.trim().isEmpty ? b.uid : b.name.trim();
+        return aa.toLowerCase().compareTo(bb.toLowerCase());
+      });
+      missingList = list;
+
+      subtitle =
+      'Studying: ${studying.length} • Paid: ${paidUids.length} • Not paid yet: $notPaidYet • Unpaid: $unpaidCount';
+    } else {
+      subtitle = 'Payments: ${items.length} • Unpaid: $unpaidCount • Total: $total DA';
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -649,15 +1092,48 @@ class _TeacherSection extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.black.withOpacity(0.65),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.black.withOpacity(0.65),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                if (isCurrentMonth && notPaidYet > 0) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _showMissingList(
+                      context: context,
+                      title: 'Not paid yet • $header • $monthLabel',
+                      learners: missingList,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.red.withOpacity(0.45)),
+                      ),
+                      child: Text(
+                        'List ($notPaidYet)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -675,6 +1151,8 @@ class _TeacherSection extends StatelessWidget {
     );
   }
 }
+
+// ---------------- Existing row ----------------
 
 class _PaymentRow extends StatelessWidget {
   const _PaymentRow({
@@ -758,15 +1236,12 @@ class _PaymentRow extends StatelessWidget {
     final left = _asInt(payment['remindBeforeSession']);
     final amount = _asInt(payment['amount']);
 
-    // Admin paid/unpaid
-    final isPaidTeacher = _asBool(payment['teacherPaid']);
+    final isPaidStaff = _asBool(payment['teacherPaid']);
+    final confirmed = _asBool(payment['teacherConfirmed']);
 
-    // Teacher confirmed yes/no (teacher action)
-    final teacherConfirmed = _asBool(payment['teacherConfirmed']);
-
-    final paidChipBg = isPaidTeacher ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.12);
-    final paidChipBorder = isPaidTeacher ? Colors.green : Colors.red;
-    final paidChipText = isPaidTeacher ? 'PAID' : 'UNPAID';
+    final paidChipBg = isPaidStaff ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.12);
+    final paidChipBorder = isPaidStaff ? Colors.green : Colors.red;
+    final paidChipText = isPaidStaff ? 'PAID' : 'UNPAID';
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -818,10 +1293,10 @@ class _PaymentRow extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     _chip(
-                      text: teacherConfirmed ? 'TEACHER: CONFIRMED' : 'TEACHER: NOT CONFIRMED',
-                      color: teacherConfirmed ? Colors.green : Colors.red,
+                      text: confirmed ? 'CONFIRMED' : 'NOT CONFIRMED',
+                      color: confirmed ? Colors.green : Colors.red,
                     ),
-                    if (teacherConfirmed && paymentId.isNotEmpty)
+                    if (confirmed && paymentId.isNotEmpty)
                       OutlinedButton.icon(
                         icon: const Icon(Icons.undo_rounded, size: 18),
                         label: const Text('Unconfirm'),
@@ -837,11 +1312,9 @@ class _PaymentRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-
-          // Admin toggle paid/unpaid (admin-only)
           InkWell(
             borderRadius: BorderRadius.circular(999),
-            onTap: paymentId.isEmpty ? null : () => onTogglePaid(paymentId, !isPaidTeacher),
+            onTap: paymentId.isEmpty ? null : () => onTogglePaid(paymentId, !isPaidStaff),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
