@@ -24,6 +24,7 @@
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">
 
+        <!-- Local notifications receivers -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false" />
@@ -72,17 +73,32 @@
 
     </application>
 
+    <!-- IMPORTANT: Android 11+ package visibility -->
     <queries>
+
+        <!-- SMS -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="sms" />
+        </intent>
+
+        <!-- Dialer -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+
+        <!-- Text processing -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-    </queries>
 
-    <queries>
+        <!-- Speech recognition -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+
     </queries>
 
 </manifest>

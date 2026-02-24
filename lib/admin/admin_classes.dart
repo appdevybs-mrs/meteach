@@ -69,7 +69,8 @@
     bool _loadingTeachers = true;
     Map<String, Map<String, String>> _teachersByUid = {}; // uid -> {uid,name,serial}
     Map<String, String> _teacherUidByName = {}; // normalizedFullName -> uid
-  
+    // ✅ Cache progress per class (so list scrolling is smooth)
+    final Map<String, _ClassProg> _classProgCache = {};
     List<Map<String, String>> get _teachers {
       final list = _teachersByUid.values.toList();
       list.sort((a, b) => (a["name"] ?? "").compareTo(b["name"] ?? ""));
@@ -156,7 +157,12 @@
   
     String _formatDate(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
     String _norm(String s) => s.trim().toLowerCase();
-  
+    static int _asInt(dynamic v) {
+      if (v == null) return 0;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString()) ?? 0;
+    }
     bool _isLearnerRole(dynamic role) {
       final r = (role ?? "").toString().trim().toLowerCase();
       return r == "learner" || r == "learners" || r == "learner(s)";
@@ -1396,7 +1402,76 @@
   
       await sheetFuture;
     }
-  
+
+    // -------------------- ✅ Class progress (attendance taught.sessionId vs syllabi sessions) --------------------
+
+    Future<_ClassProg> _loadClassProgress(String classId, Map<String, dynamic> cls) async {
+      // cache hit
+      if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
+
+      final courseId = (cls["course_id"] ?? "").toString().trim();
+
+      // 1) total sessions from syllabi/<course_id> (same as Teacher screen)
+      int totalSessions = 0;
+
+      if (courseId.isNotEmpty) {
+        final sSnap = await _syllabiRef.child(courseId).get();
+        if (sSnap.exists && sSnap.value is Map) {
+          final s = Map<String, dynamic>.from(sSnap.value as Map);
+          final units = s["units"];
+          if (units is List) {
+            for (final u in units) {
+              if (u is! Map) continue;
+              final unit = Map<String, dynamic>.from(u);
+              final sessions = unit["sessions"];
+              if (sessions is List) totalSessions += sessions.length;
+            }
+          }
+        }
+      }
+
+      // Fallback: if syllabus missing, use schedule.sessions_count
+      if (totalSessions <= 0) {
+        final sched = (cls["schedule"] is Map) ? Map<String, dynamic>.from(cls["schedule"]) : <String, dynamic>{};
+        totalSessions = _asInt(sched["sessions_count"]);
+      }
+
+      // 2) covered sessions = unique taught.sessionId from classes/<classId>/attendance/*
+      final att = cls["attendance"];
+      final Set<String> covered = {};
+      int held = 0;
+
+      if (att is Map) {
+        final m = Map<String, dynamic>.from(att);
+        held = m.length;
+
+        for (final entry in m.entries) {
+          final rec = entry.value;
+          if (rec is! Map) continue;
+          final r = Map<String, dynamic>.from(rec);
+
+          final taught = r["taught"];
+          if (taught is Map) {
+            final tm = Map<String, dynamic>.from(taught);
+            final sid = (tm["sessionId"] ?? "").toString().trim();
+            if (sid.isNotEmpty) covered.add(sid);
+          }
+        }
+      }
+
+      final coveredCount = covered.length;
+      final pct = totalSessions <= 0 ? 0 : ((coveredCount / totalSessions) * 100).round().clamp(0, 100);
+
+      final prog = _ClassProg(
+        percent: pct,
+        coveredCount: coveredCount,
+        totalSessions: totalSessions,
+        sessionsHeld: held,
+      );
+
+      _classProgCache[classId] = prog;
+      return prog;
+    }
     // -------------------- Classes List UI --------------------
   
     Widget _buildTopFilters() {
@@ -1609,7 +1684,47 @@
                                     _prettySessions(cls),
                                     style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600),
                                   ),
-  
+
+                                  // ✅ NEW: class progress bar
+                                  const SizedBox(height: 10),
+                                  FutureBuilder<_ClassProg>(
+                                    future: id.isEmpty ? Future.value(_ClassProg.zero()) : _loadClassProgress(id, cls),
+                                    builder: (context, snapP) {
+                                      final p = snapP.data ?? _ClassProg.zero();
+                                      final pct = p.percent.clamp(0, 100);
+
+                                      final totalLabel = p.totalSessions <= 0 ? "-" : p.totalSessions.toString();
+
+                                      return Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.insights_rounded, size: 16, color: Colors.deepOrange),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  "Progress: $pct% • ${p.coveredCount}/$totalLabel covered • Attendance records: ${p.sessionsHeld}",
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w800),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(999),
+                                            child: LinearProgressIndicator(
+                                              value: p.totalSessions <= 0 ? 0 : (p.coveredCount / p.totalSessions).clamp(0, 1),
+                                              minHeight: 8,
+                                              backgroundColor: Colors.black.withOpacity(0.06),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
                                   const SizedBox(height: 12),
                                   Wrap(
                                     spacing: 8,
@@ -1686,4 +1801,24 @@
     String day;
     String? startTime;
     final TextEditingController durationCtrl = TextEditingController(text: "90");
+  }
+  class _ClassProg {
+    final int percent;
+    final int coveredCount;
+    final int totalSessions;
+    final int sessionsHeld;
+
+    const _ClassProg({
+      required this.percent,
+      required this.coveredCount,
+      required this.totalSessions,
+      required this.sessionsHeld,
+    });
+
+    factory _ClassProg.zero() => const _ClassProg(
+      percent: 0,
+      coveredCount: 0,
+      totalSessions: 0,
+      sessionsHeld: 0,
+    );
   }

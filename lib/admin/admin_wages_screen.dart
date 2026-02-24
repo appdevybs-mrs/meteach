@@ -33,6 +33,11 @@ class AdminWagesScreen extends StatelessWidget {
     return '${d.year}-${_two(d.month)}'; // yyyy-MM
   }
 
+  static String _monthKeyNow() {
+    final d = DateTime.now();
+    return '${d.year}-${_two(d.month)}'; // yyyy-MM
+  }
+
   static String _prettyMonthLabel(String monthKey) {
     final parts = monthKey.split('-');
     if (parts.length != 2) return monthKey;
@@ -235,11 +240,33 @@ class AdminWagesScreen extends StatelessWidget {
             return const Center(child: Text('No payments found.'));
           }
 
+          // -------- Option A: Stats header (THIS MONTH) computed from existing payments ----------
+          final nowMonthKey = _monthKeyNow();
+          final monthPayments = payments.where((p) {
+            final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
+            return mk == nowMonthKey;
+          }).toList();
+
+          final stats = _StatsData.fromPayments(
+            monthLabel: _prettyMonthLabel(nowMonthKey),
+            payments: monthPayments,
+            asInt: _asInt,
+            asBool: _asBool,
+          );
+
           return ListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-            itemCount: monthKeys.length,
+            itemCount: monthKeys.length + 1, // +1 for header card
             itemBuilder: (context, i) {
-              final monthKey = monthKeys[i];
+              // Header stats card at the very top
+              if (i == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _StatsHeaderCard(data: stats),
+                );
+              }
+
+              final monthKey = monthKeys[i - 1];
               final teacherMap = grouped[monthKey] ?? {};
 
               // Sort teachers by teacherName (fallback teacherId)
@@ -307,6 +334,241 @@ class AdminWagesScreen extends StatelessWidget {
   }
 }
 
+// ---------------- Option A widgets/data ----------------
+
+class _StatsData {
+  _StatsData({
+    required this.monthLabel,
+    required this.paymentsCount,
+    required this.teachersCount,
+    required this.learnersCount,
+    required this.totalAmount,
+    required this.unpaidCount,
+    required this.unpaidAmount,
+    required this.notConfirmedCount,
+    required this.missingLearnerInfoCount,
+    required this.missingTeacherCount,
+  });
+
+  final String monthLabel;
+
+  final int paymentsCount;
+  final int teachersCount;
+  final int learnersCount;
+
+  final int totalAmount;
+
+  final int unpaidCount;
+  final int unpaidAmount;
+
+  final int notConfirmedCount;
+
+  final int missingLearnerInfoCount;
+  final int missingTeacherCount;
+
+  static _StatsData fromPayments({
+    required String monthLabel,
+    required List<Map<String, dynamic>> payments,
+    required int Function(dynamic) asInt,
+    required bool Function(dynamic) asBool,
+  }) {
+    final teacherIds = <String>{};
+    final learnerKeys = <String>{};
+
+    int totalAmount = 0;
+
+    int unpaidCount = 0;
+    int unpaidAmount = 0;
+
+    int notConfirmedCount = 0;
+
+    int missingLearnerInfoCount = 0;
+    int missingTeacherCount = 0;
+
+    for (final p in payments) {
+      final teacherId = (p['teacherId'] ?? '').toString().trim();
+      if (teacherId.isNotEmpty) {
+        teacherIds.add(teacherId);
+      } else {
+        missingTeacherCount++;
+      }
+
+      final learnerName = (p['learner_name'] ?? '').toString().trim();
+      final learnerSerial = (p['learner_serial'] ?? '').toString().trim();
+      final learnerKey = learnerSerial.isNotEmpty ? learnerSerial : learnerName;
+      if (learnerKey.isNotEmpty) {
+        learnerKeys.add(learnerKey);
+      } else {
+        missingLearnerInfoCount++;
+      }
+
+      final amount = asInt(p['amount']);
+      totalAmount += amount;
+
+      final teacherPaid = asBool(p['teacherPaid']);
+      if (!teacherPaid) {
+        unpaidCount++;
+        unpaidAmount += amount;
+      }
+
+      final teacherConfirmed = asBool(p['teacherConfirmed']);
+      if (!teacherConfirmed) {
+        notConfirmedCount++;
+      }
+    }
+
+    return _StatsData(
+      monthLabel: monthLabel,
+      paymentsCount: payments.length,
+      teachersCount: teacherIds.length,
+      learnersCount: learnerKeys.length,
+      totalAmount: totalAmount,
+      unpaidCount: unpaidCount,
+      unpaidAmount: unpaidAmount,
+      notConfirmedCount: notConfirmedCount,
+      missingLearnerInfoCount: missingLearnerInfoCount,
+      missingTeacherCount: missingTeacherCount,
+    );
+  }
+}
+
+class _StatsHeaderCard extends StatelessWidget {
+  const _StatsHeaderCard({required this.data});
+
+  final _StatsData data;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  Widget _tile({
+    required String label,
+    required String value,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7F9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: primaryBlue.withOpacity(0.85)),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                    color: Colors.black.withOpacity(0.65),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: primaryBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtDa(int n) => '$n DA';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: uiBorder.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Stats • ${data.monthLabel}',
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 10),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 2.6,
+            children: [
+              _tile(label: 'Learners', value: '${data.learnersCount}', icon: Icons.school_rounded),
+              _tile(label: 'Payments', value: '${data.paymentsCount}', icon: Icons.receipt_long_rounded),
+              _tile(label: 'Teachers', value: '${data.teachersCount}', icon: Icons.badge_rounded),
+              _tile(label: 'Not confirmed', value: '${data.notConfirmedCount}', icon: Icons.warning_amber_rounded),
+              _tile(label: 'Teacher unpaid', value: '${data.unpaidCount} • ${_fmtDa(data.unpaidAmount)}', icon: Icons.payments_rounded),
+              _tile(label: 'Total', value: _fmtDa(data.totalAmount), icon: Icons.account_balance_wallet_rounded),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (data.missingLearnerInfoCount > 0)
+                _smallNotice('Missing learner info: ${data.missingLearnerInfoCount}'),
+              if (data.missingTeacherCount > 0) _smallNotice('Missing teacherId: ${data.missingTeacherCount}'),
+              if (data.paymentsCount == 0) _smallNotice('No payments in this month yet.'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _smallNotice(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7F9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+      ),
+    );
+  }
+}
+
 class _TeacherSection extends StatelessWidget {
   const _TeacherSection({
     required this.teacherId,
@@ -331,6 +593,13 @@ class _TeacherSection extends StatelessWidget {
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  static bool _asBool(dynamic v) {
+    if (v == null) return false;
+    if (v is bool) return v;
+    final s = v.toString().trim().toLowerCase();
+    return s == 'true' || s == '1' || s == 'yes';
+  }
+
   @override
   Widget build(BuildContext context) {
     final teacherName = (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '').toString().trim();
@@ -338,6 +607,24 @@ class _TeacherSection extends StatelessWidget {
 
     // Sort by paidAt desc inside teacher
     final items = [...payments]..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+
+    // ---------------- Option C: per-teacher stats ----------------
+    int total = 0;
+    int unpaidCount = 0;
+    int unpaidAmount = 0;
+
+    for (final p in items) {
+      final amount = _asInt(p['amount']);
+      total += amount;
+
+      final teacherPaid = _asBool(p['teacherPaid']);
+      if (!teacherPaid) {
+        unpaidCount++;
+        unpaidAmount += amount;
+      }
+    }
+
+    final subtitle = 'Payments: ${items.length} • Unpaid: $unpaidCount • Total: $total DA';
 
     return Container(
       decoration: BoxDecoration(
@@ -348,15 +635,31 @@ class _TeacherSection extends StatelessWidget {
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-        title: Text(
-          header,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: primaryBlue,
-            fontSize: 14,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              header,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.black.withOpacity(0.65),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
         children: [
           for (final p in items) ...[

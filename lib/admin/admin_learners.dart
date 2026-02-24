@@ -434,7 +434,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen> with SingleTi
 enum _PayFlag { ok, yellow, red, black, noCourse }
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 enum _QuickLearnerReminder { payment, absence, empty }
-
+enum _QuickSmsTemplate { empty, welcome }
 class _LearnersList extends StatefulWidget {
   const _LearnersList({
     required this.titleHint,
@@ -486,6 +486,89 @@ class _LearnersListState extends State<_LearnersList>
   }
 
   String? _expandedUid;
+
+  Future<void> _showSmsTemplateSheet({
+  required String phone,
+  required Learner learner,
+  }) async {
+  if (!mounted) return;
+
+  final picked = await showModalBottomSheet<_QuickSmsTemplate>(
+  context: context,
+  showDragHandle: true,
+  builder: (ctx) => SafeArea(
+  child: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+  const SizedBox(height: 6),
+  ListTile(
+  leading: const Icon(Icons.sms_rounded),
+  title: const Text('Empty'),
+  onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
+  ),
+  ListTile(
+  leading: const Icon(Icons.waving_hand_rounded),
+  title: const Text('Welcome'),
+  onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.welcome),
+  ),
+  const SizedBox(height: 10),
+  ],
+  ),
+  ),
+  );
+
+  if (picked == null) return;
+
+  String body = '';
+  switch (picked) {
+  case _QuickSmsTemplate.empty:
+  body = '';
+  break;
+  case _QuickSmsTemplate.welcome:
+  body =
+  'Welcome to Your Bridge School, please download the app and login with your email and password 12345678. Please change password.';
+  break;
+  }
+
+  await _launchSms(phone: phone, body: body);
+  }
+  Future<void> _launchSms({
+    required String phone,
+    required String body,
+  }) async {
+    final p = phone.trim();
+    final text = body.trim();
+
+    if (p.isEmpty) return;
+
+    // 1) Always copy message first (your requirement)
+    if (text.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) _toast('Message copied ✅');
+    }
+
+    // 2) Try to open SMS composer (if device supports it)
+    final uri = Uri(
+      scheme: 'sms',
+      path: p,
+      // body is optional; even if it doesn't auto-fill, we already copied it
+      queryParameters: text.isEmpty ? null : {'body': text},
+    );
+
+    try {
+      final ok = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!ok && mounted) {
+        // This is what you're hitting now (no SMS handler)
+        _toast('SMS app not available. Text is copied ✅');
+      }
+    } catch (_) {
+      if (mounted) _toast('SMS app not available. Text is copied ✅');
+    }
+  }
 
   Future<String?> _getLearnerFcmToken(String learnerUid) async {
     final snap = await FirebaseDatabase.instance
@@ -1044,21 +1127,7 @@ class _LearnersListState extends State<_LearnersList>
                                                 ),
                                               ),
                                               const SizedBox(width: 10),
-                                              if (l.email.trim().isNotEmpty)
-                                                Expanded(
-                                                  child: Text(
-                                                    l.email,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: Colors.black.withOpacity(0.6),
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    textAlign: TextAlign.right,
-                                                  ),
-                                                ),
-                                              const SizedBox(width: 10),
+
                                               if (l.status == LearnerStatus.paused)
                                                 const _Pill(
                                                   label: 'Inactive',
@@ -1069,25 +1138,47 @@ class _LearnersListState extends State<_LearnersList>
                                           ),
                                           const SizedBox(height: 6),
                                           if (l.phone1.trim().isNotEmpty)
-                                            InkWell(
-                                              onTap: () async {
-                                                final phone = l.phone1.trim();
-                                                final uri = Uri(scheme: 'tel', path: phone);
-                                                if (await canLaunchUrl(uri)) {
-                                                  await launchUrl(uri);
-                                                } else {
-                                                  _toast('Cannot open phone dialer on this device.');
-                                                }
-                                              },
-                                              child: Text(
-                                                '📞 ${l.phone1}',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: AdminLearnersScreen.primaryBlue.withOpacity(0.9),
-                                                  decoration: TextDecoration.underline,
+                                            Row(
+                                              children: [
+                                                InkWell(
+                                                  onTap: () async {
+                                                    final phone = l.phone1.trim();
+                                                    final uri = Uri(scheme: 'tel', path: phone);
+                                                    if (await canLaunchUrl(uri)) {
+                                                      await launchUrl(uri);
+                                                    } else {
+                                                      _toast('Cannot open phone dialer on this device.');
+                                                    }
+                                                  },
+                                                  onLongPress: () async {
+                                                    await _showSmsTemplateSheet(phone: l.phone1.trim(), learner: l);
+                                                  },
+                                                  child: Text(
+                                                    '📞 ${l.phone1}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w800,
+                                                      color: AdminLearnersScreen.primaryBlue.withOpacity(0.9),
+                                                      decoration: TextDecoration.underline,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
+                                                if (l.email.trim().isNotEmpty) ...[
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Text(
+                                                      '✉ ${l.email.trim()}',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: Colors.black.withOpacity(0.65),
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
                                             )
                                           else
                                             Text(
@@ -1827,18 +1918,26 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _TextField(
-                      controller: emailC,
-                      label: 'Email *',
-                      hint: 'learner@email.com',
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'Required';
-                        if (!t.contains('@')) return 'Invalid email';
-                        return null;
+                    GestureDetector(
+                      onLongPress: () async {
+                        final email = emailC.text.trim();
+                        if (email.isEmpty) return;
+                        await Clipboard.setData(ClipboardData(text: email));
+                        _toast('Email copied ✅');
                       },
-                      enabled: !isEdit,
+                      child: _TextField(
+                        controller: emailC,
+                        label: 'Email *',
+                        hint: 'learner@email.com',
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return 'Required';
+                          if (!t.contains('@')) return 'Invalid email';
+                          return null;
+                        },
+                        enabled: !isEdit,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (!isEdit)
