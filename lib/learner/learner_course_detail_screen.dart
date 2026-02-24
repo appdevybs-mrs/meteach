@@ -1,10 +1,19 @@
 // learner_course_detail_screen.dart
-// ✅ Drop-in replacement for your current LearnerCourseDetailScreen
-// What’s added (without breaking your working logic):
-// - NEW "Payment" tab (smart + clean)
-// - Red banner when payment is due / due soon
-// - Uses existing DB structure: users/<uid>/courses/<courseKey>/payment_summary + attendance count
-// - Keeps your Attendance + Progress logic intact
+// ✅ FULL DROP-IN REPLACEMENT
+// Keeps your working logic intact, but improves UI/UX exactly as requested:
+//
+// ✅ Payment tab updates:
+// - Removes "Total paid"
+// - Shows LAST payment (lastAmount + lastMethod + lastPaymentAt)
+// - Table: Sessions paid | Sessions passed | Sessions left
+// - Renames "sessionsDone/used" -> "sessionsPassed"
+//
+// ✅ Progress tab upgrades (PRO UX):
+// - 2-level collapsible: Unit -> Sessions (ExpansionTile)
+// - Uses your SAME syllabi loading logic (no DB changes)
+// - Passed/Coming status based on _coveredSessionIds (same logic)
+//
+// ✅ Attendance tab unchanged (your logic kept)
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -55,7 +64,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   @override
   void initState() {
     super.initState();
-    // ✅ NEW: 3 tabs now (Payment + Attendance + Progress)
     _tab = TabController(length: 3, vsync: this);
     _load();
   }
@@ -82,6 +90,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final d = DateTime.fromMillisecondsSinceEpoch(t);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  static String _fmtMoney(int v) {
+    // Simple grouping: 30000 -> 30,000
+    final s = v.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final left = s.length - i;
+      buf.write(s[i]);
+      if (left > 1 && left % 3 == 1) buf.write(',');
+    }
+    return buf.toString();
   }
 
   Map<String, dynamic> get _cls =>
@@ -111,7 +131,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
-// ✅ start payment listener (safe: one listener only)
+
+      // ✅ start payment listener (safe: one listener only)
       await _paySub?.cancel();
       _payLoading = true;
 
@@ -232,12 +253,55 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     return {'total': total, 'present': present};
   }
 
+  // -------------------- Progress grouping helper --------------------
+
+  List<Map<String, dynamic>> _groupSyllabiByUnit() {
+    // Returns a list of unit groups:
+    // [
+    //   { unitId, unitTitle, unitOrder, sessions: [ ... ] },
+    //   ...
+    // ]
+    final Map<String, Map<String, dynamic>> groups = {};
+
+    int n(dynamic v) => (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+
+    for (final s in _syllabiFlat) {
+      final unitId = (s['unitId'] ?? '').toString();
+      final unitTitle = (s['unitTitle'] ?? '').toString();
+      final unitOrder = n(s['unitOrder']);
+
+      final key = unitId.isNotEmpty ? unitId : 'unit_$unitOrder|$unitTitle';
+
+      groups.putIfAbsent(key, () {
+        return {
+          'unitId': unitId,
+          'unitTitle': unitTitle.isEmpty ? 'Unit' : unitTitle,
+          'unitOrder': unitOrder,
+          'sessions': <Map<String, dynamic>>[],
+        };
+      });
+
+      (groups[key]!['sessions'] as List<Map<String, dynamic>>).add(s);
+    }
+
+    final list = groups.values.toList();
+    list.sort((a, b) => n(a['unitOrder']).compareTo(n(b['unitOrder'])));
+
+    // sort sessions inside each unit by order
+    for (final u in list) {
+      final sessions = (u['sessions'] as List<Map<String, dynamic>>);
+      sessions.sort((a, b) => n(a['order']).compareTo(n(b['order'])));
+    }
+
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
     final counts = _attendanceCounts();
-    final total = counts['total'] ?? 0;
+    final totalSessionsPassed = counts['total'] ?? 0; // sessions passed = attendance count
     final present = counts['present'] ?? 0;
-    final attPct = total == 0 ? 0 : ((present / total) * 100).round();
+    final attPct = totalSessionsPassed == 0 ? 0 : ((present / totalSessionsPassed) * 100).round();
 
     final totalS = _syllabiFlat.length;
     final covered = _coveredSessionIds.length;
@@ -301,8 +365,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             : TabBarView(
           controller: _tab,
           children: [
-            _paymentTab(sessionsDone: total), // ✅ NEW
-            _attendanceTab(attPct: attPct, present: present, total: total),
+            _paymentTab(sessionsPassed: totalSessionsPassed),
+            _attendanceTab(attPct: attPct, present: present, total: totalSessionsPassed),
             _progressTab(progPct: progPct, covered: covered, totalS: totalS),
           ],
         ),
@@ -310,28 +374,25 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- PAYMENT TAB (NEW) --------------------
+  // -------------------- PAYMENT TAB --------------------
 
-  Widget _paymentTab({required int sessionsDone}) {
-    // ✅ show spinner while payment is loading
-    if (_payLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  Widget _paymentTab({required int sessionsPassed}) {
+    if (_payLoading) return const Center(child: CircularProgressIndicator());
 
     final sum = _paymentSummary;
 
     final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
     final remindBeforeSession = _asInt(sum['remindBeforeSession']);
-    final totalPaid = _asInt(sum['totalPaid']);
+
+    final lastAmount = _asInt(sum['lastAmount']);
+    final lastMethod = (sum['lastMethod'] ?? '').toString();
     final lastPaymentAt = _fmtDateFromMs(sum['lastPaymentAt']);
 
     final bool hasPayments = sessionsPaidTotal > 0;
 
-    final left = sessionsPaidTotal - sessionsDone;
-
+    final left = sessionsPaidTotal - sessionsPassed;
     final bool overdue = hasPayments && left <= 0;
     final bool dueSoon = hasPayments && left > 0 && left <= remindBeforeSession;
-
 
     final int leftSafe = left < 0 ? 0 : left;
 
@@ -357,31 +418,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
                 if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
 
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _kpi(
-                      icon: Icons.confirmation_number_rounded,
-                      label: 'Sessions used',
-                      value: '$sessionsDone',
-                    ),
-                    _kpi(
-                      icon: Icons.event_available_rounded,
-                      label: 'Paid sessions',
-                      value: hasPayments ? '$sessionsPaidTotal' : '—',
-                    ),
-                    _kpi(
-                      icon: Icons.timelapse_rounded,
-                      label: 'Sessions left',
-                      value: hasPayments ? '$leftSafe' : '—',
-                    ),
-                    _kpi(
-                      icon: Icons.payments_rounded,
-                      label: 'Total paid',
-                      value: hasPayments ? '$totalPaid' : '—',
-                    ),
-                  ],
+                _sessionsTable(
+                  paid: hasPayments ? sessionsPaidTotal : null,
+                  passed: sessionsPassed,
+                  left: hasPayments ? leftSafe : null,
                 ),
 
                 const SizedBox(height: 12),
@@ -398,26 +438,59 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                          Icon(Icons.receipt_long_rounded, size: 18, color: UiK.actionOrange),
                           SizedBox(width: 8),
-                          Text('Recommendation', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                          Text('Last payment', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        !hasPayments
-                            ? 'Your payment info is not available yet. If you already paid, contact the academy to sync it.'
-                            : overdue
-                            ? 'Payment is due now. Please contact the academy to renew your sessions.'
-                            : dueSoon
-                            ? 'You are close to the last paid session. It’s a good time to renew soon.'
-                            : 'Everything looks good. Keep attending and track your progress.',
-                        style: UiK.subtleText(),
-                      ),
-                      if (lastPaymentAt.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text('Last payment update: $lastPaymentAt', style: UiK.subtleText()),
+                      const SizedBox(height: 10),
+                      if (!hasPayments)
+                        Text(
+                          'Your payment info is not available yet. If you already paid, contact the academy to sync it.',
+                          style: UiK.subtleText(),
+                        )
+                      else ...[
+                        _kvRow('Amount', lastAmount > 0 ? _fmtMoney(lastAmount) : '—'),
+                        const SizedBox(height: 6),
+                        _kvRow('Method', lastMethod.isNotEmpty ? lastMethod : '—'),
+                        const SizedBox(height: 6),
+                        _kvRow('Date', lastPaymentAt.isNotEmpty ? lastPaymentAt : '—'),
                       ],
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                          color: Colors.white,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                                SizedBox(width: 8),
+                                Text('Recommendation',
+                                    style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              !hasPayments
+                                  ? 'Payment is not synced yet.'
+                                  : overdue
+                                  ? 'Payment is due now. Please contact the academy to renew your sessions.'
+                                  : dueSoon
+                                  ? (leftSafe == 1
+                                  ? 'Payment due in 1 session. It’s a good time to renew now.'
+                                  : 'Payment due soon. It’s a good time to renew.')
+                                  : 'Everything looks good. Keep attending and track your progress.',
+                              style: UiK.subtleText(),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -429,6 +502,73 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
+  Widget _sessionsTable({required int? paid, required int passed, required int? left}) {
+    Widget cell(String v, {bool strong = false}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        child: Text(
+          v,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: UiK.mainText,
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        color: Colors.white,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Table(
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          border: TableBorder(
+            horizontalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            verticalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+          ),
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: UiK.primaryBlue.withOpacity(0.04)),
+              children: [
+                cell('Sessions paid', strong: true),
+                cell('Sessions passed', strong: true),
+                cell('Sessions left', strong: true),
+              ],
+            ),
+            TableRow(
+              children: [
+                cell(paid == null ? '—' : '$paid'),
+                cell('$passed'),
+                cell(left == null ? '—' : '$left'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kvRow(String k, String v) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            k,
+            style: TextStyle(color: UiK.mainText.withOpacity(0.70), fontWeight: FontWeight.w800),
+          ),
+        ),
+        Text(
+          v,
+          style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+        ),
+      ],
+    );
+  }
 
   Widget _dueBanner({required bool overdue, required int left}) {
     final title = overdue ? 'Payment is due' : 'Payment due soon';
@@ -464,7 +604,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- ATTENDANCE TAB (your logic kept) --------------------
+  // -------------------- ATTENDANCE TAB (unchanged) --------------------
 
   Widget _attendanceTab({required int attPct, required int present, required int total}) {
     return ListView(
@@ -609,9 +749,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- PROGRESS TAB (your logic kept) --------------------
+  // -------------------- PROGRESS TAB (2-level collapsible: Unit -> Sessions) --------------------
 
   Widget _progressTab({required int progPct, required int covered, required int totalS}) {
+    final units = _groupSyllabiByUnit();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -626,7 +768,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               children: [
                 Text('Progress', style: UiK.titleText()),
                 const SizedBox(height: 8),
-                Text('Covered: $covered / $totalS sessions', style: UiK.subtleText()),
+                Text('Passed: $covered / $totalS sessions', style: UiK.subtleText()),
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(999),
@@ -644,6 +786,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           ),
         ),
         const SizedBox(height: 14),
+
         if (_syllabiFlat.isEmpty)
           const Center(
             child: Padding(
@@ -655,18 +798,67 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             ),
           )
         else
-          ..._syllabiFlat.map(_syllabiTile).toList(),
+          ...units.map(_unitExpansion).toList(),
       ],
     );
   }
 
-  Widget _syllabiTile(Map<String, dynamic> s) {
-    final unitTitle = (s['unitTitle'] ?? '').toString();
+  Widget _unitExpansion(Map<String, dynamic> u) {
+    final unitTitle = (u['unitTitle'] ?? 'Unit').toString();
+    final sessions = (u['sessions'] as List<Map<String, dynamic>>);
+
+    // Unit progress summary
+    int unitTotal = sessions.length;
+    int unitPassed = 0;
+    for (final s in sessions) {
+      final sessionId = (s['sessionId'] ?? '').toString();
+      if (_coveredSessionIds.contains(sessionId)) unitPassed++;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        color: Colors.white,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: CircleAvatar(
+              backgroundColor: UiK.primaryBlue.withOpacity(0.08),
+              child: const Icon(Icons.folder_open_rounded, color: UiK.primaryBlue),
+            ),
+            title: Text(
+              unitTitle.isEmpty ? 'Unit' : unitTitle,
+              style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              'Passed: $unitPassed / $unitTotal',
+              style: UiK.subtleText(),
+            ),
+            children: [
+              ...sessions.map(_sessionExpansion).toList(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sessionExpansion(Map<String, dynamic> s) {
     final title = (s['title'] ?? '').toString();
     final sessionId = (s['sessionId'] ?? '').toString();
     final skill = (s['skillType'] ?? '').toString();
+    final objective = (s['objective'] ?? '').toString();
+    final content = (s['content'] ?? '').toString();
 
-    final covered = _coveredSessionIds.contains(sessionId);
+    final isPassed = _coveredSessionIds.contains(sessionId);
+    final statusText = isPassed ? 'Passed' : 'Coming';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -675,27 +867,88 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
         color: Colors.white,
       ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: (covered ? UiK.primaryBlue : UiK.uiBorder).withOpacity(0.10),
-          child: Icon(
-            covered ? Icons.check_circle_rounded : Icons.lock_outline_rounded,
-            color: covered ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.55),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: CircleAvatar(
+              backgroundColor: (isPassed ? UiK.primaryBlue : UiK.uiBorder).withOpacity(0.10),
+              child: Icon(
+                isPassed ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                color: isPassed ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.55),
+              ),
+            ),
+            title: Text(
+              title.isEmpty ? 'Session' : title,
+              style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              [
+                if (skill.isNotEmpty) skill,
+                statusText,
+              ].join(' • '),
+              style: UiK.subtleText(),
+            ),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                  color: UiK.primaryBlue.withOpacity(0.04),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _detailLine('Status', statusText),
+                    if (sessionId.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _detailLine('Session ID', sessionId),
+                    ],
+                    if (objective.trim().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text('Objective', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 6),
+                      Text(objective, style: UiK.subtleText()),
+                    ],
+                    if (content.trim().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text('Content', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 6),
+                      Text(content, style: UiK.subtleText()),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        title: Text(
-          title.isEmpty ? 'Session' : title,
-          style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
-        ),
-        subtitle: Text(
-          [
-            if (unitTitle.isNotEmpty) unitTitle,
-            if (skill.isNotEmpty) skill,
-            covered ? 'Covered' : 'Not covered yet',
-          ].join(' • '),
-          style: UiK.subtleText(),
-        ),
       ),
+    );
+  }
+
+  Widget _detailLine(String k, String v) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            k,
+            style: TextStyle(color: UiK.mainText.withOpacity(0.70), fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            v,
+            textAlign: TextAlign.right,
+            style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+          ),
+        ),
+      ],
     );
   }
 
