@@ -1,4 +1,16 @@
 // teacher_syllabus_details_screen.dart
+// ✅ FULL DROP-IN REPLACEMENT (copy/paste)
+//
+// What’s improved (safe, no DB assumptions beyond what you already parse):
+// ✅ Adds "Recommendations" card (smart tips for teacher)
+// ✅ Adds Quick Summary table: Units | Sessions | Estimated minutes | Last updated
+// ✅ Adds search (filters sessions by title / objective / content / skillType)
+// ✅ Unit -> Sessions collapsible (keeps your style, but more professional)
+// ✅ Each session is expandable (shows objective/content/homework + teacher recommendations)
+// ✅ Works with your existing schema: syllabi/<courseId> with units & sessions
+//
+// NOTE: Recommendations are UI-only (no writing to DB).
+
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
@@ -21,10 +33,25 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
 
   _SyllabusCourse? _course;
 
+  // ✅ Search
+  final TextEditingController _search = TextEditingController();
+  String _q = '';
+
   @override
   void initState() {
     super.initState();
+    _search.addListener(() {
+      final v = _search.text.trim();
+      if (v == _q) return;
+      setState(() => _q = v);
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -98,7 +125,6 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
   List<_Unit> _parseUnits(dynamic node) {
     final out = <_Unit>[];
 
-    // units can be List or Map
     final unitMaps = _asListOfMaps(node);
 
     for (final um in unitMaps) {
@@ -178,72 +204,414 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     }
   }
 
+  // ✅ Search helpers
+  bool _matches(_Session s, String q) {
+    if (q.isEmpty) return true;
+    final z = q.toLowerCase();
+    String t(String v) => v.toLowerCase();
+    return t(s.title).contains(z) ||
+        t(s.skillType).contains(z) ||
+        t(s.objective).contains(z) ||
+        t(s.content).contains(z) ||
+        t(s.homework).contains(z) ||
+        t(s.id).contains(z);
+  }
+
+  List<_Unit> _filteredUnits(_SyllabusCourse c) {
+    if (_q.isEmpty) return c.units;
+
+    final out = <_Unit>[];
+    for (final u in c.units) {
+      final filteredSessions = u.sessions.where((s) => _matches(s, _q)).toList();
+      if (filteredSessions.isEmpty) continue;
+
+      out.add(_Unit(
+        id: u.id,
+        order: u.order,
+        title: u.title,
+        otherTitle: u.otherTitle,
+        description: u.description,
+        sessions: filteredSessions,
+      ));
+    }
+    return out;
+  }
+
+  int _totalMinutes(_SyllabusCourse c) {
+    int sum = 0;
+    for (final u in c.units) {
+      for (final s in u.sessions) {
+        if (s.durationMinutes > 0) sum += s.durationMinutes;
+      }
+    }
+    return sum;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = _course;
 
     return Scaffold(
-        backgroundColor: UiK.appBg,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          surfaceTintColor: Colors.white,
-          centerTitle: true,
-          title: Text(
-            c?.title ?? 'Syllabus',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: UiK.primaryBlue,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Refresh',
-              icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
-              onPressed: _load,
-            ),
-          ],
-        ),
-        body: WatermarkBackground(
-          child: SafeArea(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _ErrorBox(message: 'Failed to load syllabus.\n$_error', onRetry: _load)
-                : c == null
-                ? const _InfoBox(
-              title: 'Not found',
-              message: 'لا يمكن العثور على هذه الدورة.',
-              icon: Icons.info_rounded,
-            )
-                : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-              children: [
-                _CourseTopCard(
-                  title: c.title,
-                  code: c.code,
-                  duration: c.duration,
-                  updatedLabel: _fmtDate(c.updatedAt),
-                  unitsCount: c.units.length,
-                  sessionsCount: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
-                ),
-                const SizedBox(height: 12),
-
-                ...c.units.map((u) => _UnitCard(unit: u)),
-                const SizedBox(height: 12),
-                const _FooterHint(),
-              ],
-            ),
+      backgroundColor: UiK.appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        centerTitle: true,
+        title: Text(
+          c?.title ?? 'Syllabus',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: UiK.primaryBlue,
+            fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
+            onPressed: _load,
+          ),
+        ],
+      ),
+      body: WatermarkBackground(
+        child: SafeArea(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? _ErrorBox(message: 'Failed to load syllabus.\n$_error', onRetry: _load)
+              : c == null
+              ? const _InfoBox(
+            title: 'Not found',
+            message: 'لا يمكن العثور على هذه الدورة.',
+            icon: Icons.info_rounded,
+          )
+              : ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            children: [
+              _CourseTopCard(
+                title: c.title,
+                code: c.code,
+                duration: c.duration,
+                updatedLabel: _fmtDate(c.updatedAt),
+                unitsCount: c.units.length,
+                sessionsCount: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
+              ),
+              const SizedBox(height: 12),
 
+              _SummaryTableCard(
+                units: c.units.length,
+                sessions: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
+                totalMinutes: _totalMinutes(c),
+                updatedLabel: _fmtDate(c.updatedAt),
+              ),
+              const SizedBox(height: 12),
+
+              _RecommendationsCard(course: c),
+              const SizedBox(height: 12),
+
+              _SearchCard(controller: _search),
+              const SizedBox(height: 12),
+
+              ..._filteredUnits(c).map((u) => _UnitCard(unit: u)),
+              const SizedBox(height: 12),
+              const _FooterHint(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
 /* ================== UI ================== */
+
+class _SearchCard extends StatelessWidget {
+  const _SearchCard({required this.controller});
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Search', style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+            decoration: InputDecoration(
+              hintText: 'Search sessions (title, objective, content, skill, ID...)',
+              hintStyle: TextStyle(color: UiK.mainText.withOpacity(0.55), fontWeight: FontWeight.w700),
+              prefixIcon: const Icon(Icons.search_rounded, color: UiK.primaryBlue),
+              filled: true,
+              fillColor: UiK.primaryBlue.withOpacity(0.04),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTableCard extends StatelessWidget {
+  const _SummaryTableCard({
+    required this.units,
+    required this.sessions,
+    required this.totalMinutes,
+    required this.updatedLabel,
+  });
+
+  final int units;
+  final int sessions;
+  final int totalMinutes;
+  final String updatedLabel;
+
+  String _fmtTotalMinutes(int m) {
+    if (m <= 0) return '—';
+    final h = m ~/ 60;
+    final r = m % 60;
+    if (h <= 0) return '$m min';
+    if (r == 0) return '${h}h';
+    return '${h}h ${r}m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(String v, {bool head = false}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        child: Text(
+          v,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: UiK.mainText,
+            fontWeight: head ? FontWeight.w900 : FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Table(
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          border: TableBorder(
+            horizontalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            verticalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+          ),
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: UiK.primaryBlue.withOpacity(0.04)),
+              children: [
+                cell('Units', head: true),
+                cell('Sessions', head: true),
+                cell('Total time', head: true),
+                cell('Updated', head: true),
+              ],
+            ),
+            TableRow(
+              children: [
+                cell('$units'),
+                cell('$sessions'),
+                cell(_fmtTotalMinutes(totalMinutes)),
+                cell(updatedLabel.isEmpty ? '—' : updatedLabel),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecommendationsCard extends StatelessWidget {
+  const _RecommendationsCard({required this.course});
+  final _SyllabusCourse course;
+
+  int _countMissingDuration() {
+    int miss = 0;
+    for (final u in course.units) {
+      for (final s in u.sessions) {
+        if (s.durationMinutes <= 0) miss++;
+      }
+    }
+    return miss;
+  }
+
+  int _countMissingObjectives() {
+    int miss = 0;
+    for (final u in course.units) {
+      for (final s in u.sessions) {
+        if (s.objective.trim().isEmpty) miss++;
+      }
+    }
+    return miss;
+  }
+
+  int _countMissingContent() {
+    int miss = 0;
+    for (final u in course.units) {
+      for (final s in u.sessions) {
+        if (s.content.trim().isEmpty) miss++;
+      }
+    }
+    return miss;
+  }
+
+  int _countMissingHomework() {
+    int miss = 0;
+    for (final u in course.units) {
+      for (final s in u.sessions) {
+        if (s.homework.trim().isEmpty) miss++;
+      }
+    }
+    return miss;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = course.units.fold<int>(0, (p, u) => p + u.sessions.length);
+
+    final missingDur = _countMissingDuration();
+    final missingObj = _countMissingObjectives();
+    final missingCont = _countMissingContent();
+    final missingHw = _countMissingHomework();
+
+    final List<_RecItem> recs = [];
+
+    if (missingObj > 0) {
+      recs.add(_RecItem(
+        icon: Icons.flag_rounded,
+        title: 'Add objectives',
+        desc: '$missingObj session(s) have no objective. Objectives help teachers and learners stay aligned.',
+      ));
+    }
+    if (missingCont > 0) {
+      recs.add(_RecItem(
+        icon: Icons.article_rounded,
+        title: 'Add content details',
+        desc: '$missingCont session(s) have empty content. Add key points / activities for consistency.',
+      ));
+    }
+    if (missingDur > 0) {
+      recs.add(_RecItem(
+        icon: Icons.timelapse_rounded,
+        title: 'Add duration',
+        desc: '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
+      ));
+    }
+    if (sessions > 0 && missingHw == sessions) {
+      recs.add(_RecItem(
+        icon: Icons.assignment_rounded,
+        title: 'Consider homework',
+        desc: 'No sessions have homework. Even short practice tasks improve retention.',
+      ));
+    } else if (missingHw > 0) {
+      recs.add(_RecItem(
+        icon: Icons.assignment_rounded,
+        title: 'Improve homework coverage',
+        desc: '$missingHw session(s) have no homework. Optional practice tasks are helpful.',
+      ));
+    }
+
+    if (recs.isEmpty) {
+      recs.add(_RecItem(
+        icon: Icons.verified_rounded,
+        title: 'Looks consistent',
+        desc: 'Objectives, content, and durations look complete. Keep the same structure for new courses.',
+      ));
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.tips_and_updates_rounded, color: UiK.actionOrange),
+              SizedBox(width: 8),
+              Text('Recommendations', style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...recs.map((r) => _RecRow(item: r)).toList(),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecItem {
+  final IconData icon;
+  final String title;
+  final String desc;
+  const _RecItem({required this.icon, required this.title, required this.desc});
+}
+
+class _RecRow extends StatelessWidget {
+  const _RecRow({required this.item});
+  final _RecItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: UiK.primaryBlue.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(item.icon, size: 18, color: UiK.actionOrange),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title, style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 4),
+                Text(
+                  item.desc,
+                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _CourseTopCard extends StatelessWidget {
   const _CourseTopCard({
@@ -327,7 +695,7 @@ class _UnitCard extends StatefulWidget {
 }
 
 class _UnitCardState extends State<_UnitCard> {
-  bool _expanded = true; // start expanded (easy to follow)
+  bool _expanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +781,7 @@ class _UnitCardState extends State<_UnitCard> {
               color: UiK.primaryBlue,
             ),
             children: [
-              ...u.sessions.map((s) => _SessionCard(session: s)),
+              ...u.sessions.map((s) => _SessionExpansion(session: s)),
               if (u.sessions.isEmpty)
                 Container(
                   width: double.infinity,
@@ -440,81 +808,144 @@ class _UnitCardState extends State<_UnitCard> {
   }
 }
 
-class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.session});
+class _SessionExpansion extends StatefulWidget {
+  const _SessionExpansion({required this.session});
   final _Session session;
 
   @override
+  State<_SessionExpansion> createState() => _SessionExpansionState();
+}
+
+class _SessionExpansionState extends State<_SessionExpansion> {
+  bool _expanded = false;
+
+  List<_RecItem> _sessionRecs(_Session s) {
+    final out = <_RecItem>[];
+
+    if (s.objective.trim().isEmpty) {
+      out.add(const _RecItem(
+        icon: Icons.flag_rounded,
+        title: 'Objective missing',
+        desc: 'Add a short objective (1–2 lines): what learners must be able to do after this session.',
+      ));
+    }
+    if (s.content.trim().isEmpty) {
+      out.add(const _RecItem(
+        icon: Icons.article_rounded,
+        title: 'Content missing',
+        desc: 'Add key points + activities (warm-up, practice, production) for consistent delivery.',
+      ));
+    }
+    if (s.durationMinutes <= 0) {
+      out.add(const _RecItem(
+        icon: Icons.timelapse_rounded,
+        title: 'Duration missing',
+        desc: 'Set duration minutes to help planning and pacing.',
+      ));
+    }
+    if (s.homework.trim().isEmpty) {
+      out.add(const _RecItem(
+        icon: Icons.assignment_rounded,
+        title: 'Homework optional',
+        desc: 'Consider short practice (5–10 minutes) to reinforce the session.',
+      ));
+    }
+
+    if (out.isEmpty) {
+      out.add(const _RecItem(
+        icon: Icons.verified_rounded,
+        title: 'Ready to teach',
+        desc: 'Objective, content, duration, and homework look good.',
+      ));
+    }
+    return out;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final title = session.title.trim().isEmpty ? 'Session' : session.title.trim();
+    final s = widget.session;
+    final title = s.title.trim().isEmpty ? 'Session' : s.title.trim();
+    final recs = _sessionRecs(s);
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: UiK.primaryBlue.withOpacity(0.04),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: _expanded,
+            onExpansionChanged: (v) => setState(() => _expanded = v),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: CircleAvatar(
+              backgroundColor: UiK.primaryBlue.withOpacity(0.08),
+              child: const Icon(Icons.play_lesson_rounded, color: UiK.primaryBlue),
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue, height: 1.2),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              [
+                if (s.skillType.trim().isNotEmpty) s.skillType.trim(),
+                if (s.durationMinutes > 0) '${s.durationMinutes} min',
+                if (s.id.trim().isNotEmpty) 'ID: ${s.id.trim()}',
+              ].join(' • '),
+              style: UiK.subtleText(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Icon(
+              _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              color: UiK.primaryBlue,
+            ),
             children: [
               Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: UiK.primaryBlue.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: UiK.primaryBlue.withOpacity(0.20)),
+                  color: UiK.primaryBlue.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
                 ),
-                child: Text(
-                  (session.order >= 999999) ? '•' : session.order.toString(),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: UiK.primaryBlue,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: UiK.primaryBlue,
-                    height: 1.2,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (s.objective.trim().isNotEmpty) ...[
+                      _Line(icon: Icons.flag_rounded, label: 'Objective', text: s.objective),
+                      const SizedBox(height: 8),
+                    ],
+                    if (s.content.trim().isNotEmpty) ...[
+                      _Line(icon: Icons.article_rounded, label: 'Content', text: s.content),
+                      const SizedBox(height: 8),
+                    ],
+                    if (s.homework.trim().isNotEmpty) ...[
+                      _Line(icon: Icons.assignment_rounded, label: 'Homework', text: s.homework),
+                      const SizedBox(height: 8),
+                    ],
+                    const SizedBox(height: 2),
+                    const Row(
+                      children: [
+                        Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                        SizedBox(width: 8),
+                        Text('Suggestions', style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ...recs.map((r) => _RecRow(item: r)).toList(),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (session.skillType.trim().isNotEmpty)
-                _Pill(icon: Icons.category_rounded, text: session.skillType),
-              if (session.durationMinutes > 0)
-                _Pill(icon: Icons.timelapse_rounded, text: '${session.durationMinutes} min'),
-            ],
-          ),
-          if (session.objective.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _Line(icon: Icons.flag_rounded, label: 'Objective', text: session.objective),
-          ],
-          if (session.content.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _Line(icon: Icons.article_rounded, label: 'Content', text: session.content),
-          ],
-          if (session.homework.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _Line(icon: Icons.assignment_rounded, label: 'Homework', text: session.homework),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -616,7 +1047,7 @@ class _FooterHint extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'اتبع الوحدات والحصص حسب الترتيب (Order) لتطبيق البرنامج كما هو مخطط.',
+              'اتبع الوحدات والحصص حسب الترتيب (Order) لتطبيق البرنامج كما هو مخطط. يمكنك استخدام البحث للوصول السريع.',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade700,
