@@ -74,7 +74,18 @@ class AdminWagesScreen extends StatelessWidget {
 
       final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
 
-      final name = (m['learner_name'] ??
+      final serial = (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '')
+          .toString()
+          .trim();
+
+      final phone1 = (m['phone1'] ?? m['phone'] ?? '').toString().trim();
+      final phone2 = (m['phone2'] ?? '').toString().trim();
+      final email = (m['email'] ?? '').toString().trim();
+
+      final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+
+      String name = (m['learner_name'] ??
           m['name'] ??
           m['fullName'] ??
           m['displayName'] ??
@@ -82,9 +93,26 @@ class AdminWagesScreen extends StatelessWidget {
           .toString()
           .trim();
 
-      final serial = (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '')
-          .toString()
-          .trim();
+// build from first + last if needed
+      if (name.isEmpty) {
+        name = [first, last].where((x) => x.isNotEmpty).join(' ').trim();
+      }
+
+// Human-friendly fallback if still empty
+      if (name.isEmpty) {
+        if (serial.isNotEmpty) {
+          name = serial; // show serial as the title
+        } else if (phone1.isNotEmpty) {
+          name = phone1;
+        } else if (phone2.isNotEmpty) {
+          name = phone2;
+        } else if (email.isNotEmpty) {
+          name = email;
+        } else {
+          final u = uid;
+          name = u.length > 6 ? 'ID …${u.substring(u.length - 6)}' : 'ID $u';
+        }
+      }
 
       out[uid] = _LearnerInfo(uid: uid, name: name, serial: serial);
     });
@@ -383,7 +411,7 @@ class AdminWagesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final paymentsRef = FirebaseDatabase.instance.ref('payments');
     final classesRef = FirebaseDatabase.instance.ref('classes');
-    final learnersRef = FirebaseDatabase.instance.ref('learners'); // <-- assumed path
+    final learnersRef = FirebaseDatabase.instance.ref('users'); // <-- assumed path
 
     return Scaffold(
       backgroundColor: appBg,
