@@ -47,12 +47,12 @@
     static const String coursesNode = "courses";
     static const String classesNode = "classes";
     static const String usersNode = "users";
-  
+    static const String syllabiNode = "syllabi";
     final DatabaseReference _db = FirebaseDatabase.instance.ref();
     late final DatabaseReference _coursesRef = _db.child(coursesNode);
     late final DatabaseReference _classesRef = _db.child(classesNode);
     late final DatabaseReference _usersRef = _db.child(usersNode);
-  
+    late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
     // ✅ Always-visible notifications (even above modals)
     final GlobalKey<ScaffoldMessengerState> _messengerKey = GlobalKey<ScaffoldMessengerState>();
   

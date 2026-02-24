@@ -45,7 +45,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   // NEW: prevents overwriting user edits to homework text
   bool _homeworkTouchedByUser = false;
-
+  String _lastAutofilledHomework = '';
   bool get _isEdit => widget.existingSessionId != null && widget.existingSessionId!.isNotEmpty;
   String get _classId => (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
   String get _courseId => (widget.classData['course_id'] ?? '').toString();
@@ -358,12 +358,16 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
     final currentHw = _homeworkCtrl.text.trim();
 
-    // Only auto-fill if user hasn't started editing and field is empty.
-    // Also: in edit mode, never overwrite existing saved homework.
+    // If the user has typed anything manually, never overwrite.
     if (_homeworkTouchedByUser) return;
-    if (currentHw.isNotEmpty) return;
 
-    _homeworkCtrl.text = hwFromSyllabus;
+    // Allow overwrite if:
+    // - the field is empty, OR
+    // - the field still contains the previous auto-filled value
+    if (currentHw.isEmpty || currentHw == _lastAutofilledHomework) {
+      _homeworkCtrl.text = hwFromSyllabus;
+      _lastAutofilledHomework = hwFromSyllabus;
+    }
   }
 
   void _selectSession(Map<String, dynamic> session) {
@@ -833,9 +837,18 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             TextField(
               controller: _homeworkCtrl,
               maxLines: 4,
-              onChanged: (_) {
-                if (!_homeworkTouchedByUser) {
+              onChanged: (v) {
+                // If user types anything, lock auto-fill.
+                if (v.trim().isNotEmpty && !_homeworkTouchedByUser) {
                   setState(() => _homeworkTouchedByUser = true);
+                }
+
+                // If user clears the field completely, allow auto-fill again.
+                if (v.trim().isEmpty && _homeworkTouchedByUser) {
+                  setState(() {
+                    _homeworkTouchedByUser = false;
+                    _lastAutofilledHomework = '';
+                  });
                 }
               },
               decoration: InputDecoration(
