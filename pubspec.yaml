@@ -22,7 +22,9 @@ dependencies:
   timezone: ^0.10.0
   flutter_timezone: ^5.0.1
   firebase_crashlytics: ^5.0.7
-
+  excel: ^4.0.6
+  path_provider: ^2.1.2
+  share_plus: ^7.2.1
   # 🔐 Permissions & storage
   permission_handler: ^11.3.1
   shared_preferences: ^2.2.3

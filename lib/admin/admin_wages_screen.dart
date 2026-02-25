@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'admin_wages_export_excel.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
@@ -423,6 +424,26 @@ class AdminWagesScreen extends StatelessWidget {
           'Wages',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Export Excel',
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: () async {
+              try {
+                await AdminWagesExcelExporter.exportAndShareExcel();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Excel exported ✅')),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Export failed: $e')),
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: StreamBuilder<DatabaseEvent>(
         stream: paymentsRef.onValue,
