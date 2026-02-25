@@ -65,7 +65,7 @@ class AdminWagesScreen extends StatelessWidget {
   }
 
   static Map<String, _LearnerInfo> _parseLearners(dynamic raw) {
-    // Expected common RTDB structure: learners/<uid> => { learner_name/name, learner_serial/serial, ... }
+    // Expected common RTDB structure: users/<uid> => { learner_name/name, learner_serial/serial, ... }
     final out = <String, _LearnerInfo>{};
     if (raw is! Map) return out;
 
@@ -75,9 +75,8 @@ class AdminWagesScreen extends StatelessWidget {
 
       final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
 
-      final serial = (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '')
-          .toString()
-          .trim();
+      final serial =
+      (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '').toString().trim();
 
       final phone1 = (m['phone1'] ?? m['phone'] ?? '').toString().trim();
       final phone2 = (m['phone2'] ?? '').toString().trim();
@@ -94,15 +93,15 @@ class AdminWagesScreen extends StatelessWidget {
           .toString()
           .trim();
 
-// build from first + last if needed
+      // build from first + last if needed
       if (name.isEmpty) {
         name = [first, last].where((x) => x.isNotEmpty).join(' ').trim();
       }
 
-// Human-friendly fallback if still empty
+      // Human-friendly fallback if still empty
       if (name.isEmpty) {
         if (serial.isNotEmpty) {
-          name = serial; // show serial as the title
+          name = serial;
         } else if (phone1.isNotEmpty) {
           name = phone1;
         } else if (phone2.isNotEmpty) {
@@ -146,9 +145,8 @@ class AdminWagesScreen extends StatelessWidget {
           teacherKey = ic.trim();
         } else if (ic is Map) {
           final icm = ic.map((kk, vv) => MapEntry(kk.toString(), vv));
-          final tid = (icm['teacherId'] ?? icm['uid'] ?? icm['id'] ?? '')
-              .toString()
-              .trim();
+          final tid =
+          (icm['teacherId'] ?? icm['uid'] ?? icm['id'] ?? '').toString().trim();
           if (tid.isNotEmpty) teacherKey = tid;
         }
         if (teacherKey.isEmpty) {
@@ -258,8 +256,7 @@ class AdminWagesScreen extends StatelessWidget {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final l = learners[i];
-                        final displayName =
-                        l.name.isNotEmpty ? l.name : '(No name)';
+                        final displayName = l.name.isNotEmpty ? l.name : '(No name)';
                         final sub = [
                           if (l.serial.isNotEmpty) l.serial,
                           l.uid,
@@ -267,8 +264,7 @@ class AdminWagesScreen extends StatelessWidget {
 
                         return ListTile(
                           dense: true,
-                          contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 4),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                           title: Text(
                             displayName,
                             maxLines: 1,
@@ -472,22 +468,33 @@ class AdminWagesScreen extends StatelessWidget {
           // Sort newest first by paidAt
           payments.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
 
-          // Group: month -> teacherId -> list
-          final Map<String, Map<String, List<Map<String, dynamic>>>> grouped = {};
+          // Group (NEW): teacherId -> list of payments (NO MONTH GROUPING)
+          final Map<String, List<Map<String, dynamic>>> groupedByTeacher = {};
           for (final p in payments) {
-            final paidAtMs = _asInt(p['paidAt']);
-            final monthKey = _monthKeyFromPaidAtMs(paidAtMs);
-
             final teacherId = (p['teacherId'] ?? '').toString().trim();
             final teacherKey = teacherId.isEmpty ? 'Unknown' : teacherId;
-
-            grouped.putIfAbsent(monthKey, () => {});
-            grouped[monthKey]!.putIfAbsent(teacherKey, () => []);
-            grouped[monthKey]![teacherKey]!.add(p);
+            groupedByTeacher.putIfAbsent(teacherKey, () => []);
+            groupedByTeacher[teacherKey]!.add(p);
           }
 
-          final monthKeys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-          if (monthKeys.isEmpty) {
+          final teacherKeys = groupedByTeacher.keys.toList()
+            ..sort((a, b) {
+              final aName = (groupedByTeacher[a]!.isNotEmpty
+                  ? (groupedByTeacher[a]!.first['teacherName'] ?? '')
+                  : '')
+                  .toString()
+                  .trim();
+              final bName = (groupedByTeacher[b]!.isNotEmpty
+                  ? (groupedByTeacher[b]!.first['teacherName'] ?? '')
+                  : '')
+                  .toString()
+                  .trim();
+              final aa = aName.isEmpty ? a : aName;
+              final bb = bName.isEmpty ? b : bName;
+              return aa.toLowerCase().compareTo(bb.toLowerCase());
+            });
+
+          if (teacherKeys.isEmpty) {
             return const Center(child: Text('No payments found.'));
           }
 
@@ -508,7 +515,7 @@ class AdminWagesScreen extends StatelessWidget {
                   final learnersRaw = learnersSnap.data?.snapshot.value;
                   final learnerMap = _parseLearners(learnersRaw);
 
-                  // Option A stats: THIS MONTH
+                  // Stats header: still shows THIS MONTH global stats (same as before)
                   final nowMonthKey = _monthKeyNow();
                   final monthPayments = payments.where((p) {
                     final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
@@ -523,7 +530,7 @@ class AdminWagesScreen extends StatelessWidget {
                     asBool: _asBool,
                   );
 
-                  // Compute missing uids (global) for this month
+                  // Missing uids (global) for this month
                   final paidUidsThisMonth = <String>{};
                   for (final p in monthPayments) {
                     final uid = (p['uid'] ?? '').toString().trim();
@@ -535,7 +542,12 @@ class AdminWagesScreen extends StatelessWidget {
                   List<_LearnerInfo> missingGlobalList() {
                     final list = <_LearnerInfo>[];
                     for (final uid in missingUidsThisMonth) {
-                      list.add(learnerMap[uid] ?? _LearnerInfo(uid: uid, name: '', serial: ''));
+                      list.add(
+                        learnerMap[uid] ?? const _LearnerInfo(uid: '', name: '', serial: ''),
+                      );
+                      if (list.last.uid.isEmpty) {
+                        list[list.length - 1] = _LearnerInfo(uid: uid, name: '', serial: '');
+                      }
                     }
                     list.sort((a, b) {
                       final aa = a.name.trim().isEmpty ? a.uid : a.name.trim();
@@ -547,7 +559,7 @@ class AdminWagesScreen extends StatelessWidget {
 
                   return ListView.builder(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-                    itemCount: monthKeys.length + 1,
+                    itemCount: teacherKeys.length + 1,
                     itemBuilder: (context, i) {
                       if (i == 0) {
                         return Padding(
@@ -565,26 +577,8 @@ class AdminWagesScreen extends StatelessWidget {
                         );
                       }
 
-                      final monthKey = monthKeys[i - 1];
-                      final teacherMap = grouped[monthKey] ?? {};
-
-                      // Sort teachers by teacherName (fallback teacherId)
-                      final teacherKeys = teacherMap.keys.toList()
-                        ..sort((a, b) {
-                          final aName = (teacherMap[a]!.isNotEmpty
-                              ? (teacherMap[a]!.first['teacherName'] ?? '')
-                              : '')
-                              .toString();
-                          final bName = (teacherMap[b]!.isNotEmpty
-                              ? (teacherMap[b]!.first['teacherName'] ?? '')
-                              : '')
-                              .toString();
-                          final aa = aName.trim().isEmpty ? a : aName;
-                          final bb = bName.trim().isEmpty ? b : bName;
-                          return aa.toLowerCase().compareTo(bb.toLowerCase());
-                        });
-
-                      final isCurrentMonth = monthKey == nowMonthKey;
+                      final tKey = teacherKeys[i - 1];
+                      final teacherPayments = groupedByTeacher[tKey] ?? const [];
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
@@ -600,47 +594,29 @@ class AdminWagesScreen extends StatelessWidget {
                             )
                           ],
                         ),
-                        child: ExpansionTile(
-                          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-                          title: Text(
-                            _prettyMonthLabel(monthKey),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
-                              fontSize: 15,
-                            ),
-                          ),
-                          children: [
-                            for (final tKey in teacherKeys) ...[
-                              _TeacherSection(
-                                teacherId: tKey,
-                                payments: teacherMap[tKey] ?? const [],
-                                isCurrentMonth: isCurrentMonth,
-                                studyingLearnerUids: studyingByTeacher[tKey] ??
-                                    _tryMatchStudyingByTeacherName(
-                                      teacherName: (teacherMap[tKey]!.isNotEmpty
-                                          ? (teacherMap[tKey]!.first['teacherName'] ?? '')
-                                          : '')
-                                          .toString()
-                                          .trim(),
-                                      studyingByTeacher: studyingByTeacher,
-                                    ),
-                                learnerMap: learnerMap,
-                                monthLabel: _prettyMonthLabel(monthKey),
-                                onTogglePaid: (paymentId, makePaid) => _togglePaid(
-                                  context: context,
-                                  paymentId: paymentId,
-                                  makePaid: makePaid,
-                                ),
-                                onRemoveTeacherConfirm: (paymentId) => _adminRemoveTeacherConfirmation(
-                                  context: context,
-                                  paymentId: paymentId,
-                                ),
+                        child: _TeacherSection(
+                          teacherId: tKey,
+                          payments: teacherPayments,
+                          nowMonthKey: nowMonthKey,
+                          studyingLearnerUids: studyingByTeacher[tKey] ??
+                              _tryMatchStudyingByTeacherName(
+                                teacherName: (teacherPayments.isNotEmpty
+                                    ? (teacherPayments.first['teacherName'] ?? '')
+                                    : '')
+                                    .toString()
+                                    .trim(),
+                                studyingByTeacher: studyingByTeacher,
                               ),
-                              const SizedBox(height: 10),
-                            ],
-                          ],
+                          learnerMap: learnerMap,
+                          onTogglePaid: (paymentId, makePaid) => _togglePaid(
+                            context: context,
+                            paymentId: paymentId,
+                            makePaid: makePaid,
+                          ),
+                          onRemoveTeacherConfirm: (paymentId) => _adminRemoveTeacherConfirmation(
+                            context: context,
+                            paymentId: paymentId,
+                          ),
                         ),
                       );
                     },
@@ -686,14 +662,8 @@ class _StatsData {
   final String monthLabel;
 
   final int paymentsCount;
-
-  // unique learners (uid) in payments
   final int paidLearnersCount;
-
-  // unique learners (uid) studying now
   final int studyingLearnersCount;
-
-  // studying - paid
   final int notPaidYetCount;
 
   final int totalAmount;
@@ -702,8 +672,6 @@ class _StatsData {
   final int unpaidAmount;
 
   final int notConfirmedCount;
-
-  // Human-friendly: "some records missing info"
   final int incompleteCount;
 
   static _StatsData fromMonth({
@@ -764,7 +732,7 @@ class _StatsData {
   }
 }
 
-// ---------------- Option A widget ----------------
+// ---------------- Stats header card ----------------
 
 class _StatsHeaderCard extends StatelessWidget {
   const _StatsHeaderCard({
@@ -895,8 +863,14 @@ class _StatsHeaderCard extends StatelessWidget {
             crossAxisSpacing: 10,
             childAspectRatio: 2.6,
             children: [
-              _tile(label: 'Studying', value: '${data.studyingLearnersCount}', icon: Icons.groups_rounded),
-              _tile(label: 'Paid learners', value: '${data.paidLearnersCount}', icon: Icons.verified_rounded),
+              _tile(
+                  label: 'Studying',
+                  value: '${data.studyingLearnersCount}',
+                  icon: Icons.groups_rounded),
+              _tile(
+                  label: 'Paid learners',
+                  value: '${data.paidLearnersCount}',
+                  icon: Icons.verified_rounded),
               _tile(
                 label: 'Not paid yet',
                 value: '${data.notPaidYetCount}',
@@ -928,16 +902,15 @@ class _StatsHeaderCard extends StatelessWidget {
   }
 }
 
-// ---------------- Option C widget ----------------
+// ---------------- Teacher -> Learners -> Payments ----------------
 
 class _TeacherSection extends StatelessWidget {
   const _TeacherSection({
     required this.teacherId,
     required this.payments,
-    required this.isCurrentMonth,
+    required this.nowMonthKey,
     required this.studyingLearnerUids,
     required this.learnerMap,
-    required this.monthLabel,
     required this.onTogglePaid,
     required this.onRemoveTeacherConfirm,
   });
@@ -945,12 +918,11 @@ class _TeacherSection extends StatelessWidget {
   final String teacherId;
   final List<Map<String, dynamic>> payments;
 
-  // Only show studying/paid/not paid yet for current month
-  final bool isCurrentMonth;
+  // to compute "not paid yet" for current month for this teacher
+  final String nowMonthKey;
 
   final Set<String>? studyingLearnerUids;
   final Map<String, _LearnerInfo> learnerMap;
-  final String monthLabel;
 
   final Future<void> Function(String paymentId, bool makePaid) onTogglePaid;
   final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
@@ -1031,8 +1003,7 @@ class _TeacherSection extends StatelessWidget {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final l = learners[i];
-                        final displayName =
-                        l.name.isNotEmpty ? l.name : '(No name)';
+                        final displayName = l.name.isNotEmpty ? l.name : '(No name)';
                         final sub = [
                           if (l.serial.isNotEmpty) l.serial,
                           l.uid,
@@ -1040,8 +1011,7 @@ class _TeacherSection extends StatelessWidget {
 
                         return ListTile(
                           dense: true,
-                          contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 4),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                           title: Text(
                             displayName,
                             maxLines: 1,
@@ -1068,37 +1038,38 @@ class _TeacherSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final teacherName =
-    (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '')
-        .toString()
-        .trim();
+    (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '').toString().trim();
     final header = teacherName.isNotEmpty ? teacherName : teacherId;
 
-    final items = [...payments]
-      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    final itemsAll = [...payments]..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
 
-    // totals + paid uids
-    int total = 0;
-    int unpaidCount = 0;
-    final paidUids = <String>{};
-
-    for (final p in items) {
+    // Teacher totals (ALL TIME)
+    int totalAll = 0;
+    int unpaidAll = 0;
+    for (final p in itemsAll) {
       final amount = _asInt(p['amount']);
-      total += amount;
-
-      final staffPaid = _asBool(p['teacherPaid']);
-      if (!staffPaid) unpaidCount++;
-
-      final uid = (p['uid'] ?? '').toString().trim();
-      if (uid.isNotEmpty) paidUids.add(uid);
+      totalAll += amount;
+      if (!_asBool(p['teacherPaid'])) unpaidAll++;
     }
 
-    String subtitle;
+    // Teacher "not paid yet" (CURRENT MONTH only)
+    final itemsThisMonth = itemsAll.where((p) {
+      final mk = AdminWagesScreen._monthKeyFromPaidAtMs(_asInt(p['paidAt']));
+      return mk == nowMonthKey;
+    }).toList();
+
+    final paidUidsThisMonth = <String>{};
+    for (final p in itemsThisMonth) {
+      final uid = (p['uid'] ?? '').toString().trim();
+      if (uid.isNotEmpty) paidUidsThisMonth.add(uid);
+    }
+
     int notPaidYet = 0;
     List<_LearnerInfo> missingList = const [];
 
-    if (isCurrentMonth) {
-      final studying = studyingLearnerUids ?? <String>{};
-      final missingUids = <String>{...studying}..removeAll(paidUids);
+    final studying = studyingLearnerUids ?? <String>{};
+    if (studying.isNotEmpty) {
+      final missingUids = <String>{...studying}..removeAll(paidUidsThisMonth);
       notPaidYet = missingUids.length;
 
       final list = <_LearnerInfo>[];
@@ -1111,22 +1082,49 @@ class _TeacherSection extends StatelessWidget {
         return aa.toLowerCase().compareTo(bb.toLowerCase());
       });
       missingList = list;
-
-      subtitle =
-      'Studying: ${studying.length} • Paid: ${paidUids.length} • Not paid yet: $notPaidYet • Unpaid: $unpaidCount';
-    } else {
-      subtitle = 'Payments: ${items.length} • Unpaid: $unpaidCount • Total: $total DA';
     }
+
+    // Group by learner (uid) under this teacher
+    final Map<String, List<Map<String, dynamic>>> byLearner = {};
+    for (final p in itemsAll) {
+      final uid = (p['uid'] ?? '').toString().trim();
+      final key = uid.isEmpty ? 'Unknown' : uid;
+      byLearner.putIfAbsent(key, () => []);
+      byLearner[key]!.add(p);
+    }
+
+    final learnerKeys = byLearner.keys.toList()
+      ..sort((a, b) {
+        String nameA = '';
+        String nameB = '';
+        if (a != 'Unknown') {
+          nameA = (learnerMap[a]?.name ?? '').trim();
+        }
+        if (b != 'Unknown') {
+          nameB = (learnerMap[b]?.name ?? '').trim();
+        }
+        if (nameA.isEmpty) {
+          nameA = (byLearner[a]!.isNotEmpty ? (byLearner[a]!.first['learner_name'] ?? '') : '').toString().trim();
+        }
+        if (nameB.isEmpty) {
+          nameB = (byLearner[b]!.isNotEmpty ? (byLearner[b]!.first['learner_name'] ?? '') : '').toString().trim();
+        }
+        final aa = nameA.isEmpty ? a : nameA;
+        final bb = nameB.isEmpty ? b : nameB;
+        return aa.toLowerCase().compareTo(bb.toLowerCase());
+      });
+
+    final subtitle =
+        'Learners: ${learnerKeys.length} • Payments: ${itemsAll.length} • Unpaid: $unpaidAll • Total: $totalAll DA';
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
       ),
       child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1137,7 +1135,7 @@ class _TeacherSection extends StatelessWidget {
               style: const TextStyle(
                 fontWeight: FontWeight.w900,
                 color: primaryBlue,
-                fontSize: 14,
+                fontSize: 15,
               ),
             ),
             const SizedBox(height: 4),
@@ -1146,7 +1144,7 @@ class _TeacherSection extends StatelessWidget {
                 Expanded(
                   child: Text(
                     subtitle,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.black.withOpacity(0.65),
@@ -1155,13 +1153,14 @@ class _TeacherSection extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (isCurrentMonth && notPaidYet > 0) ...[
+                if (notPaidYet > 0) ...[
                   const SizedBox(width: 8),
                   InkWell(
                     borderRadius: BorderRadius.circular(999),
                     onTap: () => _showMissingList(
                       context: context,
-                      title: 'Not paid yet • $header • $monthLabel',
+                      title:
+                      'Not paid yet • $header • ${AdminWagesScreen._prettyMonthLabel(nowMonthKey)}',
                       learners: missingList,
                     ),
                     child: Container(
@@ -1183,6 +1182,129 @@ class _TeacherSection extends StatelessWidget {
                   ),
                 ],
               ],
+            ),
+          ],
+        ),
+        children: [
+          for (final lKey in learnerKeys) ...[
+            _LearnerSection(
+              learnerUid: lKey,
+              payments: byLearner[lKey] ?? const [],
+              learnerMap: learnerMap,
+              onTogglePaid: onTogglePaid,
+              onRemoveTeacherConfirm: onRemoveTeacherConfirm,
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LearnerSection extends StatelessWidget {
+  const _LearnerSection({
+    required this.learnerUid,
+    required this.payments,
+    required this.learnerMap,
+    required this.onTogglePaid,
+    required this.onRemoveTeacherConfirm,
+  });
+
+  final String learnerUid;
+  final List<Map<String, dynamic>> payments;
+  final Map<String, _LearnerInfo> learnerMap;
+
+  final Future<void> Function(String paymentId, bool makePaid) onTogglePaid;
+  final Future<void> Function(String paymentId) onRemoveTeacherConfirm;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static bool _asBool(dynamic v) {
+    if (v == null) return false;
+    if (v is bool) return v;
+    final s = v.toString().trim().toLowerCase();
+    return s == 'true' || s == '1' || s == 'yes';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [...payments]..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+
+    // Learner name/serial
+    String learnerName = '';
+    String learnerSerial = '';
+
+    if (learnerUid != 'Unknown') {
+      final info = learnerMap[learnerUid];
+      learnerName = (info?.name ?? '').trim();
+      learnerSerial = (info?.serial ?? '').trim();
+    }
+
+    if (learnerName.isEmpty) {
+      learnerName = (items.isNotEmpty ? (items.first['learner_name'] ?? '') : '').toString().trim();
+    }
+    if (learnerSerial.isEmpty) {
+      learnerSerial = (items.isNotEmpty ? (items.first['learner_serial'] ?? '') : '').toString().trim();
+    }
+
+    if (learnerName.isEmpty) learnerName = learnerUid == 'Unknown' ? 'Unknown learner' : learnerUid;
+
+    int total = 0;
+    int unpaid = 0;
+    for (final p in items) {
+      final amount = _asInt(p['amount']);
+      total += amount;
+      if (!_asBool(p['teacherPaid'])) unpaid++;
+    }
+
+    final subtitle = [
+      if (learnerSerial.isNotEmpty) learnerSerial,
+      'Payments: ${items.length}',
+      'Unpaid: $unpaid',
+      'Total: $total DA',
+    ].join(' • ');
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              learnerName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.black.withOpacity(0.65),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -1288,7 +1410,8 @@ class _PaymentRow extends StatelessWidget {
     final isPaidStaff = _asBool(payment['teacherPaid']);
     final confirmed = _asBool(payment['teacherConfirmed']);
 
-    final paidChipBg = isPaidStaff ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.12);
+    final paidChipBg =
+    isPaidStaff ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.12);
     final paidChipBorder = isPaidStaff ? Colors.green : Colors.red;
     final paidChipText = isPaidStaff ? 'PAID' : 'UNPAID';
 
