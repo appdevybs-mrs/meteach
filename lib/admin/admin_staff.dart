@@ -694,9 +694,31 @@ class _StaffListState extends State<_StaffList>
                             onTap: () =>
                                 _openTeacherQuickActions(context, row.uid, u),
                             onLongPress: () async {
+                              // ✅ Confirmation first (Yes / No)
+                              final ok = await showDialog<bool>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('Call teacher?'),
+                                  content: Text(
+                                    'Do you want to call ${u.fullName.isEmpty ? 'this teacher' : u.fullName}?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('No'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text('Yes'),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (ok != true) return;
+
                               final callerName =
-                              await (context.findAncestorStateOfType<
-                                  _AdminStaffScreenState>()
+                              await (context.findAncestorStateOfType<_AdminStaffScreenState>()
                                   ?._getMyCallerName() ??
                                   Future.value('Caller'));
 
@@ -706,10 +728,9 @@ class _StaffListState extends State<_StaffList>
                                 MaterialPageRoute(
                                   builder: (_) => AudioCallScreen(
                                     peerUid: row.uid,
-                                    peerName:
-                                    u.fullName.isEmpty ? 'User' : u.fullName,
+                                    peerName: u.fullName.isEmpty ? 'User' : u.fullName,
                                     isCaller: true,
-                                    callerName: callerName, // ✅ add this (Step 2)
+                                    callerName: callerName,
                                     startWithVideo: false,
                                   ),
                                 ),
@@ -784,43 +805,64 @@ class _StaffListState extends State<_StaffList>
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  u.fullName.isEmpty ? '(No name)' : u.fullName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: AdminStaffScreen.primaryBlue,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  u.email.isEmpty ? '(No email)' : u.email,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.black.withOpacity(0.55),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _Pill(label: u.role.label),
-                                    _Pill(
-                                      label: u.status.label,
-                                      bg: _statusBg(u.status),
-                                      fg: _statusFg(u.status),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                // Only teachers have learners list
+                                if (u.role != StaffRole.teacher) {
+                                  _snackHere(context, 'Only teachers have learners.');
+                                  return;
+                                }
+
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => AdminTeacherLearnersScreen(
+                                      teacherUid: row.uid,
+                                      teacherName: u.fullName,
                                     ),
-                                    if (u.phone1.trim().isNotEmpty)
-                                      _Pill(label: '📞 ${u.phone1}'),
-                                    if (u.dob.trim().isNotEmpty)
-                                      _Pill(label: '🎂 ${u.dob}'),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                // small padding so InkWell feels nice but doesn't change layout much
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      u.fullName.isEmpty ? '(No name)' : u.fullName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: AdminStaffScreen.primaryBlue,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      u.email.isEmpty ? '(No email)' : u.email,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black.withOpacity(0.55),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        _Pill(label: u.role.label),
+                                        _Pill(
+                                          label: u.status.label,
+                                          bg: _statusBg(u.status),
+                                          fg: _statusFg(u.status),
+                                        ),
+                                        if (u.phone1.trim().isNotEmpty) _Pill(label: '📞 ${u.phone1}'),
+                                        if (u.dob.trim().isNotEmpty) _Pill(label: '🎂 ${u.dob}'),
+                                      ],
+                                    ),
                                   ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2259,4 +2301,233 @@ List<_StaffRow> _parseStaffMap(dynamic data) {
   }
 
   return [];
+}
+
+// ----------------------------
+// Teacher Learners Screen
+// (Reads learners from /classes where instructor_current.uid == teacherUid)
+// ----------------------------
+class AdminTeacherLearnersScreen extends StatelessWidget {
+  const AdminTeacherLearnersScreen({
+    super.key,
+    required this.teacherUid,
+    required this.teacherName,
+  });
+
+  final String teacherUid;
+  final String teacherName;
+
+  Widget _statChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.black.withOpacity(0.06),
+        border: Border.all(color: Colors.black.withOpacity(0.12)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+  Widget _statInline(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        '$label $value',
+        style: const TextStyle(
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _dot() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Text(
+        '•',
+        style: TextStyle(
+          color: Colors.black.withOpacity(0.4),
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final db = FirebaseDatabase.instance;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(teacherName.isEmpty ? 'Teacher learners' : teacherName),
+      ),
+      body: StreamBuilder<DatabaseEvent>(
+        stream: db.ref('classes').onValue,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return const Center(child: Text('Failed to load classes.'));
+          }
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final data = snap.data?.snapshot.value;
+          if (data == null || data is! Map) {
+            return const Center(child: Text('No classes found.'));
+          }
+
+          // Collect learners from all classes taught by this teacher
+          final Map<String, Map<String, dynamic>> learnersByUid = {};
+          int matchingClasses = 0;
+
+          int openClasses = 0;
+          int closedClasses = 0;
+          int totalEnrollments = 0; // counts learners across classes (duplicates allowed)
+
+          final classesMap = Map<dynamic, dynamic>.from(data);
+          for (final entry in classesMap.entries) {
+            final clsRaw = entry.value;
+            if (clsRaw is! Map) continue;
+
+            final cls = Map<String, dynamic>.from(clsRaw);
+
+            // Prefer instructor_current.uid (most accurate)
+            String instUid = '';
+            final instCur = cls['instructor_current'];
+            if (instCur is Map) {
+              final m = Map<String, dynamic>.from(instCur);
+              instUid = (m['uid'] ?? '').toString().trim();
+            }
+
+            // Fallback (only if uid missing): match name (best-effort)
+            final instName = (cls['instructor'] ?? '').toString().trim();
+
+            final isThisTeacher =
+                (instUid.isNotEmpty && instUid == teacherUid) ||
+                    (instUid.isEmpty &&
+                        teacherName.trim().isNotEmpty &&
+                        instName.toLowerCase().trim() ==
+                            teacherName.toLowerCase().trim());
+
+            if (!isThisTeacher) continue;
+
+            matchingClasses++;
+
+            final isOpen = (cls['is_open'] ?? true) == true;
+            if (isOpen) {
+              openClasses++;
+            } else {
+              closedClasses++;
+            }
+
+            final learnersRaw = cls['learners'];
+            if (learnersRaw is! Map) continue;
+
+            final learnersMap = Map<dynamic, dynamic>.from(learnersRaw);
+
+            // total enrollments = sum of learners in each matching class
+            totalEnrollments += learnersMap.length;
+
+            for (final l in learnersMap.entries) {
+              final learnerUid = l.key.toString();
+              final val = l.value;
+
+              String name = 'Unnamed';
+              String serial = 'N/A';
+
+              if (val is Map) {
+                final mm = Map<String, dynamic>.from(val);
+                final n = (mm['name'] ?? '').toString().trim();
+                final s = (mm['serial'] ?? '').toString().trim();
+                if (n.isNotEmpty) name = n;
+                if (s.isNotEmpty) serial = s;
+              }
+
+              // Store/overwrite basic data (unique by uid)
+              learnersByUid[learnerUid] = {
+                'uid': learnerUid,
+                'name': name,
+                'serial': serial,
+              };
+            }
+          }
+
+          final learnersList = learnersByUid.values.toList();
+          learnersList.sort((a, b) {
+            final an = (a['name'] ?? '').toString();
+            final bn = (b['name'] ?? '').toString();
+            return an.compareTo(bn);
+          });
+
+          if (matchingClasses == 0) {
+            return const Center(child: Text('This teacher has no classes.'));
+          }
+
+          if (learnersList.isEmpty) {
+            return const Center(
+                child: Text('No learners found for this teacher.'));
+          }
+
+          final uniqueLearners = learnersList.length;
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.black.withOpacity(0.06),
+                    border: Border.all(color: Colors.black.withOpacity(0.12)),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _statInline('Learners', uniqueLearners.toString()),
+                        _dot(),
+                        _statInline('Classes', matchingClasses.toString()),
+                        _dot(),
+                        _statInline('OvC', '${openClasses}/${closedClasses}'),
+                        _dot(),
+                        _statInline('Enr', totalEnrollments.toString()),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                  itemCount: learnersList.length,
+                  itemBuilder: (context, i) {
+                    final l = learnersList[i];
+                    final name = (l['name'] ?? '').toString();
+                    final serial = (l['serial'] ?? '').toString();
+
+                    return Card(
+                      elevation: 0,
+                      child: ListTile(
+                        title: Text(
+                          name.isEmpty ? 'Unnamed' : name,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle:
+                        Text('Serial: ${serial.isEmpty ? 'N/A' : serial}'),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }

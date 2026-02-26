@@ -194,7 +194,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   }
 
   // --- Date/Helper logic restored exactly as requested ---
-  String _dateStr(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+  String _dateStr(DateTime d) =>
+      "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -599,8 +600,13 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         _buildLessonCard(),
         const SizedBox(height: 20),
 
-        _sectionLabel("HOMEWORK & PROGRESS"),
+        _sectionLabel("HOMEWORK"),
         _buildHomeworkCard(),
+        const SizedBox(height: 20),
+
+        // ✅ MOVED HERE: Success rate above learners (UI-only move)
+        _sectionLabel("PROGRESS"),
+        _buildSuccessRateCard(),
         const SizedBox(height: 20),
 
         Row(
@@ -798,7 +804,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     );
   }
 
-  Widget _buildHomeworkCard() {
+  // ✅ NEW: Success Rate card moved out (UI-only; same slider/logic)
+  Widget _buildSuccessRateCard() {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -831,12 +838,33 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               activeColor: actionOrange,
               onChanged: (v) => setState(() => _successRate = v.round()),
             ),
-            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildHomeworkCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: uiBorder),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             // Homework text (editable always). We track user edits to avoid overwrites.
             TextField(
               controller: _homeworkCtrl,
-              maxLines: 4,
+
+              // ✅ 12 visible lines, then scrolls inside the field
+              minLines: 12,
+              maxLines: 12,
+              keyboardType: TextInputType.multiline,
+
               onChanged: (v) {
                 // If user types anything, lock auto-fill.
                 if (v.trim().isNotEmpty && !_homeworkTouchedByUser) {
@@ -904,10 +932,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           info['name'],
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         ),
-        subtitle: Text(
-          info['serial'].isEmpty ? "ID: $uid" : "Serial: ${info['serial']}",
-          style: const TextStyle(fontSize: 12),
-        ),
+
+        // ✅ Removed subtitle (serial/id) to make it tighter
+
         trailing: Switch(
           value: isPresent,
           activeColor: Colors.green,
