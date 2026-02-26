@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import '../services/route_state.dart';
+import '../services/push_client.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,8 +11,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-
-import '../services/push_client.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
   const TeacherMailThreadScreen({
@@ -33,13 +33,54 @@ class TeacherMailThreadScreen extends StatefulWidget {
 class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
+
   String _meDisplayName = 'Teacher';
   String _peerDisplayName = '';
+
+  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
 
   String get _peerNameShown {
     final p = _peerDisplayName.trim();
     if (p.isNotEmpty) return p;
-    return widget.peerName.trim();
+    final w = widget.peerName.trim();
+    if (w.isNotEmpty) return w;
+    return 'User';
+  }
+
+  DatabaseReference get _threadRef => _db.ref('mail_threads/${widget.threadId}');
+  DatabaseReference get _msgsRef => _db.ref('mail_messages/${widget.threadId}');
+  DatabaseReference get _indexRef => _db.ref('mail_index');
+  DatabaseReference get _stateRef => _db.ref('mail_state');
+
+  late final Stream<DatabaseEvent> _msgStream;
+
+  bool _sending = false;
+
+  // attachments in composer (not message history)
+  final List<Map<String, String>> _attachments = []; // {name,url}
+
+  @override
+  void initState() {
+    super.initState();
+    RouteState.enterMailThread(widget.threadId);
+
+    // This is safe even if there are no messages yet.
+    _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
+
+    _markRead();
+    _loadNames();
+  }
+
+  @override
+  void dispose() {
+    RouteState.exitMailThread(widget.threadId);
+    _bodyC.dispose();
+    super.dispose();
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<String> _fetchDisplayName(String uid) async {
@@ -48,9 +89,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (!snap.exists || snap.value is! Map) return '';
 
     final m = Map<String, dynamic>.from(snap.value as Map);
-    final first = (m['first_name'] ?? '').toString().trim();
-    final last = (m['last_name'] ?? '').toString().trim();
-    return ('$first $last').trim();
+    final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+    final full = ('$first $last').trim();
+    if (full.isNotEmpty) return full;
+
+    // fallback (optional)
+    final email = (m['email'] ?? '').toString().trim();
+    return email;
   }
 
   Future<void> _loadNames() async {
@@ -64,44 +110,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         if (peer.isNotEmpty) _peerDisplayName = peer;
       });
     } catch (_) {}
-  }
-
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
-  String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Teacher').trim();
-
-  DatabaseReference get _threadRef => _db.ref('mail_threads/${widget.threadId}');
-  DatabaseReference get _msgsRef => _db.ref('mail_messages/${widget.threadId}');
-  DatabaseReference get _indexRef => _db.ref('mail_index');
-  DatabaseReference get _stateRef => _db.ref('mail_state');
-
-  late final Stream<DatabaseEvent> _msgStream;
-
-  bool _sending = false;
-
-  final List<Map<String, String>> _attachments = []; // {name,url}
-
-  @override
-  void initState() {
-    super.initState();
-    RouteState.enterMailThread(widget.threadId);
-
-    _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
-    _markRead();
-    _loadNames();
-
-  }
-
-  @override
-  void dispose() {
-    RouteState.exitMailThread(widget.threadId);
-    _bodyC.dispose();
-    super.dispose();
-  }
-
-
-  void _snack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<String?> _getFcmToken(String uid) async {
@@ -147,6 +155,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       final file = File(f.path!);
       final url = await MailUploadClient.defaultClient().uploadFile(file: file);
 
+      if (!mounted) return;
       setState(() => _attachments.add({'name': f.name, 'url': url}));
     } catch (e) {
       _snack('Upload failed: $e');
@@ -156,8 +165,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   Future<void> _openUrlExternal(String raw) async {
     final url = raw.trim();
     if (url.isEmpty) return;
+
     final u = Uri.tryParse(url.startsWith('//') ? 'https:$url' : url);
     if (u == null) return;
+
     try {
       await launchUrl(u, mode: LaunchMode.externalApplication);
     } catch (_) {}
@@ -205,7 +216,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'lastMessage': preview80,
       });
 
-      // Me
+      // Me index
       await _indexRef.child(_meUid).child(widget.threadId).update({
         'subject': widget.subject,
         'updatedAt': now,
@@ -254,6 +265,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         } catch (_) {}
       }());
     } catch (e) {
+      // restore composer state
       _bodyC.text = bodyBackup;
       setState(() {
         _attachments
@@ -274,6 +286,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack('Delete failed: $e');
     }
   }
+
   Future<void> _reviewHomeworkFromThread() async {
     try {
       final tSnap = await _threadRef.get();
@@ -319,7 +332,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
             title: const Text('Evaluate homework'),
-            // REPLACE YOUR OLD content: Column(...) WITH THIS:
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -375,7 +387,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       final now = DateTime.now().millisecondsSinceEpoch;
       final noteText = noteC.text.trim();
 
-// 1) ✅ Save review into homework node
+      // 1) Save review into homework node
       await _db.ref(hwRefPath).update({
         'reviewedAt': now,
         'reviewStatus': status,
@@ -383,14 +395,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'reviewNote': noteText,
       });
 
-// 2) ✅ Send evaluation as a reply message in this thread
+      // 2) Send evaluation as a reply message in this thread
       final evalText = [
         status == 'needs_work' ? '🔁 Homework needs work' : '✅ Homework approved',
         'Score: $parsedScore/100',
         if (noteText.isNotEmpty) 'Comment: $noteText',
       ].join('\n');
 
-      final msgRef = _msgsRef.push(); // same as: mail_messages/{threadId}/...
+      final msgRef = _msgsRef.push();
       await msgRef.set({
         'fromUid': _meUid,
         'body': evalText,
@@ -402,7 +414,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'deletedFor': {},
       });
 
-// 3) ✅ Update thread preview so inbox shows evaluation
+      // 3) Update thread preview so inbox shows evaluation
       final preview80 = evalText.length > 80 ? evalText.substring(0, 80) : evalText;
 
       await _threadRef.update({
@@ -410,7 +422,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'lastMessage': preview80,
       });
 
-// 4) ✅ (Optional but recommended) mark learner inbox unread +1
+      // 4) mark peer inbox unread +1
       await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
         final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
         final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
@@ -427,7 +439,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       });
 
       _snack('Saved + sent ✅');
-
     } catch (e) {
       _snack('Failed: $e');
     }
@@ -447,7 +458,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             onPressed: _reviewHomeworkFromThread,
           ),
         ],
-
         bottom: (widget.subject.trim().isEmpty)
             ? null
             : PreferredSize(
@@ -456,8 +466,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('Topic: ${widget.subject}',
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              child: Text(
+                'Topic: ${widget.subject}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
             ),
           ),
         ),
@@ -469,7 +481,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               stream: _msgStream,
               builder: (_, snap) {
                 final msgs = _parseMessages(snap.data?.snapshot.value);
-                if (msgs.isEmpty) return const Center(child: Text('No mail yet.'));
+
+                // ✅ This is what prevents crashing when a topic has no first message.
+                if (msgs.isEmpty) {
+                  return const Center(child: Text('No mail yet.'));
+                }
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(12),
@@ -484,14 +500,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         constraints: const BoxConstraints(maxWidth: 340),
                         child: Card(
                           elevation: 0,
-                          color: mine
-                              ? Colors.blue.withOpacity(0.12)
-                              : Colors.black.withOpacity(0.05),
+                          color: mine ? Colors.blue.withOpacity(0.12) : Colors.black.withOpacity(0.05),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
-                              crossAxisAlignment:
-                              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                              crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
