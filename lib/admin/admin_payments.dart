@@ -26,7 +26,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   // ✅ Compact filters
   String? _selectedMonthYyyyMm; // "2026-02"
-  String? _selectedDayYmd; // "2026-02-19" (optional, only when month selected)
 
   // ✅ Multi-select (ticks)
   final Set<String> _selectedPaymentIds = {};
@@ -160,8 +159,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         }
 
         // Sort newest first
-        all.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
-
+        all.sort((a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])));
         // Month options
         final monthsSet = <String>{};
         for (final p in all) {
@@ -173,7 +171,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         // If selected month disappeared, reset
         if (_selectedMonthYyyyMm != null && !monthsSet.contains(_selectedMonthYyyyMm)) {
           _selectedMonthYyyyMm = null;
-          _selectedDayYmd = null;
         }
 
         // Search filter
@@ -200,22 +197,22 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         }).toList();
 
         // Month filter (paidAt-based)
-        final monthFiltered = (_selectedMonthYyyyMm == null)
+        final visible = (_selectedMonthYyyyMm == null)
             ? searchFiltered
-            : searchFiltered.where((p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm).toList();
-
-        // Day filter (dayKey-based; only used when set)
-        final visible = (_selectedDayYmd == null)
-            ? monthFiltered
-            : monthFiltered.where((p) => (p['dayKey'] ?? '') == _selectedDayYmd).toList();
+            : searchFiltered
+            .where((p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm)
+            .toList();
 
         // ✅ Today total (global; ignores filters/search)
         final today = _todayYmd();
         final todayTotal = _sumAmount(all.where((p) => (p['dayKey'] ?? '') == today));
 
-        // ✅ Totals (compact)
+        // ✅ Totals
         final visibleTotal = _sumAmount(visible);
-        final monthTotal = _sumAmount(monthFiltered);
+
+        final monthTotal = _sumAmount((_selectedMonthYyyyMm == null)
+            ? all
+            : all.where((p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm));
 
         // ✅ Selected total (only from visible rows)
         int selectedTotal = 0;
@@ -304,7 +301,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 ),
               ),
 
-              // ✅ Compact toolbar row (Option A)
+              // ✅ Compact toolbar row (Month filter ONLY)
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -327,37 +324,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         ],
                         onChanged: (v) => setState(() {
                           _selectedMonthYyyyMm = v;
-                          _selectedDayYmd = null;
                         }),
                       ),
-                      const SizedBox(width: 8),
-
-                      _SmallButton(
-                        enabled: _selectedMonthYyyyMm != null,
-                        label: _selectedDayYmd ?? 'Day: All',
-                        icon: Icons.calendar_month_rounded,
-                        onTap: () async {
-                          if (_selectedMonthYyyyMm == null) return;
-
-                          final picked = await _pickDateYmd(
-                            context: context,
-                            initialYmd: _selectedDayYmd ?? _todayYmd(),
-                            helpText: 'Pick day (paid date)',
-                          );
-                          if (picked == null) return;
-
-                          setState(() {
-                            // keep month consistent with picked day
-                            _selectedMonthYyyyMm = picked.substring(0, 7);
-                            _selectedDayYmd = picked;
-                          });
-                        },
-                        onClear: (_selectedDayYmd == null)
-                            ? null
-                            : () => setState(() => _selectedDayYmd = null),
-                      ),
-
                       const SizedBox(width: 10),
+
                       _Pill(
                         icon: Icons.summarize_rounded,
                         text: 'Total: ${_fmtMoneyDa(visibleTotal)}',
@@ -391,7 +361,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         onPressed: () {
                           setState(() {
                             _selectedMonthYyyyMm = null;
-                            _selectedDayYmd = null;
                             _selectedPaymentIds.clear();
                           });
                         },
@@ -402,13 +371,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 ),
               ),
 
-              // Header row
-
               // Table
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final tableWidth = constraints.maxWidth < 1100 ? 1100.0 : constraints.maxWidth;
+                    final tableWidth =
+                    constraints.maxWidth < 1100 ? 1100.0 : constraints.maxWidth;
 
                     if (visible.isEmpty) {
                       return const Center(child: Text('No payments found.'));
@@ -418,23 +386,20 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       scrollDirection: Axis.horizontal,
                       child: SizedBox(
                         width: tableWidth,
-                        height: constraints.maxHeight, // ✅ important so Column can contain ListView
+                        height: constraints.maxHeight,
                         child: Column(
                           children: [
                             // ✅ Header row now scrolls with table
                             Container(
                               color: Colors.white,
-                              alignment: Alignment.center, // ✅ centers the header block
+                              alignment: Alignment.center,
                               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(maxWidth: tableWidth), // ✅ keep same width
+                                constraints: BoxConstraints(maxWidth: tableWidth),
                                 child: _TableHeaderRow(),
                               ),
                             ),
-
-
                             Divider(height: 1, color: Colors.black.withOpacity(0.07)),
-
                             Expanded(
                               child: ListView.separated(
                                 padding: const EdgeInsets.fromLTRB(0, 0, 0, 18),
@@ -488,7 +453,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                     },
                                     child: Container(
                                       color: rowBg,
-                                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 10, horizontal: 6),
                                       child: Row(
                                         children: [
                                           // ✅ Tick column
@@ -496,11 +462,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                             width: 34,
                                             child: Center(
                                               child: AnimatedSwitcher(
-                                                duration: const Duration(milliseconds: 120),
+                                                duration:
+                                                const Duration(milliseconds: 120),
                                                 child: isSelected
                                                     ? const Icon(Icons.check_circle,
                                                     size: 18,
-                                                    color: AdminPaymentsScreen.actionOrange)
+                                                    color:
+                                                    AdminPaymentsScreen.actionOrange)
                                                     : Icon(Icons.radio_button_unchecked,
                                                     size: 18,
                                                     color: AdminPaymentsScreen.primaryBlue
@@ -511,10 +479,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
                                           _cell('#$idx', flex: 1, isStrong: true),
                                           _cell(paidDate.isEmpty ? '—' : paidDate, flex: 2),
-                                          _cell(learnerName.isEmpty ? '—' : learnerName, flex: 3),
+                                          _cell(learnerName.isEmpty ? '—' : learnerName,
+                                              flex: 3),
                                           _cell('$amount', flex: 2, isStrong: true),
                                           _cell(teacher.isEmpty ? '—' : teacher, flex: 3),
-                                          _cell(courseTitle.isEmpty ? '—' : courseTitle, flex: 3),
+                                          _cell(courseTitle.isEmpty ? '—' : courseTitle,
+                                              flex: 3),
                                           _cell(startDate.isEmpty ? '—' : startDate, flex: 2),
                                           _cell(notes.isEmpty ? '—' : notes, flex: 4),
 
@@ -532,9 +502,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                                   }
                                                 },
                                                 itemBuilder: (_) => const [
-                                                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                                  PopupMenuItem(
+                                                      value: 'edit', child: Text('Edit')),
                                                   PopupMenuDivider(),
-                                                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                                  PopupMenuItem(
+                                                      value: 'delete', child: Text('Delete')),
                                                 ],
                                               ),
                                             ),
@@ -550,7 +522,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         ),
                       ),
                     );
-
                   },
                 ),
               ),
@@ -604,6 +575,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     String? selectedTeacherUid;
     String? selectedTeacherName;
 
+    bool isSaving = false; // ✅ prevents multi-tap duplicate saves
+
     await showDialog<void>(
       context: context,
       builder: (_) => StatefulBuilder(
@@ -621,7 +594,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         pickedUid = uid;
                         pickedLearner = learnerMap;
 
-                        final coursesSnap = await _usersRef.child(uid).child('courses').get();
+                        final coursesSnap =
+                        await _usersRef.child(uid).child('courses').get();
                         final coursesVal = coursesSnap.value;
 
                         pickedCourseKey = null;
@@ -638,7 +612,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             pickedCourseKey = keys.first;
                             final firstNode = coursesVal[pickedCourseKey];
                             if (firstNode is Map) {
-                              final node = firstNode.map((k, v) => MapEntry(k.toString(), v));
+                              final node =
+                              firstNode.map((k, v) => MapEntry(k.toString(), v));
                               pickedCourseId = (node['id'] ?? '').toString();
                             }
                           }
@@ -647,13 +622,17 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         if (pickedCourseId != null && pickedCourseId!.trim().isNotEmpty) {
                           final cSnap = await _coursesRef.child(pickedCourseId!).get();
                           final cVal = cSnap.value;
-                          if (cVal is Map) pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
+                          if (cVal is Map) {
+                            pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
+                          }
                         }
 
-                        final totalSessions =
-                        _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
-                        sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
-                        amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                        final totalSessions = _parseTotalSessions(
+                            (pickedCourse['duration'] ?? '').toString());
+                        sessionsPaid =
+                        (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
+                        amountC.text =
+                            _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                         remindBeforeSession = sessionsPaid;
 
@@ -718,8 +697,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
                                 final code = (m['course_code'] ?? '').toString().trim();
                                 final title = (m['title'] ?? '').toString().trim();
-                                final label =
-                                [if (code.isNotEmpty) code, if (title.isNotEmpty) title].join(' — ');
+                                final label = [
+                                  if (code.isNotEmpty) code,
+                                  if (title.isNotEmpty) title
+                                ].join(' — ');
                                 keys.add(key);
                                 labelByKey[key] = label.isNotEmpty ? label : key;
                                 idByKey[key] = (m['id'] ?? '').toString();
@@ -736,7 +717,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             value: pickedCourseKey,
                             decoration: const InputDecoration(labelText: 'Course'),
                             items: keys
-                                .map((k) => DropdownMenuItem(value: k, child: Text(labelByKey[k] ?? k)))
+                                .map((k) =>
+                                DropdownMenuItem(value: k, child: Text(labelByKey[k] ?? k)))
                                 .toList(),
                             onChanged: (v) async {
                               pickedCourseKey = v;
@@ -744,20 +726,27 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               pickedCourse = {};
 
                               if (pickedCourseId != null && pickedCourseId!.trim().isNotEmpty) {
-                                final cSnap = await _coursesRef.child(pickedCourseId!).get();
+                                final cSnap =
+                                await _coursesRef.child(pickedCourseId!).get();
                                 final cVal = cSnap.value;
-                                if (cVal is Map) pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
+                                if (cVal is Map) {
+                                  pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
+                                }
                               }
 
-                              final totalSessions =
-                              _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+                              final totalSessions = _parseTotalSessions(
+                                  (pickedCourse['duration'] ?? '').toString());
                               final maxS = (totalSessions > 0) ? totalSessions : 24;
                               if (sessionsPaid > maxS) sessionsPaid = maxS;
 
-                              amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                              amountC.text = _defaultAmount(
+                                  pickedCourse, sessionsPaid, totalSessions)
+                                  .toString();
 
                               if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
-                              if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
+                              if (remindBeforeSession > sessionsPaid) {
+                                remindBeforeSession = sessionsPaid;
+                              }
 
                               setD(() {});
                             },
@@ -782,12 +771,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       max: _maxSessionsFromCourse(pickedCourse),
                       onChanged: (v) {
                         sessionsPaid = v;
-                        final totalSessions =
-                        _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
-                        amountC.text = _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
+                        final totalSessions = _parseTotalSessions(
+                            (pickedCourse['duration'] ?? '').toString());
+                        amountC.text =
+                            _defaultAmount(pickedCourse, sessionsPaid, totalSessions).toString();
 
                         if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
-                        if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
+                        if (remindBeforeSession > sessionsPaid) {
+                          remindBeforeSession = sessionsPaid;
+                        }
 
                         setD(() {});
                       },
@@ -804,7 +796,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     DropdownButtonFormField<String>(
                       value: method,
                       decoration: const InputDecoration(labelText: 'Method'),
-                      items: _methods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                      items: _methods
+                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                          .toList(),
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
                     const SizedBox(height: 10),
@@ -824,9 +818,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
-                onPressed: () async {
+                onPressed: isSaving
+                    ? null
+                    : () async {
                   if (pickedUid == null) {
                     _toast('Pick learner first.');
                     return;
@@ -848,6 +847,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     return;
                   }
 
+                  // ✅ lock button immediately
+                  setD(() => isSaving = true);
+
                   try {
                     final dayKey = paidDateYmd;
                     final dup = await _isDuplicatePayment(
@@ -858,6 +860,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       dayKey: dayKey,
                     );
                     if (dup) {
+                      setD(() => isSaving = false);
                       _toast('Duplicate payment blocked ✅');
                       return;
                     }
@@ -868,12 +871,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     final courseCode = (pickedCourse['course_code'] ?? '').toString();
                     final courseTitle = (pickedCourse['title'] ?? '').toString();
                     final learnerName =
-                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'.trim();
+                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
+                        .trim();
                     final learnerSerial = (pickedLearner['serial'] ?? '').toString();
 
-                    final remind = (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
+                    final remind =
+                    (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
 
-                    final monthKey = paidDateYmd.substring(0, 7); // safe extra field
+                    final monthKey = paidDateYmd.substring(0, 7);
 
                     await newRef.set({
                       'uid': pickedUid,
@@ -920,10 +925,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     if (context.mounted) Navigator.pop(context);
                     _toast('Payment saved ✅');
                   } catch (e) {
+                    setD(() => isSaving = false);
                     _toast('Failed: $e');
                   }
                 },
-                child: const Text('Save'),
+                child: Text(isSaving ? 'Saving…' : 'Save'),
               ),
             ],
           );
@@ -938,9 +944,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final paymentId = (p['paymentId'] ?? '').toString();
     final learnerName = (p['learner_name'] ?? '').toString().trim();
 
-    final titleName = learnerName.isEmpty
-        ? 'Edit'
-        : 'Edit: $learnerName';
+    final titleName = learnerName.isEmpty ? 'Edit' : 'Edit: $learnerName';
 
     if (paymentId.isEmpty) return;
 
@@ -967,6 +971,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     if (selectedTeacherUid.isEmpty) selectedTeacherUid = null;
     String? selectedTeacherName = (p['teacherName'] ?? '').toString().trim();
     if (selectedTeacherName.isEmpty) selectedTeacherName = null;
+
+    bool isSaving = false; // ✅ prevents multi-tap duplicate updates
 
     await showDialog<void>(
       context: context,
@@ -1050,7 +1056,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     DropdownButtonFormField<String>(
                       value: method,
                       decoration: const InputDecoration(labelText: 'Method'),
-                      items: _methods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                      items: _methods
+                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                          .toList(),
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
                     const SizedBox(height: 10),
@@ -1072,7 +1080,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
               FilledButton(
-                onPressed: () async {
+                onPressed: isSaving
+                    ? null
+                    : () async {
                   final fee = int.tryParse(amountC.text.trim()) ?? 0;
                   if (fee <= 0) {
                     _toast('Fee must be > 0');
@@ -1084,6 +1094,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     _toast('Invalid paid date.');
                     return;
                   }
+
+                  setD(() => isSaving = true);
 
                   try {
                     final monthKey = paidDateYmd.substring(0, 7);
@@ -1105,16 +1117,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
                     // ✅ keep summary correct after edit
                     if (oldUid.isNotEmpty && oldCourseKey.isNotEmpty) {
-                      await _recalcLearnerSummaryForCourse(uid: oldUid, courseKey: oldCourseKey);
+                      await _recalcLearnerSummaryForCourse(
+                          uid: oldUid, courseKey: oldCourseKey);
                     }
 
                     if (context.mounted) Navigator.pop(context);
                     _toast('Updated ✅');
                   } catch (e) {
+                    setD(() => isSaving = false);
                     _toast('Failed: $e');
                   }
                 },
-                child: const Text('Save'),
+                child: Text(isSaving ? 'Saving…' : 'Save'),
               )
             ],
           );
@@ -1131,7 +1145,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete payment?'),
-        content: const Text('This will delete the payment record.\n(Does not recalc summaries.)'),
+        content:
+        const Text('This will delete the payment record.\n(Does not recalc summaries.)'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(
@@ -1204,8 +1219,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
 
     await sumRef.runTransaction((current) {
-      final cur =
-      current is Map ? current.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+      final cur = current is Map
+          ? current.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
 
       final oldTotalPaid = _asInt(cur['totalPaid']);
       final oldSessionsPaid = _asInt(cur['sessionsPaidTotal']);
@@ -1219,7 +1235,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         'sessionsPaidTotal': newSessionsPaidTotal,
         'remindBeforeSession': remindBeforeSession <= 0
             ? newSessionsPaidTotal
-            : (remindBeforeSession > newSessionsPaidTotal ? newSessionsPaidTotal : remindBeforeSession),
+            : (remindBeforeSession > newSessionsPaidTotal
+            ? newSessionsPaidTotal
+            : remindBeforeSession),
         'lastPaymentAt': ServerValue.timestamp,
         'updatedAt': ServerValue.timestamp,
         'lastPaymentId': lastPaymentId,
@@ -1236,7 +1254,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
     final oldSnap = await sumRef.get();
     final oldRaw = oldSnap.value;
-    final oldSum = oldRaw is Map ? oldRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+    final oldSum = oldRaw is Map
+        ? oldRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
 
     final snap = await _paymentsRef.orderByChild('uid').equalTo(uid).get();
     final v = snap.value;
@@ -1422,65 +1442,6 @@ class _SmallDropdown<T> extends StatelessWidget {
   }
 }
 
-class _SmallButton extends StatelessWidget {
-  const _SmallButton({
-    required this.enabled,
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.onClear,
-  });
-
-  final bool enabled;
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final VoidCallback? onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: enabled ? 1 : 0.55,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AdminPaymentsScreen.appBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.black.withOpacity(0.06)),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: enabled ? onTap : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85)),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: AdminPaymentsScreen.primaryBlue.withOpacity(0.92),
-                    fontSize: 12.5,
-                  ),
-                ),
-                if (onClear != null) ...[
-                  const SizedBox(width: 6),
-                  InkWell(
-                    onTap: onClear,
-                    child: const Icon(Icons.close, size: 16),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ------------------ Table header ------------------
 
 class _TableHeaderRow extends StatelessWidget {
@@ -1516,7 +1477,6 @@ class _TableHeaderRow extends StatelessWidget {
         const SizedBox(width: 40),
       ],
     );
-
   }
 }
 
@@ -1670,7 +1630,8 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
           final role = (m['role'] ?? '').toString().toLowerCase().trim();
           if (role != 'learner') return;
 
-          final name = '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'.trim().toLowerCase();
+          final name =
+          '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'.trim().toLowerCase();
           final email = (m['email'] ?? '').toString().toLowerCase();
           final serial = (m['serial'] ?? '').toString().toLowerCase();
 
@@ -1867,8 +1828,7 @@ Future<void> _sendPaymentReceiptMail({
   final subject = 'Payment receipt';
   final now = DateTime.now().millisecondsSinceEpoch;
 
-  final body =
-      '✅ Payment received\n'
+  final body = '✅ Payment received\n'
       'Course: $courseTitle\n'
       'Sessions: $sessionsPaid\n'
       'Amount: $amount DA\n'
