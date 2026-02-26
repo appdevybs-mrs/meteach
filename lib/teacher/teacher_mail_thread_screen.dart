@@ -1038,12 +1038,24 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     final now = DateTime.now().millisecondsSinceEpoch;
 
                     Map<String, dynamic> toItemMap(List<Map<String, dynamic>> list) {
+                      String safeKey(String s) {
+                        // RTDB keys cannot contain: . # $ [ ] /
+                        var k = s.trim();
+                        k = k.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+                        k = k.replaceAll(RegExp(r'\s+'), ' ').trim();
+                        if (k.isEmpty) k = 'item';
+                        return k;
+                      }
+
                       final out = <String, dynamic>{};
                       for (int i = 0; i < list.length; i++) {
                         final label = (list[i]['label'] ?? '').toString().trim();
                         if (label.isEmpty) continue;
-                        // NOTE: these are stored as keys inside a MAP, not as paths.
-                        out[label] = _clamp15(list[i]['score']);
+
+                        // Add index to guarantee uniqueness even if two labels sanitize to same key.
+                        final key = '${safeKey(label)}_$i';
+
+                        out[key] = _clamp15(list[i]['score']);
                       }
                       return out;
                     }
@@ -1112,7 +1124,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
                     if (mounted) Navigator.pop(ctx, true);
                     _snack('Report sent ✅');
-                  } catch (e) {
+                  } catch (e, st) {
+                    debugPrint('REPORT SEND FAILED: $e');
+                    debugPrint('STACK TRACE:\n$st');
                     _snack('Failed: $e');
                     setLocal(() => sending = false);
                   }

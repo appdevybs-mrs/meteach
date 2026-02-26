@@ -3,17 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'learner_homework_screen.dart';
 import '../shared/session_manager.dart';
 import 'learner_regulations_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_screen.dart';
-
+import 'learner_homework_screen.dart' as hw;
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
-
+import 'package:dream_english_academy/learner/learner_mail_screen.dart';
 // ✅ Call logs screen
 import '../calls/call_logs_screen.dart';
 
@@ -785,7 +784,7 @@ Future<void> _openHomeworkCoursePicker(
 
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => LearnerHomeworkScreen(
+                            builder: (_) => hw.LearnerHomeworkScreen(
                               courseKey: courseKey,
                               courseTitle: title,
                             ),
@@ -1010,7 +1009,7 @@ class _HomeCard extends StatelessWidget {
       onTap: () async {
         if (routeType == _HomeCardRoute.mail) {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
+            MaterialPageRoute(builder: (_) => LearnerMailScreen()),
           );
           return;
         }

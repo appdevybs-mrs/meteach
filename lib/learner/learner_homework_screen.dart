@@ -34,7 +34,24 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   final Set<String> _expanded = <String>{};
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+  // ---- Helpers: shorten long text for subject/body (UI only) ----
+  String _short(String s, int max) {
+    final t = s.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (t.length <= max) return t;
+    if (max <= 1) return '…';
+    return '${t.substring(0, max - 1)}…';
+  }
 
+  String _hwSubject({
+    required String date,
+    required String taughtTitle,
+  }) {
+    final d = date.trim();
+    final lesson = _short(taughtTitle, 24); // keep subject short
+    return '[HW] ${widget.courseTitle}'
+        '${d.isEmpty ? '' : ' • $d'}'
+        '${lesson.isEmpty ? '' : ' • $lesson'}';
+  }
   DatabaseReference _hwRef(String sessionId) {
     return _usersRef
         .child(_uid)
@@ -68,25 +85,21 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     // If learner undoes then marks done again, it continues same thread.
     final threadId = '${_uid}_${teacherUid}_$sessionId';
 
-    final subject = '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
+    final subject = _hwSubject(date: date, taughtTitle: taughtTitle);
+    final hw = homeworkText.trim();
 
     final body = [
-      'Homework submission',
-      'Course: ${widget.courseTitle}',
-      if (date.isNotEmpty) 'Session date: $date',
-      if (taughtTitle.isNotEmpty) 'Lesson: $taughtTitle',
-      if (dueDate.isNotEmpty) 'Due: $dueDate',
-      '',
-      'Task:',
-      homeworkText.isEmpty ? '—' : homeworkText,
-      '',
-      '➡️ Please attach your homework file here (photo/PDF) or type your answer.',
+      'Homework',
+      if (date.trim().isNotEmpty) 'Date: ${date.trim()}',
+      if (taughtTitle.trim().isNotEmpty) 'Session: ${taughtTitle.trim()}',
     ].join('\n');
 
     // Push message id
     final msgKey = _db.child('mail_messages').child(threadId).push().key;
     if (msgKey == null) return;
-
+    // Save the auto-created message key so we can delete it on Undo (if not reviewed)
+    final hwMsgKeyPath =
+        'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework/autoMailMsgKey';
     // Multi-location update (thread + message + my index)
     final Map<String, dynamic> updates = {
       // thread meta
@@ -96,7 +109,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_threads/$threadId/lastMessage': body.length > 60 ? body.substring(0, 60) : body,
       'mail_threads/$threadId/participants/$_uid': true,
       'mail_threads/$threadId/participants/$teacherUid': true,
-
+      // link auto-created message to homework for future Undo-delete
+      hwMsgKeyPath: msgKey,
       // ✅ Homework linkage (for full cycle)
       'mail_threads/$threadId/type': 'homework',
       'mail_threads/$threadId/courseKey': widget.courseKey,
@@ -161,6 +175,48 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     if (mounted) await _load();
   }
 
+  Future<void> _deleteAutoHomeworkMessageIfAllowed({
+    required String sessionId,
+    required String teacherUid,
+  }) async {
+    try {
+      if (teacherUid.trim().isEmpty) return;
+
+      // Read latest homework state (do NOT rely only on UI state)
+      final hwSnap = await _hwRef(sessionId).get();
+      if (!hwSnap.exists || hwSnap.value == null) return;
+
+      final hw = Map<String, dynamic>.from(hwSnap.value as Map);
+
+      // Only allow delete if teacher has NOT reviewed
+      final reviewedAt = hw['reviewedAt'];
+      if (reviewedAt != null) return;
+
+      final msgKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
+      if (msgKey.isEmpty) return;
+
+      final threadId = '${_uid}_${teacherUid}_$sessionId';
+      final now = _nowMs();
+
+      // Delete only the auto-created message (both sides share same mail_messages path)
+      // Also clear the saved key so we don't try to delete twice.
+      final Map<String, dynamic> updates = {
+        'mail_messages/$threadId/$msgKey': null,
+        'users/$_uid/courses/${widget.courseKey}/attendance/$sessionId/homework/autoMailMsgKey': null,
+
+        // Optional: reduce clutter in lists by clearing previews (safe UI-only)
+        'mail_threads/$threadId/lastMessage': '',
+        'mail_threads/$threadId/updatedAt': now,
+        'mail_index/$_uid/$threadId/lastMessage': '',
+        'mail_index/$_uid/$threadId/updatedAt': now,
+        'mail_index/$teacherUid/$threadId/lastMessage': '',
+        'mail_index/$teacherUid/$threadId/updatedAt': now,
+      };
+
+      await _db.update(updates);
+    } catch (_) {}
+  }
+
   Future<void> _toggleDone(String sessionId, {required bool currentlyDone}) async {
     try {
       if (currentlyDone) {
@@ -220,6 +276,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         final submittedAt = hw['submittedAt'];
 
         final reviewedAt = hw['reviewedAt'];
+        final autoMailMsgKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
         final reviewStatus = (hw['reviewStatus'] ?? '').toString().trim(); // pass / redo
         final reviewScore = hw['reviewScore'];
         final reviewGrade = (hw['reviewGrade'] ?? '').toString().trim(); // A/B/C/D (new)
@@ -238,6 +295,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           'seenAt': seenAt,
           'doneAt': doneAt,
           'submittedAt': submittedAt,
+          'autoMailMsgKey': autoMailMsgKey,
 
           'reviewedAt': reviewedAt,
           'reviewStatus': reviewStatus,
@@ -497,6 +555,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
             final submittedAt = it['submittedAt'];
 
             final reviewedAt = it['reviewedAt'];
+            final autoMailMsgKey = (it['autoMailMsgKey'] ?? '').toString().trim();
             final reviewStatus = (it['reviewStatus'] ?? '').toString().trim(); // pass/redo
             final needsRedo = it['needsRedo'] == true;
 
@@ -621,40 +680,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                             const SizedBox(width: 8),
 
                             // Seen / Done mini badge (keeps your old logic)
+                            // Seen / Done (compact icon to reduce visual clutter)
                             if (isDone)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: UiK.primaryBlue.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                                ),
-                                child: const Text(
-                                  'Done',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: UiK.primaryBlue,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              )
+                              Icon(Icons.check_circle_rounded, size: 18, color: UiK.primaryBlue.withOpacity(0.85))
                             else if (isSeen)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: UiK.actionOrange.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
-                                ),
-                                child: const Text(
-                                  'Seen',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: UiK.actionOrange,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
+                              Icon(Icons.visibility_rounded, size: 18, color: UiK.actionOrange.withOpacity(0.85)),
                           ],
                         ),
                         const SizedBox(height: 6),
@@ -735,57 +765,72 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
                           const SizedBox(height: 12),
 
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  icon: Icon(isDone ? Icons.undo_rounded : Icons.check_circle_rounded),
-                                  label: Text(isDone ? 'Undo' : 'Mark done'),
-                                  style: OutlinedButton.styleFrom(
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                  ),
-                                  onPressed: () async {
-                                    if (isDone) {
-                                      await _toggleDone(sessionId, currentlyDone: true);
-                                      if (mounted) {
-                                        setState(() => it['doneAt'] = null);
+                          // Undo disappears after teacher review
+                          if (!(isDone && isReviewed))
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    icon: Icon(isDone ? Icons.undo_rounded : Icons.check_circle_rounded),
+                                    label: Text(isDone ? 'Undo' : 'Mark done/Send'),
+                                    style: OutlinedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    ),
+                                    onPressed: () async {
+                                      final teacherUid = (it['teacherUid'] ?? '').toString().trim();
+                                      final teacherName = (it['teacherName'] ?? '').toString();
+
+                                      if (isDone) {
+                                        // Only delete auto-message if NOT reviewed
+                                        if (!isReviewed) {
+                                          await _deleteAutoHomeworkMessageIfAllowed(
+                                            sessionId: sessionId,
+                                            teacherUid: teacherUid,
+                                          );
+                                          if (mounted) {
+                                            setState(() {
+                                              it['autoMailMsgKey'] = '';
+                                            });
+                                          }
+                                        }
+
+                                        await _toggleDone(sessionId, currentlyDone: true);
+                                        if (mounted) {
+                                          setState(() => it['doneAt'] = null);
+                                        }
+                                        return;
                                       }
-                                      return;
-                                    }
 
-                                    final now = _nowMs();
+                                      final now = _nowMs();
 
-                                    await _hwRef(sessionId).update({
-                                      'doneAt': now,
-                                      'submittedAt': now,
-                                      'seenAt': it['seenAt'] ?? now,
-                                    });
-
-                                    if (mounted) {
-                                      setState(() {
-                                        it['doneAt'] = now;
-                                        it['submittedAt'] = now;
-                                        it['seenAt'] ??= now;
+                                      await _hwRef(sessionId).update({
+                                        'doneAt': now,
+                                        'submittedAt': now,
+                                        'seenAt': it['seenAt'] ?? now,
                                       });
-                                    }
 
-                                    final teacherUid = (it['teacherUid'] ?? '').toString();
-                                    final teacherName = (it['teacherName'] ?? '').toString();
+                                      if (mounted) {
+                                        setState(() {
+                                          it['doneAt'] = now;
+                                          it['submittedAt'] = now;
+                                          it['seenAt'] ??= now;
+                                        });
+                                      }
 
-                                    await _createHomeworkMailAndOpen(
-                                      sessionId: sessionId,
-                                      teacherUid: teacherUid,
-                                      teacherName: teacherName,
-                                      date: date,
-                                      dueDate: due,
-                                      taughtTitle: taughtTitle,
-                                      homeworkText: text,
-                                    );
-                                  },
+                                      await _createHomeworkMailAndOpen(
+                                        sessionId: sessionId,
+                                        teacherUid: teacherUid,
+                                        teacherName: teacherName,
+                                        date: date,
+                                        dueDate: due,
+                                        taughtTitle: taughtTitle,
+                                        homeworkText: text,
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
 
                           // Helpful quick action: open the homework mail thread (compact)
                           const SizedBox(height: 10),
