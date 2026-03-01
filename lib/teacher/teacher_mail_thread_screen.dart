@@ -62,7 +62,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   // attachments in composer (not message history)
   final List<Map<String, String>> _attachments = []; // {name,url}
 
-  // ---- NEW: learner role + courseKey (current course only) ----
+  // ---- learner role + courseKey (current course only) ----
   bool _peerIsLearner = false;
   bool _loadedPeerRole = false;
   String? _threadCourseKey; // for current course report stats
@@ -248,6 +248,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         attachments: attachmentsBackup,
         updateThreadPreview: true,
         sendPush: true,
+        messageType: null,
       );
     } catch (e) {
       _bodyC.text = bodyBackup;
@@ -274,6 +275,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     required List<Map<String, String>> attachments,
     required bool updateThreadPreview,
     required bool sendPush,
+    required String? messageType,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final msgRef = _msgsRef.push();
@@ -281,7 +283,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final preview = body.trim().isEmpty ? (attachments.isNotEmpty ? '📎 Attachment' : '') : body.trim();
     final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
 
-    await msgRef.set({
+    final payload = <String, dynamic>{
       'fromUid': _meUid,
       'body': body,
       'toUids': {widget.peerUid: true},
@@ -290,7 +292,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       'attachments': attachments,
       'createdAt': now,
       'deletedFor': {},
-    });
+    };
+
+    if (messageType != null && messageType.trim().isNotEmpty) {
+      payload['type'] = messageType.trim();
+    }
+
+    await msgRef.set(payload);
 
     if (updateThreadPreview) {
       await _threadRef.update({
@@ -308,7 +316,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'deletedAt': null,
       });
 
-      // ✅ FIX: safe transaction even if existing value is String/num/null
+      // safe transaction even if existing value is String/num/null
       await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
         final m = _asStringDynamicMap(cur);
 
@@ -534,7 +542,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'lastMessage': preview80,
       });
 
-      // ✅ FIX: safe transaction here too
       await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
         final m = _asStringDynamicMap(cur);
 
@@ -559,7 +566,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-  // ---------- NEW: Report Card (Learner only) ----------
+  // ---------- Report Card (Learner only) ----------
   Future<Map<String, dynamic>> _computeHomeworkStatsForCourse({
     required String learnerUid,
     required String courseKey,
@@ -632,6 +639,79 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (v is num) x = v.toInt();
     x = x.clamp(1, 5);
     return x;
+  }
+
+  String _autoSummaryBalanced({
+    required int behaviorAvg,
+    required int progressAvg,
+    required int homeworkDone,
+    required int homeworkRedo,
+    required int homeworkAvgScore,
+  }) {
+    String level5(int v) {
+      if (v >= 4) return 'strong';
+      if (v == 3) return 'steady';
+      return 'developing';
+    }
+
+    final bLevel = level5(behaviorAvg);
+    final pLevel = level5(progressAvg);
+
+    final strengths = <String>[];
+    final dev = <String>[];
+    final rec = <String>[];
+
+    // Strengths (balanced)
+    if (behaviorAvg >= 4) {
+      strengths.add('demonstrates positive classroom behavior and engagement');
+    } else if (behaviorAvg == 3) {
+      strengths.add('shows generally appropriate classroom behavior');
+    } else {
+      strengths.add('shows effort to follow classroom expectations');
+    }
+
+    if (progressAvg >= 4) {
+      strengths.add('is making strong progress in language development');
+    } else if (progressAvg == 3) {
+      strengths.add('is making steady progress in language development');
+    } else {
+      strengths.add('is developing core language skills and confidence');
+    }
+
+    // Development areas
+    if (behaviorAvg <= 2) {
+      dev.add('benefits from additional support with consistency, participation, and classroom routines');
+    } else if (behaviorAvg == 3) {
+      dev.add('can improve consistency in participation and classroom focus');
+    } else {
+      dev.add('should continue maintaining this positive classroom approach');
+    }
+
+    if (progressAvg <= 2) {
+      dev.add('needs more practice to strengthen speaking and writing accuracy');
+    } else if (progressAvg == 3) {
+      dev.add('should continue building fluency and accuracy, especially in speaking and writing');
+    } else {
+      dev.add('should continue challenging themselves with more complex language use');
+    }
+
+    // Homework / recommendation
+    if (homeworkRedo > 0) {
+      rec.add('reviewing feedback carefully and resubmitting improvements will accelerate progress');
+    }
+    if (homeworkDone == 0) {
+      rec.add('more consistent homework completion is recommended');
+    } else if (homeworkDone >= 6 && homeworkAvgScore >= 80) {
+      rec.add('continuing regular practice at home will help maintain this good momentum');
+    } else {
+      rec.add('regular short practice at home (10–15 minutes) will support improvement');
+    }
+
+    return [
+      'Strengths: The learner $bLevel in behavior and $pLevel in progress, and ${strengths.join(', ')}.',
+      'Development: The learner ${dev.join(' ')}.',
+      'Recommendation: ${rec.join(' ')}.',
+    ].join('\n');
   }
 
   Future<Uint8List?> _renderWidgetToPng(GlobalKey key, {double pixelRatio = 2.5}) async {
@@ -719,9 +799,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             return DropdownButton<int>(
               value: value,
               isDense: true,
-              items: const [1, 2, 3, 4, 5]
-                  .map((n) => DropdownMenuItem<int>(value: n, child: Text('$n')))
-                  .toList(),
+              items: const [1, 2, 3, 4, 5].map((n) => DropdownMenuItem<int>(value: n, child: Text('$n'))).toList(),
               onChanged: (v) {
                 if (v == null) return;
                 onChanged(v);
@@ -802,13 +880,23 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
           final commentText = commentC.text.trim();
 
+          final autoSummary = _autoSummaryBalanced(
+            behaviorAvg: behaviorAvg,
+            progressAvg: progressAvg,
+            homeworkDone: finalDone,
+            homeworkRedo: finalRedo,
+            homeworkAvgScore: finalAvgScore,
+          );
+
           final summaryLines = <String>[
             '📋 Report Card',
             'Course: $courseKey',
             'Learner: $_peerNameShown',
             'Behavior: $behaviorAvg/5 • Progress: $progressAvg/5',
             'Homework: done $finalDone • redo $finalRedo • avg $finalAvgScore/100 • common $finalCommonGrade',
-            if (commentText.isNotEmpty) 'Comment: $commentText',
+            '',
+            autoSummary,
+            if (commentText.isNotEmpty) '\nTeacher comment: $commentText',
           ];
 
           return AlertDialog(
@@ -945,7 +1033,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Teacher comment',
+                      'Teacher comment (optional)',
                       style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black.withOpacity(0.75)),
                     ),
                   ),
@@ -959,7 +1047,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       minLines: null,
                       textAlignVertical: TextAlignVertical.top,
                       decoration: const InputDecoration(
-                        labelText: 'Write a qualitative report…',
+                        labelText: 'Add a personal note…',
                         border: OutlineInputBorder(),
                         alignLabelWithHint: true,
                       ),
@@ -971,23 +1059,32 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Diagram preview',
+                      'PNG preview (watermarked)',
                       style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black.withOpacity(0.75)),
                     ),
                   ),
                   const SizedBox(height: 10),
                   RepaintBoundary(
                     key: diagramKey,
-                    child: _ReportCardDiagram(
-                      learnerName: _peerNameShown,
-                      courseKey: courseKey,
-                      createdAtMs: DateTime.now().millisecondsSinceEpoch,
-                      behaviorAvg: behaviorAvg,
-                      progressAvg: progressAvg,
-                      homeworkDone: finalDone,
-                      homeworkRedo: finalRedo,
-                      homeworkAvgScore: finalAvgScore,
-                      homeworkCommonGrade: finalCommonGrade,
+                    child: _ReportWatermarkBackground(
+                      child: _ReportCardDiagramV2(
+                        schoolTitle: 'REPORT CARD',
+                        learnerName: _peerNameShown,
+                        courseKey: courseKey,
+                        createdAtMs: DateTime.now().millisecondsSinceEpoch,
+                        teacherName: _meDisplayName,
+                        behaviorItems: behaviorItems,
+                        progressItems: progressItems,
+                        behaviorAvg: behaviorAvg,
+                        progressAvg: progressAvg,
+                        homeworkDone: finalDone,
+                        homeworkRedo: finalRedo,
+                        homeworkAvgScore: finalAvgScore,
+                        homeworkCommonGrade: finalCommonGrade,
+                        autoSummary: autoSummary,
+                        commentText: commentText,
+                        reportId: 'PREVIEW',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -1051,10 +1148,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       for (int i = 0; i < list.length; i++) {
                         final label = (list[i]['label'] ?? '').toString().trim();
                         if (label.isEmpty) continue;
-
-                        // Add index to guarantee uniqueness even if two labels sanitize to same key.
                         final key = '${safeKey(label)}_$i';
-
                         out[key] = _clamp15(list[i]['score']);
                       }
                       return out;
@@ -1086,12 +1180,14 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         },
                       },
                       'comment': commentText,
-                      'diagramVersion': 1,
+                      'autoSummary': autoSummary,
+                      'diagramVersion': 2,
                     };
 
                     await _db.ref('reports/${widget.peerUid}/$reportId').set(reportData);
                     await _threadRef.child('reports').child(reportId).set(true);
 
+                    // Render a final diagram with the real reportId
                     final pngBytes = await _renderWidgetToPng(diagramKey, pixelRatio: 2.5);
                     if (pngBytes == null) {
                       _snack('Could not generate diagram image.');
@@ -1108,7 +1204,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       'Learner: $_peerNameShown',
                       'Behavior: $behaviorAvg/5 • Progress: $progressAvg/5',
                       'Homework: done $finalDone • redo $finalRedo • avg $finalAvgScore/100 • common $finalCommonGrade',
-                      if (commentText.isNotEmpty) 'Comment: $commentText',
+                      '',
+                      autoSummary,
+                      if (commentText.isNotEmpty) '\nTeacher comment: $commentText',
                       '',
                       'Report ID: $reportId',
                     ].join('\n');
@@ -1120,6 +1218,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       ],
                       updateThreadPreview: true,
                       sendPush: true,
+                      messageType: 'report',
                     );
 
                     if (mounted) Navigator.pop(ctx, true);
@@ -1207,80 +1306,115 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     final m = msgs[i];
                     final mine = m.fromUid == _meUid;
 
+                    final isReport = m.type == 'report';
+
+                    final bg = isReport
+                        ? (mine ? Colors.deepPurple.withOpacity(0.10) : Colors.deepPurple.withOpacity(0.06))
+                        : (mine ? Colors.blue.withOpacity(0.12) : Colors.black.withOpacity(0.05));
+
+                    final borderColor = isReport ? Colors.deepPurple.withOpacity(0.75) : Colors.transparent;
+
                     return Align(
                       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 340),
-                        child: Card(
-                          elevation: 0,
-                          color: mine ? Colors.blue.withOpacity(0.12) : Colors.black.withOpacity(0.05),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        mine ? _meDisplayName : _peerNameShown,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.black.withOpacity(0.6),
-                                          fontSize: 12,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: isReport
+                                ? Border(left: BorderSide(color: Colors.deepPurple.withOpacity(0.75), width: 5))
+                                : null,
+                          ),
+                          child: Card(
+                            elevation: 0,
+                            color: bg,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (isReport) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.deepPurple.withOpacity(0.12),
+                                            borderRadius: BorderRadius.circular(999),
+                                            border: Border.all(color: Colors.deepPurple.withOpacity(0.25)),
+                                          ),
+                                          child: Text(
+                                            'REPORT',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 10,
+                                              color: Colors.deepPurple.withOpacity(0.9),
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _fmt(m.createdAtMs),
-                                      style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.55)),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: PopupMenuButton<String>(
-                                        padding: EdgeInsets.zero,
-                                        tooltip: 'Message actions',
-                                        onSelected: (v) async {
-                                          if (v == 'delete_for_me') await _deleteMessageForMe(m);
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (m.body.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Text(m.body),
-                                ],
-                                if (m.attachments.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  ...m.attachments.map((a) {
-                                    final name = a['name'] ?? 'Attachment';
-                                    final url = a['url'] ?? '';
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
-                                      child: InkWell(
-                                        onTap: () => _openUrlExternal(url),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Flexible(
                                         child: Text(
-                                          '📎 $name',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            decoration: TextDecoration.underline,
+                                          mine ? _meDisplayName : _peerNameShown,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.black.withOpacity(0.6),
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ),
-                                    );
-                                  }),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _fmt(m.createdAtMs),
+                                        style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.55)),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      SizedBox(
+                                        width: 32,
+                                        height: 32,
+                                        child: PopupMenuButton<String>(
+                                          padding: EdgeInsets.zero,
+                                          tooltip: 'Message actions',
+                                          onSelected: (v) async {
+                                            if (v == 'delete_for_me') await _deleteMessageForMe(m);
+                                          },
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (m.body.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text(m.body),
+                                  ],
+                                  if (m.attachments.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    ...m.attachments.map((a) {
+                                      final name = a['name'] ?? 'Attachment';
+                                      final url = a['url'] ?? '';
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: InkWell(
+                                          onTap: () => _openUrlExternal(url),
+                                          child: Text(
+                                            '📎 $name',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              decoration: TextDecoration.underline,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -1360,22 +1494,93 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 }
 
-class _ReportCardDiagram extends StatelessWidget {
-  const _ReportCardDiagram({
+/// Watermark background used INSIDE RepaintBoundary so it appears in the PNG.
+/// - Center logo: very transparent
+/// - Top-right logo: non-transparent
+class _ReportWatermarkBackground extends StatelessWidget {
+  const _ReportWatermarkBackground({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Container(color: Colors.white),
+
+        // A) Transparent center watermark
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: 0.05,
+              child: Center(
+                child: FractionallySizedBox(
+                  widthFactor: 0.75,
+                  child: Image.asset(
+                    'assets/images/ybs_logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // B) Non-transparent top-right small logo
+        Positioned(
+          right: 10,
+          top: 10,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: 0.95,
+              child: SizedBox(
+                width: 46,
+                height: 46,
+                child: Image.asset(
+                  'assets/images/ybs_logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        child,
+      ],
+    );
+  }
+}
+
+class _ReportCardDiagramV2 extends StatelessWidget {
+  const _ReportCardDiagramV2({
+    required this.schoolTitle,
     required this.learnerName,
     required this.courseKey,
     required this.createdAtMs,
+    required this.teacherName,
+    required this.behaviorItems,
+    required this.progressItems,
     required this.behaviorAvg,
     required this.progressAvg,
     required this.homeworkDone,
     required this.homeworkRedo,
     required this.homeworkAvgScore,
     required this.homeworkCommonGrade,
+    required this.autoSummary,
+    required this.commentText,
+    required this.reportId,
   });
 
+  final String schoolTitle;
   final String learnerName;
   final String courseKey;
   final int createdAtMs;
+  final String teacherName;
+
+  final List<Map<String, dynamic>> behaviorItems;
+  final List<Map<String, dynamic>> progressItems;
 
   final int behaviorAvg;
   final int progressAvg;
@@ -1385,41 +1590,80 @@ class _ReportCardDiagram extends StatelessWidget {
   final int homeworkAvgScore;
   final String homeworkCommonGrade;
 
-  String _fmt(int ms) {
+  final String autoSummary;
+  final String commentText;
+  final String reportId;
+
+  String _fmtDate(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
-  Widget _bar({required String label, required int value, required Color color}) {
-    final v = value.clamp(0, 5);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  int _clamp15(dynamic v) {
+    int x = 3;
+    if (v is num) x = v.toInt();
+    x = x.clamp(1, 5);
+    return x;
+  }
+
+  String _dots(int value) {
+    final v = value.clamp(1, 5);
+    return List.generate(5, (i) => i < v ? '●' : '○').join();
+  }
+
+  List<Map<String, dynamic>> _capItems(List<Map<String, dynamic>> list, int max) {
+    if (list.length <= max) return list;
+    return list.take(max).toList();
+  }
+
+  Widget _sectionTitle(String t) {
+    return Text(
+      t,
+      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+    );
+  }
+
+  Widget _kv(String k, String v) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            height: 10,
-            color: Colors.black.withOpacity(0.08),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: v / 5.0,
-              child: Container(color: color),
-            ),
+        Text('$k: ', style: TextStyle(color: Colors.black.withOpacity(0.65), fontWeight: FontWeight.w800)),
+        Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
+      ],
+    );
+  }
+
+  Widget _itemLine(String label, int score) {
+    final clean = label.trim().isEmpty ? 'Item' : label.trim();
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            clean,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
           ),
         ),
-        const SizedBox(height: 6),
-        Text('$v / 5', style: TextStyle(color: Colors.black.withOpacity(0.65), fontWeight: FontWeight.w700)),
+        const SizedBox(width: 10),
+        Text(_dots(score), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    const maxPerSection = 6;
+
+    final bShown = _capItems(behaviorItems, maxPerSection);
+    final pShown = _capItems(progressItems, maxPerSection);
+
+    final bMore = behaviorItems.length - bShown.length;
+    final pMore = progressItems.length - pShown.length;
+
     return Container(
-      width: 320,
+      width: 360,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1438,49 +1682,127 @@ class _ReportCardDiagram extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('REPORT CARD', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            Text(schoolTitle.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
             const SizedBox(height: 6),
-            Text('Learner: $learnerName', style: const TextStyle(fontWeight: FontWeight.w800)),
-            Text('Course: $courseKey', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w700)),
-            Text('Date: ${_fmt(createdAtMs)}', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w700)),
+            Text('Learner: $learnerName', style: const TextStyle(fontWeight: FontWeight.w900)),
+            Text('Course: $courseKey', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
+            Text('Date: ${_fmtDate(createdAtMs)}', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
+            Text('Teacher: $teacherName', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
-            _bar(label: 'Behavior', value: behaviorAvg, color: Colors.green),
-            const SizedBox(height: 10),
-            _bar(label: 'Progress', value: progressAvg, color: Colors.blue),
-            const SizedBox(height: 12),
-            const Divider(),
-            const Text('Homework summary', style: TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
+
+            // Quick summary row
             Wrap(
-              spacing: 8,
+              spacing: 10,
               runSpacing: 8,
               children: [
-                _chip('Done', '$homeworkDone'),
-                _chip('Redo', '$homeworkRedo'),
-                _chip('Avg score', '$homeworkAvgScore/100'),
-                _chip('Common grade', homeworkCommonGrade),
+                _kv('Behavior', '$behaviorAvg/5'),
+                _kv('Progress', '$progressAvg/5'),
+                _kv('HW Done', '$homeworkDone'),
+                _kv('Redo', '$homeworkRedo'),
+                _kv('Avg', '$homeworkAvgScore/100'),
+                _kv('Grade', homeworkCommonGrade),
               ],
+            ),
+
+            const SizedBox(height: 12),
+            const Divider(),
+
+            // Details (fixed size, capped)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionTitle('Behavior details'),
+                      const SizedBox(height: 8),
+                      for (final it in bShown)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: _itemLine((it['label'] ?? '').toString(), _clamp15(it['score'])),
+                        ),
+                      if (bMore > 0)
+                        Text(
+                          '+$bMore more behavior item(s)',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black.withOpacity(0.55)),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionTitle('Progress details'),
+                      const SizedBox(height: 8),
+                      for (final it in pShown)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: _itemLine((it['label'] ?? '').toString(), _clamp15(it['score'])),
+                        ),
+                      if (pMore > 0)
+                        Text(
+                          '+$pMore more progress item(s)',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black.withOpacity(0.55)),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            const Divider(),
+
+            _sectionTitle('Auto summary'),
+            const SizedBox(height: 6),
+            Text(
+              autoSummary,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.25,
+                color: Colors.black.withOpacity(0.85),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _sectionTitle('Teacher comment (optional)'),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.black.withOpacity(0.10)),
+              ),
+              child: Text(
+                commentText.trim().isEmpty ? '—' : commentText.trim(),
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.25,
+                  color: Colors.black.withOpacity(0.85),
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Report ID: $reportId',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black.withOpacity(0.55)),
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  static Widget _chip(String k, String v) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('$k: ', style: TextStyle(color: Colors.black.withOpacity(0.65), fontWeight: FontWeight.w800)),
-          Text(v, style: const TextStyle(fontWeight: FontWeight.w900)),
-        ],
       ),
     );
   }
@@ -1494,6 +1816,7 @@ class _MailMsg {
     required this.attachments,
     required this.createdAtMs,
     required this.deletedFor,
+    required this.type,
   });
 
   final String id;
@@ -1502,6 +1825,7 @@ class _MailMsg {
   final List<Map<String, String>> attachments;
   final int createdAtMs;
   final Set<String> deletedFor;
+  final String type; // '', 'report', ...
 
   factory _MailMsg.fromMap(String id, Map<String, dynamic> m) {
     int parseMs(dynamic v) {
@@ -1536,6 +1860,7 @@ class _MailMsg {
       attachments: atts,
       createdAtMs: parseMs(m['createdAt']),
       deletedFor: del,
+      type: (m['type'] ?? '').toString().trim(),
     );
   }
 }
