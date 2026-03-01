@@ -7,12 +7,16 @@ import 'dart:ui' as ui;
 import '../services/route_state.dart';
 import '../services/push_client.dart';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
@@ -34,8 +38,36 @@ class TeacherMailThreadScreen extends StatefulWidget {
 }
 
 class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
+  // ---------------- Pro palette (matches learner style) ----------------
+  static const Color _navy = Color(0xFF243B5A);
+  static const Color _navyDark = Color(0xFF1C2F4A);
+  static const Color _orange = Color(0xFFEC740A);
+
+  static Color _mineBubbleBg(BuildContext context, {bool isReport = false}) =>
+      isReport ? Colors.deepPurple.withOpacity(0.90) : _navy;
+
+  static Color _mineText(BuildContext context) => Colors.white;
+
+  static Color _theirsBubbleBg(BuildContext context, {bool isReport = false}) =>
+      isReport ? Colors.deepPurple.withOpacity(0.14) : _orange.withOpacity(0.80);
+
+  static Color _theirsText(BuildContext context) =>
+      _navyDark;
+
+  static Color _datePillBg(BuildContext context) =>
+      Colors.white.withOpacity(0.85);
+
+  static Color _datePillBorder(BuildContext context) =>
+      _navy.withOpacity(0.15);
+
+  // ------------------------------------------------
+
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
+
+  // Search within thread (local only)
+  final _searchC = TextEditingController();
+  bool _searching = false;
 
   String _meDisplayName = 'Teacher';
   String _peerDisplayName = '';
@@ -68,6 +100,34 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   String? _threadCourseKey; // for current course report stats
   bool _loadedThreadMeta = false;
 
+  // Camera
+  final ImagePicker _picker = ImagePicker();
+
+  // Audio playback (inline)
+  final AudioPlayer _audio = AudioPlayer();
+  StreamSubscription<Duration>? _posSub;
+  StreamSubscription<Duration>? _durSub;
+  StreamSubscription<PlayerState>? _stateSub;
+  String? _playingUrl;
+  Duration _pos = Duration.zero;
+  Duration _dur = Duration.zero;
+  bool _isPlaying = false;
+
+  // Audio recording (WhatsApp-ish composer)
+  final AudioRecorder _rec = AudioRecorder();
+  bool _recRecording = false;
+  bool _recLocked = false;
+  bool _recCancelling = false;
+  DateTime? _recStartedAt;
+  Timer? _recTicker;
+  Duration _recElapsed = Duration.zero;
+  String? _recPath;
+
+  // Gesture tracking
+  Offset? _pressStartGlobal;
+  static const double _cancelDxThreshold = 90; // swipe left to cancel
+  static const double _lockDyThreshold = 70; // slide up to lock
+
   @override
   void initState() {
     super.initState();
@@ -80,12 +140,35 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     _loadPeerRole();
     _loadThreadMeta();
+
+    _posSub = _audio.onPositionChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _pos = d);
+    });
+    _durSub = _audio.onDurationChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _dur = d);
+    });
+    _stateSub = _audio.onPlayerStateChanged.listen((s) {
+      if (!mounted) return;
+      setState(() => _isPlaying = (s == PlayerState.playing));
+    });
   }
 
   @override
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
     _bodyC.dispose();
+    _searchC.dispose();
+
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _stateSub?.cancel();
+    _audio.dispose();
+
+    _recTicker?.cancel();
+    unawaited(_rec.dispose());
+
     super.dispose();
   }
 
@@ -177,6 +260,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (_) {}
   }
 
+  // ---------------- Parsing ----------------
+
   List<_MailMsg> _parseMessages(dynamic data) {
     if (data is! Map) return [];
     final out = <_MailMsg>[];
@@ -191,9 +276,28 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       out.add(msg);
     });
 
-    out.sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+    // Newest first (works with ListView(reverse: true))
+    out.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
     return out;
   }
+
+  List<_MailMsg> _applyLocalSearch(List<_MailMsg> msgs) {
+    final q = _searchC.text.trim().toLowerCase();
+    if (q.isEmpty) return msgs;
+
+    bool attMatch(_MailMsg m) {
+      for (final a in m.attachments) {
+        final name = (a['name'] ?? '').toLowerCase();
+        final url = (a['url'] ?? '').toLowerCase();
+        if (name.contains(q) || url.contains(q)) return true;
+      }
+      return false;
+    }
+
+    return msgs.where((m) => m.body.toLowerCase().contains(q) || attMatch(m)).toList();
+  }
+
+  // ---------------- Attachments ----------------
 
   Future<void> _pickAndUploadAttachment() async {
     try {
@@ -212,6 +316,22 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
+  Future<void> _takePhotoAndAttach() async {
+    try {
+      final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+      if (x == null) return;
+
+      final file = File(x.path);
+      final url = await MailUploadClient.defaultClient().uploadFile(file: file);
+
+      final name = x.name.isNotEmpty ? x.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      if (!mounted) return;
+      setState(() => _attachments.add({'name': name, 'url': url}));
+    } catch (e) {
+      _snack('Camera upload failed: $e');
+    }
+  }
+
   Future<void> _openUrlExternal(String raw) async {
     final url = raw.trim();
     if (url.isEmpty) return;
@@ -223,6 +343,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       await launchUrl(u, mode: LaunchMode.externalApplication);
     } catch (_) {}
   }
+
+  // ---------------- Send ----------------
 
   Future<void> _send() async {
     if (_sending) return;
@@ -292,6 +414,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       'attachments': attachments,
       'createdAt': now,
       'deletedFor': {},
+      'reactions': {}, // enable reactions (same schema as learner)
     };
 
     if (messageType != null && messageType.trim().isNotEmpty) {
@@ -316,7 +439,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'deletedAt': null,
       });
 
-      // safe transaction even if existing value is String/num/null
       await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
         final m = _asStringDynamicMap(cur);
 
@@ -360,6 +482,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
+  // ---------------- Delete (for me) ----------------
+
   Future<void> _deleteMessageForMe(_MailMsg m) async {
     try {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
@@ -368,6 +492,601 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack('Delete failed: $e');
     }
   }
+
+  // ---------------- Reactions ----------------
+
+  Future<void> _toggleReaction(_MailMsg m, String emoji) async {
+    try {
+      final path = _msgsRef.child(m.id).child('reactions').child(emoji).child(_meUid);
+      final snap = await path.get();
+      if (snap.exists && snap.value == true) {
+        await path.remove();
+      } else {
+        await path.set(true);
+      }
+    } catch (e) {
+      _snack('Reaction failed: $e');
+    }
+  }
+
+  void _openMessageActions(_MailMsg m) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) {
+        const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏'];
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('React', style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9))),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: emojis.map((e) {
+                  final selected = (m.reactions[e] ?? const <String>{}).contains(_meUid);
+                  return InkWell(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _toggleReaction(m, e);
+                    },
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected ? _orange.withOpacity(0.18) : Colors.grey.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: selected ? _orange.withOpacity(0.55) : Colors.grey.withOpacity(0.18)),
+                      ),
+                      child: Text(e, style: const TextStyle(fontSize: 18)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 18),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.delete_outline_rounded, color: Colors.red.withOpacity(0.85)),
+                title: const Text('Delete (for me)', style: TextStyle(fontWeight: FontWeight.w800)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _deleteMessageForMe(m);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReactionsRow(_MailMsg m, {required bool mine}) {
+    if (m.reactions.isEmpty) return const SizedBox.shrink();
+
+    final entries = <MapEntry<String, int>>[];
+    m.reactions.forEach((emoji, uids) {
+      final c = uids.length;
+      if (c > 0) entries.add(MapEntry(emoji, c));
+    });
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    entries.sort((a, b) => b.value.compareTo(a.value));
+    final show = entries.take(4).toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Wrap(
+          spacing: 6,
+          children: show.map((e) {
+            final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
+            final bg = selected ? Colors.white.withOpacity(0.22) : Colors.white.withOpacity(0.16);
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: mine ? bg : Colors.black.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: mine ? Colors.white.withOpacity(0.22) : _navy.withOpacity(0.12)),
+              ),
+              child: Text(
+                '${e.key} ${e.value}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                  color: mine ? Colors.white : _navy.withOpacity(0.92),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  // ---------------- WhatsApp-style recording ----------------
+
+  Future<void> _recStart(LongPressStartDetails d) async {
+    if (_sending) return;
+
+    try {
+      final ok = await _rec.hasPermission();
+      if (!ok) {
+        _snack('Microphone permission denied.');
+        return;
+      }
+
+      _pressStartGlobal = d.globalPosition;
+      _recCancelling = false;
+      _recLocked = false;
+      _recElapsed = Duration.zero;
+      _recStartedAt = DateTime.now();
+
+      final tmp = await getTemporaryDirectory();
+      final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      _recPath = path;
+
+      await _rec.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+
+      _recTicker?.cancel();
+      _recTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        if (!mounted) return;
+        final start = _recStartedAt;
+        if (start == null) return;
+        setState(() => _recElapsed = DateTime.now().difference(start));
+      });
+
+      if (!mounted) return;
+      setState(() => _recRecording = true);
+    } catch (e) {
+      _snack('Record failed: $e');
+    }
+  }
+
+  void _recMove(LongPressMoveUpdateDetails d) {
+    if (!_recRecording || _recLocked) return;
+    final start = _pressStartGlobal;
+    if (start == null) return;
+
+    final dx = d.globalPosition.dx - start.dx; // left is negative
+    final dy = d.globalPosition.dy - start.dy; // up is negative
+
+    final cancel = dx <= -_cancelDxThreshold;
+    final lock = dy <= -_lockDyThreshold;
+
+    if (cancel != _recCancelling || lock != _recLocked) {
+      setState(() {
+        _recCancelling = cancel;
+        _recLocked = lock;
+      });
+    }
+  }
+
+  Future<void> _recEnd(LongPressEndDetails d) async {
+    if (!_recRecording) return;
+
+    if (_recLocked) return; // locked: user will stop manually
+
+    if (_recCancelling) {
+      await _recCancel();
+      return;
+    }
+
+    await _recStopAndSend();
+  }
+
+  Future<void> _recCancel() async {
+    try {
+      _recTicker?.cancel();
+      _recTicker = null;
+
+      await _rec.stop();
+      final p = _recPath;
+      if (p != null) {
+        final f = File(p);
+        if (await f.exists()) {
+          await f.delete().catchError((_) {});
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _recRecording = false;
+      _recLocked = false;
+      _recCancelling = false;
+      _recStartedAt = null;
+      _recElapsed = Duration.zero;
+      _recPath = null;
+    });
+  }
+
+  Future<void> _recStopAndSend() async {
+    try {
+      _recTicker?.cancel();
+      _recTicker = null;
+
+      final path = await _rec.stop();
+      if (path == null || path.trim().isEmpty) {
+        await _recCancel();
+        return;
+      }
+
+      final file = File(path);
+      if (!await file.exists()) {
+        await _recCancel();
+        return;
+      }
+
+      final url = await MailUploadClient.defaultClient().uploadFile(file: file);
+      final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      if (!mounted) return;
+      setState(() {
+        _recRecording = false;
+        _recLocked = false;
+        _recCancelling = false;
+        _recStartedAt = null;
+        _recElapsed = Duration.zero;
+        _recPath = null;
+        _attachments.add({'name': name, 'url': url});
+      });
+
+      await _send();
+    } catch (e) {
+      _snack('Audio send failed: $e');
+      await _recCancel();
+    }
+  }
+
+  String _fmtRec(Duration d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final mm = two(d.inMinutes.remainder(60));
+    final ss = two(d.inSeconds.remainder(60));
+    return '$mm:$ss';
+  }
+
+  // ---------------- Inline media helpers ----------------
+
+  static bool _looksLikeImage(String urlOrName) {
+    final s = urlOrName.toLowerCase();
+    return s.endsWith('.jpg') ||
+        s.endsWith('.jpeg') ||
+        s.endsWith('.png') ||
+        s.endsWith('.webp') ||
+        s.endsWith('.gif');
+  }
+
+  static bool _looksLikeAudio(String urlOrName) {
+    final s = urlOrName.toLowerCase();
+    return s.endsWith('.mp3') ||
+        s.endsWith('.m4a') ||
+        s.endsWith('.aac') ||
+        s.endsWith('.wav') ||
+        s.endsWith('.ogg');
+  }
+
+  Future<void> _showImageViewer(String url, {String? title}) async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.92),
+      builder: (_) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(10),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  minScale: 0.6,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                      const Text('Failed to load image', style: TextStyle(color: Colors.white)),
+                      loadingBuilder: (ctx, child, prog) {
+                        if (prog == null) return child;
+                        return const Center(child: CircularProgressIndicator());
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                left: 10,
+                right: 10,
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    ),
+                    if ((title ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          title!.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _toggleAudio(String url) async {
+    try {
+      if (_playingUrl != null && _playingUrl != url) {
+        await _audio.stop();
+        _pos = Duration.zero;
+        _dur = Duration.zero;
+      }
+
+      if (_playingUrl == url && _isPlaying) {
+        await _audio.pause();
+        return;
+      }
+
+      _playingUrl = url;
+      await _audio.play(UrlSource(url));
+    } catch (e) {
+      _snack('Audio failed: $e');
+    }
+  }
+
+  Future<void> _seekAudio(Duration to) async {
+    try {
+      await _audio.seek(to);
+    } catch (_) {}
+  }
+
+  Widget _buildAttachmentWidget({
+    required _MailMsg m,
+    required Map<String, String> a,
+    required bool mine,
+  }) {
+    final name = a['name'] ?? 'Attachment';
+    final url = (a['url'] ?? '').trim();
+    final isImg = _looksLikeImage(url) || _looksLikeImage(name);
+    final isAud = _looksLikeAudio(url) || _looksLikeAudio(name);
+
+    if (isImg && url.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: InkWell(
+          onTap: () => _showImageViewer(url, title: name),
+          borderRadius: BorderRadius.circular(14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 240,
+              height: 160,
+              color: Colors.black.withOpacity(0.06),
+              child: Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'Image failed to load',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: mine ? Colors.white : _navy,
+                    ),
+                  ),
+                ),
+                loadingBuilder: (ctx, child, prog) {
+                  if (prog == null) return child;
+                  return const Center(child: CircularProgressIndicator());
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isAud && url.isNotEmpty) {
+      final active = (_playingUrl == url);
+      final dur = active ? _dur : Duration.zero;
+      final pos = active ? _pos : Duration.zero;
+
+      double progress() {
+        final msDur = dur.inMilliseconds;
+        if (msDur <= 0) return 0.0;
+        final v = pos.inMilliseconds / msDur;
+        if (v.isNaN || v.isInfinite) return 0.0;
+        return v.clamp(0.0, 1.0);
+      }
+
+      String fmt(Duration d) {
+        String two(int n) => n.toString().padLeft(2, '0');
+        final mm = two(d.inMinutes.remainder(60));
+        final ss = two(d.inSeconds.remainder(60));
+        return '$mm:$ss';
+      }
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Container(
+          width: 260,
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  InkWell(
+                    onTap: () => _toggleAudio(url),
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: mine ? Colors.white.withOpacity(0.18) : Colors.white.withOpacity(0.7),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        (active && _isPlaying) ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        color: mine ? Colors.white : _navy,
+                        size: 26,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w900, color: mine ? Colors.white : _navy),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: progress(),
+                minHeight: 6,
+                backgroundColor: mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    active ? fmt(pos) : '00:00',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    active && dur.inMilliseconds > 0 ? fmt(dur) : '--:--',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75),
+                    ),
+                  ),
+                ],
+              ),
+              if (active && dur.inMilliseconds > 0)
+                Slider(
+                  value: pos.inMilliseconds.clamp(0, dur.inMilliseconds).toDouble(),
+                  min: 0,
+                  max: dur.inMilliseconds.toDouble(),
+                  onChanged: (v) => _seekAudio(Duration(milliseconds: v.toInt())),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        onTap: () => _openUrlExternal(url),
+        child: Text(
+          '📎 $name',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            decoration: TextDecoration.underline,
+            color: mine ? Colors.white : _navy,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------- UI helpers (date separators like learner) ----------------
+
+  static String _dayKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _dateLabel(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final thatDay = DateTime(d.year, d.month, d.day);
+    final diffDays = thatDay.difference(today).inDays;
+
+    if (diffDays == 0) return 'Today';
+    if (diffDays == -1) return 'Yesterday';
+    return _dayKey(d);
+  }
+
+  Widget _dateSeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: _datePillBg(context),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _datePillBorder(context)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: _navy.withOpacity(0.85)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  BorderRadius _bubbleRadius({required bool mine}) {
+    const r = Radius.circular(18);
+    const sharp = Radius.circular(6);
+    return BorderRadius.only(
+      topLeft: r,
+      topRight: r,
+      bottomLeft: mine ? r : sharp,
+      bottomRight: mine ? sharp : r,
+    );
+  }
+
+  static String _fmtTime(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(d.hour)}:${two(d.minute)}';
+  }
+
+  // ---------- Homework evaluation + report card (UNCHANGED) ----------
 
   Future<void> _reviewHomeworkFromThread() async {
     try {
@@ -533,6 +1252,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'attachments': [],
         'createdAt': now,
         'deletedFor': {},
+        'reactions': {},
       });
 
       final preview80 = evalText.length > 80 ? evalText.substring(0, 80) : evalText;
@@ -661,7 +1381,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final dev = <String>[];
     final rec = <String>[];
 
-    // Strengths (balanced)
     if (behaviorAvg >= 4) {
       strengths.add('demonstrates positive classroom behavior and engagement');
     } else if (behaviorAvg == 3) {
@@ -678,7 +1397,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       strengths.add('is developing core language skills and confidence');
     }
 
-    // Development areas
     if (behaviorAvg <= 2) {
       dev.add('benefits from additional support with consistency, participation, and classroom routines');
     } else if (behaviorAvg == 3) {
@@ -695,7 +1413,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       dev.add('should continue challenging themselves with more complex language use');
     }
 
-    // Homework / recommendation
     if (homeworkRedo > 0) {
       rec.add('reviewing feedback carefully and resubmitting improvements will accelerate progress');
     }
@@ -1136,7 +1853,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
                     Map<String, dynamic> toItemMap(List<Map<String, dynamic>> list) {
                       String safeKey(String s) {
-                        // RTDB keys cannot contain: . # $ [ ] /
                         var k = s.trim();
                         k = k.replaceAll(RegExp(r'[.#$\[\]/]'), '_');
                         k = k.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -1187,7 +1903,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     await _db.ref('reports/${widget.peerUid}/$reportId').set(reportData);
                     await _threadRef.child('reports').child(reportId).set(true);
 
-                    // Render a final diagram with the real reportId
                     final pngBytes = await _renderWidgetToPng(diagramKey, pixelRatio: 2.5);
                     if (pngBytes == null) {
                       _snack('Could not generate diagram image.');
@@ -1240,49 +1955,108 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (ok == true) {}
   }
 
+  // ---------------- Build ----------------
+
   @override
   Widget build(BuildContext context) {
-    final title = _peerNameShown.isEmpty ? 'Mail' : 'Mail — $_peerNameShown';
+    final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
+    final subjectTrim = widget.subject.trim();
 
     final canReport = _peerIsLearner && (_threadCourseKey != null && _threadCourseKey!.trim().isNotEmpty);
 
+    final showRecBar = _recRecording || _recLocked;
+
     return Scaffold(
       appBar: AppBar(
-        title: GestureDetector(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: _navy),
+        title: _searching
+            ? TextField(
+          controller: _searchC,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Search in this thread…',
+            border: InputBorder.none,
+            hintStyle: TextStyle(color: _navy.withOpacity(0.45), fontWeight: FontWeight.w700),
+          ),
+          style: const TextStyle(color: _navy, fontWeight: FontWeight.w900),
+          onChanged: (_) => setState(() {}),
+        )
+            : GestureDetector(
           onLongPress: canReport ? _openReportCard : null,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Flexible(child: Text(title)),
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: _navy),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               if (_loadedPeerRole && _peerIsLearner) ...[
                 const SizedBox(width: 8),
-                Icon(Icons.assignment_turned_in_rounded, size: 18, color: Colors.white.withOpacity(0.9)),
+                Icon(Icons.assignment_turned_in_rounded, size: 18, color: _navy.withOpacity(0.9)),
               ],
             ],
           ),
         ),
         actions: [
           IconButton(
+            tooltip: _searching ? 'Close search' : 'Search',
+            icon: Icon(_searching ? Icons.close_rounded : Icons.search_rounded, color: _navy),
+            onPressed: () {
+              setState(() {
+                _searching = !_searching;
+                if (!_searching) _searchC.clear();
+              });
+            },
+          ),
+          IconButton(
             tooltip: 'Evaluate homework',
-            icon: const Icon(Icons.fact_check_rounded),
+            icon: Icon(Icons.fact_check_rounded, color: _navy.withOpacity(0.95)),
             onPressed: _reviewHomeworkFromThread,
           ),
           if (_loadedPeerRole && _peerIsLearner)
             IconButton(
               tooltip: canReport ? 'Report card (long press title too)' : 'Report card unavailable (missing courseKey)',
-              icon: Icon(Icons.analytics_rounded, color: canReport ? null : Colors.white.withOpacity(0.45)),
+              icon: Icon(Icons.analytics_rounded, color: canReport ? _navy.withOpacity(0.95) : _navy.withOpacity(0.35)),
               onPressed: canReport ? _openReportCard : null,
             ),
         ],
-        bottom: (widget.subject.trim().isEmpty)
+        bottom: (subjectTrim.isEmpty)
             ? null
             : PreferredSize(
-          preferredSize: const Size.fromHeight(34),
+          preferredSize: const Size.fromHeight(46),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('Topic: ${widget.subject}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: _orange.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _orange.withOpacity(0.35)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.topic_rounded, size: 18, color: _navy.withOpacity(0.9)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        subjectTrim,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.92)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1293,138 +2067,149 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             child: StreamBuilder<DatabaseEvent>(
               stream: _msgStream,
               builder: (_, snap) {
-                final msgs = _parseMessages(snap.data?.snapshot.value);
+                final msgsAll = _parseMessages(snap.data?.snapshot.value);
+                final msgs = _applyLocalSearch(msgsAll);
 
-                if (msgs.isEmpty) {
-                  return const Center(child: Text('No mail yet.'));
-                }
+                if (msgsAll.isEmpty) return const Center(child: Text('No mail yet.'));
+                if (msgs.isEmpty) return const Center(child: Text('No results in this thread.'));
 
                 return ListView.builder(
-                  padding: const EdgeInsets.all(12),
+                  reverse: true,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
                   itemCount: msgs.length,
                   itemBuilder: (_, i) {
                     final m = msgs[i];
                     final mine = m.fromUid == _meUid;
 
+                    final thisDateLabel = _dateLabel(m.createdAtMs);
+                    String? nextDateLabel;
+                    if (i + 1 < msgs.length) nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
+                    final showDate = (i == msgs.length - 1) || (nextDateLabel != thisDateLabel);
+
                     final isReport = m.type == 'report';
 
-                    final bg = isReport
-                        ? (mine ? Colors.deepPurple.withOpacity(0.10) : Colors.deepPurple.withOpacity(0.06))
-                        : (mine ? Colors.blue.withOpacity(0.12) : Colors.black.withOpacity(0.05));
+                    final bubbleBg = mine
+                        ? _mineBubbleBg(context, isReport: isReport)
+                        : _theirsBubbleBg(context, isReport: isReport);
 
-                    final borderColor = isReport ? Colors.deepPurple.withOpacity(0.75) : Colors.transparent;
+                    final textColor = mine ? _mineText(context) : _theirsText(context);
 
-                    return Align(
-                      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 340),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: isReport
-                                ? Border(left: BorderSide(color: Colors.deepPurple.withOpacity(0.75), width: 5))
-                                : null,
-                          ),
-                          child: Card(
-                            elevation: 0,
-                            color: bg,
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (isReport) ...[
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.deepPurple.withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(999),
-                                            border: Border.all(color: Colors.deepPurple.withOpacity(0.25)),
-                                          ),
-                                          child: Text(
-                                            'REPORT',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 10,
-                                              color: Colors.deepPurple.withOpacity(0.9),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ],
-                                      Flexible(
-                                        child: Text(
-                                          mine ? _meDisplayName : _peerNameShown,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.black.withOpacity(0.6),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _fmt(m.createdAtMs),
-                                        style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.55)),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      SizedBox(
-                                        width: 32,
-                                        height: 32,
-                                        child: PopupMenuButton<String>(
-                                          padding: EdgeInsets.zero,
-                                          tooltip: 'Message actions',
-                                          onSelected: (v) async {
-                                            if (v == 'delete_for_me') await _deleteMessageForMe(m);
-                                          },
-                                          itemBuilder: (_) => const [
-                                            PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                    return Column(
+                      children: [
+                        if (showDate) _dateSeparator(thisDateLabel),
+
+                        Align(
+                          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 340),
+                            child: GestureDetector(
+                              onLongPress: () => _openMessageActions(m),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: bubbleBg,
+                                  borderRadius: _bubbleRadius(mine: mine),
+                                  border: Border.all(
+                                    color: isReport
+                                        ? (mine ? Colors.white.withOpacity(0.25) : Colors.deepPurple.withOpacity(0.25))
+                                        : (mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08)),
                                   ),
-                                  if (m.body.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Text(m.body),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 6),
+                                      color: Colors.black.withOpacity(0.05),
+                                    ),
                                   ],
-                                  if (m.attachments.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    ...m.attachments.map((a) {
-                                      final name = a['name'] ?? 'Attachment';
-                                      final url = a['url'] ?? '';
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 6),
-                                        child: InkWell(
-                                          onTap: () => _openUrlExternal(url),
-                                          child: Text(
-                                            '📎 $name',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              decoration: TextDecoration.underline,
-                                            ),
+                                ),
+                                padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
+                                child: Column(
+                                  crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  children: [
+                                    if (isReport && !mine) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.20),
+                                          borderRadius: BorderRadius.circular(999),
+                                          border: Border.all(color: Colors.white.withOpacity(0.22)),
+                                        ),
+                                        child: const Text(
+                                          'REPORT',
+                                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.white),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+
+                                    if (m.body.trim().isNotEmpty)
+                                      Text(
+                                        m.body,
+                                        style: TextStyle(
+                                          color: textColor,
+                                          fontSize: 15,
+                                          height: 1.35,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+
+                                    if (m.attachments.isNotEmpty) ...[
+                                      if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
+                                      ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
+                                    ],
+
+                                    _buildReactionsRow(m, mine: mine),
+
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _fmtTime(m.createdAtMs),
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: mine ? Colors.white.withOpacity(0.75) : _navy.withOpacity(0.55),
                                           ),
                                         ),
-                                      );
-                                    }),
+                                        const SizedBox(width: 6),
+                                        SizedBox(
+                                          width: 28,
+                                          height: 28,
+                                          child: PopupMenuButton<String>(
+                                            padding: EdgeInsets.zero,
+                                            tooltip: 'Message actions',
+                                            icon: Icon(
+                                              Icons.more_vert_rounded,
+                                              size: 18,
+                                              color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.65),
+                                            ),
+                                            onSelected: (v) async {
+                                              if (v == 'react') _openMessageActions(m);
+                                              if (v == 'delete_for_me') await _deleteMessageForMe(m);
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem(value: 'react', child: Text('React')),
+                                              PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     );
                   },
                 );
               },
             ),
           ),
+
+          // Composer
           SafeArea(
             top: false,
             child: Padding(
@@ -1445,31 +2230,154 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         }).toList(),
                       ),
                     ),
+
+                  // Recording bar
+                  if (showRecBar)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: _navy.withOpacity(0.10)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.mic_rounded, color: _orange.withOpacity(0.95)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _recLocked ? 'Recording (locked)' : (_recCancelling ? 'Release to cancel' : 'Recording…'),
+                                  style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9)),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _fmtRec(_recElapsed),
+                                  style: TextStyle(fontWeight: FontWeight.w800, color: _navy.withOpacity(0.65)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_recLocked) ...[
+                            IconButton(
+                              tooltip: 'Cancel',
+                              onPressed: _recCancel,
+                              icon: Icon(Icons.close_rounded, color: Colors.red.withOpacity(0.85)),
+                            ),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _navy,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onPressed: _recStopAndSend,
+                              child: const Text('Send'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
                   Row(
                     children: [
+                      // Camera
+                      IconButton(
+                        tooltip: 'Camera',
+                        onPressed: (_sending || _recRecording) ? null : _takePhotoAndAttach,
+                        icon: Icon(Icons.photo_camera_rounded, color: _navy.withOpacity(0.9)),
+                      ),
+
+                      // Attach
                       IconButton(
                         tooltip: 'Attach',
-                        onPressed: _sending ? null : _pickAndUploadAttachment,
-                        icon: const Icon(Icons.attach_file),
+                        onPressed: (_sending || _recRecording) ? null : _pickAndUploadAttachment,
+                        icon: Icon(Icons.attach_file, color: _navy.withOpacity(0.9)),
                       ),
+
                       Expanded(
                         child: TextField(
                           controller: _bodyC,
+                          onChanged: (_) => setState(() {}), // important for Send/Mic toggle
                           minLines: 1,
                           maxLines: 4,
-                          decoration: const InputDecoration(
-                            hintText: 'Write mail…',
-                            border: OutlineInputBorder(),
+                          enabled: !_recRecording,
+                          decoration: InputDecoration(
+                            hintText: _recRecording ? 'Recording…' : 'Message…',
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.92),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: _navy.withOpacity(0.15)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: _navy.withOpacity(0.12)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: _orange.withOpacity(0.65), width: 1.2),
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _sending ? null : _send,
-                        child: Text(_sending ? 'Sending…' : 'Send'),
-                      ),
+
+                      if (_bodyC.text.trim().isNotEmpty || _attachments.isNotEmpty)
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _navy,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          ),
+                          onPressed: _sending ? null : _send,
+                          child: Text(_sending ? 'Sending…' : 'Send'),
+                        )
+                      else
+                        GestureDetector(
+                          onLongPressStart: _recStart,
+                          onLongPressMoveUpdate: _recMove,
+                          onLongPressEnd: _recEnd,
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: _navy,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Icon(
+                              _recRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
+
+                  if (_recRecording && !_recLocked)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded, size: 16, color: _navy.withOpacity(0.55)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Hold to record • Swipe left to cancel • Slide up to lock',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: _navy.withOpacity(0.55),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1477,12 +2385,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ],
       ),
     );
-  }
-
-  static String _fmt(int ms) {
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
   String _gradeFromScore(int score) {
@@ -1690,7 +2592,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             Text('Teacher: $teacherName', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
 
-            // Quick summary row
             Wrap(
               spacing: 10,
               runSpacing: 8,
@@ -1707,7 +2608,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             const SizedBox(height: 12),
             const Divider(),
 
-            // Details (fixed size, capped)
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1817,6 +2717,7 @@ class _MailMsg {
     required this.createdAtMs,
     required this.deletedFor,
     required this.type,
+    required this.reactions,
   });
 
   final String id;
@@ -1826,6 +2727,9 @@ class _MailMsg {
   final int createdAtMs;
   final Set<String> deletedFor;
   final String type; // '', 'report', ...
+
+  // emoji -> set of uids
+  final Map<String, Set<String>> reactions;
 
   factory _MailMsg.fromMap(String id, Map<String, dynamic> m) {
     int parseMs(dynamic v) {
@@ -1853,6 +2757,22 @@ class _MailMsg {
       });
     }
 
+    final rx = <String, Set<String>>{};
+    final rawRx = m['reactions'];
+    if (rawRx is Map) {
+      rawRx.forEach((emoji, users) {
+        if (emoji == null) return;
+        final set = <String>{};
+        if (users is Map) {
+          users.forEach((uid, ok) {
+            if (uid == null) return;
+            if (ok == true) set.add(uid.toString());
+          });
+        }
+        if (set.isNotEmpty) rx[emoji.toString()] = set;
+      });
+    }
+
     return _MailMsg(
       id: id,
       fromUid: (m['fromUid'] ?? '').toString(),
@@ -1861,6 +2781,7 @@ class _MailMsg {
       createdAtMs: parseMs(m['createdAt']),
       deletedFor: del,
       type: (m['type'] ?? '').toString().trim(),
+      reactions: rx,
     );
   }
 }
