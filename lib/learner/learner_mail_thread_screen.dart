@@ -47,9 +47,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static Color _theirsBubbleBg(BuildContext context) => _orange.withOpacity(0.80);
   static Color _theirsText(BuildContext context) => _navyDark;
 
-  static Color _datePillBg(BuildContext context) => Colors.white.withOpacity(0.85);
+  static Color _datePillBg(BuildContext context) => Colors.white.withOpacity(0.88);
   static Color _datePillBorder(BuildContext context) => _navy.withOpacity(0.15);
 
+  // Used only to fix relative/odd media URLs. Matches your upload endpoint domain.
+  static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
   // ------------------------------------------------
 
   final _db = FirebaseDatabase.instance;
@@ -88,16 +90,25 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
-  String? _playingUrl;
+  StreamSubscription<void>? _completeSub;
+  String? _playingUrl; // normalized url
   Duration _pos = Duration.zero;
   Duration _dur = Duration.zero;
   bool _isPlaying = false;
 
   // Audio recording (composer)
   final AudioRecorder _rec = AudioRecorder();
+
+  bool _recStarting = false; // fixes "release before start finishes" bug
   bool _recRecording = false;
+  bool _recUploading = false;
+
   bool _recLocked = false;
   bool _recCancelling = false;
+
+  bool _recPendingStop = false;
+  bool _recPendingCancel = false;
+
   DateTime? _recStartedAt;
   Timer? _recTicker;
   Duration _recElapsed = Duration.zero;
@@ -105,13 +116,17 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   // Gesture tracking (WhatsApp-ish)
   Offset? _pressStartGlobal;
-  static const double _cancelDxThreshold = 90; // swipe left to cancel
-  static const double _lockDyThreshold = 70; // slide up to lock
+
+  // Tweaked thresholds to avoid accidental lock
+  static const double _cancelDxThreshold = 110; // swipe left to cancel
+  static const double _lockDyThreshold = 95; // slide up to lock
+  static const double _lockDeadzoneDx = 45; // don't lock if also dragging sideways
 
   @override
   void initState() {
     super.initState();
     RouteState.enterMailThread(widget.threadId);
+
     _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
     _markRead();
     _loadNames();
@@ -128,21 +143,32 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (!mounted) return;
       setState(() => _isPlaying = (s == PlayerState.playing));
     });
+    _completeSub = _audio.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _isPlaying = false;
+        // keep _playingUrl so the UI stays "active", but clamp to end
+        _pos = _dur;
+      });
+    });
   }
 
   @override
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
+
     _bodyC.dispose();
     _searchC.dispose();
 
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
+    _completeSub?.cancel();
     _audio.dispose();
 
     _recTicker?.cancel();
     unawaited(_rec.dispose());
+
     super.dispose();
   }
 
@@ -201,6 +227,46 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
       await _db.ref(hwPath).update({'submittedAt': ServerValue.timestamp});
     } catch (_) {}
+  }
+
+  // ---------------- URL + media fixes ----------------
+
+  /// Fixes:
+  /// - URLs like "//domain/path" (adds https:)
+  /// - relative URLs like "/uploads/a.jpg" or "uploads/a.jpg" (adds your origin)
+  /// - http:// (prefers https:// to avoid Android cleartext issues)
+  /// - spaces (encodes)
+  static String _safeNetworkUrl(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return '';
+
+    s = s.replaceAll('\\', '/');
+
+    if (s.startsWith('//')) s = 'https:$s';
+
+    // If it looks like a relative path, prefix origin.
+    final u0 = Uri.tryParse(s);
+    final hasScheme = u0 != null && u0.scheme.isNotEmpty;
+
+    if (!hasScheme) {
+      if (s.startsWith('/')) {
+        s = '$_uploadOrigin$s';
+      } else {
+        s = '$_uploadOrigin/$s';
+      }
+    }
+
+    // Prefer https if backend ever returns http
+    if (s.startsWith('http://')) {
+      s = 'https://${s.substring('http://'.length)}';
+    }
+
+    // Ensure it's safely encoded
+    final u1 = Uri.tryParse(s);
+    if (u1 == null) return Uri.encodeFull(s);
+
+    // Uri.toString() is safe and normalized
+    return u1.toString();
   }
 
   // ---------------- Parsing ----------------
@@ -274,10 +340,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   }
 
   Future<void> _openUrlExternal(String raw) async {
-    final url = raw.trim();
-    if (url.isEmpty) return;
-    final u = Uri.tryParse(url.startsWith('//') ? 'https:$url' : url);
+    final fixed = _safeNetworkUrl(raw);
+    if (fixed.isEmpty) return;
+
+    final u = Uri.tryParse(fixed);
     if (u == null) return;
+
     try {
       await launchUrl(u, mode: LaunchMode.externalApplication);
     } catch (_) {}
@@ -397,23 +465,35 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     }
   }
 
-  // ---------------- WhatsApp-style recording ----------------
+  // ---------------- WhatsApp-style recording (FIXED) ----------------
+
+  bool get _composerBusy => _sending || _recStarting || _recRecording || _recUploading;
 
   Future<void> _recStart(LongPressStartDetails d) async {
-    if (_sending) return;
+    if (_composerBusy) return;
+
+    // Optimistically flip to recording UI immediately to avoid the “release before start finishes” bug.
+    _pressStartGlobal = d.globalPosition;
+    _recStarting = true;
+    _recRecording = true;
+    _recUploading = false;
+    _recCancelling = false;
+    _recLocked = false;
+    _recPendingStop = false;
+    _recPendingCancel = false;
+    _recElapsed = Duration.zero;
+    _recStartedAt = DateTime.now();
+    _recPath = null;
+
+    if (mounted) setState(() {});
 
     try {
       final ok = await _rec.hasPermission();
       if (!ok) {
         _snack('Microphone permission denied.');
+        _resetRecUi();
         return;
       }
-
-      _pressStartGlobal = d.globalPosition;
-      _recCancelling = false;
-      _recLocked = false;
-      _recElapsed = Duration.zero;
-      _recStartedAt = DateTime.now();
 
       final tmp = await getTemporaryDirectory();
       final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
@@ -436,14 +516,30 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         setState(() => _recElapsed = DateTime.now().difference(start));
       });
 
-      setState(() => _recRecording = true);
+      _recStarting = false;
+      if (mounted) setState(() {});
+
+      // If the user already released while we were starting, complete the action now.
+      if (_recPendingCancel) {
+        _recPendingCancel = false;
+        await _recCancel();
+        return;
+      }
+      if (_recPendingStop && !_recLocked) {
+        _recPendingStop = false;
+        await _recStopAndSend();
+        return;
+      }
     } catch (e) {
       _snack('Record failed: $e');
+      _resetRecUi();
     }
   }
 
   void _recMove(LongPressMoveUpdateDetails d) {
-    if (!_recRecording || _recLocked) return;
+    if (!_recRecording) return; // includes "starting"
+    if (_recLocked) return;
+
     final start = _pressStartGlobal;
     if (start == null) return;
 
@@ -451,7 +547,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     final dy = d.globalPosition.dy - start.dy; // up is negative
 
     final cancel = dx <= -_cancelDxThreshold;
-    final lock = dy <= -_lockDyThreshold;
+
+    // lock must be a clear upward slide (not diagonal)
+    final lock = (dy <= -_lockDyThreshold) && (dx.abs() <= _lockDeadzoneDx);
 
     if (cancel != _recCancelling || lock != _recLocked) {
       setState(() {
@@ -464,7 +562,18 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   Future<void> _recEnd(LongPressEndDetails d) async {
     if (!_recRecording) return;
 
-    // if locked: ignore end (user will stop manually)
+    // If we are still starting, mark what should happen once start finishes.
+    if (_recStarting) {
+      if (_recLocked) return; // user intentionally locked while starting
+      if (_recCancelling) {
+        _recPendingCancel = true;
+      } else {
+        _recPendingStop = true;
+      }
+      return;
+    }
+
+    // If locked: ignore end (user will stop manually)
     if (_recLocked) return;
 
     if (_recCancelling) {
@@ -475,11 +584,39 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     await _recStopAndSend();
   }
 
+  Future<void> _recLongPressCancel() async {
+    // Safety: if the gesture is cancelled by the system, don't leave recording running.
+    if (!_recRecording) return;
+    await _recCancel();
+  }
+
+  void _resetRecUi() {
+    _recTicker?.cancel();
+    _recTicker = null;
+
+    _recStarting = false;
+    _recRecording = false;
+    _recUploading = false;
+
+    _recLocked = false;
+    _recCancelling = false;
+
+    _recPendingStop = false;
+    _recPendingCancel = false;
+
+    _recStartedAt = null;
+    _recElapsed = Duration.zero;
+    _recPath = null;
+
+    if (mounted) setState(() {});
+  }
+
   Future<void> _recCancel() async {
     try {
       _recTicker?.cancel();
       _recTicker = null;
 
+      // stop safely (may throw if start never completed)
       await _rec.stop();
       final p = _recPath;
       if (p != null) {
@@ -490,18 +627,18 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       }
     } catch (_) {}
 
-    if (!mounted) return;
-    setState(() {
-      _recRecording = false;
-      _recLocked = false;
-      _recCancelling = false;
-      _recStartedAt = null;
-      _recElapsed = Duration.zero;
-      _recPath = null;
-    });
+    _resetRecUi();
   }
 
   Future<void> _recStopAndSend() async {
+    if (_recUploading) return;
+
+    setState(() {
+      _recUploading = true;
+      _recCancelling = false;
+      _recLocked = false;
+    });
+
     try {
       _recTicker?.cancel();
       _recTicker = null;
@@ -522,22 +659,40 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       final url = await MailUploadClient.defaultClient().uploadFile(file: file);
       final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
+      // cleanup local file
+      await file.delete().catchError((_) {});
+
       if (!mounted) return;
+
+      // Stop recording UI first, then add attachment + send
       setState(() {
+        _recStarting = false;
         _recRecording = false;
-        _recLocked = false;
-        _recCancelling = false;
+        _recUploading = false;
+
         _recStartedAt = null;
         _recElapsed = Duration.zero;
         _recPath = null;
+
         _attachments.add({'name': name, 'url': url});
       });
 
-      // send immediately
       await _send();
     } catch (e) {
       _snack('Audio send failed: $e');
       await _recCancel();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recUploading = false;
+          _recStarting = false;
+          _recRecording = false;
+          _recLocked = false;
+          _recCancelling = false;
+          _recPendingStop = false;
+          _recPendingCancel = false;
+        });
+      }
     }
   }
 
@@ -552,16 +707,27 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   static bool _looksLikeImage(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.jpg') || s.endsWith('.jpeg') || s.endsWith('.png') || s.endsWith('.webp') || s.endsWith('.gif');
+    return s.endsWith('.jpg') ||
+        s.endsWith('.jpeg') ||
+        s.endsWith('.png') ||
+        s.endsWith('.webp') ||
+        s.endsWith('.gif');
   }
 
   static bool _looksLikeAudio(String urlOrName) {
     final s = urlOrName.toLowerCase();
-    return s.endsWith('.mp3') || s.endsWith('.m4a') || s.endsWith('.aac') || s.endsWith('.wav') || s.endsWith('.ogg');
+    return s.endsWith('.mp3') ||
+        s.endsWith('.m4a') ||
+        s.endsWith('.aac') ||
+        s.endsWith('.wav') ||
+        s.endsWith('.ogg');
   }
 
-  Future<void> _showImageViewer(String url, {String? title}) async {
+  Future<void> _showImageViewer(String rawUrl, {String? title}) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
     if (!mounted) return;
+
     await showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.92),
@@ -579,7 +745,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                     child: Image.network(
                       url,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Text('Failed to load image', style: TextStyle(color: Colors.white)),
+                      errorBuilder: (_, __, ___) => const Text(
+                        'Failed to load image',
+                        style: TextStyle(color: Colors.white),
+                      ),
                       loadingBuilder: (ctx, child, prog) {
                         if (prog == null) return child;
                         return const Center(child: CircularProgressIndicator());
@@ -619,8 +788,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     );
   }
 
-  Future<void> _toggleAudio(String url) async {
+  Future<void> _toggleAudio(String rawUrl) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
+
     try {
+      // switching audio
       if (_playingUrl != null && _playingUrl != url) {
         await _audio.stop();
         _pos = Duration.zero;
@@ -661,7 +834,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     }
   }
 
-  void _openMessageActions(_MailMsg m) {
+  // LONG PRESS: reactions ONLY (as you requested)
+  void _openReactionsPicker(_MailMsg m) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -676,7 +850,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             children: [
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('React', style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9))),
+                child: Text(
+                  'React',
+                  style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9)),
+                ),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -702,16 +879,6 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 18),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.delete_outline_rounded, color: Colors.red.withOpacity(0.85)),
-                title: const Text('Delete (for me)', style: TextStyle(fontWeight: FontWeight.w800)),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _deleteMessageForMe(m);
-                },
-              ),
             ],
           ),
         );
@@ -733,7 +900,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     final show = entries.take(4).toList();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 4),
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
         child: Wrap(
@@ -742,17 +909,17 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
             final bg = selected ? Colors.white.withOpacity(0.22) : Colors.white.withOpacity(0.16);
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: mine ? bg : Colors.black.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: mine ? Colors.white.withOpacity(0.22) : _navy.withOpacity(0.12)),
+                border: Border.all(color: mine ? Colors.white.withOpacity(0.20) : _navy.withOpacity(0.10)),
               ),
               child: Text(
                 '${e.key} ${e.value}',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 12,
+                  fontSize: 11.5,
                   color: mine ? Colors.white : _navy.withOpacity(0.92),
                 ),
               ),
@@ -782,10 +949,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   Widget _dateSeparator(String label) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: _datePillBg(context),
             borderRadius: BorderRadius.circular(999),
@@ -793,7 +960,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           ),
           child: Text(
             label,
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: _navy.withOpacity(0.85)),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: _navy.withOpacity(0.85)),
           ),
         ),
       ),
@@ -801,7 +968,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   }
 
   BorderRadius _bubbleRadius({required bool mine}) {
-    const r = Radius.circular(18);
+    const r = Radius.circular(16);
     const sharp = Radius.circular(6);
     return BorderRadius.only(
       topLeft: r,
@@ -823,32 +990,42 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     required bool mine,
   }) {
     final name = a['name'] ?? 'Attachment';
-    final url = (a['url'] ?? '').trim();
+    final rawUrl = (a['url'] ?? '').trim();
+    final url = _safeNetworkUrl(rawUrl);
+
     final isImg = _looksLikeImage(url) || _looksLikeImage(name);
     final isAud = _looksLikeAudio(url) || _looksLikeAudio(name);
 
     if (isImg && url.isNotEmpty) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(top: 6),
         child: InkWell(
           onTap: () => _showImageViewer(url, title: name),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             child: Container(
-              width: 240,
-              height: 160,
+              width: 220,
+              height: 140,
               color: Colors.black.withOpacity(0.06),
               child: Image.network(
                 url,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text('Image failed to load', style: TextStyle(fontWeight: FontWeight.w800, color: mine ? Colors.white : _navy)),
-                ),
+                errorBuilder: (_, __, ___) {
+                  return InkWell(
+                    onTap: () => _openUrlExternal(url),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(
+                        'Image failed to load\nTap to open',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: mine ? Colors.white : _navy),
+                      ),
+                    ),
+                  );
+                },
                 loadingBuilder: (ctx, child, prog) {
                   if (prog == null) return child;
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(child: CircularProgressIndicator(strokeWidth: 2));
                 },
               ),
             ),
@@ -878,13 +1055,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       }
 
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(top: 6),
         child: Container(
-          width: 260,
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          width: 240,
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
           decoration: BoxDecoration(
             color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10)),
           ),
           child: Column(
@@ -896,8 +1073,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                     onTap: () => _toggleAudio(url),
                     borderRadius: BorderRadius.circular(999),
                     child: Container(
-                      width: 42,
-                      height: 42,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: mine ? Colors.white.withOpacity(0.18) : Colors.white.withOpacity(0.7),
                         shape: BoxShape.circle,
@@ -905,7 +1082,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       child: Icon(
                         (active && _isPlaying) ? Icons.pause_rounded : Icons.play_arrow_rounded,
                         color: mine ? Colors.white : _navy,
-                        size: 26,
+                        size: 24,
                       ),
                     ),
                   ),
@@ -915,7 +1092,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.w900, color: mine ? Colors.white : _navy),
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5, color: mine ? Colors.white : _navy),
                     ),
                   ),
                 ],
@@ -923,20 +1100,28 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
               const SizedBox(height: 8),
               LinearProgressIndicator(
                 value: progress(),
-                minHeight: 6,
+                minHeight: 5,
                 backgroundColor: mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Text(
                     active ? fmt(pos) : '00:00',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75)),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11.5,
+                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75),
+                    ),
                   ),
                   const Spacer(),
                   Text(
                     active && dur.inMilliseconds > 0 ? fmt(dur) : '--:--',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75)),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11.5,
+                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75),
+                    ),
                   ),
                 ],
               ),
@@ -953,8 +1138,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       );
     }
 
+    // Generic file
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(top: 6),
       child: InkWell(
         onTap: () => _openUrlExternal(url),
         child: Text(
@@ -976,7 +1162,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
     final subjectTrim = widget.subject.trim();
 
-    final showRecBar = _recRecording || _recLocked;
+    final showRecBar = _recStarting || _recRecording || _recLocked || _recUploading;
 
     return Scaffold(
       appBar: AppBar(
@@ -1012,9 +1198,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         bottom: (subjectTrim.isEmpty)
             ? null
             : PreferredSize(
-          preferredSize: const Size.fromHeight(46),
+          preferredSize: const Size.fromHeight(44),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Container(
@@ -1059,7 +1245,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
                   return ListView.builder(
                     reverse: true,
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                     itemCount: msgs.length,
                     itemBuilder: (_, i) {
                       final m = msgs[i];
@@ -1073,83 +1259,100 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       final bubbleBg = mine ? _mineBubbleBg(context) : _theirsBubbleBg(context);
                       final textColor = mine ? _mineText(context) : _theirsText(context);
 
+                      final bodyText = m.body.trim(); // helps “one word but whole line colored” from old messages
+
                       return Column(
                         children: [
                           if (showDate) _dateSeparator(thisDateLabel),
-                          Align(
-                            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 340),
-                              child: GestureDetector(
-                                onLongPress: () => _openMessageActions(m),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: bubbleBg,
-                                    borderRadius: _bubbleRadius(mine: mine),
-                                    border: Border.all(color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08)),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 6),
-                                        color: Colors.black.withOpacity(0.05),
-                                      ),
-                                    ],
-                                  ),
-                                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
-                                  child: Column(
-                                    crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                                    children: [
-                                      if (m.body.trim().isNotEmpty)
-                                        Text(
-                                          m.body,
-                                          style: TextStyle(
-                                            color: textColor,
-                                            fontSize: 15,
-                                            height: 1.35,
-                                            fontWeight: FontWeight.w600,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              mainAxisAlignment: mine ? MainAxisAlignment.end : MainAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Flexible(
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 340),
+                                    child: GestureDetector(
+                                      onLongPress: () => _openReactionsPicker(m), // ✅ long press = reactions only
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: bubbleBg,
+                                          borderRadius: _bubbleRadius(mine: mine),
+                                          border: Border.all(
+                                            color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08),
                                           ),
-                                        ),
-                                      if (m.attachments.isNotEmpty) ...[
-                                        if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
-                                        ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
-                                      ],
-                                      _buildReactionsRow(m, mine: mine),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            _fmtTime(m.createdAtMs),
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w800,
-                                              color: mine ? Colors.white.withOpacity(0.75) : _navy.withOpacity(0.55),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 6),
+                                              color: Colors.black.withOpacity(0.04),
                                             ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          SizedBox(
-                                            width: 28,
-                                            height: 28,
-                                            child: PopupMenuButton<String>(
-                                              padding: EdgeInsets.zero,
-                                              tooltip: 'Message actions',
-                                              icon: Icon(Icons.more_vert_rounded, size: 18, color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.65)),
-                                              onSelected: (v) async {
-                                                if (v == 'react') _openMessageActions(m);
-                                                if (v == 'delete_for_me') await _deleteMessageForMe(m);
-                                              },
-                                              itemBuilder: (_) => const [
-                                                PopupMenuItem(value: 'react', child: Text('React')),
-                                                PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+                                          ],
+                                        ),
+                                        padding: const EdgeInsets.fromLTRB(10, 8, 8, 6), // ✅ compact
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                          children: [
+                                            if (bodyText.isNotEmpty)
+                                              Text(
+                                                bodyText,
+                                                style: TextStyle(
+                                                  color: textColor,
+                                                  fontSize: 14.2,
+                                                  height: 1.28,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            if (m.attachments.isNotEmpty) ...[
+                                              if (bodyText.isNotEmpty) const SizedBox(height: 4),
+                                              ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
+                                            ],
+                                            _buildReactionsRow(m, mine: mine),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  _fmtTime(m.createdAtMs),
+                                                  style: TextStyle(
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: mine ? Colors.white.withOpacity(0.75) : _navy.withOpacity(0.55),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+
+                                                // ✅ three dots = delete only
+                                                SizedBox(
+                                                  width: 26,
+                                                  height: 26,
+                                                  child: PopupMenuButton<String>(
+                                                    padding: EdgeInsets.zero,
+                                                    tooltip: 'Delete',
+                                                    icon: Icon(
+                                                      Icons.more_vert_rounded,
+                                                      size: 18,
+                                                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.65),
+                                                    ),
+                                                    onSelected: (v) async {
+                                                      if (v == 'delete_for_me') await _deleteMessageForMe(m);
+                                                    },
+                                                    itemBuilder: (_) => const [
+                                                      PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+                                                    ],
+                                                  ),
+                                                ),
                                               ],
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                         ],
@@ -1182,13 +1385,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                         ),
                       ),
 
-                    // Recording bar (WhatsApp-ish)
+                    // Recording bar (fixed + clearer states)
                     if (showRecBar)
                       Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.95),
+                          color: Colors.white.withOpacity(0.96),
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(color: _navy.withOpacity(0.10)),
                         ),
@@ -1201,7 +1404,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    _recLocked ? 'Recording (locked)' : (_recCancelling ? 'Release to cancel' : 'Recording…'),
+                                    _recUploading
+                                        ? 'Uploading audio…'
+                                        : _recLocked
+                                        ? 'Recording (locked)'
+                                        : (_recCancelling ? 'Release to cancel' : (_recStarting ? 'Starting…' : 'Recording…')),
                                     style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9)),
                                   ),
                                   const SizedBox(height: 4),
@@ -1212,12 +1419,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                 ],
                               ),
                             ),
-                            if (_recLocked) ...[
+                            if (_recUploading)
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            if (!_recUploading) ...[
                               IconButton(
                                 tooltip: 'Cancel',
                                 onPressed: _recCancel,
                                 icon: Icon(Icons.close_rounded, color: Colors.red.withOpacity(0.85)),
                               ),
+                              // Always allow manual stop/send (even if not locked) => prevents “stuck recording”
                               FilledButton(
                                 style: FilledButton.styleFrom(
                                   backgroundColor: _navy,
@@ -1237,14 +1451,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                         // Camera
                         IconButton(
                           tooltip: 'Camera',
-                          onPressed: (_sending || _recRecording) ? null : _takePhotoAndAttach,
+                          onPressed: _composerBusy ? null : _takePhotoAndAttach,
                           icon: Icon(Icons.photo_camera_rounded, color: _navy.withOpacity(0.9)),
                         ),
 
                         // Attach files
                         IconButton(
                           tooltip: 'Attach',
-                          onPressed: (_sending || _recRecording) ? null : _pickAndUploadAttachment,
+                          onPressed: _composerBusy ? null : _pickAndUploadAttachment,
                           icon: Icon(Icons.attach_file, color: _navy.withOpacity(0.9)),
                         ),
 
@@ -1254,9 +1468,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                             onChanged: (_) => setState(() {}),
                             minLines: 1,
                             maxLines: 4,
-                            enabled: !_recRecording, // disable typing while recording (like WhatsApp)
+                            enabled: !_recRecording && !_recStarting && !_recUploading,
                             decoration: InputDecoration(
-                              hintText: _recRecording ? 'Recording…' : 'Message…',
+                              hintText: (_recRecording || _recStarting || _recUploading) ? 'Recording…' : 'Message…',
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.92),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1277,7 +1491,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                         ),
                         const SizedBox(width: 8),
 
-                        // If text/attachments exist → Send button. Otherwise → Mic button (WhatsApp feel)
+                        // If text/attachments exist → Send button. Otherwise → Mic button
                         if (_bodyC.text.trim().isNotEmpty || _attachments.isNotEmpty)
                           FilledButton(
                             style: FilledButton.styleFrom(
@@ -1294,6 +1508,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                             onLongPressStart: _recStart,
                             onLongPressMoveUpdate: _recMove,
                             onLongPressEnd: _recEnd,
+                            onLongPressCancel: _recLongPressCancel,
                             child: Container(
                               width: 48,
                               height: 48,
@@ -1302,7 +1517,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: Icon(
-                                _recRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+                                (_recRecording || _recStarting) ? Icons.mic_rounded : Icons.mic_none_rounded,
                                 color: Colors.white,
                               ),
                             ),
@@ -1310,8 +1525,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       ],
                     ),
 
-                    // Help hint (only while recording and not locked)
-                    if (_recRecording && !_recLocked)
+                    // Hint (only while recording and not locked)
+                    if ((_recRecording || _recStarting) && !_recLocked && !_recUploading)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Row(
@@ -1366,10 +1581,17 @@ class _MailMsg {
       return int.tryParse(v?.toString() ?? '') ?? 0;
     }
 
-    final rawAtt = m['attachments'];
+    // attachments can come as List OR Map (Firebase sometimes stores "lists" as maps)
     final atts = <Map<String, String>>[];
+    final rawAtt = m['attachments'];
     if (rawAtt is List) {
       for (final item in rawAtt) {
+        if (item is Map) {
+          atts.add(item.map((k, v) => MapEntry(k.toString(), v.toString())));
+        }
+      }
+    } else if (rawAtt is Map) {
+      for (final item in rawAtt.values) {
         if (item is Map) {
           atts.add(item.map((k, v) => MapEntry(k.toString(), v.toString())));
         }

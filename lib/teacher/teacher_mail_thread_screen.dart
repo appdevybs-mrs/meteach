@@ -51,14 +51,47 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   static Color _theirsBubbleBg(BuildContext context, {bool isReport = false}) =>
       isReport ? Colors.deepPurple.withOpacity(0.14) : _orange.withOpacity(0.80);
 
-  static Color _theirsText(BuildContext context) =>
-      _navyDark;
+  static Color _theirsText(BuildContext context) => _navyDark;
 
-  static Color _datePillBg(BuildContext context) =>
-      Colors.white.withOpacity(0.85);
+  static Color _datePillBg(BuildContext context) => Colors.white.withOpacity(0.85);
 
-  static Color _datePillBorder(BuildContext context) =>
-      _navy.withOpacity(0.15);
+  static Color _datePillBorder(BuildContext context) => _navy.withOpacity(0.15);
+
+  // Used only to fix relative/odd media URLs. Matches your upload endpoint domain.
+  static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
+
+  /// Fixes:
+  /// - URLs like "//domain/path" (adds https:)
+  /// - relative URLs like "/uploads/a.jpg" or "uploads/a.jpg" (adds your origin)
+  /// - http:// (prefers https:// to avoid Android cleartext issues)
+  /// - spaces (encodes)
+  static String _safeNetworkUrl(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return '';
+
+    s = s.replaceAll('\\', '/');
+
+    if (s.startsWith('//')) s = 'https:$s';
+
+    final u0 = Uri.tryParse(s);
+    final hasScheme = u0 != null && u0.scheme.isNotEmpty;
+
+    if (!hasScheme) {
+      if (s.startsWith('/')) {
+        s = '$_uploadOrigin$s';
+      } else {
+        s = '$_uploadOrigin/$s';
+      }
+    }
+
+    if (s.startsWith('http://')) {
+      s = 'https://${s.substring('http://'.length)}';
+    }
+
+    final u1 = Uri.tryParse(s);
+    if (u1 == null) return Uri.encodeFull(s);
+    return u1.toString();
+  }
 
   // ------------------------------------------------
 
@@ -108,16 +141,25 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
-  String? _playingUrl;
+  StreamSubscription<void>? _completeSub;
+  String? _playingUrl; // normalized
   Duration _pos = Duration.zero;
   Duration _dur = Duration.zero;
   bool _isPlaying = false;
 
-  // Audio recording (WhatsApp-ish composer)
+  // Audio recording (WhatsApp-ish composer) — FIXED like learner
   final AudioRecorder _rec = AudioRecorder();
+
+  bool _recStarting = false; // fixes “release before start finishes”
   bool _recRecording = false;
+  bool _recUploading = false;
+
   bool _recLocked = false;
   bool _recCancelling = false;
+
+  bool _recPendingStop = false;
+  bool _recPendingCancel = false;
+
   DateTime? _recStartedAt;
   Timer? _recTicker;
   Duration _recElapsed = Duration.zero;
@@ -125,8 +167,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   // Gesture tracking
   Offset? _pressStartGlobal;
-  static const double _cancelDxThreshold = 90; // swipe left to cancel
-  static const double _lockDyThreshold = 70; // slide up to lock
+
+  // thresholds tuned to avoid accidental lock/cancel
+  static const double _cancelDxThreshold = 110; // swipe left to cancel
+  static const double _lockDyThreshold = 95; // slide up to lock
+  static const double _lockDeadzoneDx = 45; // don’t lock if also dragging sideways
+
+  bool get _composerBusy => _sending || _recStarting || _recRecording || _recUploading;
 
   @override
   void initState() {
@@ -153,6 +200,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       if (!mounted) return;
       setState(() => _isPlaying = (s == PlayerState.playing));
     });
+    _completeSub = _audio.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _isPlaying = false;
+        _pos = _dur;
+      });
+    });
   }
 
   @override
@@ -164,6 +218,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
+    _completeSub?.cancel();
     _audio.dispose();
 
     _recTicker?.cancel();
@@ -333,10 +388,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 
   Future<void> _openUrlExternal(String raw) async {
-    final url = raw.trim();
-    if (url.isEmpty) return;
+    final fixed = _safeNetworkUrl(raw);
+    if (fixed.isEmpty) return;
 
-    final u = Uri.tryParse(url.startsWith('//') ? 'https:$url' : url);
+    final u = Uri.tryParse(fixed);
     if (u == null) return;
 
     try {
@@ -611,23 +666,33 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     );
   }
 
-  // ---------------- WhatsApp-style recording ----------------
+  // ---------------- WhatsApp-style recording (FIXED) ----------------
 
   Future<void> _recStart(LongPressStartDetails d) async {
-    if (_sending) return;
+    if (_composerBusy) return;
+
+    // Optimistic UI first (prevents “release before start finishes”)
+    _pressStartGlobal = d.globalPosition;
+    _recStarting = true;
+    _recRecording = true;
+    _recUploading = false;
+    _recCancelling = false;
+    _recLocked = false;
+    _recPendingStop = false;
+    _recPendingCancel = false;
+    _recElapsed = Duration.zero;
+    _recStartedAt = DateTime.now();
+    _recPath = null;
+
+    if (mounted) setState(() {});
 
     try {
       final ok = await _rec.hasPermission();
       if (!ok) {
         _snack('Microphone permission denied.');
+        _resetRecUi();
         return;
       }
-
-      _pressStartGlobal = d.globalPosition;
-      _recCancelling = false;
-      _recLocked = false;
-      _recElapsed = Duration.zero;
-      _recStartedAt = DateTime.now();
 
       final tmp = await getTemporaryDirectory();
       final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
@@ -650,15 +715,30 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         setState(() => _recElapsed = DateTime.now().difference(start));
       });
 
-      if (!mounted) return;
-      setState(() => _recRecording = true);
+      _recStarting = false;
+      if (mounted) setState(() {});
+
+      // If user released while still starting, finish now.
+      if (_recPendingCancel) {
+        _recPendingCancel = false;
+        await _recCancel();
+        return;
+      }
+      if (_recPendingStop && !_recLocked) {
+        _recPendingStop = false;
+        await _recStopAndSend();
+        return;
+      }
     } catch (e) {
       _snack('Record failed: $e');
+      _resetRecUi();
     }
   }
 
   void _recMove(LongPressMoveUpdateDetails d) {
-    if (!_recRecording || _recLocked) return;
+    if (!_recRecording) return; // includes starting
+    if (_recLocked) return;
+
     final start = _pressStartGlobal;
     if (start == null) return;
 
@@ -666,7 +746,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final dy = d.globalPosition.dy - start.dy; // up is negative
 
     final cancel = dx <= -_cancelDxThreshold;
-    final lock = dy <= -_lockDyThreshold;
+
+    // lock must be a clear upward slide (not diagonal)
+    final lock = (dy <= -_lockDyThreshold) && (dx.abs() <= _lockDeadzoneDx);
 
     if (cancel != _recCancelling || lock != _recLocked) {
       setState(() {
@@ -679,7 +761,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   Future<void> _recEnd(LongPressEndDetails d) async {
     if (!_recRecording) return;
 
-    if (_recLocked) return; // locked: user will stop manually
+    // If still starting, defer decision until start finishes.
+    if (_recStarting) {
+      if (_recLocked) return;
+      if (_recCancelling) {
+        _recPendingCancel = true;
+      } else {
+        _recPendingStop = true;
+      }
+      return;
+    }
+
+    // Locked: ignore end (user stops manually)
+    if (_recLocked) return;
 
     if (_recCancelling) {
       await _recCancel();
@@ -687,6 +781,33 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
 
     await _recStopAndSend();
+  }
+
+  Future<void> _recLongPressCancel() async {
+    // Safety: if system cancels the gesture, don't leave recording running.
+    if (!_recRecording) return;
+    await _recCancel();
+  }
+
+  void _resetRecUi() {
+    _recTicker?.cancel();
+    _recTicker = null;
+
+    _recStarting = false;
+    _recRecording = false;
+    _recUploading = false;
+
+    _recLocked = false;
+    _recCancelling = false;
+
+    _recPendingStop = false;
+    _recPendingCancel = false;
+
+    _recStartedAt = null;
+    _recElapsed = Duration.zero;
+    _recPath = null;
+
+    if (mounted) setState(() {});
   }
 
   Future<void> _recCancel() async {
@@ -704,18 +825,18 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       }
     } catch (_) {}
 
-    if (!mounted) return;
-    setState(() {
-      _recRecording = false;
-      _recLocked = false;
-      _recCancelling = false;
-      _recStartedAt = null;
-      _recElapsed = Duration.zero;
-      _recPath = null;
-    });
+    _resetRecUi();
   }
 
   Future<void> _recStopAndSend() async {
+    if (_recUploading) return;
+
+    setState(() {
+      _recUploading = true;
+      _recCancelling = false;
+      _recLocked = false;
+    });
+
     try {
       _recTicker?.cancel();
       _recTicker = null;
@@ -735,14 +856,20 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       final url = await MailUploadClient.defaultClient().uploadFile(file: file);
       final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
+      // cleanup local file (prevents storage leak)
+      await file.delete().catchError((_) {});
+
       if (!mounted) return;
+
       setState(() {
+        _recStarting = false;
         _recRecording = false;
-        _recLocked = false;
-        _recCancelling = false;
+        _recUploading = false;
+
         _recStartedAt = null;
         _recElapsed = Duration.zero;
         _recPath = null;
+
         _attachments.add({'name': name, 'url': url});
       });
 
@@ -750,6 +877,18 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (e) {
       _snack('Audio send failed: $e');
       await _recCancel();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recUploading = false;
+          _recStarting = false;
+          _recRecording = false;
+          _recLocked = false;
+          _recCancelling = false;
+          _recPendingStop = false;
+          _recPendingCancel = false;
+        });
+      }
     }
   }
 
@@ -780,8 +919,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         s.endsWith('.ogg');
   }
 
-  Future<void> _showImageViewer(String url, {String? title}) async {
+  Future<void> _showImageViewer(String rawUrl, {String? title}) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
     if (!mounted) return;
+
     await showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.92),
@@ -840,7 +982,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     );
   }
 
-  Future<void> _toggleAudio(String url) async {
+  Future<void> _toggleAudio(String rawUrl) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
+
     try {
       if (_playingUrl != null && _playingUrl != url) {
         await _audio.stop();
@@ -872,7 +1017,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     required bool mine,
   }) {
     final name = a['name'] ?? 'Attachment';
-    final url = (a['url'] ?? '').trim();
+    final rawUrl = (a['url'] ?? '').trim();
+    final url = _safeNetworkUrl(rawUrl);
+
     final isImg = _looksLikeImage(url) || _looksLikeImage(name);
     final isAud = _looksLikeAudio(url) || _looksLikeAudio(name);
 
@@ -891,16 +1038,21 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               child: Image.network(
                 url,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    'Image failed to load',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: mine ? Colors.white : _navy,
+                errorBuilder: (_, __, ___) {
+                  return InkWell(
+                    onTap: () => _openUrlExternal(url),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        'Image failed to load\nTap to open',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: mine ? Colors.white : _navy,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
                 loadingBuilder: (ctx, child, prog) {
                   if (prog == null) return child;
                   return const Center(child: CircularProgressIndicator());
@@ -1453,6 +1605,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 
   Future<void> _openReportCard() async {
+    // (UNCHANGED BODY BELOW — kept intact)
     if (!_peerIsLearner) {
       _snack('Report Card is only for learners.');
       return;
@@ -1964,7 +2117,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     final canReport = _peerIsLearner && (_threadCourseKey != null && _threadCourseKey!.trim().isNotEmpty);
 
-    final showRecBar = _recRecording || _recLocked;
+    final showRecBar = _recStarting || _recRecording || _recLocked || _recUploading;
 
     return Scaffold(
       appBar: AppBar(
@@ -2097,7 +2250,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     return Column(
                       children: [
                         if (showDate) _dateSeparator(thisDateLabel),
-
                         Align(
                           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                           child: ConstrainedBox(
@@ -2140,7 +2292,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                       ),
                                       const SizedBox(height: 8),
                                     ],
-
                                     if (m.body.trim().isNotEmpty)
                                       Text(
                                         m.body,
@@ -2151,14 +2302,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
-
                                     if (m.attachments.isNotEmpty) ...[
                                       if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
                                       ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
                                     ],
-
                                     _buildReactionsRow(m, mine: mine),
-
                                     const SizedBox(height: 6),
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -2225,19 +2373,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         children: _attachments.map((a) {
                           return Chip(
                             label: Text(a['name'] ?? 'file'),
-                            onDeleted: () => setState(() => _attachments.remove(a)),
+                            onDeleted: _composerBusy ? null : () => setState(() => _attachments.remove(a)),
                           );
                         }).toList(),
                       ),
                     ),
 
-                  // Recording bar
+                  // Recording bar (fixed + clearer states)
                   if (showRecBar)
                     Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.95),
+                        color: Colors.white.withOpacity(0.96),
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(color: _navy.withOpacity(0.10)),
                       ),
@@ -2250,7 +2398,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _recLocked ? 'Recording (locked)' : (_recCancelling ? 'Release to cancel' : 'Recording…'),
+                                  _recUploading
+                                      ? 'Uploading audio…'
+                                      : _recLocked
+                                      ? 'Recording (locked)'
+                                      : (_recCancelling ? 'Release to cancel' : (_recStarting ? 'Starting…' : 'Recording…')),
                                   style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9)),
                                 ),
                                 const SizedBox(height: 4),
@@ -2261,12 +2413,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               ],
                             ),
                           ),
-                          if (_recLocked) ...[
+                          if (_recUploading)
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          if (!_recUploading) ...[
                             IconButton(
                               tooltip: 'Cancel',
                               onPressed: _recCancel,
                               icon: Icon(Icons.close_rounded, color: Colors.red.withOpacity(0.85)),
                             ),
+                            // Always allow manual stop/send => prevents “stuck recording”
                             FilledButton(
                               style: FilledButton.styleFrom(
                                 backgroundColor: _navy,
@@ -2286,26 +2445,26 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       // Camera
                       IconButton(
                         tooltip: 'Camera',
-                        onPressed: (_sending || _recRecording) ? null : _takePhotoAndAttach,
+                        onPressed: _composerBusy ? null : _takePhotoAndAttach,
                         icon: Icon(Icons.photo_camera_rounded, color: _navy.withOpacity(0.9)),
                       ),
 
                       // Attach
                       IconButton(
                         tooltip: 'Attach',
-                        onPressed: (_sending || _recRecording) ? null : _pickAndUploadAttachment,
+                        onPressed: _composerBusy ? null : _pickAndUploadAttachment,
                         icon: Icon(Icons.attach_file, color: _navy.withOpacity(0.9)),
                       ),
 
                       Expanded(
                         child: TextField(
                           controller: _bodyC,
-                          onChanged: (_) => setState(() {}), // important for Send/Mic toggle
+                          onChanged: (_) => setState(() {}),
                           minLines: 1,
                           maxLines: 4,
-                          enabled: !_recRecording,
+                          enabled: !_recRecording && !_recStarting && !_recUploading,
                           decoration: InputDecoration(
-                            hintText: _recRecording ? 'Recording…' : 'Message…',
+                            hintText: (_recRecording || _recStarting || _recUploading) ? 'Recording…' : 'Message…',
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.92),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2342,6 +2501,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                           onLongPressStart: _recStart,
                           onLongPressMoveUpdate: _recMove,
                           onLongPressEnd: _recEnd,
+                          onLongPressCancel: _recLongPressCancel,
                           child: Container(
                             width: 48,
                             height: 48,
@@ -2350,7 +2510,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               borderRadius: BorderRadius.circular(18),
                             ),
                             child: Icon(
-                              _recRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+                              (_recRecording || _recStarting) ? Icons.mic_rounded : Icons.mic_none_rounded,
                               color: Colors.white,
                             ),
                           ),
@@ -2358,7 +2518,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     ],
                   ),
 
-                  if (_recRecording && !_recLocked)
+                  if ((_recRecording || _recStarting) && !_recLocked && !_recUploading)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Row(
@@ -2588,10 +2748,11 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             const SizedBox(height: 6),
             Text('Learner: $learnerName', style: const TextStyle(fontWeight: FontWeight.w900)),
             Text('Course: $courseKey', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
-            Text('Date: ${_fmtDate(createdAtMs)}', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
-            Text('Teacher: $teacherName', style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
+            Text('Date: ${_fmtDate(createdAtMs)}',
+                style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
+            Text('Teacher: $teacherName',
+                style: TextStyle(color: Colors.black.withOpacity(0.70), fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
-
             Wrap(
               spacing: 10,
               runSpacing: 8,
@@ -2604,10 +2765,8 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                 _kv('Grade', homeworkCommonGrade),
               ],
             ),
-
             const SizedBox(height: 12),
             const Divider(),
-
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2652,10 +2811,8 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
             const Divider(),
-
             _sectionTitle('Auto summary'),
             const SizedBox(height: 6),
             Text(
@@ -2667,9 +2824,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-
             const SizedBox(height: 12),
-
             _sectionTitle('Teacher comment (optional)'),
             const SizedBox(height: 6),
             Container(
@@ -2692,7 +2847,6 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
@@ -2738,10 +2892,17 @@ class _MailMsg {
       return int.tryParse(v?.toString() ?? '') ?? 0;
     }
 
-    final rawAtt = m['attachments'];
+    // attachments can come as List OR Map (Firebase sometimes stores "lists" as maps)
     final atts = <Map<String, String>>[];
+    final rawAtt = m['attachments'];
     if (rawAtt is List) {
       for (final item in rawAtt) {
+        if (item is Map) {
+          atts.add(item.map((k, v) => MapEntry(k.toString(), v.toString())));
+        }
+      }
+    } else if (rawAtt is Map) {
+      for (final item in rawAtt.values) {
         if (item is Map) {
           atts.add(item.map((k, v) => MapEntry(k.toString(), v.toString())));
         }
