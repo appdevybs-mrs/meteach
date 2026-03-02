@@ -39,8 +39,7 @@ class AudioCallService {
   final ValueNotifier<MediaStream?> remoteStreamVN = ValueNotifier(null);
 
   // --- video request popup ---
-  final ValueNotifier<String?> videoOnRequestFromUid =
-  ValueNotifier<String?>(null);
+  final ValueNotifier<String?> videoOnRequestFromUid = ValueNotifier<String?>(null);
 
   // store the peer uid for this call (so enableVideo can notify them)
   String? _peerUid;
@@ -60,6 +59,7 @@ class AudioCallService {
   StreamSubscription<DatabaseEvent>? _reofferSub;
   StreamSubscription<DatabaseEvent>? _reanswerSub;
   bool _handlingReoffer = false;
+  Map<dynamic, dynamic>? _pendingReoffer;
 
   // commands
   StreamSubscription<DatabaseEvent>? _cmdSub;
@@ -72,24 +72,33 @@ class AudioCallService {
   String? callId;
   bool get inCall => callId != null;
 
-  /// True if call negotiated with video enabled (initially or later)
+  /// True if MY side currently has video enabled
   bool withVideo = false;
 
   bool _remoteAnswerApplied = false;
   bool _starting = false;
   bool _ending = false;
 
+  bool _isCaller = false;
+
   // call timeout (ringing)
   Timer? _ringTimeoutTimer;
   static const Duration _ringTimeout = Duration(seconds: 10);
+
   Timer? _disconnectGraceTimer;
   static const Duration _disconnectGrace = Duration(seconds: 8);
+
+  // renegotiate retry
+  Timer? _renegotiateRetryTimer;
+
   // values: idle | ringing | accepted | declined | busy | no_answer | ended
   final ValueNotifier<String> callState = ValueNotifier<String>('idle');
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   Map<String, dynamic> get _iceConfig => {
+    // Keep config compatible; does not change RTDB.
+    'sdpSemantics': 'unified-plan',
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
     ],
@@ -103,18 +112,32 @@ class AudioCallService {
   MediaStream? get remoteStream => _remoteStream;
 
   // ---------- presence (busy) ----------
-  DatabaseReference _presenceRefFor(String uid) =>
-      _db.ref('presence/in_call/$uid');
+  DatabaseReference _presenceRefFor(String uid) => _db.ref('presence/in_call/$uid');
 
+  /// ✅ FIX: accept map format (active=1) AND tolerate old bool/int/string leftovers.
   Future<bool> _isUserBusy(String uid) async {
     try {
       final snap = await _presenceRefFor(uid).get();
       final v = snap.value;
+      if (v == null) return false;
+
+      if (v is bool) return v == true;
+      if (v is int) return v == 1;
+
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        if (s == '1' || s == 'true') return true;
+        if (s == '0' || s == 'false') return false;
+      }
+
       if (v is Map) {
         final active = v['active'];
-        if (active is int) return active == 1;
         if (active is bool) return active == true;
-        if (active != null) return active.toString() == '1';
+        if (active is int) return active == 1;
+        if (active != null) {
+          final s = active.toString().trim().toLowerCase();
+          return s == '1' || s == 'true';
+        }
       }
     } catch (_) {}
     return false;
@@ -222,6 +245,7 @@ class AudioCallService {
 
     _videoTrack = null;
     _videoSender = null;
+    _videoTransceiver = null;
   }
 
   Future<void> _closePeer() async {
@@ -232,6 +256,7 @@ class AudioCallService {
 
     _videoTrack = null;
     _videoSender = null;
+    _videoTransceiver = null;
   }
 
   Future<void> _resetState() async {
@@ -244,6 +269,10 @@ class AudioCallService {
     _remoteAnswerApplied = false;
 
     chatMessages.value = [];
+
+    _pendingReoffer = null;
+    _renegotiateRetryTimer?.cancel();
+    _renegotiateRetryTimer = null;
 
     _setStateSafe('idle');
 
@@ -274,14 +303,12 @@ class AudioCallService {
     pc.onConnectionState = (RTCPeerConnectionState state) async {
       debugPrint('📡 onConnectionState=$state');
 
-      // Fail/Closed -> end immediately
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
         await endNow();
         return;
       }
 
-      // Disconnected can be temporary (screen off, network switch) -> grace period
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
         _disconnectGraceTimer?.cancel();
         _disconnectGraceTimer = Timer(_disconnectGrace, () async {
@@ -293,7 +320,6 @@ class AudioCallService {
           }
         });
       } else {
-        // back to connected -> cancel pending hangup
         _disconnectGraceTimer?.cancel();
         _disconnectGraceTimer = null;
       }
@@ -325,12 +351,64 @@ class AudioCallService {
     };
   }
 
+  // ---------- remote stream helpers ----------
+  Future<MediaStream> _ensureRemoteStream() async {
+    if (_remoteStream != null) return _remoteStream!;
+    final s = await createLocalMediaStream(
+      'remote-${DateTime.now().millisecondsSinceEpoch}',
+    );
+    _remoteStream = s;
+    remoteStreamVN.value = s;
+    return s;
+  }
+
+  Future<void> _attachRemoteTrack(RTCTrackEvent event) async {
+    final track = event.track;
+    if (track == null) return;
+
+    try {
+      track.enabled = true;
+    } catch (_) {}
+
+    // If platform provides a stream, use it.
+    if (event.streams.isNotEmpty) {
+      final s = event.streams.first;
+      _remoteStream = s;
+
+      // Force notifier refresh if stream instance is identical (track set changed).
+      if (!identical(remoteStreamVN.value, s)) {
+        remoteStreamVN.value = s;
+      } else {
+        // Trigger UI refresh without changing RTDB
+        remoteStreamVN.value = null;
+        remoteStreamVN.value = s;
+      }
+      return;
+    }
+
+    // ✅ FIX: Unified Plan can deliver tracks with NO streams -> create one and attach.
+    final rs = await _ensureRemoteStream();
+
+    try {
+      final already = rs.getTracks().any((t) => t.id == track.id);
+      if (!already) {
+        await rs.addTrack(track);
+      }
+    } catch (_) {}
+
+    // Force UI refresh
+    remoteStreamVN.value = null;
+    remoteStreamVN.value = rs;
+  }
+
   // ---------- peer creation ----------
   Future<void> _createPeer({
     required bool isCaller,
     required DatabaseReference callRef,
     required bool enableVideo,
   }) async {
+    _isCaller = isCaller;
+
     _localStream = await navigator.mediaDevices.getUserMedia({
       'audio': true,
       'video': enableVideo
@@ -352,51 +430,28 @@ class AudioCallService {
     _pc = await createPeerConnection(_iceConfig);
     _wirePcConnectionGuards();
 
-    // ✅ Keep a video m-line ready so either side can enable later
-    try {
-      try {
-        _videoTransceiver = await _pc!.addTransceiver(
-          kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
-          init: RTCRtpTransceiverInit(
-            direction: TransceiverDirection.SendRecv,
-          ),
-        );
-
-        _videoSender = _videoTransceiver!.sender;
-
-        if (enableVideo && _videoTrack != null) {
-          await _videoSender!.replaceTrack(_videoTrack);
-        } else {
-          await _videoSender!.replaceTrack(null);
-        }
-      } catch (_) {}
-    } catch (_) {}
-
+    // Plan-B legacy callback (may not fire on modern builds)
     _pc!.onAddStream = (MediaStream stream) {
       debugPrint(
-          '✅ onAddStream: id=${stream.id} vids=${stream.getVideoTracks().length} auds=${stream.getAudioTracks().length}');
+        '✅ onAddStream: id=${stream.id} vids=${stream.getVideoTracks().length} auds=${stream.getAudioTracks().length}',
+      );
       _remoteStream = stream;
       remoteStreamVN.value = stream;
     };
 
+    // ✅ Primary: Unified Plan track callback
     _pc!.onTrack = (RTCTrackEvent event) async {
       debugPrint(
-          '✅ onTrack: kind=${event.track.kind} streams=${event.streams.length}');
-
-      if (event.streams.isNotEmpty) {
-        _remoteStream = event.streams.first;
-        remoteStreamVN.value = _remoteStream;
-        return;
-      }
-      // wait for onAddStream
+        '✅ onTrack: kind=${event.track.kind} streams=${event.streams.length}',
+      );
+      await _attachRemoteTrack(event);
     };
 
+    // Add local tracks to PC
     for (final t in _localStream!.getTracks()) {
-      if (t.kind == 'audio') {
-        await _pc!.addTrack(t, _localStream!);
-      }
-      if (enableVideo && t.kind == 'video') {
-        await _pc!.addTrack(t, _localStream!);
+      final sender = await _pc!.addTrack(t, _localStream!);
+      if (t.kind == 'video') {
+        _videoSender = sender;
       }
     }
 
@@ -608,11 +663,18 @@ class AudioCallService {
     if (ref == null || pc == null || me.isEmpty) return;
     if (callState.value != 'accepted') return;
 
-    if (pc.signalingState != RTCSignalingState.RTCSignalingStateStable) return;
+    if (pc.signalingState != RTCSignalingState.RTCSignalingStateStable) {
+      // schedule retry
+      _renegotiateRetryTimer?.cancel();
+      _renegotiateRetryTimer = Timer(const Duration(milliseconds: 350), () {
+        _renegotiate();
+      });
+      return;
+    }
 
     final offer = await pc.createOffer({
-      'offerToReceiveAudio': 1,
-      'offerToReceiveVideo': 1,
+      'offerToReceiveAudio': true,
+      'offerToReceiveVideo': true,
     });
 
     await pc.setLocalDescription(offer);
@@ -625,38 +687,45 @@ class AudioCallService {
     });
   }
 
-  void _listenRenegotiation() {
+  Future<void> _drainPendingReoffer() async {
+    if (_handlingReoffer) return;
+
     final ref = _callRef;
     final pc = _pc;
     final me = _meUid;
     if (ref == null || pc == null || me.isEmpty) return;
 
-    _reofferSub?.cancel();
-    _reanswerSub?.cancel();
+    _handlingReoffer = true;
+    try {
+      while (_pendingReoffer != null) {
+        final v = _pendingReoffer!;
+        _pendingReoffer = null;
 
-    _reofferSub = ref.child('reoffer').onValue.listen((event) async {
-      final v = event.snapshot.value;
-      if (v is! Map) return;
-
-      final from = (v['from'] ?? '').toString();
-      if (from.isEmpty || from == me) return;
-
-      if (_handlingReoffer) return;
-      _handlingReoffer = true;
-
-      try {
         final sdp = (v['sdp'] ?? '').toString();
         final type = (v['type'] ?? 'offer').toString();
 
+        // If we are not stable, try again shortly.
         if (pc.signalingState != RTCSignalingState.RTCSignalingStateStable) {
-          return;
+          // simple glare handling attempt (polite = callee)
+          if (!_isCaller &&
+              pc.signalingState ==
+                  RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+            try {
+              await pc.setLocalDescription(RTCSessionDescription('', 'rollback'));
+            } catch (_) {}
+          }
+
+          // requeue and wait
+          _pendingReoffer = v;
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          continue;
         }
 
         await pc.setRemoteDescription(RTCSessionDescription(sdp, type));
 
         final answer = await pc.createAnswer({
-          'offerToReceiveAudio': 1,
-          'offerToReceiveVideo': 1,
+          'offerToReceiveAudio': true,
+          'offerToReceiveVideo': true,
         });
 
         await pc.setLocalDescription(answer);
@@ -667,11 +736,32 @@ class AudioCallService {
           'sdp': answer.sdp,
           'ts': ServerValue.timestamp,
         });
-      } catch (_) {
-        // ignore
-      } finally {
-        _handlingReoffer = false;
       }
+    } catch (_) {
+      // ignore
+    } finally {
+      _handlingReoffer = false;
+    }
+  }
+
+  void _listenRenegotiation() {
+    final ref = _callRef;
+    final pc = _pc;
+    final me = _meUid;
+    if (ref == null || pc == null || me.isEmpty) return;
+
+    _reofferSub?.cancel();
+    _reanswerSub?.cancel();
+
+    _reofferSub = ref.child('reoffer').onValue.listen((event) {
+      final v = event.snapshot.value;
+      if (v is! Map) return;
+
+      final from = (v['from'] ?? '').toString();
+      if (from.isEmpty || from == me) return;
+
+      _pendingReoffer = v;
+      _drainPendingReoffer();
     });
 
     _reanswerSub = ref.child('reanswer').onValue.listen((event) async {
@@ -820,18 +910,37 @@ class AudioCallService {
     final pc = _pc;
     if (pc == null) return;
 
+    // If we already cached a transceiver, use it
     if (_videoTransceiver != null) {
       _videoSender = _videoTransceiver!.sender;
       return;
     }
 
-    final senders = await pc.getSenders();
-    for (final s in senders) {
-      if (s.track?.kind == 'video') {
-        _videoSender = s;
-        return;
+    // Try to find a video transceiver even if sender.track is null (Unified Plan)
+// Try to find a video transceiver even if sender.track is null (Unified Plan)
+    try {
+      final dynPc = pc as dynamic;
+      final List<dynamic> transceivers = await dynPc.getTransceivers();
+
+      for (final dynTr in transceivers) {
+        try {
+          // In some versions this can be RTCRtpTransceiver or RTCRtpTransceiver?
+          final RTCRtpTransceiver? tr =
+          (dynTr is RTCRtpTransceiver) ? dynTr : (dynTr as RTCRtpTransceiver?);
+
+          if (tr == null) continue;
+
+          final receiver = tr.receiver;
+          final rTrack = receiver.track;
+
+          if (rTrack != null && rTrack.kind == 'video') {
+            _videoTransceiver = tr;
+            _videoSender = tr.sender; // ✅ safe (sender is non-null on a non-null transceiver)
+            return;
+          }
+        } catch (_) {}
       }
-    }
+    } catch (_) {}
   }
 
   Future<void> _replaceVideoTrack(MediaStreamTrack? newTrack) async {
@@ -904,10 +1013,13 @@ class AudioCallService {
     _cancelRingTimeout();
     _disconnectGraceTimer?.cancel();
     _disconnectGraceTimer = null;
+
+    _renegotiateRetryTimer?.cancel();
+    _renegotiateRetryTimer = null;
+
     final ref = _callRef;
     final currentCallId = callId;
 
-    // Keep the reason visible to UI
     _setStateSafe(reason);
 
     int? durationSec;
@@ -941,7 +1053,6 @@ class AudioCallService {
       } catch (_) {}
     }
 
-    // Notify peer before tearing down
     if (!localOnly && ref != null) {
       try {
         await ref.update({
@@ -955,10 +1066,8 @@ class AudioCallService {
     await _disposeMedia();
     await _closePeer();
 
-    // Clear presence
     await _clearMyInCallPresence();
 
-    // Update logs
     if (!localOnly &&
         currentCallId != null &&
         callerUid != null &&
@@ -998,13 +1107,11 @@ class AudioCallService {
       final me = _meUid;
       if (me.isEmpty) throw Exception('You must be logged in to place a call.');
 
-      // 1) Logged out check (FCM token missing => user logged out in your app)
       final calleeToken = await _getUserFcmToken(calleeUid);
       if (calleeToken == null) {
         throw Exception('User is currently logged out and unavailable.');
       }
 
-      // 2) Busy check
       final busy = await _isUserBusy(calleeUid);
       if (busy) {
         _setStateSafe('busy');
@@ -1033,7 +1140,6 @@ class AudioCallService {
         'createdAt': ServerValue.timestamp,
       });
 
-      // mark me in call (busy presence)
       await _setMyInCallPresence(callId: id);
 
       _setStateSafe('ringing');
@@ -1048,7 +1154,6 @@ class AudioCallService {
         video: withVideo,
       );
 
-      // Try push (token already exists)
       try {
         await _sendIncomingCallPush(
           calleeUid: calleeUid,
@@ -1072,8 +1177,8 @@ class AudioCallService {
       _listenChat();
 
       final offer = await _pc!.createOffer({
-        'offerToReceiveAudio': 1,
-        'offerToReceiveVideo': 1,
+        'offerToReceiveAudio': true,
+        'offerToReceiveVideo': true,
       });
       await _pc!.setLocalDescription(offer);
 
@@ -1082,7 +1187,6 @@ class AudioCallService {
         'sdp': offer.sdp,
       });
 
-      // 10s no-answer timeout
       _cancelRingTimeout();
       _ringTimeoutTimer = Timer(_ringTimeout, () async {
         try {
@@ -1090,7 +1194,6 @@ class AudioCallService {
           final refNow = _callRef;
           if (current == null || refNow == null) return;
 
-          // Only if still ringing
           final snap = await refNow.get();
           final v = snap.value;
           if (v is Map) {
@@ -1194,7 +1297,6 @@ class AudioCallService {
       final me = _meUid;
       if (me.isEmpty) throw Exception('You must be logged in to answer a call.');
 
-      // If I'm already in a call, mark this call as busy
       final iAmBusy = await _isUserBusy(me);
       if (iAmBusy) {
         try {
@@ -1257,8 +1359,8 @@ class AudioCallService {
       );
 
       final answer = await _pc!.createAnswer({
-        'offerToReceiveAudio': 1,
-        'offerToReceiveVideo': 1,
+        'offerToReceiveAudio': true,
+        'offerToReceiveVideo': true,
       });
       await _pc!.setLocalDescription(answer);
 
@@ -1268,7 +1370,6 @@ class AudioCallService {
         'acceptedAt': ServerValue.timestamp,
       });
 
-      // mark me in call (busy presence)
       await _setMyInCallPresence(callId: callId);
 
       _setStateSafe('accepted');

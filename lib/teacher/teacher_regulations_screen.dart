@@ -10,14 +10,15 @@ class TeacherRegulationsScreen extends StatefulWidget {
   const TeacherRegulationsScreen({super.key});
 
   @override
-  State<TeacherRegulationsScreen> createState() => _TeacherRegulationsScreenState();
+  State<TeacherRegulationsScreen> createState() =>
+      _TeacherRegulationsScreenState();
 }
 
 class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
 
-  bool _loading = true;
-  String? _error;
+  bool _isLoading = true;
+  String? _errorMessage;
 
   bool _isTeacher = false;
   List<_RegSection> _sections = const [];
@@ -25,13 +26,13 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadRegulations();
   }
 
-  Future<void> _loadAll() async {
+  Future<void> _loadRegulations() async {
     setState(() {
-      _loading = true;
-      _error = null;
+      _isLoading = true;
+      _errorMessage = null;
       _isTeacher = false;
       _sections = const [];
     });
@@ -40,120 +41,154 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       if (uid.isEmpty) {
         setState(() {
-          _loading = false;
-          _error = 'Not logged in.';
+          _isLoading = false;
+          _errorMessage = 'You are not logged in.';
         });
         return;
       }
 
-      // ✅ 1) Teacher-only (users/$uid/role)
-      bool isTeacher = false;
-      try {
-        final roleSnap = await _db.child('users/$uid/role').get();
-        final role = (roleSnap.value ?? '').toString().trim().toLowerCase();
-        isTeacher = role == 'teacher' || role == 'teachers' || role == 'teacher(s)';
-      } catch (_) {
-        isTeacher = false;
-      }
+      // 1) Teacher-only gate: users/$uid/role
+      final isTeacher = await _checkIsTeacher(uid);
 
       if (!mounted) return;
 
       if (!isTeacher) {
         setState(() {
-          _loading = false;
+          _isLoading = false;
           _isTeacher = false;
           _sections = const [];
         });
         return;
       }
 
-      // ✅ 2) Load contract/teacher (ALL sections)
-      final snap = await _db.child('contract/teacher').get();
-      final v = snap.value;
-
-      if (v is! Map) {
-        setState(() {
-          _loading = false;
-          _isTeacher = true;
-          _sections = const [];
-        });
-        return;
-      }
-
-      final raw = Map<dynamic, dynamic>.from(v);
-      final sections = <_RegSection>[];
-
-      final keys = raw.keys.map((e) => e.toString()).toList();
-
-      // newest first
-      keys.sort((a, b) {
-        final aa = _extractUpdatedAt(raw[a]);
-        final bb = _extractUpdatedAt(raw[b]);
-        return bb.compareTo(aa);
-      });
-
-      for (final key in keys) {
-        final node = raw[key];
-        if (node is! Map) continue;
-
-        final m = node.map((k, vv) => MapEntry(k.toString(), vv));
-
-        final title = (m['title'] ?? key).toString().trim();
-        final updatedAt = _toInt(m['updatedAt']);
-
-        final itemsNode = m['items'];
-        final items = <_RegItem>[];
-
-        // ✅ Map OR List (fix for numeric keys)
-        if (itemsNode is Map) {
-          final im = Map<dynamic, dynamic>.from(itemsNode);
-          final itemKeys = im.keys.map((e) => e.toString()).toList()
-            ..sort((a, b) => _safeInt(a).compareTo(_safeInt(b)));
-
-          for (final ik in itemKeys) {
-            final text = (im[ik] ?? '').toString().trim();
-            if (text.isEmpty) continue;
-            items.add(_RegItem(n: _safeInt(ik), text: text));
-          }
-        } else if (itemsNode is List) {
-          for (int i = 0; i < itemsNode.length; i++) {
-            final text = (itemsNode[i] ?? '').toString().trim();
-            if (text.isEmpty) continue;
-            items.add(_RegItem(n: i, text: text));
-          }
-          // if you want to hide 0-index:
-          // items.removeWhere((x) => x.n == 0);
-        }
-
-        if (items.isEmpty) continue;
-
-        sections.add(_RegSection(
-          keyName: key,
-          title: title,
-          updatedAt: updatedAt,
-          items: items,
-        ));
-      }
+      // 2) Load all teacher contract sections: contract/teacher
+      final sections = await _fetchTeacherSections();
 
       if (!mounted) return;
 
       setState(() {
-        _loading = false;
+        _isLoading = false;
         _isTeacher = true;
         _sections = sections;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loading = false;
-        _error = e.toString();
+        _isLoading = false;
+        _errorMessage = e.toString();
       });
     }
   }
 
+  Future<bool> _checkIsTeacher(String uid) async {
+    try {
+      final roleSnap = await _dbRef.child('users/$uid/role').get();
+      final role = (roleSnap.value ?? '').toString().trim().toLowerCase();
+
+      // Adjust these if your database uses different role values.
+      return role == 'teacher' || role == 'teachers' || role == 'teacher(s)';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<_RegSection>> _fetchTeacherSections() async {
+    final snap = await _dbRef.child('contract/teacher').get();
+    final value = snap.value;
+
+    if (value is! Map) return const [];
+
+    final raw = Map<dynamic, dynamic>.from(value);
+
+    // Convert to a list of entries with string keys (safe even if keys aren't strings).
+    final sectionEntries = raw.entries
+        .map((e) => MapEntry(e.key.toString(), e.value))
+        .toList();
+
+    // Newest first (by updatedAt)
+    sectionEntries.sort((a, b) {
+      final aa = _extractUpdatedAt(a.value);
+      final bb = _extractUpdatedAt(b.value);
+      return bb.compareTo(aa);
+    });
+
+    final sections = <_RegSection>[];
+
+    for (final entry in sectionEntries) {
+      final keyName = entry.key;
+      final node = entry.value;
+
+      if (node is! Map) continue;
+
+      final Map<String, dynamic> data =
+      (node as Map).map((k, v) => MapEntry(k.toString(), v));
+
+      final title = (data['title'] ?? keyName).toString().trim();
+      final updatedAt = _toInt(data['updatedAt']);
+
+      final items = _parseItems(data['items']);
+      if (items.isEmpty) continue;
+
+      sections.add(
+        _RegSection(
+          keyName: keyName,
+          title: title,
+          updatedAt: updatedAt,
+          items: items,
+        ),
+      );
+    }
+
+    return sections;
+  }
+
+  List<_RegItem> _parseItems(dynamic itemsNode) {
+    final items = <_RegItem>[];
+
+    // Case A: Items stored as a Map (often numeric keys like "0", "1", "2"...)
+    if (itemsNode is Map) {
+      final entries = itemsNode.entries
+          .map((e) => MapEntry(e.key.toString(), e.value))
+          .toList()
+        ..sort((a, b) => _safeInt(a.key).compareTo(_safeInt(b.key)));
+
+      // Detect 0-based numbering and shift to 1-based for display
+      final numericKeys =
+      entries.map((e) => int.tryParse(e.key.trim())).whereType<int>().toList();
+      final zeroBased = numericKeys.isNotEmpty && numericKeys.contains(0);
+
+      int fallbackNumber = 1;
+      for (final e in entries) {
+        final text = (e.value ?? '').toString().trim();
+        if (text.isEmpty) continue;
+
+        final rawNum = int.tryParse(e.key.trim());
+        final displayNum = rawNum == null
+            ? fallbackNumber
+            : (zeroBased ? rawNum + 1 : rawNum);
+
+        items.add(_RegItem(number: displayNum <= 0 ? fallbackNumber : displayNum, text: text));
+        fallbackNumber++;
+      }
+    }
+
+    // Case B: Items stored as a List
+    else if (itemsNode is List) {
+      for (int i = 0; i < itemsNode.length; i++) {
+        final text = (itemsNode[i] ?? '').toString().trim();
+        if (text.isEmpty) continue;
+
+        // 1-based numbering
+        items.add(_RegItem(number: i + 1, text: text));
+      }
+    }
+
+    return items;
+  }
+
   static int _extractUpdatedAt(dynamic node) {
     if (node is! Map) return 0;
-    final m = node.map((k, vv) => MapEntry(k.toString(), vv));
+    final m = node.map((k, v) => MapEntry(k.toString(), v));
     return _toInt(m['updatedAt']);
   }
 
@@ -178,11 +213,59 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
     }
   }
 
+  Widget _buildContent() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return _ErrorBox(
+        message: 'Failed to load regulations.\n$_errorMessage',
+        onRetry: _loadRegulations,
+      );
+    }
+
+    if (!_isTeacher) {
+      return const _InfoBox(
+        title: 'Teachers only',
+        message: 'This page is available to teachers only.',
+        icon: Icons.lock_rounded,
+      );
+    }
+
+    if (_sections.isEmpty) {
+      return const _InfoBox(
+        title: 'No content',
+        message: 'There are no regulations available right now.',
+        icon: Icons.info_rounded,
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      children: [
+        const _HeaderCard(
+          title: 'Teacher Regulations',
+          subtitle: 'Tap any section title to view the details.',
+        ),
+        const SizedBox(height: 12),
+        ..._sections.map(
+              (s) => _SectionCard(
+            section: s,
+            updatedAtLabel: _formatUpdatedAt(s.updatedAt),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const _FooterHint(),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ✅ Arabic-friendly (RTL)
+    // Force LTR so the screen never appears RTL.
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: TextDirection.ltr,
       child: Scaffold(
         backgroundColor: UiK.appBg,
         appBar: AppBar(
@@ -201,60 +284,23 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
             IconButton(
               tooltip: 'Refresh',
               icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
-              onPressed: _loadAll,
+              onPressed: _loadRegulations,
             ),
           ],
         ),
         body: WatermarkBackground(
-          child: SafeArea(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _ErrorBox(
-              message: 'Failed to load regulations.\n$_error',
-              onRetry: _loadAll,
-            )
-                : !_isTeacher
-                ? const _InfoBox(
-              title: 'Teachers only',
-              message: 'هذه الصفحة مخصصة للأساتذة فقط.',
-              icon: Icons.lock_rounded,
-            )
-                : _sections.isEmpty
-                ? const _InfoBox(
-              title: 'No content',
-              message: 'لا توجد قوانين متاحة حاليًا.',
-              icon: Icons.info_rounded,
-            )
-                : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-              children: [
-                const _HeaderCard(
-                  title: 'قوانين الأساتذة',
-                  subtitle: 'اضغط على أي عنوان لعرض التفاصيل.',
-                ),
-                const SizedBox(height: 12),
-                ..._sections.map(
-                      (s) => _SectionCard(
-                    section: s,
-                    updatedAtLabel: _formatUpdatedAt(s.updatedAt),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const _FooterHint(),
-              ],
-            ),
-          ),
+          child: SafeArea(child: _buildContent()),
         ),
       ),
     );
   }
 }
 
-/* ====== UI widgets (same style as learner screen) ====== */
+/* ===================== UI Widgets ===================== */
 
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({required this.title, required this.subtitle});
+
   final String title;
   final String subtitle;
 
@@ -287,6 +333,7 @@ class _HeaderCard extends StatelessWidget {
               children: [
                 Text(
                   title,
+                  textAlign: TextAlign.left,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     color: UiK.primaryBlue,
@@ -296,6 +343,7 @@ class _HeaderCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   subtitle,
+                  textAlign: TextAlign.left,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.grey.shade700,
@@ -313,6 +361,7 @@ class _HeaderCard extends StatelessWidget {
 
 class _SectionCard extends StatefulWidget {
   const _SectionCard({required this.section, required this.updatedAtLabel});
+
   final _RegSection section;
   final String updatedAtLabel;
 
@@ -347,6 +396,7 @@ class _SectionCardState extends State<_SectionCard> {
                 Expanded(
                   child: Text(
                     s.title,
+                    textAlign: TextAlign.left,
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: UiK.primaryBlue,
@@ -356,7 +406,8 @@ class _SectionCardState extends State<_SectionCard> {
                 ),
                 if (widget.updatedAtLabel.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: UiK.primaryBlue.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(999),
@@ -389,6 +440,7 @@ class _SectionCardState extends State<_SectionCard> {
 
 class _RegItemRow extends StatelessWidget {
   const _RegItemRow({required this.item});
+
   final _RegItem item;
 
   @override
@@ -414,7 +466,7 @@ class _RegItemRow extends StatelessWidget {
               border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
             ),
             child: Text(
-              item.n <= 0 ? '•' : item.n.toString(),
+              item.number.toString(),
               style: const TextStyle(
                 fontWeight: FontWeight.w900,
                 color: UiK.actionOrange,
@@ -425,7 +477,7 @@ class _RegItemRow extends StatelessWidget {
           Expanded(
             child: Text(
               item.text,
-              textAlign: TextAlign.start,
+              textAlign: TextAlign.left,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade800,
@@ -466,7 +518,8 @@ class _FooterHint extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'للاستفسارات أو الاعتراضات، يرجى التواصل عبر القنوات الرسمية للمؤسسة.',
+              'For questions or objections, please contact the institution through official channels.',
+              textAlign: TextAlign.left,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade700,
@@ -481,7 +534,12 @@ class _FooterHint extends StatelessWidget {
 }
 
 class _InfoBox extends StatelessWidget {
-  const _InfoBox({required this.title, required this.message, required this.icon});
+  const _InfoBox({
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
+
   final String title;
   final String message;
   final IconData icon;
@@ -504,6 +562,7 @@ class _InfoBox extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               title,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.w900,
                 color: UiK.primaryBlue,
@@ -529,6 +588,7 @@ class _InfoBox extends StatelessWidget {
 
 class _ErrorBox extends StatelessWidget {
   const _ErrorBox({required this.message, required this.onRetry});
+
   final String message;
   final VoidCallback onRetry;
 
@@ -546,7 +606,8 @@ class _ErrorBox extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: UiK.actionOrange, size: 34),
+            const Icon(Icons.error_outline_rounded,
+                color: UiK.actionOrange, size: 34),
             const SizedBox(height: 10),
             const Text(
               'Error',
@@ -574,7 +635,8 @@ class _ErrorBox extends StatelessWidget {
                   backgroundColor: UiK.actionOrange,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: onRetry,
@@ -592,7 +654,8 @@ class _ErrorBox extends StatelessWidget {
   }
 }
 
-/* ====== Models ====== */
+/* ===================== Models ===================== */
+
 class _RegSection {
   const _RegSection({
     required this.keyName,
@@ -608,7 +671,8 @@ class _RegSection {
 }
 
 class _RegItem {
-  const _RegItem({required this.n, required this.text});
-  final int n;
+  const _RegItem({required this.number, required this.text});
+
+  final int number;
   final String text;
 }

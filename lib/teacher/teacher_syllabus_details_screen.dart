@@ -1,15 +1,16 @@
 // teacher_syllabus_details_screen.dart
 // ✅ FULL DROP-IN REPLACEMENT (copy/paste)
 //
-// What’s improved (safe, no DB assumptions beyond what you already parse):
-// ✅ Adds "Recommendations" card (smart tips for teacher)
-// ✅ Adds Quick Summary table: Units | Sessions | Estimated minutes | Last updated
-// ✅ Adds search (filters sessions by title / objective / content / skillType)
-// ✅ Unit -> Sessions collapsible (keeps your style, but more professional)
-// ✅ Each session is expandable (shows objective/content/homework + teacher recommendations)
-// ✅ Works with your existing schema: syllabi/<courseId> with units & sessions
+// Goal:
+// - Force this screen to be LTR (so it won't look RTL even if the app locale is Arabic)
+// - Remove ALL Arabic text/comments and use clear English everywhere
+// - Keep your current Firebase schema assumptions exactly the same (read-only UI)
+// - Make the UI easier to follow: summary + recommendations + search + clean empty states
 //
-// NOTE: Recommendations are UI-only (no writing to DB).
+// Data expected (same as your code):
+// syllabi/<courseId> -> { title, courseCode, duration, updatedAt, units:[...] or units:{...} }
+// units -> { id, order, title, otherTitle, description, sessions:[...] or sessions:{...} }
+// sessions -> { id, order, title, skillType, objective, durationMinutes, content, homework }
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -30,21 +31,22 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
 
   bool _loading = true;
   String? _error;
-
   _SyllabusCourse? _course;
 
-  // ✅ Search
+  // Search
   final TextEditingController _search = TextEditingController();
-  String _q = '';
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
+
     _search.addListener(() {
       final v = _search.text.trim();
-      if (v == _q) return;
-      setState(() => _q = v);
+      if (v == _query) return;
+      setState(() => _query = v);
     });
+
     _load();
   }
 
@@ -63,9 +65,10 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
 
     try {
       final snap = await _db.child('syllabi/${widget.courseId}').get();
-      final v = snap.value;
+      if (!mounted) return;
 
-      if (v is! Map) {
+      final raw = snap.value;
+      if (raw is! Map) {
         setState(() {
           _loading = false;
           _course = null;
@@ -73,22 +76,23 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
         return;
       }
 
-      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-      final title = (m['title'] ?? widget.courseId).toString().trim();
-      final code = (m['courseCode'] ?? '').toString().trim();
-      final duration = (m['duration'] ?? '').toString().trim();
-      final updatedAt = _toInt(m['updatedAt']);
+      final data = raw.map((k, v) => MapEntry(k.toString(), v));
 
-      final units = _parseUnits(m['units']);
+      final title = (data['title'] ?? widget.courseId).toString().trim();
+      final code = (data['courseCode'] ?? '').toString().trim();
+      final duration = (data['duration'] ?? '').toString().trim();
+      final updatedAt = _toInt(data['updatedAt']);
 
-      // sort units by order (then title)
+      final units = _parseUnits(data['units']);
+
+      // Sort units by order, then title
       units.sort((a, b) {
         final c = a.order.compareTo(b.order);
         if (c != 0) return c;
         return a.title.compareTo(b.title);
       });
 
-      // sort sessions inside unit by order
+      // Sort sessions by order inside each unit
       for (final u in units) {
         u.sessions.sort((a, b) {
           final c = a.order.compareTo(b.order);
@@ -101,7 +105,7 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
         _loading = false;
         _course = _SyllabusCourse(
           id: widget.courseId,
-          title: title,
+          title: title.isEmpty ? 'Syllabus' : title,
           code: code,
           duration: duration,
           updatedAt: updatedAt,
@@ -109,6 +113,7 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
         );
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
         _error = e.toString();
@@ -116,15 +121,38 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     }
   }
 
+  // ---------- Parsing helpers (same schema expectations) ----------
+
   static int _toInt(dynamic v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
+  static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
+    final out = <Map<String, dynamic>>[];
+
+    if (node is List) {
+      for (final x in node) {
+        if (x is Map) out.add(Map<String, dynamic>.from(x));
+      }
+      return out;
+    }
+
+    if (node is Map) {
+      final mm = Map<dynamic, dynamic>.from(node);
+      for (final entry in mm.entries) {
+        final v = entry.value;
+        if (v is Map) out.add(Map<String, dynamic>.from(v));
+      }
+      return out;
+    }
+
+    return out;
+  }
+
   List<_Unit> _parseUnits(dynamic node) {
     final out = <_Unit>[];
-
     final unitMaps = _asListOfMaps(node);
 
     for (final um in unitMaps) {
@@ -169,28 +197,6 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     return out;
   }
 
-  static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
-    final out = <Map<String, dynamic>>[];
-
-    if (node is List) {
-      for (final x in node) {
-        if (x is Map) out.add(Map<String, dynamic>.from(x));
-      }
-      return out;
-    }
-
-    if (node is Map) {
-      final mm = Map<dynamic, dynamic>.from(node);
-      for (final entry in mm.entries) {
-        final v = entry.value;
-        if (v is Map) out.add(Map<String, dynamic>.from(v));
-      }
-      return out;
-    }
-
-    return out;
-  }
-
   String _fmtDate(int ms) {
     if (ms <= 0) return '';
     try {
@@ -204,11 +210,13 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     }
   }
 
-  // ✅ Search helpers
+  // ---------- Search helpers ----------
+
   bool _matches(_Session s, String q) {
     if (q.isEmpty) return true;
     final z = q.toLowerCase();
     String t(String v) => v.toLowerCase();
+
     return t(s.title).contains(z) ||
         t(s.skillType).contains(z) ||
         t(s.objective).contains(z) ||
@@ -218,11 +226,11 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
   }
 
   List<_Unit> _filteredUnits(_SyllabusCourse c) {
-    if (_q.isEmpty) return c.units;
+    if (_query.isEmpty) return c.units;
 
     final out = <_Unit>[];
     for (final u in c.units) {
-      final filteredSessions = u.sessions.where((s) => _matches(s, _q)).toList();
+      final filteredSessions = u.sessions.where((s) => _matches(s, _query)).toList();
       if (filteredSessions.isEmpty) continue;
 
       out.add(_Unit(
@@ -247,89 +255,196 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     return sum;
   }
 
+  int _countFilteredSessions(List<_Unit> units) {
+    int sum = 0;
+    for (final u in units) {
+      sum += u.sessions.length;
+    }
+    return sum;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = _course;
 
-    return Scaffold(
-      backgroundColor: UiK.appBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        centerTitle: true,
-        title: Text(
-          c?.title ?? 'Syllabus',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: UiK.primaryBlue,
-            fontWeight: FontWeight.w900,
+    // ✅ Force this screen to stay LTR even if the app locale is RTL.
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: UiK.appBg,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.white,
+          centerTitle: true,
+          title: Text(
+            c?.title ?? 'Syllabus',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: UiK.primaryBlue,
+              fontWeight: FontWeight.w900,
+            ),
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Refresh',
+              icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
+              onPressed: _load,
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
-            onPressed: _load,
-          ),
-        ],
-      ),
-      body: WatermarkBackground(
-        child: SafeArea(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? _ErrorBox(message: 'Failed to load syllabus.\n$_error', onRetry: _load)
-              : c == null
-              ? const _InfoBox(
-            title: 'Not found',
-            message: 'لا يمكن العثور على هذه الدورة.',
-            icon: Icons.info_rounded,
-          )
-              : ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-            children: [
-              _CourseTopCard(
-                title: c.title,
-                code: c.code,
-                duration: c.duration,
-                updatedLabel: _fmtDate(c.updatedAt),
-                unitsCount: c.units.length,
-                sessionsCount: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
-              ),
-              const SizedBox(height: 12),
-
-              _SummaryTableCard(
-                units: c.units.length,
-                sessions: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
-                totalMinutes: _totalMinutes(c),
-                updatedLabel: _fmtDate(c.updatedAt),
-              ),
-              const SizedBox(height: 12),
-
-              _RecommendationsCard(course: c),
-              const SizedBox(height: 12),
-
-              _SearchCard(controller: _search),
-              const SizedBox(height: 12),
-
-              ..._filteredUnits(c).map((u) => _UnitCard(unit: u)),
-              const SizedBox(height: 12),
-              const _FooterHint(),
-            ],
+        body: WatermarkBackground(
+          child: SafeArea(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? _ErrorBox(message: 'Failed to load the syllabus.\n\n$_error', onRetry: _load)
+                : c == null
+                ? const _InfoBox(
+              title: 'Not found',
+              message: 'We could not find this course syllabus.',
+              icon: Icons.info_rounded,
+            )
+                : _buildContent(c),
           ),
         ),
       ),
     );
   }
+
+  Widget _buildContent(_SyllabusCourse c) {
+    final unitsFiltered = _filteredUnits(c);
+    final filteredSessionsCount = _countFilteredSessions(unitsFiltered);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      children: [
+        _CourseTopCard(
+          title: c.title,
+          code: c.code,
+          duration: c.duration,
+          updatedLabel: _fmtDate(c.updatedAt),
+          unitsCount: c.units.length,
+          sessionsCount: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
+        ),
+        const SizedBox(height: 12),
+
+        _SummaryTableCard(
+          units: c.units.length,
+          sessions: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
+          totalMinutes: _totalMinutes(c),
+          updatedLabel: _fmtDate(c.updatedAt),
+        ),
+        const SizedBox(height: 12),
+
+        _RecommendationsCard(course: c),
+        const SizedBox(height: 12),
+
+        _SearchCard(
+          controller: _search,
+          onClear: () => _search.clear(),
+          resultLabel: _query.isEmpty
+              ? null
+              : '$filteredSessionsCount session(s) match “$_query”.',
+        ),
+        const SizedBox(height: 12),
+
+        if (_query.isNotEmpty && unitsFiltered.isEmpty)
+          _EmptySearchResults(
+            query: _query,
+            onClear: () => _search.clear(),
+          )
+        else
+          ...unitsFiltered.map((u) => _UnitCard(unit: u)),
+
+        const SizedBox(height: 12),
+        const _FooterHint(),
+      ],
+    );
+  }
 }
 
-/* ================== UI ================== */
+/* ================== UI WIDGETS ================== */
 
 class _SearchCard extends StatelessWidget {
-  const _SearchCard({required this.controller});
+  const _SearchCard({
+    required this.controller,
+    required this.onClear,
+    this.resultLabel,
+  });
+
   final TextEditingController controller;
+  final VoidCallback onClear;
+  final String? resultLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasText = controller.text.trim().isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Search',
+            style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+            decoration: InputDecoration(
+              hintText: 'Search sessions (title, objective, content, skill type, ID...)',
+              hintStyle: TextStyle(
+                color: UiK.mainText.withOpacity(0.55),
+                fontWeight: FontWeight.w700,
+              ),
+              prefixIcon: const Icon(Icons.search_rounded, color: UiK.primaryBlue),
+              suffixIcon: hasText
+                  ? IconButton(
+                tooltip: 'Clear',
+                onPressed: onClear,
+                icon: const Icon(Icons.clear_rounded),
+              )
+                  : null,
+              filled: true,
+              fillColor: UiK.primaryBlue.withOpacity(0.04),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          ),
+          if (resultLabel != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              resultLabel!,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptySearchResults extends StatelessWidget {
+  const _EmptySearchResults({required this.query, required this.onClear});
+  final String query;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -343,23 +458,38 @@ class _SearchCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Search', style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 10),
-          TextField(
-            controller: controller,
-            style: const TextStyle(fontWeight: FontWeight.w800),
-            decoration: InputDecoration(
-              hintText: 'Search sessions (title, objective, content, skill, ID...)',
-              hintStyle: TextStyle(color: UiK.mainText.withOpacity(0.55), fontWeight: FontWeight.w700),
-              prefixIcon: const Icon(Icons.search_rounded, color: UiK.primaryBlue),
-              filled: true,
-              fillColor: UiK.primaryBlue.withOpacity(0.04),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
+          const Row(
+            children: [
+              Icon(Icons.search_off_rounded, color: UiK.actionOrange),
+              SizedBox(width: 8),
+              Text(
+                'No results',
+                style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No sessions match “$query”. Try a shorter keyword, or search by skill type, objective, or ID.',
+            style: TextStyle(
+              color: Colors.grey.shade800,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.clear_rounded),
+              label: const Text('Clear search', style: TextStyle(fontWeight: FontWeight.w900)),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                side: BorderSide(color: UiK.uiBorder.withOpacity(0.95)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                foregroundColor: UiK.primaryBlue,
+              ),
             ),
           ),
         ],
@@ -491,7 +621,7 @@ class _RecommendationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = course.units.fold<int>(0, (p, u) => p + u.sessions.length);
+    final sessionsTotal = course.units.fold<int>(0, (p, u) => p + u.sessions.length);
 
     final missingDur = _countMissingDuration();
     final missingObj = _countMissingObjectives();
@@ -521,8 +651,9 @@ class _RecommendationsCard extends StatelessWidget {
         desc: '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
       ));
     }
-    if (sessions > 0 && missingHw == sessions) {
-      recs.add(_RecItem(
+
+    if (sessionsTotal > 0 && missingHw == sessionsTotal) {
+      recs.add(const _RecItem(
         icon: Icons.assignment_rounded,
         title: 'Consider homework',
         desc: 'No sessions have homework. Even short practice tasks improve retention.',
@@ -536,7 +667,7 @@ class _RecommendationsCard extends StatelessWidget {
     }
 
     if (recs.isEmpty) {
-      recs.add(_RecItem(
+      recs.add(const _RecItem(
         icon: Icons.verified_rounded,
         title: 'Looks consistent',
         desc: 'Objectives, content, and durations look complete. Keep the same structure for new courses.',
@@ -557,7 +688,10 @@ class _RecommendationsCard extends StatelessWidget {
             children: [
               Icon(Icons.tips_and_updates_rounded, color: UiK.actionOrange),
               SizedBox(width: 8),
-              Text('Recommendations', style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+              Text(
+                'Recommendations',
+                style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -598,11 +732,18 @@ class _RecRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.title, style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+                Text(
+                  item.title,
+                  style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   item.desc,
-                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700, height: 1.35),
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -826,7 +967,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
       out.add(const _RecItem(
         icon: Icons.flag_rounded,
         title: 'Objective missing',
-        desc: 'Add a short objective (1–2 lines): what learners must be able to do after this session.',
+        desc: 'Add a short objective (1–2 lines): what learners should be able to do after this session.',
       ));
     }
     if (s.content.trim().isEmpty) {
@@ -840,13 +981,13 @@ class _SessionExpansionState extends State<_SessionExpansion> {
       out.add(const _RecItem(
         icon: Icons.timelapse_rounded,
         title: 'Duration missing',
-        desc: 'Set duration minutes to help planning and pacing.',
+        desc: 'Set duration minutes to improve planning and pacing.',
       ));
     }
     if (s.homework.trim().isEmpty) {
       out.add(const _RecItem(
         icon: Icons.assignment_rounded,
-        title: 'Homework optional',
+        title: 'Homework is optional',
         desc: 'Consider short practice (5–10 minutes) to reinforce the session.',
       ));
     }
@@ -889,7 +1030,11 @@ class _SessionExpansionState extends State<_SessionExpansion> {
             ),
             title: Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue, height: 1.2),
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: UiK.primaryBlue,
+                height: 1.2,
+              ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -935,7 +1080,10 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                       children: [
                         Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
                         SizedBox(width: 8),
-                        Text('Suggestions', style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+                        Text(
+                          'Suggestions',
+                          style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -1047,7 +1195,7 @@ class _FooterHint extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'اتبع الوحدات والحصص حسب الترتيب (Order) لتطبيق البرنامج كما هو مخطط. يمكنك استخدام البحث للوصول السريع.',
+              'Tip: Follow the units and sessions by their order number to deliver the syllabus as planned. Use Search to quickly jump to any session.',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade700,
@@ -1085,13 +1233,21 @@ class _InfoBox extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue, fontSize: 16),
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: UiK.primaryBlue,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, height: 1.35),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
+                height: 1.35,
+              ),
             ),
           ],
         ),
@@ -1129,7 +1285,11 @@ class _ErrorBox extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, height: 1.35),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
+                height: 1.35,
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -1154,7 +1314,7 @@ class _ErrorBox extends StatelessWidget {
   }
 }
 
-/* ================== Models ================== */
+/* ================== MODELS ================== */
 
 class _SyllabusCourse {
   const _SyllabusCourse({

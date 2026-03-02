@@ -57,7 +57,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
 
   bool _didPop = false;
 
-  // ✅ presence busy flag
+  // ✅ presence busy flag (keep same path used by service)
   static const String _presenceInCallPath = 'presence/in_call';
 
   @override
@@ -76,11 +76,26 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     _startOnce();
   }
 
+  /// ✅ FIX: Do NOT write a bool into presence/in_call/$uid.
+  /// Service expects a map: {active, callId, ts}. Remove node when false.
   Future<void> _setInCallPresence(bool v) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
+    final ref = FirebaseDatabase.instance.ref('$_presenceInCallPath/$uid');
+
     try {
-      await FirebaseDatabase.instance.ref('$_presenceInCallPath/$uid').set(v);
+      if (!v) {
+        await ref.remove();
+        return;
+      }
+
+      final cid = AudioCallService.I.callId ?? widget.incomingCallId ?? '';
+      await ref.set({
+        'active': 1,
+        'callId': cid,
+        'ts': ServerValue.timestamp,
+      });
     } catch (_) {}
   }
 
@@ -98,12 +113,9 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     final local = AudioCallService.I.localStreamVN.value;
     final remote = AudioCallService.I.remoteStreamVN.value;
 
-    if (_localRenderer.srcObject != local) {
-      _localRenderer.srcObject = local;
-    }
-    if (_remoteRenderer.srcObject != remote) {
-      _remoteRenderer.srcObject = remote;
-    }
+    // Keep assignment stable (some platforms need re-assignments when tracks appear later)
+    _localRenderer.srcObject = local;
+    _remoteRenderer.srcObject = remote;
 
     if (mounted) setState(() {});
   }
@@ -182,7 +194,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     });
   }
 
-  Future<void> _onCallState() async {
+  void _onCallState() async {
     if (!mounted) return;
     final s = AudioCallService.I.callState.value;
 
@@ -202,9 +214,12 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
         _incomingWaiting = false;
         _cameraOn = AudioCallService.I.withVideo;
       });
-      _bindStreams();
+
+      await _bindStreams();
+
       if (_timer == null) _startTimer();
-      // 🔊 Force speaker ON on Android (debug / stability)
+
+      // 🔊 Force speaker ON on Android (stability)
       _speakerOn = true;
       await AudioCallService.I.setSpeakerOn(true);
       return;
@@ -267,7 +282,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     _timer?.cancel();
     _cancelRingTimeout();
 
-    // clear busy presence
+    // clear busy presence (safe)
     _setInCallPresence(false);
 
     AudioCallService.I.callState.removeListener(_onCallState);
@@ -365,6 +380,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
         _callReady = true;
         _cameraOn = AudioCallService.I.withVideo;
       });
+
       await _bindStreams();
       _startTimer();
     } catch (_) {
@@ -425,6 +441,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
 
   Future<void> _toggleCamera() async {
     if (!_callReady) return;
+
     if (!_cameraOn) {
       final cam = await Permission.camera.request();
       if (!cam.isGranted) {
@@ -439,6 +456,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       } catch (_) {}
       return;
     }
+
     await AudioCallService.I.disableVideo();
     if (!mounted) return;
     setState(() => _cameraOn = false);
@@ -512,7 +530,9 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       builder: (_) {
         return AlertDialog(
           title: const Text('Video request'),
-          content: Text('$peerName turned on video.\nDo you want to turn on your camera too?'),
+          content: Text(
+            '$peerName turned on video.\nDo you want to turn on your camera too?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -581,7 +601,8 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
     final viewPadding = MediaQuery.of(context).viewPadding;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    final remoteHasVideo = (_remoteRenderer.srcObject?.getVideoTracks().isNotEmpty ?? false);
+    final remoteHasVideo =
+    (_remoteRenderer.srcObject?.getVideoTracks().isNotEmpty ?? false);
     final showRemoteVideo = remoteHasVideo;
 
     return Scaffold(
@@ -596,7 +617,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
       ),
       body: Stack(
         children: [
-
           Positioned.fill(
             child: showRemoteVideo
                 ? RTCVideoView(
@@ -629,7 +649,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
               ),
             ),
           ),
-
           Positioned(
             left: 16,
             top: 16,
@@ -662,7 +681,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
               ],
             ),
           ),
-
           if (_cameraOn && _localRenderer.srcObject != null)
             Positioned(
               right: 16,
@@ -681,7 +699,6 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                 ),
               ),
             ),
-
           if (!_incomingWaiting && msgs.isNotEmpty)
             Positioned(
               left: 16,
@@ -696,9 +713,7 @@ class _AudioCallScreenState extends State<AudioCallScreen> {
                 ),
               ),
             ),
-
           if (_incomingWaiting) _buildIncomingPopup(peer),
-
           Positioned(
             left: 0,
             right: 0,

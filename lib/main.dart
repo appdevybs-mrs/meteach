@@ -6,13 +6,13 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
 import 'teacher/teacher_home.dart';
 import 'services/fcm_service.dart';
-
+import 'firebase_options.dart';
 // Keeping your imports (even if not used yet) so nothing breaks in your project
 import 'learner/learner_home.dart';
 import 'auth/auth_gate.dart';
@@ -24,8 +24,9 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(); // uses google-services.json on Android
-
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   // ✅ 1) Catch Flutter UI errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FirebaseCrashlytics.instance.recordFlutterFatalError(details);
@@ -2067,8 +2068,9 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
       );
     }
 
-    final platformKey = Platform.isIOS ? 'ios' : 'android';
-
+    final platformKey = kIsWeb
+        ? 'web'
+        : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
     return StreamBuilder<DatabaseEvent>(
       stream: _ref.onValue, // ✅ listen to whole node so we can read allowAdminBypass
       builder: (context, snap) {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -41,15 +41,21 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static const Color _navyDark = Color(0xFF1C2F4A);
   static const Color _orange = Color(0xFFEC740A);
 
-  static Color _mineBubbleBg(BuildContext context) => _navy;
-  static Color _mineText(BuildContext context) => Colors.white;
+  static Color _mineBubbleBg(BuildContext context, {bool isReport = false, bool isHwEval = false}) {
+    if (isReport) return Colors.deepPurple.withOpacity(0.90);
+    if (isHwEval) return Colors.teal.withOpacity(0.90);
+    return _navy;
+  }
 
-  static Color _theirsBubbleBg(BuildContext context) => _orange.withOpacity(0.80);
-  static Color _theirsText(BuildContext context) => _navyDark;
-
+  static Color _theirsBubbleBg(BuildContext context, {bool isReport = false, bool isHwEval = false}) {
+    if (isReport) return Colors.deepPurple.withOpacity(0.14);
+    if (isHwEval) return Colors.teal.withOpacity(0.18);
+    return _orange.withOpacity(0.80);
+  }
   static Color _datePillBg(BuildContext context) => Colors.white.withOpacity(0.88);
   static Color _datePillBorder(BuildContext context) => _navy.withOpacity(0.15);
-
+  static Color _mineText(BuildContext context) => Colors.white;
+  static Color _theirsText(BuildContext context) => _navyDark;
   // Used only to fix relative/odd media URLs. Matches your upload endpoint domain.
   static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
   // ------------------------------------------------
@@ -495,18 +501,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         return;
       }
 
-      final tmp = await getTemporaryDirectory();
-      final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      _recPath = path;
 
-      await _rec.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: path,
-      );
 
       _recTicker?.cancel();
       _recTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
@@ -1256,9 +1251,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       if (i + 1 < msgs.length) nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
                       final showDate = (i == msgs.length - 1) || (nextDateLabel != thisDateLabel);
 
-                      final bubbleBg = mine ? _mineBubbleBg(context) : _theirsBubbleBg(context);
-                      final textColor = mine ? _mineText(context) : _theirsText(context);
+                      final isReport = m.type == 'report';
+                      final isHwEval = m.type == 'homework_eval';
 
+                      final bubbleBg = mine
+                          ? _mineBubbleBg(context, isReport: isReport, isHwEval: isHwEval)
+                          : _theirsBubbleBg(context, isReport: isReport, isHwEval: isHwEval);
+
+                      final textColor = mine ? _mineText(context) : _theirsText(context);
                       final bodyText = m.body.trim(); // helps “one word but whole line colored” from old messages
 
                       return Column(
@@ -1280,7 +1280,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                           color: bubbleBg,
                                           borderRadius: _bubbleRadius(mine: mine),
                                           border: Border.all(
-                                            color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08),
+                                            color: isReport
+                                                ? (mine ? Colors.white.withOpacity(0.25) : Colors.deepPurple.withOpacity(0.25))
+                                                : isHwEval
+                                                ? (mine ? Colors.white.withOpacity(0.22) : Colors.teal.withOpacity(0.30))
+                                                : (mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08)),
                                           ),
                                           boxShadow: [
                                             BoxShadow(
@@ -1295,6 +1299,21 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                                           mainAxisSize: MainAxisSize.min,
                                           crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                                           children: [
+                                            if (isReport && !mine) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withOpacity(0.20),
+                                                  borderRadius: BorderRadius.circular(999),
+                                                  border: Border.all(color: Colors.white.withOpacity(0.22)),
+                                                ),
+                                                child: const Text(
+                                                  'REPORT',
+                                                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.white),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                            ],
                                             if (bodyText.isNotEmpty)
                                               Text(
                                                 bodyText,
@@ -1561,6 +1580,8 @@ class _MailMsg {
     required this.attachments,
     required this.createdAtMs,
     required this.deletedFor,
+    required this.type,
+
     required this.reactions,
   });
 
@@ -1570,7 +1591,7 @@ class _MailMsg {
   final List<Map<String, String>> attachments;
   final int createdAtMs;
   final Set<String> deletedFor;
-
+  final String type; // '', 'report', ...
   // emoji -> set of uids
   final Map<String, Set<String>> reactions;
 
@@ -1630,6 +1651,7 @@ class _MailMsg {
       attachments: atts,
       createdAtMs: parseMs(m['createdAt']),
       deletedFor: del,
+      type: (m['type'] ?? '').toString().trim(),
       reactions: rx,
     );
   }

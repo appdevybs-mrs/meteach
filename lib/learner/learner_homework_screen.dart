@@ -68,6 +68,25 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     } catch (_) {}
   }
 
+
+  Future<String> _myDisplayName() async {
+    try {
+      final snap = await _usersRef.child(_uid).get();
+      if (!snap.exists || snap.value is! Map) return 'Learner';
+
+      final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+      final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final email = (m['email'] ?? '').toString().trim();
+
+      final full = ('$fn $ln').trim();
+      return full.isNotEmpty ? full : (email.isNotEmpty ? email : 'Learner');
+    } catch (_) {
+      return 'Learner';
+    }
+  }
+
+
   Future<void> _createHomeworkMailAndOpen({
     required String sessionId,
     required String teacherUid,
@@ -143,10 +162,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     // Teacher index + unreadCount increment safely
     final teacherIndexRef = _db.child('mail_index').child(teacherUid).child(threadId);
 
+    final learnerName = await _myDisplayName();
+
     await teacherIndexRef.update({
       'peerUid': _uid,
-      // if you have learner name, you can put it here; otherwise courseTitle is still helpful
-      'peerName': widget.courseTitle,
+      'peerName': learnerName,
       'subject': subject,
       'lastMessage': body.length > 60 ? body.substring(0, 60) : body,
       'updatedAt': now,

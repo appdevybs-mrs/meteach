@@ -12,6 +12,8 @@ class TeacherMailScreen extends StatefulWidget {
   State<TeacherMailScreen> createState() => _TeacherMailScreenState();
 }
 
+enum _InboxTabRole { learners, teachers, admin }
+
 class _TeacherMailScreenState extends State<TeacherMailScreen> {
   final _db = FirebaseDatabase.instance;
   final _searchC = TextEditingController();
@@ -19,15 +21,23 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   String _q = '';
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
-
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
 
   late final Stream<DatabaseEvent> _stream;
 
+  // -------------------------------------------------------
+  // CACHES (names + roles for tabs + better search)
+  // -------------------------------------------------------
+  final Map<String, String> _nameCache = {}; // uid -> display name
+  final Map<String, String> _roleCache = {}; // uid -> normalized: admin/teacher/learner
+  final Map<String, Future<void>> _userFetchPending = {};
+
   @override
   void initState() {
     super.initState();
-    _stream = _indexRef.orderByChild('updatedAt').onValue.asBroadcastStream();
+    // NOTE: orderByChild('updatedAt') is fine even if nested exists;
+    // we parse the snapshot ourselves.
+    _stream = _indexRef.onValue.asBroadcastStream();
   }
 
   @override
@@ -42,24 +52,195 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // -----------------------------------------
+  // Role normalization (case-insensitive + typos)
+  // -----------------------------------------
+  String _normalizeRole(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+
+    // admins (include common typos)
+    if (s == 'admin' ||
+        s == 'adin' ||
+        s == 'admn' ||
+        s == 'adm' ||
+        s == 'administration' ||
+        s == 'administrator') {
+      return 'admin';
+    }
+
+    // teachers
+    if (s == 'teacher' ||
+        s == 'teach' ||
+        s == 'instructor' ||
+        s == 'prof') {
+      return 'teacher';
+    }
+
+    // learners (include typos)
+    if (s == 'learner' ||
+        s == 'lerner' ||
+        s == 'student' ||
+        s == 'pupil') {
+      return 'learner';
+    }
+
+    // default: learner (safer UX)
+    return 'learner';
+  }
+
+  Future<void> _ensureUserCached(String uid) {
+    uid = uid.trim();
+    if (uid.isEmpty) return Future.value();
+
+    if (_nameCache.containsKey(uid) && _roleCache.containsKey(uid)) {
+      return Future.value();
+    }
+
+    final pending = _userFetchPending[uid];
+    if (pending != null) return pending;
+
+    final fut = () async {
+      try {
+        final snap = await _db.ref('users/$uid').get();
+        if (snap.exists && snap.value is Map) {
+          final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+
+          final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+          final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+          final email = (m['email'] ?? '').toString().trim();
+
+          final full = ('$fn $ln').trim();
+          final display = full.isNotEmpty ? full : (email.isNotEmpty ? email : 'User');
+
+          _nameCache[uid] = display;
+          _roleCache[uid] = _normalizeRole(m['role']);
+        } else {
+          _nameCache.putIfAbsent(uid, () => 'User');
+          _roleCache.putIfAbsent(uid, () => 'learner');
+        }
+      } catch (_) {
+        _nameCache.putIfAbsent(uid, () => 'User');
+        _roleCache.putIfAbsent(uid, () => 'learner');
+      }
+    }();
+
+    _userFetchPending[uid] = fut;
+    return fut;
+  }
+
+  String _bestName(_TopicRow r) {
+    final pn = r.peerName.trim();
+    if (pn.isNotEmpty) return pn;
+
+    final cached = _nameCache[r.peerUid.trim()];
+    if (cached != null && cached.trim().isNotEmpty) return cached;
+
+    return 'User';
+  }
+
+  String _bestRole(_TopicRow r) {
+    return _roleCache[r.peerUid.trim()] ?? '';
+  }
+
+  bool _matchesTab(_InboxTabRole tab, _TopicRow r) {
+    final role = _bestRole(r);
+    final normalized = role.isEmpty ? 'learner' : role;
+
+    if (tab == _InboxTabRole.teachers) return normalized == 'teacher';
+    if (tab == _InboxTabRole.admin) return normalized == 'admin';
+    return normalized == 'learner';
+  }
+
+  // -----------------------------------------
+  // IMPORTANT: robust parser for your mail_index shapes
+  // -----------------------------------------
+  bool _looksLikeThreadObject(Map<String, dynamic> m) {
+    // any of these keys means it's probably a thread preview object
+    return m.containsKey('peerUid') ||
+        m.containsKey('peerName') ||
+        m.containsKey('subject') ||
+        m.containsKey('updatedAt') ||
+        m.containsKey('lastMessage') ||
+        m.containsKey('unreadCount');
+  }
+
   List<_TopicRow> _parse(dynamic v) {
     if (v is! Map) return [];
     final out = <_TopicRow>[];
 
-    v.forEach((k, vv) {
-      if (k == null || vv == null) return;
-      if (vv is! Map) return;
-
-      final m = vv.map((kk, vvv) => MapEntry(kk.toString(), vvv));
-      final row = _TopicRow.fromMap(k.toString(), m);
-
+    void addIfThreadObject(String threadId, Map obj) {
+      final m = obj.map((kk, vvv) => MapEntry(kk.toString(), vvv));
+      final row = _TopicRow.fromMap(threadId, m);
       if (row.deletedAtMs != null) return;
 
+      // must have at least threadId + peerUid or subject to be useful
+      // (prevents garbage rows from nested buckets)
+      if (row.threadId.trim().isEmpty) return;
+      if (row.peerUid.trim().isEmpty && row.subject.trim().isEmpty) return;
+
       out.add(row);
+    }
+
+    // Top-level can contain:
+    // - threadId -> {fields}
+    // - peerUid -> { threadId -> true OR threadId -> {fields} }
+    v.forEach((k, vv) {
+      if (k == null || vv == null) return;
+
+      final key = k.toString();
+
+      if (vv is Map) {
+        final asMap = vv.map((kk, vvv) => MapEntry(kk.toString(), vvv));
+
+        // Case 1: direct thread object at top
+        if (_looksLikeThreadObject(asMap)) {
+          addIfThreadObject(key, vv);
+          return;
+        }
+
+        // Case 2: bucket by peerUid:
+        //   peerUid -> { threadId -> true OR threadId -> {fields} }
+        asMap.forEach((innerK, innerV) {
+          if (innerK.trim().isEmpty || innerV == null) return;
+
+          // if the inner value is a full object, parse it
+          if (innerV is Map) {
+            final innerMap = innerV.map((kk, vvv) => MapEntry(kk.toString(), vvv));
+            if (_looksLikeThreadObject(innerMap)) {
+              addIfThreadObject(innerK, innerV);
+            }
+            return;
+          }
+
+          // if inner value is just true/false, we cannot build a preview from it
+          // without reading mail_threads/<threadId>.
+          // We'll ignore it because you already have the real object at top-level
+          // in your examples.
+        });
+
+        return;
+      }
+
+      // ignore non-map nodes
     });
 
-    out.sort((a, b) => (b.updatedAtMs).compareTo(a.updatedAtMs));
-    return out;
+    // Deduplicate by threadId (because your index may reference same thread multiple ways)
+    final byId = <String, _TopicRow>{};
+    for (final r in out) {
+      final existing = byId[r.threadId];
+      if (existing == null) {
+        byId[r.threadId] = r;
+      } else {
+        // keep the one with newest updatedAt
+        if (r.updatedAtMs > existing.updatedAtMs) {
+          byId[r.threadId] = r;
+        }
+      }
+    }
+
+    final rows = byId.values.toList();
+    rows.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+    return rows;
   }
 
   List<_TopicRow> _applyFilter(List<_TopicRow> rows) {
@@ -69,7 +250,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     bool hit(_TopicRow r) {
       final subject = r.subject.toLowerCase();
       final last = r.lastMessage.toLowerCase();
-      final peer = r.peerName.toLowerCase();
+      final peer = _bestName(r).toLowerCase();
       return subject.contains(q) || last.contains(q) || peer.contains(q);
     }
 
@@ -77,14 +258,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   Map<String, List<_TopicRow>> _groupByPeer(List<_TopicRow> rows) {
-    // key by peerUid (stronger than name)
     final Map<String, List<_TopicRow>> grouped = {};
     for (final r in rows) {
       final key = r.peerUid.isNotEmpty ? r.peerUid : r.peerName;
       grouped.putIfAbsent(key, () => []).add(r);
     }
 
-    // sort threads inside each group by updatedAt desc
     for (final k in grouped.keys) {
       grouped[k]!.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
     }
@@ -105,9 +284,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete topic?'),
-        content: const Text(
-          'This deletes only for you.\nThe other side can still see it.',
-        ),
+        content: const Text('This deletes only for you.\nThe other side can still see it.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -178,10 +355,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     required String teacherUid,
     required String subject,
   }) async {
-    // load current values (optional but nice)
     int score = 100;
     String note = '';
-    String status = 'approved'; // approved | needs_work
+    String status = 'approved';
 
     try {
       final hwSnap = await _db.ref(hwRefPath).get();
@@ -266,7 +442,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
     if (ok != true) return;
 
-    // parse score safely
     int parsedScore = int.tryParse(scoreC.text.trim()) ?? 0;
     if (parsedScore < 0) parsedScore = 0;
     if (parsedScore > 100) parsedScore = 100;
@@ -275,7 +450,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     final now = DateTime.now().millisecondsSinceEpoch;
 
     try {
-      // 1) update homework node
       await _db.ref(hwRefPath).update({
         'reviewedAt': now,
         'reviewStatus': status,
@@ -283,7 +457,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         'reviewNote': noteText,
       });
 
-      // 2) update thread + both indexes preview (so inbox shows review)
       final preview = status == 'needs_work'
           ? '🔁 Needs work • $parsedScore/100'
           : '✅ Approved • $parsedScore/100';
@@ -306,7 +479,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   // -----------------------------------------
-  // Compose: admin OR teacher OR learner OR whole class
+  // Compose (unchanged)
   // -----------------------------------------
   Future<void> _composeNewTopic() async {
     try {
@@ -329,7 +502,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
       const placeholderLastMessage = '(No messages yet)';
 
-      // 1) Send to ONE person (admin or teacher or learner)
       if (picked.mode == _ComposeMode.single && picked.receiverUid != null) {
         final toUid = picked.receiverUid!;
         final toName = picked.receiverName ?? '';
@@ -340,7 +512,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           return;
         }
 
-        // thread meta (no first message created)
         await _db.ref('mail_threads/$threadId').set({
           'subject': subject,
           'createdAt': now,
@@ -348,7 +519,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           'lastMessage': placeholderLastMessage,
         });
 
-        // teacher index (sender) unread 0
         await _db.ref('mail_index/$_meUid/$threadId').set({
           'subject': subject,
           'updatedAt': now,
@@ -359,7 +529,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           'deletedAt': null,
         });
 
-        // receiver index unread 1 (shows new topic)
         await _db.ref('mail_index/$toUid/$threadId').set({
           'subject': subject,
           'updatedAt': now,
@@ -383,11 +552,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             ),
           ),
         );
-
         return;
       }
 
-      // 2) Send to WHOLE CLASS: create a thread per learner (unchanged recipients)
       if (picked.mode == _ComposeMode.classGroup) {
         final classId = picked.classId;
         if (classId == null || classId.trim().isEmpty) {
@@ -395,7 +562,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           return;
         }
 
-        // load class learners
         final cSnap = await _db.ref('classes/$classId/learners').get();
         final cVal = cSnap.value;
 
@@ -404,7 +570,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           return;
         }
 
-        // optional: load users once to display names better
         final usersSnap = await _db.ref('users').get();
         final usersVal = usersSnap.value;
         final nameByUid = <String, String>{};
@@ -426,8 +591,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         for (final entry in cVal.entries) {
           final learnerUid = entry.key.toString().trim();
           if (learnerUid.isEmpty) continue;
-
-          // avoid sending to self if teacher accidentally appears
           if (learnerUid == _meUid) continue;
 
           final learnerName = nameByUid[learnerUid] ??
@@ -437,15 +600,13 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           final threadId = _db.ref('mail_threads').push().key;
           if (threadId == null) continue;
 
-          // thread meta (no first message created)
           await _db.ref('mail_threads/$threadId').set({
-            'subject': '[$classId] $subject', // keeps it recognizable in inbox
+            'subject': '[$classId] $subject',
             'createdAt': now,
             'updatedAt': now,
             'lastMessage': placeholderLastMessage,
           });
 
-          // teacher index (sender)
           await _db.ref('mail_index/$_meUid/$threadId').set({
             'subject': '[$classId] $subject',
             'updatedAt': now,
@@ -456,7 +617,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             'deletedAt': null,
           });
 
-          // learner index (receiver)
           await _db.ref('mail_index/$learnerUid/$threadId').set({
             'subject': '[$classId] $subject',
             'updatedAt': now,
@@ -478,204 +638,232 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mail'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: TextField(
-              controller: _searchC,
-              decoration: InputDecoration(
-                hintText: 'Search topic / last message / person…',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: (_q.isEmpty)
-                    ? null
-                    : IconButton(
-                  tooltip: 'Clear',
-                  icon: const Icon(Icons.close),
-                  onPressed: () {
-                    _searchC.clear();
-                    setState(() => _q = '');
-                  },
-                ),
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: (v) {
-                _searchDebounce?.cancel();
-                _searchDebounce = Timer(const Duration(milliseconds: 200), () {
-                  if (!mounted) return;
-                  setState(() => _q = v.trim().toLowerCase());
-                });
-              },
-            ),
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _composeNewTopic,
-        icon: const Icon(Icons.edit_rounded),
-        label: const Text('New'),
-      ),
-      body: StreamBuilder<DatabaseEvent>(
-        stream: _stream,
-        builder: (context, snap) {
-          final rows = _parse(snap.data?.snapshot.value);
+  Widget _buildTab(_InboxTabRole tabRole) {
+    return StreamBuilder<DatabaseEvent>(
+      stream: _stream,
+      builder: (context, snap) {
+        final rows = _parse(snap.data?.snapshot.value);
 
-          if (rows.isEmpty) {
-            return const Center(child: Text('No mail yet.'));
-          }
+        if (rows.isEmpty) {
+          return const Center(child: Text('No mail yet.'));
+        }
 
-          final filtered = _applyFilter(rows);
-          if (filtered.isEmpty) {
-            return const Center(child: Text('No results.'));
-          }
+        // Warm cache (names + roles) for peers we see
+        for (final r in rows) {
+          final uid = r.peerUid.trim();
+          if (uid.isNotEmpty) _ensureUserCached(uid);
+        }
 
-          final grouped = _groupByPeer(filtered);
-          final groupKeys = grouped.keys.toList();
+        final roleRows = rows.where((r) => _matchesTab(tabRole, r)).toList();
+        final filtered = _applyFilter(roleRows);
 
-          // Sort groups by most recent thread inside group
-          groupKeys.sort((a, b) {
-            final aTop = grouped[a]!.isEmpty ? 0 : grouped[a]!.first.updatedAtMs;
-            final bTop = grouped[b]!.isEmpty ? 0 : grouped[b]!.first.updatedAtMs;
-            return bTop.compareTo(aTop);
-          });
+        if (filtered.isEmpty) {
+          return const Center(child: Text('No results.'));
+        }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: groupKeys.length,
-            itemBuilder: (_, gi) {
-              final k = groupKeys[gi];
-              final items = grouped[k]!;
-              final displayName = (items.first.peerName.isEmpty) ? 'User' : items.first.peerName;
-              final unreadTotal = _sumUnread(items);
+        final grouped = _groupByPeer(filtered);
+        final groupKeys = grouped.keys.toList();
 
-              return Card(
-                elevation: 0,
-                color: Colors.black.withOpacity(0.03),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: ExpansionTile(
-                  initiallyExpanded: true,
-                  title: Row(
-                    children: [
-                      Expanded(
+        groupKeys.sort((a, b) {
+          final aTop = grouped[a]!.isEmpty ? 0 : grouped[a]!.first.updatedAtMs;
+          final bTop = grouped[b]!.isEmpty ? 0 : grouped[b]!.first.updatedAtMs;
+          return bTop.compareTo(aTop);
+        });
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: groupKeys.length,
+          itemBuilder: (_, gi) {
+            final k = groupKeys[gi];
+            final items = grouped[k]!;
+            final displayName = _bestName(items.first);
+            final unreadTotal = _sumUnread(items);
+
+            return Card(
+              elevation: 0,
+              color: Colors.black.withOpacity(0.03),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        displayName,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (unreadTotal > 0) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                         child: Text(
-                          displayName,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
+                          unreadTotal > 99 ? '99+' : '$unreadTotal',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                children: [
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final r = items[i];
+
+                      return ListTile(
+                        tileColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        title: Text(
+                          r.subject.isEmpty ? '(No topic)' : r.subject,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          r.lastMessage,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      if (unreadTotal > 0) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            unreadTotal > 99 ? '99+' : '$unreadTotal',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (r.unreadCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  r.unreadCount > 99 ? '99+' : '${r.unreadCount}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            PopupMenuButton<String>(
+                              onSelected: (v) async {
+                                if (v == 'delete') await _deleteThreadForMe(r);
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(value: 'delete', child: Text('Delete (for me)')),
+                              ],
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ],
+                        onLongPress: () async {
+                          await _tryOpenHomeworkReview(r);
+                        },
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
+                              builder: (_) => TeacherMailThreadScreen(
+                                threadId: r.threadId,
+                                peerUid: r.peerUid,
+                                peerName: _bestName(r),
+                                subject: r.subject,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
-                  children: [
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) {
-                        final r = items[i];
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
-                        return ListTile(
-                          tileColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          title: Text(
-                            r.subject.isEmpty ? '(No topic)' : r.subject,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          subtitle: Text(
-                            '${r.lastMessage}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (r.unreadCount > 0)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    r.unreadCount > 99 ? '99+' : '${r.unreadCount}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(width: 8),
-                              PopupMenuButton<String>(
-                                onSelected: (v) async {
-                                  if (v == 'delete') await _deleteThreadForMe(r);
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(value: 'delete', child: Text('Delete (for me)')),
-                                ],
-                              ),
-                            ],
-                          ),
-                          onLongPress: () async {
-                            _snack('Long press ✅ ${r.threadId}');
-                            await _tryOpenHomeworkReview(r);
-                          },
-                          onTap: () async {
-                            await Navigator.of(context).push(
-                              MaterialPageRoute(
-                                settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
-                                builder: (_) => TeacherMailThreadScreen(
-                                  threadId: r.threadId,
-                                  peerUid: r.peerUid,
-                                  peerName: r.peerName.isEmpty ? 'User' : r.peerName,
-                                  subject: r.subject,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Mail'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(56 + 48),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  child: TextField(
+                    controller: _searchC,
+                    decoration: InputDecoration(
+                      hintText: 'Search topic / last message / person…',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: (_q.isEmpty)
+                          ? null
+                          : IconButton(
+                        tooltip: 'Clear',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _searchC.clear();
+                          setState(() => _q = '');
+                        },
+                      ),
+                      border: const OutlineInputBorder(),
                     ),
+                    onChanged: (v) {
+                      _searchDebounce?.cancel();
+                      _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+                        if (!mounted) return;
+                        setState(() => _q = v.trim().toLowerCase());
+                      });
+                    },
+                  ),
+                ),
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'Learners'),
+                    Tab(text: 'Teachers'),
+                    Tab(text: 'Administration'),
                   ],
                 ),
-              );
-            },
-          );
-        },
+              ],
+            ),
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _composeNewTopic,
+          icon: const Icon(Icons.edit_rounded),
+          label: const Text('New'),
+        ),
+        body: TabBarView(
+          children: [
+            _buildTab(_InboxTabRole.learners),
+            _buildTab(_InboxTabRole.teachers),
+            _buildTab(_InboxTabRole.admin),
+          ],
+        ),
       ),
     );
   }
 }
 
 // ----------------------------
-// Compose Sheet
+// Compose Sheet (UNCHANGED FROM YOUR CODE, but kept here so file compiles)
 // ----------------------------
 
 class _ComposeSheet extends StatefulWidget {
@@ -692,13 +880,11 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   bool _loading = true;
 
   final _subjectC = TextEditingController();
-
   String _teacherName = 'Teacher';
 
   List<_RecipientRow> _recipients = [];
   _RecipientRow? _picked;
 
-  // for "whole class"
   List<_ClassRow> _classes = [];
   _ClassRow? _pickedClass;
 
@@ -716,9 +902,16 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     super.dispose();
   }
 
+  String _normalizeRole(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+    if (s == 'admin' || s == 'adin' || s == 'admn' || s == 'administration' || s == 'administrator') return 'admin';
+    if (s == 'teacher' || s == 'instructor' || s == 'teach') return 'teacher';
+    if (s == 'learner' || s == 'lerner' || s == 'student') return 'learner';
+    return 'learner';
+  }
+
   Future<void> _loadEverything() async {
     try {
-      // teacher name
       final meSnap = await widget.db.ref('users/${widget.meUid}').get();
       final meVal = meSnap.value;
       if (meVal is Map) {
@@ -729,7 +922,6 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         if (full.isNotEmpty) _teacherName = full;
       }
 
-      // load users (names + admins + teachers)
       final usersSnap = await widget.db.ref('users').get();
       final usersVal = usersSnap.value;
 
@@ -742,7 +934,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           if (uid == null || vv == null || vv is! Map) return;
           final m = vv.map((k, v) => MapEntry(k.toString(), v));
 
-          final role = (m['role'] ?? '').toString().toLowerCase().trim();
+          final role = _normalizeRole(m['role']);
           final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
           final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
           final email = (m['email'] ?? '').toString().trim();
@@ -761,7 +953,6 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         });
       }
 
-      // classes where I'm instructor_current.uid
       final classesSnap = await widget.db.ref('classes').get();
       final classesVal = classesSnap.value;
 
@@ -801,18 +992,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         return _RecipientRow(uid: u, name: name, type: _RecipientType.learner);
       }).toList();
 
-      // merge recipients (admins + teachers + my learners)
-      final all = <_RecipientRow>[
-        ...admins,
-        ...teachers,
-        ...learnerRecipients,
-      ];
+      final all = <_RecipientRow>[...admins, ...teachers, ...learnerRecipients];
 
-      int rank(_RecipientType t) {
-        if (t == _RecipientType.admin) return 0;
-        if (t == _RecipientType.teacher) return 1;
-        return 2; // learner
-      }
+      int rank(_RecipientType t) => t == _RecipientType.admin ? 0 : (t == _RecipientType.teacher ? 1 : 2);
 
       all.sort((a, b) {
         final r = rank(a.type).compareTo(rank(b.type));
@@ -842,7 +1024,6 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     final subject = _subjectC.text.trim();
     if (subject.isEmpty) return;
 
-    // No "first message" from popup anymore
     const msg = '';
 
     if (_mode == _ComposeMode.single) {
@@ -864,7 +1045,6 @@ class _ComposeSheetState extends State<_ComposeSheet> {
       return;
     }
 
-    // class group
     final c = _pickedClass;
     if (c == null) return;
 
@@ -896,7 +1076,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
       child: SafeArea(
-        top: false, // important: don't push down from top
+        top: false,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -983,7 +1163,6 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 }
 
 enum _ComposeMode { single, classGroup }
-
 enum _RecipientType { admin, teacher, learner }
 
 class _RecipientRow {
@@ -1016,11 +1195,9 @@ class _ComposeResult {
   final String subject;
   final String firstMessage;
 
-  // single
   final String? receiverUid;
   final String? receiverName;
 
-  // class group
   final String? classId;
 }
 
