@@ -806,7 +806,10 @@ class _LearnersListState extends State<_LearnersList>
 
     final warnAt = dueAt - 1;
 
-    if (currentSession == dueAt) return _PayFlag.red;
+    // ✅ RED if due OR overdue
+    if (currentSession >= dueAt) return _PayFlag.red;
+
+// ✅ YELLOW only one session before due
     if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
 
     return _PayFlag.ok;

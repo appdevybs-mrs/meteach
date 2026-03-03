@@ -33,11 +33,12 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   // 30-min grid
   static const int _minutesStep = 30;
 
-  // ✅ Visible timetable window: 07:00 -> 23:00
+  // ✅ Visible timetable window: 07:00 -> 00:00 (next day)
   static const int _visibleStartMin = 7 * 60; // 07:00
-  static const int _visibleEndMin = 23 * 60; // 23:00
+  static const int _visibleEndMin = 24 * 60; // 00:00
+  // ✅ +1 so the last label (00:00) can appear
   static const int _visibleSlots =
-      (_visibleEndMin - _visibleStartMin) ~/ _minutesStep; // 32
+      ((_visibleEndMin - _visibleStartMin) ~/ _minutesStep) + 1; // 35
 
   // Teachers for filter
   bool _loadingTeachers = true;
@@ -847,7 +848,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                         children: [
                                           _gridBackground(gridH, fullW, s),
 
-                                          // Time labels (07:00 -> 23:00)
+                                          // Time labels (07:00 -> 00:00)
                                           Positioned(
                                             left: 0,
                                             top: 0,

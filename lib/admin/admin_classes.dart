@@ -709,6 +709,26 @@
               final name = (l["name"] ?? "").toString().toLowerCase();
               return serial.contains(q) || name.contains(q);
             }).toList();
+
+// ✅ ORDER: Enrolled first, then Not enrolled. (Optional: selected first inside each group)
+            filtered.sort((a, b) {
+              final auid = a["uid"].toString();
+              final buid = b["uid"].toString();
+
+              final aEnrolled = enrolledUids.contains(auid);
+              final bEnrolled = enrolledUids.contains(buid);
+
+              if (aEnrolled != bEnrolled) return aEnrolled ? -1 : 1;
+
+              final aSelected = selectedLearnersByUid.containsKey(auid);
+              final bSelected = selectedLearnersByUid.containsKey(buid);
+
+              if (aSelected != bSelected) return aSelected ? -1 : 1;
+
+              final an = (a["name"] ?? "").toString();
+              final bn = (b["name"] ?? "").toString();
+              return an.compareTo(bn);
+            });
   
             return AlertDialog(
               title: const Text("Pick learners"),
@@ -748,7 +768,7 @@
                                 _notify("Not enrolled in this course. Assign course first.", error: true);
                                 return;
                               }
-  
+
                               setDState(() {
                                 if (val == true) {
                                   selectedLearnersByUid[uid] = {"serial": serial, "name": name};
@@ -757,6 +777,13 @@
                                 }
                               });
                               setModalState(() {});
+
+// ✅ Popup notification (shows even above the dialog)
+                              if (val == true) {
+                                _notify("Added: $name");
+                              } else {
+                                _notify("Removed: $name");
+                              }
                             },
                             title: Row(
                               children: [
