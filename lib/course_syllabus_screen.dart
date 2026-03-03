@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 ///             objective: "...",
 ///             content: "...",
 ///             homework: "...",   // optional
+///             ///             sessionNumber: 1    // ✅ NEW
 ///             durationMinutes: 45,
 ///             order: 1
 ///           }
@@ -81,8 +82,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         for (final u in units) {
           u.sessions.sort((a, b) => a.order.compareTo(b.order));
         }
-
         _units = units;
+        _ensureSessionNumbers();
+
       } else {
         _units = [];
       }
@@ -96,6 +98,29 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   int get _totalSessions =>
       _units.fold<int>(0, (sum, u) => sum + u.sessions.length);
 
+
+  void _ensureSessionNumbers() {
+    // Ensure correct ordering before numbering
+    _units.sort((a, b) => a.order.compareTo(b.order));
+    for (final u in _units) {
+      u.sessions.sort((a, b) => a.order.compareTo(b.order));
+    }
+
+    int n = 1;
+    for (int ui = 0; ui < _units.length; ui++) {
+      final u = _units[ui];
+      final sessions = <SyllabusSession>[];
+
+      for (int si = 0; si < u.sessions.length; si++) {
+        final s = u.sessions[si];
+        sessions.add(s.copyWith(sessionNumber: n));
+        n++;
+      }
+
+      _units[ui] = u.copyWith(sessions: sessions);
+    }
+  }
+
   Future<void> _saveSyllabus() async {
     setState(() => _saving = true);
     try {
@@ -106,6 +131,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           _units[i].sessions[j] = _units[i].sessions[j].copyWith(order: j + 1);
         }
       }
+
+      _ensureSessionNumbers();
 
       // 1) Read course meta (code/title/duration) from the "courses/{courseId}" node
       final courseSnap = await _db.ref('courses').child(widget.courseId).get();
@@ -256,6 +283,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       homework: res.homework.trim(),
       durationMinutes: res.durationMinutes,
       order: unit.sessions.length + 1,
+      sessionNumber: _totalSessions + 1, // temporary; _ensureSessionNumbers() will finalize
     );
 
     setState(() {
@@ -719,7 +747,7 @@ class _UnitCard extends StatelessWidget {
                       child: const Icon(Icons.drag_handle),
                     ),
                     title: Text(
-                      s.title.isEmpty ? '(Untitled session)' : s.title,
+                      'Session ${s.sessionNumber <= 0 ? (i + 1) : s.sessionNumber} • ${s.title.isEmpty ? '(Untitled session)' : s.title}',
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     subtitle: Text(
@@ -1203,6 +1231,7 @@ class SyllabusSession {
     required this.homework,
     required this.durationMinutes,
     required this.order,
+    required this.sessionNumber,
   });
 
   final String id;
@@ -1211,8 +1240,11 @@ class SyllabusSession {
   final String objective;
   final String content;
   final String homework; // optional
-  final int durationMinutes; // required (you said YES)
+  final int durationMinutes; // required
   final int order;
+
+  // ✅ NEW
+  final int sessionNumber;
 
   SyllabusSession copyWith({
     String? title,
@@ -1222,6 +1254,7 @@ class SyllabusSession {
     String? homework,
     int? durationMinutes,
     int? order,
+    int? sessionNumber,
   }) {
     return SyllabusSession(
       id: id,
@@ -1232,6 +1265,7 @@ class SyllabusSession {
       homework: homework ?? this.homework,
       durationMinutes: durationMinutes ?? this.durationMinutes,
       order: order ?? this.order,
+      sessionNumber: sessionNumber ?? this.sessionNumber,
     );
   }
 
@@ -1245,6 +1279,7 @@ class SyllabusSession {
       'homework': homework,
       'durationMinutes': durationMinutes,
       'order': order,
+      'sessionNumber': sessionNumber, // ✅ NEW
     };
   }
 
@@ -1259,7 +1294,15 @@ class SyllabusSession {
       durationMinutes: (m['durationMinutes'] is num)
           ? (m['durationMinutes'] as num).toInt()
           : (int.tryParse('${m['durationMinutes']}') ?? 45),
-      order: (m['order'] is num) ? (m['order'] as num).toInt() : (int.tryParse('${m['order']}') ?? 0),
+      order: (m['order'] is num)
+          ? (m['order'] as num).toInt()
+          : (int.tryParse('${m['order']}') ?? 0),
+
+      // ✅ NEW: if missing, default 0, then _ensureSessionNumbers() will fix it
+      sessionNumber: (m['sessionNumber'] is num)
+          ? (m['sessionNumber'] as num).toInt()
+          : (int.tryParse('${m['sessionNumber']}') ?? 0),
     );
   }
 }
+

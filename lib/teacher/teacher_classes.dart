@@ -1,10 +1,27 @@
 // teacher_classes_screen.dart
-// ✅ Drop-in replacement for your TeacherClassesScreen
-// Adds:
-// - "Progress" button per class
-// - Progress bar in class card (class taught sessions vs syllabus total)
-// - Uses classes/<classId>/attendance taught.sessionId + syllabi/<course_id>
-// - Keeps your existing Take/History/Stats flow intact
+// ✅ DROP-IN replacement for your TeacherClassesScreen (copy/paste)
+//
+// NEW FEATURES (what changed):
+// 1) Progress is now split into TWO things:
+//    - Meetings progress  = how many attendance records exist (each save = 1 meeting)
+//    - Syllabus progress  = how many SYLLABUS lessons were taught across meetings
+//
+// 2) Supports your new attendance structure:
+//    - attendance/<meetingId>/taughtItems : List
+//        item.type == "syllabus"  -> counts to syllabus progress (sessionId unique)
+//        item.type == "custom"    -> does NOT count to syllabus progress
+//
+// 3) Backward compatible with old records:
+//    - attendance/<meetingId>/taught : Map { sessionId: ... }  (old single taught)
+//
+// 4) Card UI shows BOTH:
+//    - Meetings: held / plannedMeetings
+//    - Syllabus: coveredLessons / totalLessons
+//
+// RECOMMENDATION (important):
+// - Store a planned meetings count per class (example: classes/<classId>/schedule/meetingsCount = 8)
+//   Then Meetings progress becomes: Meetings: 3/8.
+// - If not found, we fall back to "-" for total meetings.
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,7 +37,7 @@ import '../calls/audio_call_screen.dart';
 import '../services/push_client.dart';
 import 'teacher_mail_thread_screen.dart';
 
-// ✅ NEW
+// ✅ Your existing progress screen (keep it)
 import 'teacher_class_progress_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
@@ -55,7 +72,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 
   List<Map<String, dynamic>> _myClasses = [];
 
-  // ✅ Cache progress per class so cards don't constantly re-fetch
+  // ✅ cache progress per class
   final Map<String, _ClassProg> _classProgCache = {};
 
   @override
@@ -76,6 +93,20 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
+  }
+
+  // ✅ RECOMMENDATION helper:
+  // If you store planned meetings here:
+  // classes/<classId>/schedule/meetingsCount = 8
+  int? _plannedMeetingsFromClass(Map<String, dynamic> classData) {
+    final schedule = classData['schedule'];
+    if (schedule is Map) {
+      final m = Map<String, dynamic>.from(schedule);
+      final v = m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount'];
+      final n = _asInt(v);
+      if (n > 0) return n;
+    }
+    return null;
   }
 
   Future<void> _loadMyClasses() async {
@@ -154,7 +185,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 
         if (matchesUid || matchesName || matchesSerial) {
           mine.add({
-            'id': key.toString(), // ✅ add classId for navigation
+            'id': key.toString(),
             ...c.map((k, v) => MapEntry(k.toString(), v)),
           });
         }
@@ -193,7 +224,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return 0;
   }
 
-  // NEW: only what we need for the collapsed card
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
     if (schedule is Map) {
@@ -223,7 +253,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   }
 
   // ----------------------------
-  // Teacher -> Learner quick actions (your existing logic)
+  // Teacher -> Learner quick actions (unchanged)
   // ----------------------------
 
   void _toast(String msg) {
@@ -252,14 +282,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     required String learnerUid,
     required String title,
     required String message,
-    required String kind, // 'homework' | 'custom'
+    required String kind,
   }) async {
     final teacher = FirebaseAuth.instance.currentUser;
 
-    // 1) ALWAYS write reminder in RTDB
-    final reminderRef = FirebaseDatabase.instance
-        .ref('reminders/$learnerUid')
-        .push();
+    final reminderRef = FirebaseDatabase.instance.ref('reminders/$learnerUid').push();
 
     try {
       await reminderRef.set({
@@ -288,7 +315,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       return;
     }
 
-    // 2) Push
     final token = await _getLearnerFcmToken(learnerUid);
 
     await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
@@ -329,9 +355,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     }
   }
 
-  Future<void> _askAndSendCustomReminder({
-    required String learnerUid,
-  }) async {
+  Future<void> _askAndSendCustomReminder({required String learnerUid}) async {
     final c = TextEditingController();
 
     final ok = await showDialog<bool>(
@@ -493,31 +517,26 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 6),
-
             ListTile(
               leading: const Icon(Icons.menu_book_rounded),
               title: const Text('Reminder: homework'),
               onTap: () => Navigator.pop(ctx, 'homework'),
             ),
-
             ListTile(
               leading: const Icon(Icons.edit_note_rounded),
               title: const Text('Reminder: type your message'),
               onTap: () => Navigator.pop(ctx, 'custom'),
             ),
-
             ListTile(
               leading: const Icon(Icons.mail_rounded),
               title: const Text('Send a mail'),
               onTap: () => Navigator.pop(ctx, 'mail'),
             ),
-
             ListTile(
               leading: const Icon(Icons.call_rounded),
               title: const Text('Call (in-app)'),
               onTap: () => Navigator.pop(ctx, 'call'),
             ),
-
             const SizedBox(height: 10),
           ],
         ),
@@ -542,33 +561,27 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     }
 
     if (picked == 'mail') {
-      await _openOrCreateMailThread(
-        learnerUid: learnerUid,
-        learnerName: learnerName,
-      );
+      await _openOrCreateMailThread(learnerUid: learnerUid, learnerName: learnerName);
       return;
     }
 
     if (picked == 'call') {
-      await _callLearnerInApp(
-        learnerUid: learnerUid,
-        learnerName: learnerName,
-      );
+      await _callLearnerInApp(learnerUid: learnerUid, learnerName: learnerName);
       return;
     }
   }
 
   // ----------------------------
-  // ✅ Class progress (class attendance taught.sessionId vs syllabi sessions)
+  // ✅ PROGRESS (UPDATED)
   // ----------------------------
 
   Future<_ClassProg> _loadClassProgress(String classId, Map<String, dynamic> classData) async {
     // cache hit
     if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
 
-    // total sessions from syllabi/<course_id>
+    // A) total lessons from syllabi/<course_id>
     final courseId = (classData['course_id'] ?? '').toString().trim();
-    int totalSessions = 0;
+    int totalLessons = 0;
 
     if (courseId.isNotEmpty) {
       final sSnap = await _syllabiRef.child(courseId).get();
@@ -580,47 +593,80 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             if (u is! Map) continue;
             final unit = Map<String, dynamic>.from(u);
             final sessions = unit['sessions'];
-            if (sessions is List) totalSessions += sessions.length;
+            if (sessions is List) totalLessons += sessions.length;
           }
         }
       }
     }
 
-    // covered sessions from classes/<classId>/attendance/*/taught/sessionId
+    // B) meetings held + syllabus lessons covered from classes/<classId>/attendance
     final att = classData['attendance'];
-    final Set<String> covered = {};
-    int held = 0;
+    final Set<String> coveredLessonSessionIds = {}; // unique syllabus sessions across all meetings
+    int meetingsHeld = 0;
 
     if (att is Map) {
       final m = Map<String, dynamic>.from(att);
-      held = m.length;
+      meetingsHeld = m.length;
 
       for (final entry in m.entries) {
         final rec = entry.value;
         if (rec is! Map) continue;
         final r = Map<String, dynamic>.from(rec);
-        final taught = r['taught'];
-        if (taught is Map) {
-          final tm = Map<String, dynamic>.from(taught);
-          final sid = (tm['sessionId'] ?? '').toString().trim();
-          if (sid.isNotEmpty) covered.add(sid);
+
+        // ✅ NEW: preferred format (multiple taught items)
+        final taughtItems = r['taughtItems'];
+        bool countedFromNewFormat = false;
+
+        if (taughtItems is List) {
+          countedFromNewFormat = true;
+          for (final it in taughtItems) {
+            if (it is! Map) continue;
+            final item = Map<String, dynamic>.from(it);
+
+            final type = (item['type'] ?? '').toString().trim().toLowerCase();
+            if (type != 'syllabus') continue; // only syllabus counts to syllabus progress
+
+            final sid = (item['sessionId'] ?? '').toString().trim();
+            if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
+          }
+        }
+
+        // ✅ BACKWARD COMPAT: old single taught map
+        if (!countedFromNewFormat) {
+          final taught = r['taught'];
+          if (taught is Map) {
+            final tm = Map<String, dynamic>.from(taught);
+            final sid = (tm['sessionId'] ?? '').toString().trim();
+            if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
+          }
         }
       }
     }
 
-    final coveredCount = covered.length;
-    final pct = totalSessions <= 0 ? 0 : ((coveredCount / totalSessions) * 100).round().clamp(0, 100);
+    final coveredLessons = coveredLessonSessionIds.length;
+
+    // Meetings total (optional recommended)
+    final plannedMeetings = _plannedMeetingsFromClass(classData);
+
+    // percent for syllabus only (keeps your existing bar meaning)
+    final syllabusPct =
+    totalLessons <= 0 ? 0 : ((coveredLessons / totalLessons) * 100).round().clamp(0, 100);
 
     final prog = _ClassProg(
-      percent: pct,
-      coveredCount: coveredCount,
-      totalSessions: totalSessions,
-      sessionsHeld: held,
+      syllabusPercent: syllabusPct,
+      coveredLessons: coveredLessons,
+      totalLessons: totalLessons,
+      meetingsHeld: meetingsHeld,
+      plannedMeetings: plannedMeetings,
     );
 
     _classProgCache[classId] = prog;
     return prog;
   }
+
+  // ----------------------------
+  // UI
+  // ----------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -680,6 +726,35 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // ✅ Recommendation card (safe + helpful)
+                Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(color: uiBorder.withOpacity(0.8)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Recommendation',
+                          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'To show Meetings progress like 3/8, save a number in:\n'
+                              'classes/<classId>/schedule/meetingsCount = 8',
+                          style: TextStyle(color: mainText, fontWeight: FontWeight.w700, height: 1.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
                 Card(
                   elevation: 0,
                   color: Colors.white,
@@ -719,8 +794,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                   const Center(
                     child: Padding(
                       padding: EdgeInsets.all(24),
-                      child: Text('No classes found for you yet.',
-                          style: TextStyle(color: mainText, fontWeight: FontWeight.w800)),
+                      child: Text(
+                        'No classes found for you yet.',
+                        style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
+                      ),
                     ),
                   )
                 else
@@ -772,32 +849,58 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                 style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
               ),
 
-              // ✅ NEW: class progress bar (loads safely)
+              // ✅ NEW: Meeting progress + Syllabus progress (safe loader)
               const SizedBox(height: 10),
               FutureBuilder<_ClassProg>(
                 future: (classId.isEmpty) ? Future.value(_ClassProg.zero()) : _loadClassProgress(classId, c),
                 builder: (context, snap) {
                   final p = snap.data ?? _ClassProg.zero();
-                  final pct = p.percent.clamp(0, 100);
+
+                  final plannedMeetingsStr =
+                  (p.plannedMeetings == null || p.plannedMeetings! <= 0) ? '-' : '${p.plannedMeetings}';
+
+                  final syllabusTotalStr = p.totalLessons <= 0 ? '-' : '${p.totalLessons}';
+
+                  final syllabusPct = p.syllabusPercent.clamp(0, 100);
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Meetings progress line
                       Row(
                         children: [
-                          const Icon(Icons.insights_rounded, size: 16, color: actionOrange),
+                          const Icon(Icons.event_available_rounded, size: 16, color: actionOrange),
                           const SizedBox(width: 8),
-                          Text(
-                            'Progress: $pct%  •  ${p.coveredCount}/${p.totalSessions <= 0 ? '-' : p.totalSessions} covered',
-                            style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
+                          Expanded(
+                            child: Text(
+                              'Meetings: ${p.meetingsHeld}/$plannedMeetingsStr',
+                              style: TextStyle(color: mainText.withOpacity(0.80), fontWeight: FontWeight.w900),
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
+
+                      // Syllabus progress line
+                      Row(
+                        children: [
+                          const Icon(Icons.menu_book_rounded, size: 16, color: actionOrange),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Syllabus: ${p.coveredLessons}/$syllabusTotalStr  •  $syllabusPct%',
+                              style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Syllabus progress bar (same as before, but now correct)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
-                          value: p.totalSessions <= 0 ? 0 : (p.coveredCount / p.totalSessions).clamp(0, 1),
+                          value: p.totalLessons <= 0 ? 0 : (p.coveredLessons / p.totalLessons).clamp(0, 1),
                           minHeight: 8,
                           backgroundColor: primaryBlue.withOpacity(0.10),
                           valueColor: const AlwaysStoppedAnimation(actionOrange),
@@ -866,7 +969,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 
           const SizedBox(height: 10),
 
-          // ✅ NEW: Progress button (full width, clean)
+          // Progress button
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -913,8 +1016,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   Widget _learnersList(Map<String, dynamic> c) {
     final learners = c['learners'];
     if (learners is! Map || learners.isEmpty) {
-      return Text('No learners in this class yet.',
-          style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700));
+      return Text(
+        'No learners in this class yet.',
+        style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
+      );
     }
 
     final m = Map<String, dynamic>.from(learners);
@@ -980,22 +1085,28 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
 }
 
 class _ClassProg {
-  final int percent;
-  final int coveredCount;
-  final int totalSessions;
-  final int sessionsHeld;
+  // syllabus progress
+  final int syllabusPercent;
+  final int coveredLessons;
+  final int totalLessons;
+
+  // meeting progress
+  final int meetingsHeld;
+  final int? plannedMeetings;
 
   const _ClassProg({
-    required this.percent,
-    required this.coveredCount,
-    required this.totalSessions,
-    required this.sessionsHeld,
+    required this.syllabusPercent,
+    required this.coveredLessons,
+    required this.totalLessons,
+    required this.meetingsHeld,
+    required this.plannedMeetings,
   });
 
   factory _ClassProg.zero() => const _ClassProg(
-    percent: 0,
-    coveredCount: 0,
-    totalSessions: 0,
-    sessionsHeld: 0,
+    syllabusPercent: 0,
+    coveredLessons: 0,
+    totalLessons: 0,
+    meetingsHeld: 0,
+    plannedMeetings: null,
   );
 }
