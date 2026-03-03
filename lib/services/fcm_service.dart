@@ -7,7 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
 import '../admin/admin_payments.dart'; // keep (project safety)
 import 'route_state.dart';
@@ -134,6 +134,12 @@ class FCMService {
   }
 
   Future<void> _requestPermission() async {
+    if (kIsWeb) {
+      // Web: do NOT use Platform.* and iOS options don't apply
+      await _messaging.requestPermission();
+      return;
+    }
+
     if (Platform.isIOS) {
       await _messaging.requestPermission(alert: true, badge: true, sound: true);
     } else {
@@ -152,7 +158,7 @@ class FCMService {
     try {
       await FirebaseDatabase.instance.ref('fcm_tokens/$uid').update({
         'token': token,
-        'platform': Platform.isAndroid ? 'android' : 'other',
+        'platform': kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'other'),
         'updatedAt': ServerValue.timestamp,
       });
       debugPrint('✅ Token saved to RTDB: fcm_tokens/$uid');
@@ -163,7 +169,10 @@ class FCMService {
 
   Future<void> _ensureLocalInit() async {
     if (_localInited) return;
-
+    if (kIsWeb) {
+      _localInited = true;
+      return;
+    }
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidInit);
 

@@ -522,18 +522,32 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       }
 
       if (kIsWeb) {
-        // Some web setups of `record` require a `path:` argument.
-        final webPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        // Web: prefer Opus in WebM container (most compatible in Chrome).
+        final webPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.webm';
         _recPath = webPath;
 
-        await _rec.start(
-          const RecordConfig(
-            encoder: AudioEncoder.aacLc,
-            bitRate: 128000,
-            sampleRate: 44100,
-          ),
-          path: webPath,
-        );
+        try {
+          await _rec.start(
+            const RecordConfig(
+              encoder: AudioEncoder.opus,
+              bitRate: 64000,
+              sampleRate: 48000,
+            ),
+            path: webPath,
+          );
+        } catch (_) {
+          // Fallback: WAV is big, but often supported.
+          final wavPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.wav';
+          _recPath = wavPath;
+
+          await _rec.start(
+            const RecordConfig(
+              encoder: AudioEncoder.wav,
+              sampleRate: 44100,
+            ),
+            path: wavPath,
+          );
+        }
       } else {
         final tmp = await getTemporaryDirectory();
         final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
@@ -677,7 +691,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       }
 
       final client = MailUploadClient.defaultClient();
-      final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      final ext =
+      (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav')) ? 'wav' :
+      (kIsWeb ? 'webm' : 'm4a');
+
+      final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
 
       String url;
 
@@ -750,7 +770,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         s.endsWith('.m4a') ||
         s.endsWith('.aac') ||
         s.endsWith('.wav') ||
-        s.endsWith('.ogg');
+        s.endsWith('.ogg') ||
+        s.endsWith('.webm');
   }
 
   Future<void> _showImageViewer(String rawUrl, {String? title}) async {
