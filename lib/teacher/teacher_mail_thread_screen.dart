@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/route_state.dart';
 import '../services/push_client.dart';
-
+import '../utils/io_delete.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -514,19 +513,35 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 
   // ---------------- Attachments ----------------
-
   Future<void> _pickAndUploadAttachment() async {
     try {
-      final picked = await FilePicker.platform.pickFiles(withData: false);
+      final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
       if (picked == null || picked.files.isEmpty) return;
-      final f = picked.files.first;
-      if (f.path == null) return;
 
-      final file = File(f.path!);
-      final url = await MailUploadClient.defaultClient().uploadFile(file: file);
+      final f = picked.files.first;
+      final name = (f.name.isNotEmpty) ? f.name : 'file_${DateTime.now().millisecondsSinceEpoch}';
+
+      final client = MailUploadClient.defaultClient();
+
+      String url;
+      if (kIsWeb) {
+        final bytes = f.bytes;
+        if (bytes == null || bytes.isEmpty) {
+          _snack('Upload failed: file bytes are empty (web).');
+          return;
+        }
+        url = await client.uploadBytes(bytes: bytes, filename: name);
+      } else {
+        final path = f.path;
+        if (path == null || path.trim().isEmpty) {
+          _snack('Upload failed: no file path.');
+          return;
+        }
+        url = await client.uploadPath(path: path, filename: name);
+      }
 
       if (!mounted) return;
-      setState(() => _attachments.add({'name': f.name, 'url': url}));
+      setState(() => _attachments.add({'name': name, 'url': url}));
     } catch (e) {
       _snack('Upload failed: $e');
     }
@@ -537,10 +552,21 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
       if (x == null) return;
 
-      final file = File(x.path);
-      final url = await MailUploadClient.defaultClient().uploadFile(file: file);
-
+      final client = MailUploadClient.defaultClient();
       final name = x.name.isNotEmpty ? x.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      String url;
+      if (kIsWeb) {
+        final bytes = await x.readAsBytes();
+        if (bytes.isEmpty) {
+          _snack('Camera upload failed: empty image bytes.');
+          return;
+        }
+        url = await client.uploadBytes(bytes: bytes, filename: name);
+      } else {
+        url = await client.uploadPath(path: x.path, filename: name);
+      }
+
       if (!mounted) return;
       setState(() => _attachments.add({'name': name, 'url': url}));
     } catch (e) {
@@ -832,7 +858,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   Future<void> _recStart(LongPressStartDetails d) async {
     if (_composerBusy) return;
 
-    // Optimistic UI first (prevents “release before start finishes”)
     _pressStartGlobal = d.globalPosition;
     _recStarting = true;
     _recRecording = true;
@@ -855,18 +880,45 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         return;
       }
 
-      final tmp = await getTemporaryDirectory();
-      final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      _recPath = path;
+      if (kIsWeb) {
+        final webPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.webm';
+        _recPath = webPath;
 
-      await _rec.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: path,
-      );
+        try {
+          await _rec.start(
+            const RecordConfig(
+              encoder: AudioEncoder.opus,
+              bitRate: 64000,
+              sampleRate: 48000,
+            ),
+            path: webPath,
+          );
+        } catch (_) {
+          final wavPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.wav';
+          _recPath = wavPath;
+
+          await _rec.start(
+            const RecordConfig(
+              encoder: AudioEncoder.wav,
+              sampleRate: 44100,
+            ),
+            path: wavPath,
+          );
+        }
+      } else {
+        final tmp = await getTemporaryDirectory();
+        final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        _recPath = path;
+
+        await _rec.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: path,
+        );
+      }
 
       _recTicker?.cancel();
       _recTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
@@ -879,7 +931,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _recStarting = false;
       if (mounted) setState(() {});
 
-      // If user released while still starting, finish now.
       if (_recPendingCancel) {
         _recPendingCancel = false;
         await _recCancel();
@@ -895,6 +946,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _resetRecUi();
     }
   }
+
 
   void _recMove(LongPressMoveUpdateDetails d) {
     if (!_recRecording) return; // includes starting
@@ -971,18 +1023,18 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (mounted) setState(() {});
   }
 
+
   Future<void> _recCancel() async {
     try {
       _recTicker?.cancel();
       _recTicker = null;
 
       await _rec.stop();
+
+      // ✅ Web has no dart:io File. Only delete temp file on non-web platforms.
       final p = _recPath;
-      if (p != null) {
-        final f = File(p);
-        if (await f.exists()) {
-          await f.delete().catchError((_) {});
-        }
+      if (p != null && p.trim().isNotEmpty) {
+        await deleteFileIfExists(p);
       }
     } catch (_) {}
 
@@ -1002,23 +1054,31 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _recTicker?.cancel();
       _recTicker = null;
 
-      final path = await _rec.stop();
-      if (path == null || path.trim().isEmpty) {
+      final pathOrUrl = await _rec.stop();
+      if (pathOrUrl == null || pathOrUrl.trim().isEmpty) {
         await _recCancel();
         return;
       }
 
-      final file = File(path);
-      if (!await file.exists()) {
-        await _recCancel();
-        return;
+      final client = MailUploadClient.defaultClient();
+
+      final ext =
+      (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav')) ? 'wav' :
+      (kIsWeb ? 'webm' : 'm4a');
+
+      final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      String url;
+
+      if (kIsWeb) {
+        final resp = await http.get(Uri.parse(pathOrUrl));
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+          throw Exception('Could not read recorded audio (HTTP ${resp.statusCode})');
+        }
+        url = await client.uploadBytes(bytes: resp.bodyBytes, filename: name);
+      } else {
+        url = await client.uploadPath(path: pathOrUrl, filename: name);
       }
-
-      final url = await MailUploadClient.defaultClient().uploadFile(file: file);
-      final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-      // cleanup local file (prevents storage leak)
-      await file.delete().catchError((_) {});
 
       if (!mounted) return;
 
@@ -1053,6 +1113,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
+
   String _fmtRec(Duration d) {
     String two(int n) => n.toString().padLeft(2, '0');
     final mm = two(d.inMinutes.remainder(60));
@@ -1077,7 +1138,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         s.endsWith('.m4a') ||
         s.endsWith('.aac') ||
         s.endsWith('.wav') ||
-        s.endsWith('.ogg');
+        s.endsWith('.ogg') ||
+        s.endsWith('.webm'); // ✅ web recordings
   }
 
   Future<void> _showImageViewer(String rawUrl, {String? title}) async {
@@ -1781,11 +1843,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
+
   Future<String> _uploadPngBytes(Uint8List bytes) async {
-    final dir = Directory.systemTemp;
-    final file = File('${dir.path}/report_${DateTime.now().millisecondsSinceEpoch}.png');
-    await file.writeAsBytes(bytes, flush: true);
-    return MailUploadClient.defaultClient().uploadFile(file: file);
+    final client = MailUploadClient.defaultClient();
+    final name = 'report_${DateTime.now().millisecondsSinceEpoch}.png';
+    return client.uploadBytes(bytes: bytes, filename: name);
   }
 
   Future<void> _openReportCard() async {
@@ -3197,16 +3259,49 @@ class MailUploadClient {
     );
   }
 
-  Future<String> uploadFile({required File file}) async {
+  Future<String> uploadBytes({
+    required List<int> bytes,
+    required String filename,
+  }) async {
     final uri = Uri.parse(endpoint);
 
     final req = http.MultipartRequest('POST', uri)
       ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
       ..fields['key'] = key
       ..fields['app_id'] = appId
-      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
 
-    final streamed = await req.send();
+    final streamed = await _http.send(req);
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
+    }
+
+    final decoded = _tryDecodeJson(body);
+    if (decoded == null) throw Exception('Upload failed: invalid JSON\n$body');
+
+    final ok = decoded['success'] == true;
+    final url = (decoded['url'] ?? '').toString();
+    if (!ok || url.trim().isEmpty) throw Exception('Upload failed: $decoded');
+
+    return url;
+  }
+
+  /// Mobile/Desktop only (non-web)
+  Future<String> uploadPath({
+    required String path,
+    required String filename,
+  }) async {
+    final uri = Uri.parse(endpoint);
+
+    final req = http.MultipartRequest('POST', uri)
+      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
+      ..fields['key'] = key
+      ..fields['app_id'] = appId
+      ..files.add(await http.MultipartFile.fromPath('file', path, filename: filename));
+
+    final streamed = await _http.send(req);
     final body = await streamed.stream.bytesToString();
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
