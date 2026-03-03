@@ -12,6 +12,8 @@ import 'teacher_schedule.dart';
 import '../shared/session_manager.dart';
 import 'teacher_wages_screen.dart';
 import 'teacher_syllabi_screen.dart';
+import 'teacher_online_booking.dart';
+import 'teacher_online_booking.dart';
 // ✅ Call logs
 import '../calls/call_logs_screen.dart';
 
