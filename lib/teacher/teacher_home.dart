@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'teacher_online_booking.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -761,6 +761,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           'Schedule',
                           Icons.calendar_today_rounded,
                           const TeacherSchedule(),
+                        ),
+                        _buildQuickCard(
+                          context,
+                          'Online Availability',
+                          Icons.event_available_rounded,
+                          const TeacherOnlineBookingScreen(),
                         ),
                         FutureBuilder<_ClassesSummary>(
                           future: _classesSummaryFuture,

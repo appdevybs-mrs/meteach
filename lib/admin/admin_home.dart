@@ -16,7 +16,7 @@ import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
 import '../shared/session_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-
+import 'admin_booking.dart';
 // ✅ timetable
 import 'admin_timetable_screen.dart';
 
@@ -210,6 +210,15 @@ class AdminHome extends StatelessWidget {
                           color: primaryBlue,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
+                          ),
+                        ),
+                        _DashCard(
+                          title: 'Booking',
+                          subtitle: 'Levels & slots setup',
+                          icon: Icons.event_available_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminBookingScreen()),
                           ),
                         ),
                         _DashCard(
