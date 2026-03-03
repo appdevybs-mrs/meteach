@@ -1,7 +1,17 @@
-// ✅ FULL REPLACEMENT: lib/teacher/teacher_online_booking.dart
-// OPTION 1 (Recommended): Day Editor UI (no grid tapping)
-// Weekly repeating availability (Mon–Sun). Teachers create time blocks per day.
+// ✅ FULL REPLACEMENT (OPTION 1): lib/teacher/teacher_online_booking.dart
+// New UX: 1-hour fixed slots (checkbox timetable). No blocks, no merging.
 // Saves to: booking_availability/<teacherUid>/<courseId>
+//
+// Data format (new):
+// booking_availability/<teacherUid>/<courseId>/
+//   startHour: 8
+//   endHour: 21
+//   slotMinutes: 60
+//   week:
+//     mon: ["08:00","09:00","13:00"]
+//
+// Backward compatible loader:
+// If it finds old blocks [{start,end}], it converts them into 1-hour slots.
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -15,7 +25,7 @@ class TeacherOnlineBookingScreen extends StatefulWidget {
 }
 
 class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen> {
-  // ===== Brand colors (match your style) =====
+  // ===== Brand colors =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
   static const appBg = Color(0xFFF4F7F9);
@@ -28,30 +38,30 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   String myUid = '';
   String myName = 'Teacher';
 
-  // Courses (from users/<uid>/courses)
+  // Courses
   bool loading = true;
   bool saving = false;
   List<_CoursePick> myCourses = [];
   String? selectedCourseId;
 
-  // Time range (visual guideline only)
-  int startHour = 8; // 08:00
-  int endHour = 20; // 20:00
-  int stepMinutes = 30;
+  // Timetable range
+  int startHour = 8;  // inclusive
+  int endHour = 21;   // exclusive (21 means last slot starts at 20:00)
+  final int slotMinutes = 60;
 
-  // Weekly data
+  // Days
   final List<String> dayKeys = const ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   final List<String> dayLabels = const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  // Map dayKey -> list of blocks
-  final Map<String, List<_TimeBlock>> week = {
-    'mon': [],
-    'tue': [],
-    'wed': [],
-    'thu': [],
-    'fri': [],
-    'sat': [],
-    'sun': [],
+  // Map dayKey -> set of selected slot start minutes (e.g., 08:00 = 480)
+  final Map<String, Set<int>> weekSlots = {
+    'mon': <int>{},
+    'tue': <int>{},
+    'wed': <int>{},
+    'thu': <int>{},
+    'fri': <int>{},
+    'sat': <int>{},
+    'sun': <int>{},
   };
 
   @override
@@ -70,7 +80,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   DatabaseReference _availRef(String courseId) => _db.child('booking_availability/$myUid/$courseId');
 
   String _two(int n) => n < 10 ? '0$n' : '$n';
-
   String _fmt(TimeOfDay t) => '${_two(t.hour)}:${_two(t.minute)}';
 
   int _toInt(dynamic v) {
@@ -87,64 +96,22 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     return TimeOfDay(hour: hh, minute: mm);
   }
 
-  // Suggest next start time for a day
-  TimeOfDay _suggestStart(String dayKey) {
-    final blocks = week[dayKey] ?? [];
-    if (blocks.isEmpty) return TimeOfDay(hour: startHour, minute: 0);
-
-    final sorted = [...blocks]..sort((a, b) => _tToMinutes(a.start).compareTo(_tToMinutes(b.start)));
-    final last = sorted.last;
-    final nextM = _tToMinutes(last.end);
-    return _minutesToTime(nextM.clamp(startHour * 60, endHour * 60));
+  TimeOfDay? _parseHHMM(String s) {
+    final parts = s.split(':');
+    if (parts.length != 2) return null;
+    final hh = int.tryParse(parts[0]);
+    final mm = int.tryParse(parts[1]);
+    if (hh == null || mm == null) return null;
+    if (hh < 0 || hh > 23) return null;
+    if (mm < 0 || mm > 59) return null;
+    return TimeOfDay(hour: hh, minute: mm);
   }
 
-  // Normalize: sort + merge overlaps + clamp
-  void _normalizeDay(String dayKey) {
-    final blocks = week[dayKey] ?? [];
-    if (blocks.isEmpty) return;
-
-    // clamp + remove invalid
-    final filtered = <_TimeBlock>[];
-    for (final b in blocks) {
-      var s = _tToMinutes(b.start);
-      var e = _tToMinutes(b.end);
-
-      final minM = startHour * 60;
-      final maxM = endHour * 60;
-
-      if (s < minM) s = minM;
-      if (e > maxM) e = maxM;
-
-      if (e <= s) continue;
-
-      filtered.add(_TimeBlock(start: _minutesToTime(s), end: _minutesToTime(e)));
-    }
-
-    filtered.sort((a, b) => _tToMinutes(a.start).compareTo(_tToMinutes(b.start)));
-
-    // merge overlaps
-    final merged = <_TimeBlock>[];
-    for (final b in filtered) {
-      if (merged.isEmpty) {
-        merged.add(b);
-        continue;
-      }
-
-      final last = merged.last;
-      final lastEnd = _tToMinutes(last.end);
-      final curStart = _tToMinutes(b.start);
-      final curEnd = _tToMinutes(b.end);
-
-      if (curStart < lastEnd) {
-        // overlap/touch -> extend end
-        final newEnd = _minutesToTime(curEnd > lastEnd ? curEnd : lastEnd);
-        merged[merged.length - 1] = _TimeBlock(start: last.start, end: newEnd);
-      } else {
-        merged.add(b);
-      }
-    }
-
-    week[dayKey] = merged;
+  List<int> _hoursInRange(int fromHour, int toHour) {
+    final a = fromHour.clamp(startHour, endHour);
+    final b = toHour.clamp(startHour, endHour);
+    if (b <= a) return [];
+    return List.generate(b - a, (i) => a + i);
   }
 
   // ===================== Init / Load =====================
@@ -228,7 +195,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   Future<void> _loadAvailability(String courseId) async {
     // clear local week
     for (final dk in dayKeys) {
-      week[dk] = [];
+      weekSlots[dk] = <int>{};
     }
 
     try {
@@ -248,22 +215,43 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
 
       final sh = _toInt(m['startHour']);
       final eh = _toInt(m['endHour']);
-      final sm = _toInt(m['stepMinutes']);
+      final sm = _toInt(m['slotMinutes']); // new field
+      final oldSm = _toInt(m['stepMinutes']); // old field (ignore for new UI)
 
-      if (sh > 0 && eh > sh && sm > 0) {
+      // Only apply if sane. Prefer new "slotMinutes" but allow old data.
+      if (sh > 0 && eh > sh) {
         startHour = sh;
         endHour = eh;
-        stepMinutes = sm;
       }
+      // slotMinutes fixed to 60 in UI; we only read to avoid crashing.
+      // If somebody saved different slotMinutes, we still display as 60.
 
       final weekNode = m['week'];
       if (weekNode is Map) {
         final wm = weekNode.map((k, vv) => MapEntry(k.toString(), vv));
+
         for (final dk in dayKeys) {
           final list = wm[dk];
-          final blocks = <_TimeBlock>[];
+          final set = <int>{};
 
-          if (list is List) {
+          // NEW FORMAT: list of "HH:MM"
+          if (list is List && list.isNotEmpty && list.first is! Map) {
+            for (final item in list) {
+              final s = item.toString().trim();
+              final t = _parseHHMM(s);
+              if (t == null) continue;
+
+              final minutes = _tToMinutes(t);
+              // keep only slot starts inside range
+              if (minutes >= startHour * 60 && minutes <= (endHour - 1) * 60) {
+                // must align to full hour
+                if (minutes % 60 == 0) set.add(minutes);
+              }
+            }
+          }
+
+          // OLD FORMAT: list of blocks [{start,end}]
+          if (list is List && list.isNotEmpty && list.first is Map) {
             for (final item in list) {
               if (item is! Map) continue;
               final im = item.map((k, vv) => MapEntry(k.toString(), vv));
@@ -272,12 +260,21 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
               final st = _parseHHMM(s);
               final en = _parseHHMM(e);
               if (st == null || en == null) continue;
-              blocks.add(_TimeBlock(start: st, end: en));
+
+              final sMin = _tToMinutes(st);
+              final eMin = _tToMinutes(en);
+
+              // Convert block into hour slots (start times)
+              // Example 08:00-10:00 => 08:00, 09:00
+              for (int cur = sMin; cur + 60 <= eMin; cur += 60) {
+                if (cur >= startHour * 60 && cur <= (endHour - 1) * 60) {
+                  if (cur % 60 == 0) set.add(cur);
+                }
+              }
             }
           }
 
-          week[dk] = blocks;
-          _normalizeDay(dk);
+          weekSlots[dk] = set;
         }
       }
 
@@ -286,17 +283,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       _toast('Failed loading availability: $e');
       setState(() {});
     }
-  }
-
-  TimeOfDay? _parseHHMM(String s) {
-    final parts = s.split(':');
-    if (parts.length != 2) return null;
-    final hh = int.tryParse(parts[0]);
-    final mm = int.tryParse(parts[1]);
-    if (hh == null || mm == null) return null;
-    if (hh < 0 || hh > 23) return null;
-    if (mm < 0 || mm > 59) return null;
-    return TimeOfDay(hour: hh, minute: mm);
   }
 
   // ===================== Save =====================
@@ -308,20 +294,11 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       return;
     }
 
-    // normalize all days before save
-    for (final dk in dayKeys) {
-      _normalizeDay(dk);
-    }
-
     final payloadWeek = <String, dynamic>{};
+
     for (final dk in dayKeys) {
-      final blocks = week[dk] ?? [];
-      payloadWeek[dk] = blocks
-          .map((b) => {
-        'start': _fmt(b.start),
-        'end': _fmt(b.end),
-      })
-          .toList();
+      final slots = (weekSlots[dk] ?? <int>{}).toList()..sort();
+      payloadWeek[dk] = slots.map((m) => _fmt(_minutesToTime(m))).toList();
     }
 
     setState(() => saving = true);
@@ -331,7 +308,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         'teacherName': myName,
         'startHour': startHour,
         'endHour': endHour,
-        'stepMinutes': stepMinutes,
+        'slotMinutes': 60,
         'updatedAt': ServerValue.timestamp,
         'week': payloadWeek,
       });
@@ -345,48 +322,85 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     }
   }
 
-  // ===================== UI Actions =====================
+  // ===================== Day Editor (Checkbox Timetable) =====================
 
   Future<void> _openDayEditor(String dayKey, String label) async {
-    final blocks = [...(week[dayKey] ?? [])]; // local copy for editing
+    final local = <int>{...(weekSlots[dayKey] ?? <int>{})};
 
-    void normalizeLocal() {
-      blocks.sort((a, b) => _tToMinutes(a.start).compareTo(_tToMinutes(b.start)));
-      final merged = <_TimeBlock>[];
-      for (final b in blocks) {
-        if (merged.isEmpty) {
-          merged.add(b);
-          continue;
-        }
-        final last = merged.last;
-        final lastEnd = _tToMinutes(last.end);
-        final curStart = _tToMinutes(b.start);
-        final curEnd = _tToMinutes(b.end);
-        if (curStart < lastEnd) {
-          final newEnd = _minutesToTime(curEnd > lastEnd ? curEnd : lastEnd);
-          merged[merged.length - 1] = _TimeBlock(start: last.start, end: newEnd);
-        } else {
-          merged.add(b);
-        }
-      }
-      blocks
-        ..clear()
-        ..addAll(merged);
-    }
+    // Split into "Morning" and "Afternoon/Evening" like you asked
+    // Morning: startHour .. 13
+    // Afternoon: 13 .. endHour
+    const splitHour = 13;
 
-    Future<TimeOfDay?> pickTime(TimeOfDay initial) async {
-      return showTimePicker(
-        context: context,
-        initialTime: initial,
-        helpText: 'Pick time',
-        builder: (ctx, child) {
-          return Theme(
-            data: Theme.of(ctx).copyWith(
-              colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: actionOrange),
+    final morningHours = _hoursInRange(startHour, splitHour);
+    final afternoonHours = _hoursInRange(splitHour, endHour);
+
+    Widget slotRow(String title, List<int> hours) {
+      if (hours.isEmpty) return const SizedBox.shrink();
+
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: uiBorder.withOpacity(0.85)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: hours.map((h) {
+                  final startM = h * 60;
+                  final endM = (h + 1) * 60;
+                  final isOn = local.contains(startM);
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      // toggling happens in modal setState below via StatefulBuilder
+                    },
+                    child: Container(
+                      width: 120,
+                      margin: const EdgeInsets.only(right: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isOn ? actionOrange.withOpacity(0.10) : appBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isOn ? actionOrange.withOpacity(0.35) : uiBorder.withOpacity(0.9),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: isOn,
+                            activeColor: actionOrange,
+                            onChanged: (_) {},
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${_two(h)}-${_two(h + 1)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: isOn ? actionOrange : primaryBlue,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
-            child: child!,
-          );
-        },
+          ],
+        ),
       );
     }
 
@@ -398,7 +412,84 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setModal) {
-            final dayCount = blocks.length;
+            // helper toggle (needs setModal)
+            void toggleHour(int h) {
+              final startM = h * 60;
+              if (local.contains(startM)) {
+                local.remove(startM);
+              } else {
+                // Only allow full-hour slots inside range
+                if (h >= startHour && h < endHour) {
+                  local.add(startM);
+                }
+              }
+            }
+
+            Widget rowWithToggle(String title, List<int> hours) {
+              if (hours.isEmpty) return const SizedBox.shrink();
+
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: hours.map((h) {
+                          final startM = h * 60;
+                          final isOn = local.contains(startM);
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () => setModal(() => toggleHour(h)),
+                            child: Container(
+                              width: 120,
+                              margin: const EdgeInsets.only(right: 10),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isOn ? actionOrange.withOpacity(0.10) : appBg,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isOn ? actionOrange.withOpacity(0.35) : uiBorder.withOpacity(0.9),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Checkbox(
+                                    value: isOn,
+                                    activeColor: actionOrange,
+                                    onChanged: (_) => setModal(() => toggleHour(h)),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      '${_two(h)}-${_two(h + 1)}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: isOn ? actionOrange : primaryBlue,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
 
             return SafeArea(
               child: Padding(
@@ -438,7 +529,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '$label availability',
+                                  '$label timetable',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
                                     color: primaryBlue,
@@ -447,7 +538,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Add blocks like 14:00 → 16:00 (weekly repeating)',
+                                  'Tick the 1-hour slots you can teach (weekly repeating).',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     color: Colors.grey.shade600,
@@ -465,7 +556,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                               border: Border.all(color: actionOrange.withOpacity(0.25)),
                             ),
                             child: Text(
-                              '$dayCount block${dayCount == 1 ? '' : 's'}',
+                              '${local.length} slot${local.length == 1 ? '' : 's'}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
                                 color: actionOrange,
@@ -479,7 +570,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
 
                     const SizedBox(height: 12),
 
-                    // quick add
+                    // quick actions
                     Row(
                       children: [
                         Expanded(
@@ -491,18 +582,19 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             onPressed: () {
-                              final s = _suggestStart(dayKey);
-                              final sMin = _tToMinutes(s);
-                              final eMin = (sMin + 60).clamp(startHour * 60, endHour * 60);
-                              final e = _minutesToTime(eMin);
-
+                              // Select all for this day
+                              final all = <int>{};
+                              for (int h = startHour; h < endHour; h++) {
+                                all.add(h * 60);
+                              }
                               setModal(() {
-                                blocks.add(_TimeBlock(start: s, end: e));
-                                normalizeLocal();
+                                local
+                                  ..clear()
+                                  ..addAll(all);
                               });
                             },
-                            icon: const Icon(Icons.add_rounded),
-                            label: const Text('Add block', style: TextStyle(fontWeight: FontWeight.w900)),
+                            icon: const Icon(Icons.done_all_rounded),
+                            label: const Text('Select all', style: TextStyle(fontWeight: FontWeight.w900)),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -514,7 +606,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            onPressed: blocks.isEmpty ? null : () => setModal(() => blocks.clear()),
+                            onPressed: local.isEmpty ? null : () => setModal(() => local.clear()),
                             icon: const Icon(Icons.delete_outline_rounded),
                             label: const Text('Clear day', style: TextStyle(fontWeight: FontWeight.w900)),
                           ),
@@ -524,138 +616,16 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
 
                     const SizedBox(height: 12),
 
-                    // list
+                    // timetable sections
                     ConstrainedBox(
                       constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.55),
-                      child: blocks.isEmpty
-                          ? Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: uiBorder.withOpacity(0.85)),
-                        ),
-                        child: const Text(
-                          'No blocks yet.\nTap "Add block" to add your teaching hours.',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      )
-                          : ListView.separated(
+                      child: ListView(
                         shrinkWrap: true,
-                        itemCount: blocks.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) {
-                          final b = blocks[i];
-
-                          return Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: uiBorder.withOpacity(0.85)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: actionOrange.withOpacity(0.10),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: actionOrange.withOpacity(0.25)),
-                                      ),
-                                      child: const Icon(Icons.access_time_rounded, color: actionOrange),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        '${_fmt(b.start)}  →  ${_fmt(b.end)}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: primaryBlue,
-                                          fontSize: 15,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Remove',
-                                      onPressed: () => setModal(() => blocks.removeAt(i)),
-                                      icon: const Icon(Icons.close_rounded, color: Colors.red),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: [
-                                    OutlinedButton(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: primaryBlue,
-                                        side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                      ),
-                                      onPressed: () async {
-                                        final picked = await pickTime(b.start);
-                                        if (picked == null) return;
-
-                                        final ns = picked;
-                                        var ne = b.end;
-
-                                        if (_tToMinutes(ne) <= _tToMinutes(ns)) {
-                                          ne = _minutesToTime(
-                                            (_tToMinutes(ns) + stepMinutes).clamp(startHour * 60, endHour * 60),
-                                          );
-                                        }
-
-                                        setModal(() {
-                                          blocks[i] = _TimeBlock(start: ns, end: ne);
-                                          normalizeLocal();
-                                        });
-                                      },
-                                      child: Text(
-                                        'Start: ${_fmt(b.start)}',
-                                        style: const TextStyle(fontWeight: FontWeight.w900),
-                                      ),
-                                    ),
-                                    OutlinedButton(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: primaryBlue,
-                                        side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                      ),
-                                      onPressed: () async {
-                                        final picked = await pickTime(b.end);
-                                        if (picked == null) return;
-
-                                        final ns = b.start;
-                                        final ne = picked;
-
-                                        if (_tToMinutes(ne) <= _tToMinutes(ns)) {
-                                          _toast('End must be after start.');
-                                          return;
-                                        }
-
-                                        setModal(() {
-                                          blocks[i] = _TimeBlock(start: ns, end: ne);
-                                          normalizeLocal();
-                                        });
-                                      },
-                                      child: Text(
-                                        'End: ${_fmt(b.end)}',
-                                        style: const TextStyle(fontWeight: FontWeight.w900),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                        children: [
+                          rowWithToggle('Morning', morningHours),
+                          const SizedBox(height: 12),
+                          rowWithToggle('Afternoon / Evening', afternoonHours),
+                        ],
                       ),
                     ),
 
@@ -673,8 +643,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                             ),
                             onPressed: () {
                               setState(() {
-                                week[dayKey] = [...blocks];
-                                _normalizeDay(dayKey);
+                                weekSlots[dayKey] = <int>{...local};
                               });
                               Navigator.of(ctx).pop();
                             },
@@ -735,7 +704,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                 const _InfoBox(
                   text:
                   'This timetable repeats every week.\n'
-                      'Tap a day to add time blocks (ex: 14:00 → 16:00).\n'
+                      'Tap a day and tick the 1-hour slots you can teach.\n'
                       'Then press Save.',
                 ),
               ],
@@ -752,11 +721,11 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                 ...List.generate(7, (i) {
                   final dk = dayKeys[i];
                   final label = dayLabels[i];
-                  return _DayCard(
+                  return _DayCardSlots(
                     label: label,
-                    blocks: week[dk] ?? const [],
+                    slotCount: (weekSlots[dk] ?? <int>{}).length,
+                    preview: _previewSlots(weekSlots[dk] ?? <int>{}),
                     onTap: saving ? null : () => _openDayEditor(dk, label),
-                    fmt: _fmt,
                   );
                 }),
                 const SizedBox(height: 12),
@@ -791,6 +760,15 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         ],
       ),
     );
+  }
+
+  String _previewSlots(Set<int> slots) {
+    if (slots.isEmpty) return 'No slots selected';
+    final sorted = slots.toList()..sort();
+    // show first 6
+    final take = sorted.take(6).map((m) => _fmt(_minutesToTime(m))).toList();
+    final more = sorted.length > 6 ? ' …' : '';
+    return '${take.join(', ')}$more';
   }
 
   Widget _courseDropdown() {
@@ -839,7 +817,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       children: List.generate(7, (i) {
         final dk = dayKeys[i];
         final label = dayLabels[i];
-        final count = (week[dk] ?? []).length;
+        final count = (weekSlots[dk] ?? <int>{}).length;
 
         return InkWell(
           borderRadius: BorderRadius.circular(999),
@@ -891,12 +869,6 @@ class _CoursePick {
   final String title;
   final String code;
   _CoursePick({required this.id, required this.title, required this.code});
-}
-
-class _TimeBlock {
-  final TimeOfDay start;
-  final TimeOfDay end;
-  _TimeBlock({required this.start, required this.end});
 }
 
 // ===================== UI Components =====================
@@ -953,18 +925,18 @@ class _InfoBox extends StatelessWidget {
   }
 }
 
-class _DayCard extends StatelessWidget {
-  const _DayCard({
+class _DayCardSlots extends StatelessWidget {
+  const _DayCardSlots({
     required this.label,
-    required this.blocks,
+    required this.slotCount,
+    required this.preview,
     required this.onTap,
-    required this.fmt,
   });
 
   final String label;
-  final List<_TimeBlock> blocks;
+  final int slotCount;
+  final String preview;
   final VoidCallback? onTap;
-  final String Function(TimeOfDay) fmt;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -972,7 +944,7 @@ class _DayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final has = blocks.isNotEmpty;
+    final has = slotCount > 0;
 
     return InkWell(
       onTap: onTap,
@@ -1023,39 +995,32 @@ class _DayCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  if (!has)
-                    Text(
-                      'No availability yet (tap to add)',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
-                    )
-                  else
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: blocks.map((b) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: actionOrange.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: actionOrange.withOpacity(0.22)),
-                          ),
-                          child: Text(
-                            '${fmt(b.start)} → ${fmt(b.end)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: actionOrange,
-                              fontSize: 12,
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                  Text(
+                    preview,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
                     ),
+                  ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: has ? actionOrange.withOpacity(0.10) : const Color(0xFFF4F7F9),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: (has ? actionOrange : uiBorder).withOpacity(0.35)),
+              ),
+              child: Text(
+                '$slotCount',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: has ? actionOrange : primaryBlue.withOpacity(0.6),
+                  fontSize: 12,
+                ),
               ),
             ),
             const SizedBox(width: 10),
