@@ -1,18 +1,33 @@
 // learner_course_detail_screen.dart
 // ✅ FULL DROP-IN REPLACEMENT (SAFE)
+//
 // Keeps your working Firebase/loading logic intact.
-// Implements your requested changes:
+// Tabs kept: Payment / Attendance / Progress
 //
-// ✅ Progress changes (per your list):
-// 1) Removed filter chips (All / Passed / Coming / Homework)
-// 2) Removed "Next up"
-// 3) Removed "X sessions include homework"
-// 4) Removed duration + skillType + any extra session meta chips (no type/id/duration shown)
-// 5) Ensures bottom sheet + list content are NOT covered by phone bottom navigation bar
-//    -> uses SafeArea + bottom padding with MediaQuery.viewPadding.bottom
+// ✅ NEW (matches your new teacher logic):
+// 1) Progress is now split into TWO things:
+//    - Meetings progress  = how many attendance records exist (each save = 1 meeting)
+//    - Syllabus progress  = how many SYLLABUS lessons were taught across meetings (unique sessionIds)
 //
-// ✅ Attendance tab kept unchanged (your logic)
-// ✅ Payment tab kept unchanged (your logic)
+// 2) Supports NEW attendance format (preferred):
+//    users/<uid>/courses/<courseKey>/attendance/<meetingId>/taughtItems : List
+//      - item.type == "syllabus" => counts to syllabus progress
+//      - item.type == "custom"   => does NOT count to syllabus progress (meeting-only)
+//
+// 3) Backward compatible with OLD format:
+//    users/<uid>/courses/<courseKey>/attendance/<meetingId>/taught : Map
+//      - taught.sessionId counts to syllabus progress
+//
+// 4) Attendance tab shows a nice “Taught (meeting)” summary:
+//    - If taughtItems exists: shows syllabus lessons + custom notes
+//    - Else falls back to taught.title (old)
+//
+// ✅ Recommendation (important for 3/8 display):
+// - Store planned meetings in classes/<classId>/schedule/meetingsCount = 8
+//   (If missing, total meetings shows as "-")
+//
+// UI safety:
+// - Bottom sheets + lists won’t be covered by bottom navigation bar (SafeArea + bottom padding)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,10 +56,12 @@ class LearnerCourseDetailScreen extends StatefulWidget {
 class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> with SingleTickerProviderStateMixin {
   static const usersNode = 'users';
   static const syllabiNode = 'syllabi';
+  static const classesNode = 'classes';
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
+  late final DatabaseReference _classesRef = _db.child(classesNode);
 
   bool _busy = true;
   String? _error;
@@ -55,6 +72,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   List<Map<String, dynamic>> _syllabiFlat = [];
   Set<String> _coveredSessionIds = {};
+
+  // ✅ NEW: meetings total (optional)
+  int? _plannedMeetings;
 
   late final TabController _tab;
   StreamSubscription<DatabaseEvent>? _paySub;
@@ -93,7 +113,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   }
 
   static String _fmtMoney(int v) {
-    // Simple grouping: 30000 -> 30,000
     final s = v.toString();
     final buf = StringBuffer();
     for (int i = 0; i < s.length; i++) {
@@ -115,6 +134,42 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   DatabaseReference get _paymentSummaryRef =>
       _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
 
+  int? _plannedMeetingsFromCourseOrClass(Map<String, dynamic> course) {
+    // try in course/class snapshot first
+    final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
+
+    dynamic v;
+
+    // direct
+    v = cls['meetingsCount'] ?? cls['totalMeetings'] ?? cls['sessionsCount'];
+    int n = _asInt(v);
+    if (n > 0) return n;
+
+    // inside schedule
+    final schedule = cls['schedule'];
+    if (schedule is Map) {
+      final s = Map<String, dynamic>.from(schedule);
+      v = s['meetingsCount'] ?? s['totalMeetings'] ?? s['sessionsCount'];
+      n = _asInt(v);
+      if (n > 0) return n;
+    }
+
+    return null;
+  }
+
+  Future<int?> _fetchPlannedMeetingsFromClassesNode(String classId) async {
+    if (classId.trim().isEmpty) return null;
+    try {
+      final snap = await _classesRef.child(classId).child('schedule').get();
+      if (!snap.exists || snap.value == null || snap.value is! Map) return null;
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final n = _asInt(m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount']);
+      return n > 0 ? n : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // -------------------- Load (keeps your working logic) --------------------
 
   Future<void> _load() async {
@@ -125,6 +180,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       _attendance = [];
       _syllabiFlat = [];
       _coveredSessionIds = {};
+      _plannedMeetings = null;
     });
 
     try {
@@ -158,6 +214,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       if (!snap.exists || snap.value == null || snap.value is! Map) throw Exception('Course not found.');
       _course = Map<String, dynamic>.from(snap.value as Map);
 
+      // ✅ planned meetings (recommendation feature)
+      _plannedMeetings = _plannedMeetingsFromCourseOrClass(_course);
+      _plannedMeetings ??= await _fetchPlannedMeetingsFromClassesNode(_classId);
+
       // Attendance list
       final att = _course['attendance'];
       final List<Map<String, dynamic>> attList = [];
@@ -166,21 +226,72 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       if (att is Map) {
         final m = Map<String, dynamic>.from(att);
         for (final entry in m.entries) {
-          final sessionId = entry.key.toString();
+          final meetingId = entry.key.toString();
           if (entry.value is! Map) continue;
+
           final rec = Map<String, dynamic>.from(entry.value as Map);
 
-          final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
-          final taughtSessionId = (taught['sessionId'] ?? '').toString().trim();
-          if (taughtSessionId.isNotEmpty) covered.add(taughtSessionId);
+          // ✅ NEW: parse taughtItems (preferred)
+          final taughtItems = rec['taughtItems'];
+          final List<Map<String, dynamic>> taughtItemsList = [];
+          final List<String> taughtSyllabusTitles = [];
+          final List<String> taughtCustomTitles = [];
+
+          bool hasNewFormat = false;
+          if (taughtItems is List) {
+            hasNewFormat = true;
+
+            for (final it in taughtItems) {
+              if (it is! Map) continue;
+              final item = Map<String, dynamic>.from(it);
+              final type = (item['type'] ?? '').toString().trim().toLowerCase();
+
+              // safe normalize
+              final String title = (item['title'] ?? item['name'] ?? '').toString().trim();
+              final String sid = (item['sessionId'] ?? '').toString().trim();
+
+              taughtItemsList.add(item);
+
+              if (type == 'syllabus') {
+                if (sid.isNotEmpty) covered.add(sid);
+                if (title.isNotEmpty) taughtSyllabusTitles.add(title);
+              } else if (type == 'custom') {
+                if (title.isNotEmpty) taughtCustomTitles.add(title);
+              }
+            }
+          }
+
+          // ✅ BACKWARD COMPAT: old single taught map
+          final taughtOld = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
+          if (!hasNewFormat) {
+            final taughtSessionId = (taughtOld['sessionId'] ?? '').toString().trim();
+            if (taughtSessionId.isNotEmpty) covered.add(taughtSessionId);
+          }
+
+          // ✅ build a nice summary string for Attendance UI
+          String taughtSummary = '';
+          if (hasNewFormat) {
+            final parts = <String>[];
+            if (taughtSyllabusTitles.isNotEmpty) parts.add(taughtSyllabusTitles.join(', '));
+            if (taughtCustomTitles.isNotEmpty) parts.add('Notes: ${taughtCustomTitles.join(', ')}');
+            taughtSummary = parts.join(' • ');
+          } else {
+            // old format
+            taughtSummary = (taughtOld['title'] ?? '').toString().trim();
+          }
 
           attList.add({
-            'sessionId': sessionId,
+            'meetingId': meetingId, // meeting record id
             ...rec,
+
+            // for UI
+            'taughtItems': taughtItemsList,
+            'taughtSummary': taughtSummary,
           });
         }
       }
 
+      // newest first
       attList.sort((a, b) {
         final ad = (a['date'] ?? '').toString();
         final bd = (b['date'] ?? '').toString();
@@ -351,7 +462,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
       if (isBullet(t)) {
         final bl = t.trimLeft();
-        final normalized = bl.startsWith('- ') ? bl.substring(2) : bl.startsWith('• ') ? bl.substring(2) : bl;
+        final normalized = bl.startsWith('- ')
+            ? bl.substring(2)
+            : bl.startsWith('• ')
+            ? bl.substring(2)
+            : bl;
         current.lines.add('• $normalized');
       } else {
         current.lines.add(t.trim());
@@ -372,13 +487,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   @override
   Widget build(BuildContext context) {
     final counts = _attendanceCounts();
-    final totalSessionsPassed = counts['total'] ?? 0; // sessions passed = attendance count
-    final present = counts['present'] ?? 0;
-    final attPct = totalSessionsPassed == 0 ? 0 : ((present / totalSessionsPassed) * 100).round();
 
-    final totalS = _syllabiFlat.length;
-    final covered = _coveredSessionIds.length;
-    final progPct = totalS == 0 ? 0 : ((covered / totalS) * 100).round();
+    // ✅ Meetings = attendance records
+    final meetingsHeld = counts['total'] ?? 0;
+    final present = counts['present'] ?? 0;
+    final attPct = meetingsHeld == 0 ? 0 : ((present / meetingsHeld) * 100).round();
+
+    // ✅ Syllabus coverage (unique sessionIds)
+    final totalLessons = _syllabiFlat.length;
+    final coveredLessons = _coveredSessionIds.length;
+    final syllabusPct = totalLessons == 0 ? 0 : ((coveredLessons / totalLessons) * 100).round();
 
     return Scaffold(
       backgroundColor: UiK.appBg,
@@ -438,16 +556,22 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             : TabBarView(
           controller: _tab,
           children: [
-            _paymentTab(sessionsPassed: totalSessionsPassed),
-            _attendanceTab(attPct: attPct, present: present, total: totalSessionsPassed),
-            _progressTab(progPct: progPct, covered: covered, totalS: totalS),
+            _paymentTab(sessionsPassed: meetingsHeld),
+            _attendanceTab(attPct: attPct, present: present, total: meetingsHeld),
+            _progressTab(
+              meetingsHeld: meetingsHeld,
+              plannedMeetings: _plannedMeetings,
+              syllabusPct: syllabusPct,
+              coveredLessons: coveredLessons,
+              totalLessons: totalLessons,
+            ),
           ],
         ),
       ),
     );
   }
 
-  // -------------------- PAYMENT TAB --------------------
+  // -------------------- PAYMENT TAB (UNCHANGED) --------------------
 
   Widget _paymentTab({required int sessionsPassed}) {
     if (_payLoading) return const Center(child: CircularProgressIndicator());
@@ -488,17 +612,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                   style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
-
                 if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
-
                 _sessionsTable(
                   paid: hasPayments ? sessionsPaidTotal : null,
                   passed: sessionsPassed,
                   left: hasPayments ? leftSafe : null,
                 ),
-
                 const SizedBox(height: 12),
-
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -677,7 +797,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- ATTENDANCE TAB (unchanged) --------------------
+  // -------------------- ATTENDANCE TAB (UPDATED taught summary) --------------------
 
   Widget _attendanceTab({required int attPct, required int present, required int total}) {
     return ListView(
@@ -733,11 +853,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final status = (a['status'] ?? '').toString().toLowerCase();
     final rate = (a['successRate'] ?? '').toString();
 
-    final taught = (a['taught'] is Map) ? Map<String, dynamic>.from(a['taught'] as Map) : <String, dynamic>{};
-    final taughtTitle = (taught['title'] ?? '').toString();
-    final unitTitle = (taught['unitTitle'] ?? '').toString();
+    // ✅ NEW: taught summary (supports taughtItems)
+    final taughtSummary = (a['taughtSummary'] ?? '').toString().trim();
 
-    // ✅ Homework (safe if missing)
+    // old taught details still supported
+    final taughtOld = (a['taught'] is Map) ? Map<String, dynamic>.from(a['taught'] as Map) : <String, dynamic>{};
+    final unitTitle = (taughtOld['unitTitle'] ?? '').toString();
+
+    // Homework
     final hw = (a['homework'] is Map) ? Map<String, dynamic>.from(a['homework'] as Map) : <String, dynamic>{};
     final hwText = (hw['text'] ?? '').toString().trim();
     final hwDue = (hw['dueDate'] ?? '').toString().trim();
@@ -756,22 +879,25 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           children: [
             CircleAvatar(
               backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red).withOpacity(0.08),
-              child: Icon(isPresent ? Icons.check_rounded : Icons.close_rounded, color: isPresent ? UiK.primaryBlue : Colors.red),
+              child: Icon(
+                isPresent ? Icons.check_rounded : Icons.close_rounded,
+                color: isPresent ? UiK.primaryBlue : Colors.red,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(date.isEmpty ? 'Session' : date, style: UiK.titleText(size: 15)),
+                  Text(date.isEmpty ? 'Meeting' : date, style: UiK.titleText(size: 15)),
                   const SizedBox(height: 6),
                   Text(
                     'Status: ${isPresent ? 'Present' : 'Absent'}${rate.isEmpty ? '' : ' • Success: $rate%'}',
                     style: UiK.subtleText(),
                   ),
-                  if (taughtTitle.isNotEmpty) ...[
+                  if (taughtSummary.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text('Taught: $taughtTitle', style: UiK.subtleText()),
+                    Text('Taught: $taughtSummary', style: UiK.subtleText()),
                   ],
                   if (unitTitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
@@ -780,8 +906,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                       style: TextStyle(color: UiK.mainText.withOpacity(0.6), fontWeight: FontWeight.w700),
                     ),
                   ],
-
-                  // ✅ Homework display
                   if (hwText.isNotEmpty || hwDue.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -822,16 +946,110 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- PROGRESS TAB (CLEAN PRO UI, per your changes) --------------------
+  // -------------------- PROGRESS TAB (UPDATED like teacher) --------------------
 
-  Widget _progressTab({required int progPct, required int covered, required int totalS}) {
+  Widget _progressTab({
+    required int meetingsHeld,
+    required int? plannedMeetings,
+    required int syllabusPct,
+    required int coveredLessons,
+    required int totalLessons,
+  }) {
     final units = _groupSyllabiByUnit();
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+
+    final plannedStr = (plannedMeetings == null || plannedMeetings <= 0) ? '-' : '$plannedMeetings';
 
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
       children: [
-        _progressSummaryCard(progPct: progPct, covered: covered, totalS: totalS),
+        // recommendation card
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: UiK.cardShape(),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Row(
+                  children: [
+                    Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                    SizedBox(width: 8),
+                    Text('Recommendation', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'To show Meetings progress like 3/8, save:\n'
+                      'classes/<classId>/schedule/meetingsCount = 8',
+                  style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w700, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // summary card
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: UiK.cardShape(),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Progress', style: UiK.titleText()),
+                const SizedBox(height: 8),
+                Text(
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
+                  style: UiK.subtleText(),
+                ),
+                const SizedBox(height: 12),
+
+                // meetings line
+                Row(
+                  children: [
+                    const Icon(Icons.event_available_rounded, size: 18, color: UiK.actionOrange),
+                    const SizedBox(width: 8),
+                    const Text('Meetings', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    const Spacer(),
+                    Text('$meetingsHeld/$plannedStr', style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // syllabus line + bar
+                Row(
+                  children: [
+                    const Icon(Icons.menu_book_rounded, size: 18, color: UiK.actionOrange),
+                    const SizedBox(width: 8),
+                    const Text('Syllabus', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    const Spacer(),
+                    Text('$syllabusPct%', style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: totalLessons == 0 ? 0 : (coveredLessons / totalLessons).clamp(0, 1),
+                    minHeight: 10,
+                    backgroundColor: UiK.primaryBlue.withOpacity(0.10),
+                    valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Covered: $coveredLessons / $totalLessons lessons', style: UiK.subtleText()),
+              ],
+            ),
+          ),
+        ),
+
         const SizedBox(height: 14),
 
         if (_syllabiFlat.isEmpty)
@@ -847,50 +1065,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         else
           ...units.map(_unitModuleCard).toList(),
       ],
-    );
-  }
-
-  Widget _progressSummaryCard({required int progPct, required int covered, required int totalS}) {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: UiK.cardShape(),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Progress', style: UiK.titleText()),
-            const SizedBox(height: 8),
-            Text(
-              'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
-              style: UiK.subtleText(),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.insights_rounded, size: 18, color: UiK.actionOrange),
-                const SizedBox(width: 8),
-                const Text('Overall', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
-                const Spacer(),
-                Text('$progPct%', style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: totalS == 0 ? 0 : (covered / totalS).clamp(0, 1),
-                minHeight: 10,
-                backgroundColor: UiK.primaryBlue.withOpacity(0.10),
-                valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text('Passed: $covered / $totalS sessions', style: UiK.subtleText()),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1041,8 +1215,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
-
-                  // Only status + homework indicator (no duration/type/id)
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -1062,7 +1234,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                         ),
                     ],
                   ),
-
                   if (objective.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -1109,7 +1280,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               final statusText = passed ? 'Passed' : 'Coming';
 
               final hwBlocks = _parseHomework(hw);
-
               final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
               return Container(
@@ -1179,7 +1349,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                                                   icon: passed ? Icons.check_rounded : Icons.schedule_rounded,
                                                   text: statusText,
                                                   fg: passed ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.75),
-                                                  bg: passed ? UiK.primaryBlue.withOpacity(0.10) : UiK.uiBorder.withOpacity(0.18),
+                                                  bg: passed
+                                                      ? UiK.primaryBlue.withOpacity(0.10)
+                                                      : UiK.uiBorder.withOpacity(0.18),
                                                 ),
                                               ],
                                             ),
@@ -1192,18 +1364,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 12),
-
                           if (objective.isNotEmpty)
                             _sectionCard(
                               icon: Icons.flag_rounded,
                               title: 'Learning Outcome',
                               child: Text(objective, style: UiK.subtleText()),
                             ),
-
                           if (objective.isNotEmpty) const SizedBox(height: 12),
-
                           _sectionCard(
                             icon: Icons.assignment_rounded,
                             title: 'Homework',
@@ -1239,9 +1407,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                               ],
                             ),
                           ),
-
                           const SizedBox(height: 12),
-
                           if (content.isNotEmpty)
                             _sectionCard(
                               icon: Icons.menu_book_rounded,
@@ -1447,8 +1613,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       ),
     );
   }
-
-  // -------------------- UI helper --------------------
 
   Widget _kpi({required IconData icon, required String label, required String value}) {
     return Container(
