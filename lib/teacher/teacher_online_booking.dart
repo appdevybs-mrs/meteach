@@ -33,7 +33,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   static const mainText = Color(0xFF2D2D2D);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-
+  final DatabaseReference _curriculumRef = FirebaseDatabase.instance.ref('booking_curriculum');
   // Teacher info
   String myUid = '';
   String myName = 'Teacher';
@@ -151,6 +151,20 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     } catch (_) {}
   }
 
+  Future<Set<String>> _loadEnabledCourseIds() async {
+    final enabled = <String>{};
+    try {
+      final snap = await _curriculumRef.get();
+      final v = snap.value;
+
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        enabled.addAll(m.keys);
+      }
+    } catch (_) {}
+    return enabled;
+  }
+
   Future<void> _loadMyCourses() async {
     try {
       final snap = await _db.child('users/$myUid/courses').get();
@@ -179,14 +193,24 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         }
       }
 
-      out.sort((a, b) => a.title.compareTo(b.title));
+      // Load enabled course ids (admin-approved: booking_curriculum exists)
+      final enabledIds = await _loadEnabledCourseIds();
+
+// Filter: only courses that exist in booking_curriculum
+      final filtered = out.where((c) => enabledIds.contains(c.id)).toList();
+
+      filtered.sort((a, b) => a.title.compareTo(b.title));
 
       setState(() {
-        myCourses = out;
-        selectedCourseId = out.isNotEmpty ? out.first.id : null;
+        myCourses = filtered;
+        selectedCourseId = filtered.isNotEmpty ? filtered.first.id : null;
       });
 
-      if (out.isEmpty) _toast('No courses assigned to you (users/$myUid/courses).');
+      if (out.isEmpty) {
+        _toast('No courses assigned to you (users/$myUid/courses).');
+      } else if (filtered.isEmpty) {
+        _toast('No booking-enabled courses yet. Ask admin to create booking plan first.');
+      }
     } catch (e) {
       _toast('Failed loading courses: $e');
     }

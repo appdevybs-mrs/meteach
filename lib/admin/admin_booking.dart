@@ -276,7 +276,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         'updatedAt': ServerValue.timestamp,
         'sessions': sessionsOut,
       });
-
+// Mark course as booking-enabled in booking_config (optional but useful)
+      await _configRef.child('courses/$courseId').set({
+        'enabled': true,
+        'title': course.title,
+        'totalLessons': desiredN,
+        'updatedAt': ServerValue.timestamp,
+      });
       _toast('Saved booking plan for "${course.title}" ✅');
     } catch (e) {
       _toast('Save failed: $e');
