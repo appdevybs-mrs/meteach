@@ -1,32 +1,25 @@
 // ✅ FULL REPLACEMENT: lib/learner/learner_booking_screen.dart
 //
-// Includes your 6 requests + fixes the “already booked” change problem:
+// Keeps your booking logic + timetable UI.
+// ✅ Adds Google Meet link support (EXTERNAL browser/app only) + time-window rule.
+// ✅ Reads meetUrl + durationMinutes from booking_availability/<teacherId>/<courseId>/...
 //
-// 1) ✅ Timetable grid (days columns, times rows)
-// 2) ✅ Tap slot → details popup (bottom sheet)
-// 3) ✅ Confirmation dialog before booking
-// 4) ✅ Learner cannot cancel within 24H (UI + logic enforced)
-// 5) ✅ Booked sessions (by this learner) are colored differently
-// 6) ✅ Notification hook placeholder (commented)
+// Data expected (per teacher per course):
+// booking_availability/<teacherId>/<courseId>/
+//   teacherName: "Mr X" (optional)
+//   meetUrl: "https://meet.google.com/xxx-xxxx-xxx" (optional)
+//   durationMinutes: 60 (optional)
+//   week/mon: ["10:00", "11:00"]
 //
-// EXTRA FIXES (from your problem list):
-// ✅ (3) If learner already booked, allow “Change booking” (switch to another slot)
-//    - Only if the existing booking is >24h away.
-// ✅ (4) Bottom sheet buttons won’t be covered by phone bottom bar (SafeArea + padding).
-// ✅ (5) Next required session shows a (!) button → opens session details sheet.
-// ✅ (6) Simple schedule filters (teacher + time of day + available-only) without clutter.
-//
-// Keeps your important booking logic:
-// - booking_config gate: booking_config/courses/<courseId>/enabled
-// - curriculum optional
-// - progress currentSession
-// - reservation transaction + prevent duplicate booking
-// - prevents duplicate booking in same slot
-// - “already has booking” now becomes “offer switch” instead of hard block
+// Notes:
+// - If meetUrl missing → Join button is hidden/disabled.
+// - Join is allowed only within:
+//   10 min before start  →  (duration + 15 min) after start.
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -46,6 +39,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   static const uiBorder = Color(0xFFD1D9E0);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  // ✅ (optional) classId inference (safe even if unused for now)
+  String _classId = '';
 
   // Auth
   String myUid = '';
@@ -86,7 +82,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
   }
 
   String _two(int n) => n < 10 ? '0$n' : '$n';
@@ -151,6 +149,39 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     }
   }
 
+  Future<void> _openExternalUrl(String url) async {
+    final u = url.trim();
+    if (u.isEmpty) {
+      _toast('Missing meeting link.');
+      return;
+    }
+
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      _toast('Invalid meeting link.');
+      return;
+    }
+
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication, // ✅ always external
+    );
+
+    if (!ok) _toast('Could not open the link.');
+  }
+
+  bool _canOpenMeetNow(_Slot slot) {
+    if (!slot.bookedByMe) return false;
+    if (slot.meetUrl.trim().isEmpty) return false;
+
+    final now = DateTime.now();
+    final openFrom = slot.start.subtract(const Duration(minutes: 10));
+    final dur = slot.durationMinutes <= 0 ? 60 : slot.durationMinutes;
+    final openUntil = slot.start.add(Duration(minutes: dur)).add(const Duration(minutes: 15));
+
+    return now.isAfter(openFrom) && now.isBefore(openUntil);
+  }
+
   // ================== Init ==================
 
   Future<void> _init() async {
@@ -185,6 +216,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     await _loadCurriculum(courseId!);
 
     await _loadOrCreateProgress(courseId!);
+
+    // ✅ optional classId inference (safe)
+    _classId = await _inferClassIdForCourse(courseId!);
 
     // ✅ Load my bookings first so generated slots can be marked "bookedByMe"
     await _loadMyBookingsForWindow(courseId!);
@@ -241,6 +275,35 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<String> _inferClassIdForCourse(String cid) async {
+    // Finds the class where:
+    // - classes/<classId>/course_id == cid (or variants)
+    // - and learner is in classes/<classId>/learners/<myUid>
+    try {
+      final snap = await _db.child('classes').get();
+      if (!snap.exists || snap.value is! Map) return '';
+
+      final all = Map<dynamic, dynamic>.from(snap.value as Map);
+
+      for (final entry in all.entries) {
+        final classId = entry.key.toString();
+        final val = entry.value;
+        if (val is! Map) continue;
+
+        final c = val.map((k, v) => MapEntry(k.toString(), v));
+        final courseIdAny = (c['course_id'] ?? c['courseId'] ?? c['course'] ?? '').toString().trim();
+        if (courseIdAny != cid) continue;
+
+        final learners = c['learners'];
+        if (learners is Map) {
+          final lm = Map<dynamic, dynamic>.from(learners);
+          if (lm.containsKey(myUid)) return classId;
+        }
+      }
+    } catch (_) {}
+    return '';
   }
 
   // ================== Booking Gate ==================
@@ -372,7 +435,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   Future<_MyBooking?> _findMyNextBooking(String cid) async {
     final now = DateTime.now();
-
     _MyBooking? best;
 
     try {
@@ -413,9 +475,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             sessionNo: sNo,
           );
 
-          if (best == null || candidate.start.isBefore(best.start)) {
-            best = candidate;
-          }
+          if (best == null || candidate.start.isBefore(best.start)) best = candidate;
         }
       }
     } catch (_) {}
@@ -425,7 +485,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   // ================== Availability -> Upcoming Slots ==================
   //
-  // Strict per-course availability:
   // booking_availability/<teacherId>/<courseId>/week/<weekday> = ["HH:MM", ...]
   Future<void> _generateSlots(String cid) async {
     setState(() => generatedSlots = []);
@@ -455,6 +514,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             .toString()
             .trim();
 
+        // ✅ Meet + Duration (per teacher+course)
+        final meetUrl = (effective['meetUrl'] ??
+            effective['meet_url'] ??
+            effective['googleMeetUrl'] ??
+            effective['google_meet_url'] ??
+            '')
+            .toString()
+            .trim();
+
+        int durationMin = _toInt(effective['durationMinutes'], fallback: 0);
+        if (durationMin <= 0) durationMin = _toInt(effective['durationMin'], fallback: 0);
+        if (durationMin <= 0) durationMin = 60;
+
         final week = effective['week'];
         if (week is! Map) continue;
 
@@ -478,6 +550,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             teacherId: teacherId,
             teacherName: resolvedTeacherName.isEmpty ? 'Teacher' : resolvedTeacherName,
             slotsByDay: slotsByDay,
+            meetUrl: meetUrl,
+            durationMinutes: durationMin,
           ),
         );
       }
@@ -508,6 +582,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 start: start,
                 teacherId: t.teacherId,
                 teacherName: t.teacherName,
+                meetUrl: t.meetUrl,
+                durationMinutes: t.durationMinutes,
                 bookedByMe: bookedSessionNo != null,
                 bookedSessionNo: bookedSessionNo,
               ),
@@ -784,19 +860,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   if (objective.isNotEmpty) ...[
                     const Text('Objectives', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                     const SizedBox(height: 6),
-                    Text(objective, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+                    Text(objective, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey)),
                     const SizedBox(height: 12),
                   ],
                   if (content.isNotEmpty) ...[
                     const Text('Content', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                     const SizedBox(height: 6),
-                    Text(content, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+                    Text(content, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey)),
                     const SizedBox(height: 12),
                   ],
                   if (homework.isNotEmpty) ...[
                     const Text('Homework', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                     const SizedBox(height: 6),
-                    Text(homework, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+                    Text(homework, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey)),
                     const SizedBox(height: 12),
                   ],
                   SizedBox(
@@ -850,6 +926,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         final canCancel = slot.bookedByMe && slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
         final cancelLocked = slot.bookedByMe && !canCancel;
 
+        final canJoin = _canOpenMeetNow(slot);
+
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 16 + bottomPad),
@@ -862,13 +940,44 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: primaryBlue),
                 ),
                 const SizedBox(height: 6),
-                Text('Teacher: ${slot.teacherName}', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                Text(
+                  'Teacher: ${slot.teacherName}',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                ),
                 const SizedBox(height: 6),
                 Text(
                   'Session: ${slot.bookedSessionNo ?? currentSession} / $totalSessions',
                   style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  'Duration: ${slot.durationMinutes <= 0 ? 60 : slot.durationMinutes} min',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                ),
                 const SizedBox(height: 12),
+
+                // ✅ Meet button (only meaningful if bookedByMe; still show disabled text if not allowed time)
+                if (slot.bookedByMe && slot.meetUrl.trim().isNotEmpty) ...[
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: actionOrange,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    onPressed: canJoin
+                        ? () {
+                      Navigator.pop(context);
+                      _openExternalUrl(slot.meetUrl);
+                    }
+                        : null,
+                    child: Text(
+                      canJoin ? 'Join Google Meet' : 'Join available near session time',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
 
                 if (!slot.bookedByMe) ...[
                   FilledButton(
@@ -887,7 +996,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       final existing = await _findMyNextBooking(courseId!);
                       final hasOther = existing != null && !(existing.dayKey == slot.dayKey && existing.time == slot.time);
 
-                      final locked = existing != null && !existing.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+                      final locked = existing != null &&
+                          !existing.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
 
                       final msg = hasOther
                           ? (locked
@@ -929,7 +1039,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: uiBorder.withOpacity(0.7)),
                     ),
-                    child: const Text('You booked this slot ✅', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    child: const Text(
+                      'You booked this slot ✅',
+                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   FilledButton(
@@ -960,7 +1073,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                         await _cancelMyBooking(slot);
                       }
                     },
-                    child: Text(cancelLocked ? 'Cancel disabled (within 24h)' : 'Cancel booking', style: const TextStyle(fontWeight: FontWeight.w900)),
+                    child: Text(
+                      cancelLocked ? 'Cancel disabled (within 24h)' : 'Cancel booking',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ],
               ],
@@ -1054,7 +1170,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Only available', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12)),
+                  const Text('Only available',
+                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12)),
                   const SizedBox(width: 8),
                   Switch(
                     value: onlyAvailable,
@@ -1081,7 +1198,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: on ? actionOrange.withOpacity(0.35) : uiBorder.withOpacity(0.9)),
         ),
-        child: Text(label, style: TextStyle(fontWeight: FontWeight.w900, color: on ? actionOrange : primaryBlue, fontSize: 12)),
+        child: Text(
+          label,
+          style: TextStyle(fontWeight: FontWeight.w900, color: on ? actionOrange : primaryBlue, fontSize: 12),
+        ),
       ),
     );
   }
@@ -1221,7 +1341,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final cid = courseId;
 
     final sessionInfo = curriculumSessions['$currentSession'];
-    final sessionTitle = (sessionInfo is Map) ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '').toString() : '';
+    final sessionTitle =
+    (sessionInfo is Map) ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '').toString() : '';
 
     return Scaffold(
       backgroundColor: appBg,
@@ -1280,7 +1401,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                           children: [
                             Icon(Icons.info_outline_rounded, size: 16, color: actionOrange),
                             SizedBox(width: 6),
-                            Text('Details', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange, fontSize: 12)),
+                            Text('Details',
+                                style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange, fontSize: 12)),
                           ],
                         ),
                       ),
@@ -1355,10 +1477,15 @@ class _TeacherAvail {
   final String teacherName;
   final Map<String, List<String>> slotsByDay;
 
+  final String meetUrl;
+  final int durationMinutes;
+
   _TeacherAvail({
     required this.teacherId,
     required this.teacherName,
     required this.slotsByDay,
+    required this.meetUrl,
+    required this.durationMinutes,
   });
 }
 
@@ -1369,6 +1496,9 @@ class _Slot {
   final DateTime start;
   final String teacherId;
   final String teacherName;
+
+  final String meetUrl; // Google Meet link (can be empty)
+  final int durationMinutes; // minutes (fallback handled elsewhere)
 
   // reservation state
   final bool bookedByMe;
@@ -1381,6 +1511,8 @@ class _Slot {
     required this.start,
     required this.teacherId,
     required this.teacherName,
+    required this.meetUrl,
+    required this.durationMinutes,
     this.bookedByMe = false,
     this.bookedSessionNo,
   });

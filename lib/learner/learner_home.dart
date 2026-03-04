@@ -33,9 +33,9 @@ import 'learner_homework_screen.dart' as hw;
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
-import 'package:dream_english_academy/learner/learner_mail_screen.dart';
 // ✅ Call logs screen
 import '../calls/call_logs_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'learner_booking_screen.dart';
 // ✅ Call screen
 import '../calls/audio_call_screen.dart';
@@ -1069,100 +1069,462 @@ class _HomeCardsGrid extends StatelessWidget {
 }
 
 /// ✅ Full width orange booking card on top
-class _BookingTopOrangeCard extends StatelessWidget {
+/// ✅ NOW ALSO shows "Next booked class" + Join Meet (external) when allowed time window.
+class _BookingTopOrangeCard extends StatefulWidget {
   const _BookingTopOrangeCard();
 
   @override
+  State<_BookingTopOrangeCard> createState() => _BookingTopOrangeCardState();
+}
+
+class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  Future<List<Map<String, dynamic>>> _loadBookableCourses() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return [];
+
+    final snap = await _db.child('users/$uid/courses').get();
+    final v = snap.value;
+    if (v is! Map) return [];
+
+    final raw = Map<dynamic, dynamic>.from(v);
+
+    // Build list with REAL courseId stored in node (id/courseId),
+    // then filter by booking_config/courses/<cid>/enabled
+    final temp = <Map<String, dynamic>>[];
+
+    for (final e in raw.entries) {
+      final key = e.key.toString(); // course_1
+      final val = e.value;
+      if (val is! Map) continue;
+
+      final m = Map<String, dynamic>.from(val as Map);
+
+      final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
+      final courseKeyForBooking = realCourseId.isNotEmpty ? realCourseId : key;
+
+      final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
+      int numVal(dynamic vv) => (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+      final assignedAt = numVal(m['assignedAt']);
+
+      temp.add({
+        'courseId': courseKeyForBooking,
+        'title': title,
+        'assignedAt': assignedAt,
+      });
+    }
+
+    temp.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
+
+    // Filter enabled booking
+    final allowed = <Map<String, dynamic>>[];
+    for (final c in temp) {
+      final cid = (c['courseId'] ?? '').toString().trim();
+      if (cid.isEmpty) continue;
+
+      final enabledSnap = await _db.child('booking_config/courses/$cid/enabled').get();
+      final ev = enabledSnap.value;
+      final enabled = (ev == true) || (ev?.toString() == 'true');
+      if (enabled) allowed.add(c);
+    }
+
+    return allowed;
+  }
+
+  String _two(int n) => n < 10 ? '0$n' : '$n';
+  String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
+
+  DateTime? _parseSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _friendlyDate(DateTime d) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final wd = days[d.weekday - 1];
+    final mo = months[d.month - 1];
+    return '$wd, ${_two(d.day)} $mo';
+  }
+
+  Future<_NextBooking?> _findMyNextBookingAcrossCourses() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return null;
+
+    final courses = await _loadBookableCourses();
+    if (courses.isEmpty) return null;
+
+    final now = DateTime.now();
+    _NextBooking? best;
+
+    // scan a short window (fast + enough)
+    const daysAhead = 14;
+
+    for (final c in courses) {
+      final cid = (c['courseId'] ?? '').toString().trim();
+      if (cid.isEmpty) continue;
+
+      for (int i = 0; i < daysAhead; i++) {
+        final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final dk = _dateKey(day);
+
+        final snap = await _db.child('booking_reservations/$cid/$dk').get();
+        final v = snap.value;
+        if (v is! Map) continue;
+
+        final m = Map<dynamic, dynamic>.from(v);
+
+        for (final e in m.entries) {
+          final hhmm = e.key.toString();
+          final node = e.value;
+          if (node is! Map) continue;
+
+          final sm = Map<dynamic, dynamic>.from(node);
+          final learners = sm['learners'];
+          if (learners is! Map) continue;
+
+          final lm = Map<dynamic, dynamic>.from(learners);
+          if (!lm.containsKey(uid)) continue;
+
+          final start = _parseSlotStart(dk, hhmm);
+          if (start == null) continue;
+          if (!start.isAfter(now)) continue;
+
+          final teacherId = (sm['teacherId'] ?? '').toString().trim();
+          final teacherName = (sm['teacherName'] ?? 'Teacher').toString().trim();
+
+          final candidate = _NextBooking(
+            courseId: cid,
+            dayKey: dk,
+            time: hhmm,
+            start: start,
+            teacherId: teacherId,
+            teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
+          );
+
+          if (best == null || candidate.start.isBefore(best.start)) {
+            best = candidate;
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
+  int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  Future<_MeetInfo?> _loadMeetInfo({
+    required String teacherId,
+    required String courseId,
+  }) async {
+    if (teacherId.isEmpty || courseId.isEmpty) return null;
+
+    try {
+      final snap = await _db.child('booking_availability/$teacherId/$courseId').get();
+      final v = snap.value;
+      if (v is! Map) return null;
+
+      final m = Map<String, dynamic>.from(v as Map);
+
+      final meetUrl = (m['meetUrl'] ??
+          m['meet_url'] ??
+          m['googleMeetUrl'] ??
+          m['google_meet_url'] ??
+          '')
+          .toString()
+          .trim();
+
+      int dur = _toInt(m['durationMinutes'], fallback: 0);
+      if (dur <= 0) dur = _toInt(m['durationMin'], fallback: 0);
+      if (dur <= 0) dur = 60;
+
+      if (meetUrl.isEmpty) return null;
+
+      return _MeetInfo(meetUrl: meetUrl, durationMinutes: dur);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _canJoinNow(DateTime start, int durationMinutes) {
+    final now = DateTime.now();
+    final openFrom = start.subtract(const Duration(minutes: 10));
+    final dur = durationMinutes <= 0 ? 60 : durationMinutes;
+    final openUntil = start.add(Duration(minutes: dur)).add(const Duration(minutes: 15));
+    return now.isAfter(openFrom) && now.isBefore(openUntil);
+  }
+
+  Future<void> _openExternalUrl(BuildContext context, String url) async {
+    final u = url.trim();
+    if (u.isEmpty) return;
+
+    final uri = Uri.tryParse(u);
+    if (uri == null) return;
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the link.')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () async {
-        await _openBookingCoursePicker(context);
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: UiK.actionOrange,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
-          boxShadow: [
-            BoxShadow(
-              color: UiK.actionOrange.withOpacity(0.22),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
+    // Orange booking card always present
+    Widget bookingCard() {
+      return InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () async {
+          await _openBookingCoursePicker(context);
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: UiK.actionOrange,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
+            boxShadow: [
+              BoxShadow(
+                color: UiK.actionOrange.withOpacity(0.22),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.25)),
+                ),
+                child: const Icon(Icons.calendar_month_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Booking',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Book your next class',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Open',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: UiK.primaryBlue,
+                        fontSize: 12,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue, size: 18),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.25)),
-              ),
-              child: const Icon(Icons.calendar_month_rounded, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Booking',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
+      );
+    }
+
+    return Column(
+      children: [
+        bookingCard(),
+        const SizedBox(height: 12),
+
+        // ✅ Next booked class + Join
+        FutureBuilder<_NextBooking?>(
+          future: _findMyNextBookingAcrossCourses(),
+          builder: (context, snap) {
+            final next = snap.data;
+            if (snap.connectionState == ConnectionState.waiting) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 10),
+                    Text('Checking your next class...', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              );
+            }
+
+            if (next == null) {
+              // no next booking => keep UI clean
+              return const SizedBox.shrink();
+            }
+
+            return FutureBuilder<_MeetInfo?>(
+              future: _loadMeetInfo(teacherId: next.teacherId, courseId: next.courseId),
+              builder: (context, ms) {
+                final meet = ms.data;
+                final canJoin = (meet != null) && _canJoinNow(next.start, meet.durationMinutes);
+
+                final timeStr = '${_friendlyDate(next.start)} • ${next.time}';
+                final teacherStr = next.teacherName;
+
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Book your next class',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.upcoming_rounded, size: 18, color: UiK.actionOrange),
+                          SizedBox(width: 8),
+                          Text(
+                            'Next booked class',
+                            style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(timeStr, style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue)),
+                      const SizedBox(height: 4),
+                      Text('Teacher: $teacherStr', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                      const SizedBox(height: 12),
+
+                      if (meet == null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: UiK.primaryBlue.withOpacity(0.04),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                          ),
+                          child: const Text(
+                            'Meet link not set for this course yet.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ] else ...[
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: UiK.actionOrange,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            minimumSize: const Size(double.infinity, 48),
+                          ),
+                          onPressed: canJoin
+                              ? () => _openExternalUrl(context, meet.meetUrl)
+                              : null,
+                          child: Text(
+                            canJoin ? 'Join Google Meet' : 'Join available near session time',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Join opens 10 min before start, and stays open until ${(meet.durationMinutes <= 0 ? 60 : meet.durationMinutes) + 15} min after start.',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Open',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: UiK.primaryBlue,
-                      fontSize: 12,
-                    ),
-                  ),
-                  SizedBox(width: 6),
-                  Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue, size: 18),
-                ],
-              ),
-            ),
-          ],
+                );
+              },
+            );
+          },
         ),
-      ),
+      ],
     );
   }
+}
+
+class _NextBooking {
+  final String courseId;
+  final String dayKey;
+  final String time;
+  final DateTime start;
+  final String teacherId;
+  final String teacherName;
+
+  _NextBooking({
+    required this.courseId,
+    required this.dayKey,
+    required this.time,
+    required this.start,
+    required this.teacherId,
+    required this.teacherName,
+  });
+}
+
+class _MeetInfo {
+  final String meetUrl;
+  final int durationMinutes;
+
+  _MeetInfo({required this.meetUrl, required this.durationMinutes});
 }
 
 Future<void> _openBookingCoursePicker(BuildContext context) async {

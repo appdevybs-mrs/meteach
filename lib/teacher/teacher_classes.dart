@@ -1,43 +1,44 @@
-// teacher_classes_screen.dart
-// ✅ DROP-IN replacement for your TeacherClassesScreen (copy/paste)
+// ✅ FULL REPLACEMENT (SAFE): lib/teacher/teacher_classes_screen.dart
 //
-// NEW FEATURES (what changed):
-// 1) Progress is now split into TWO things:
-//    - Meetings progress  = how many attendance records exist (each save = 1 meeting)
-//    - Syllabus progress  = how many SYLLABUS lessons were taught across meetings
+// What you get (based on your exact DB shape):
+// ✅ 2 Tabs: 1) In-class   2) Online (Bookings)
+// ✅ Online reads your REAL node:
+//    booking_reservations/<courseId>/<yyyy-mm-dd>/<HH:MM>/ { teacherId, teacherName, sessionNo, learners{uid:true}, createdAt }
+// ✅ Teacher sees ONLY bookings assigned to them (teacherId == auth.uid)
+// ✅ Online shows 3 sections:
+//    1) Starting soon / Ongoing  (for late attendance + live session)
+//    2) Upcoming
+//    3) Past (last 7 days) (so teacher can confirm late attendance)
+// ✅ Online attendance SAVED IN TWO PLACES (safe):
+//    A) online_attendance/<bookingKey>  (teacher view/stats/progress)
+//    B) booking_progress/<learnerUid>/<courseId>/online_attendance/<bookingKey>  ✅ "inside the learner node inside that course"
+//       (does NOT touch your currentSession field; no breaking changes)
 //
-// 2) Supports your new attendance structure:
-//    - attendance/<meetingId>/taughtItems : List
-//        item.type == "syllabus"  -> counts to syllabus progress (sessionId unique)
-//        item.type == "custom"    -> does NOT count to syllabus progress
+// ✅ Does NOT break your existing In-class logic/screens:
+//    - TakeAttendanceScreen
+//    - AttendanceHistoryScreen
+//    - AttendanceStatsScreen
+//    - TeacherClassProgressScreen
 //
-// 3) Backward compatible with old records:
-//    - attendance/<meetingId>/taught : Map { sessionId: ... }  (old single taught)
+// Optional (but recommended):
+// - If you want Meet links on teacher cards, store them in:
+//   booking_availability/<teacherId>/<courseId>/meetUrl
+//   booking_availability/<teacherId>/<courseId>/durationMinutes
+//   (same structure you already use in learner booking screen)
 //
-// 4) Card UI shows BOTH:
-//    - Meetings: held / plannedMeetings
-//    - Syllabus: coveredLessons / totalLessons
-//
-// RECOMMENDATION (important):
-// - Store a planned meetings count per class (example: classes/<classId>/schedule/meetingsCount = 8)
-//   Then Meetings progress becomes: Meetings: 3/8.
-// - If not found, we fall back to "-" for total meetings.
+// ------------------------------------------------------------
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+// ✅ your existing in-class screens (keep)
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
 import 'attendance_stats_screen.dart';
-
-import '../calls/audio_call_screen.dart';
-import '../services/push_client.dart';
-import 'teacher_mail_thread_screen.dart';
-
-// ✅ Your existing progress screen (keep it)
 import 'teacher_class_progress_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
@@ -47,16 +48,30 @@ class TeacherClassesScreen extends StatefulWidget {
   State<TeacherClassesScreen> createState() => _TeacherClassesScreenState();
 }
 
-class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
+class _TeacherClassesScreenState extends State<TeacherClassesScreen>
+    with SingleTickerProviderStateMixin {
+  // ===== UI colors (your same style) =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
   static const mainText = Color(0xFF2D2D2D);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
 
+  // ===== DB nodes (in-class) =====
   static const String usersNode = "users";
   static const String classesNode = "classes";
   static const String syllabiNode = "syllabi";
+
+  // ===== DB nodes (online bookings) =====
+  static const String bookingReservationsNode = "booking_reservations";
+  static const String bookingAvailabilityNode = "booking_availability";
+
+  // Online attendance storage (NEW, safe)
+  static const String onlineAttendanceNode = "online_attendance";
+
+  // Learner course node (you already use this in learner booking screen)
+  // booking_progress/<learnerUid>/<courseId>/...
+  static const String bookingProgressNode = "booking_progress";
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
@@ -70,15 +85,45 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   String _teacherSerial = '';
   String _teacherName = '';
 
+  // In-class
   List<Map<String, dynamic>> _myClasses = [];
-
-  // ✅ cache progress per class
   final Map<String, _ClassProg> _classProgCache = {};
+
+  // Online
+  bool _onlineBusy = true;
+  String? _onlineError;
+  List<_OnlineBooking> _onlineAll = [];
+  final Map<String, _OnlineProg> _onlineProgCache = {};
+  final Map<String, Map<String, String>> _nameCache = {}; // uid -> {first,last,full}
+
+  late TabController _tab;
 
   @override
   void initState() {
     super.initState();
-    _loadMyClasses();
+    _tab = TabController(length: 2, vsync: this);
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
+  // ===================== helpers =====================
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    Fluttertoast.cancel();
+    Fluttertoast.showToast(
+      msg: msg,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black.withOpacity(0.85),
+      textColor: Colors.white,
+      fontSize: 15,
+    );
   }
 
   String _norm(String s) => s.trim().toLowerCase();
@@ -95,31 +140,79 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return int.tryParse(v.toString()) ?? 0;
   }
 
-  // ✅ RECOMMENDATION helper:
-  // If you store planned meetings here:
-  // classes/<classId>/schedule/meetingsCount = 8
-  int? _plannedMeetingsFromClass(Map<String, dynamic> classData) {
-    final schedule = classData['schedule'];
-    if (schedule is Map) {
-      final m = Map<String, dynamic>.from(schedule);
-      final v = m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount'];
-      final n = _asInt(v);
-      if (n > 0) return n;
+  static String _safeStr(dynamic v) => (v ?? '').toString().trim();
+
+  static String _two(int n) => n < 10 ? '0$n' : '$n';
+
+  static String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
+
+  DateTime? _parseSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
-  Future<void> _loadMyClasses() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _myClasses = [];
-      _teacherUid = '';
-      _teacherSerial = '';
-      _teacherName = '';
-      _classProgCache.clear();
-    });
+  Future<void> _openExternalUrl(String url) async {
+    final u = url.trim();
+    if (u.isEmpty) {
+      _toast('Missing meeting link.');
+      return;
+    }
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      _toast('Invalid meeting link.');
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) _toast('Could not open the link.');
+  }
 
+  Future<Map<String, String>> _loadUserName(String uid) async {
+    if (uid.isEmpty) return {'full': ''};
+    if (_nameCache.containsKey(uid)) return _nameCache[uid]!;
+    try {
+      final snap = await _usersRef.child(uid).get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final fn = _safeStr(m['first_name']);
+        final ln = _safeStr(m['last_name']);
+        final full = ('$fn $ln').trim();
+        final out = {'first': fn, 'last': ln, 'full': full};
+        _nameCache[uid] = out;
+        return out;
+      }
+    } catch (_) {}
+    final out = {'full': ''};
+    _nameCache[uid] = out;
+    return out;
+  }
+
+  // ===================== load all =====================
+
+  Future<void> _loadAll() async {
+    await _loadTeacherProfile();
+    await Future.wait([
+      _loadMyClasses(),
+      _loadMyOnlineBookings(),
+    ]);
+  }
+
+  Future<void> _loadTeacherProfile() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in.');
@@ -127,19 +220,43 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       _teacherUid = user.uid;
 
       final userSnap = await _usersRef.child(_teacherUid).get();
-      if (!userSnap.exists) throw Exception('Teacher user record not found in /users/<uid>.');
+      if (!userSnap.exists) throw Exception('Teacher record not found in /users/<uid>.');
 
       final u = (userSnap.value is Map)
           ? Map<String, dynamic>.from(userSnap.value as Map)
           : <String, dynamic>{};
 
-      _teacherSerial = (u['serial'] ?? '').toString().trim();
-      final fn = (u['first_name'] ?? '').toString().trim();
-      final ln = (u['last_name'] ?? '').toString().trim();
+      _teacherSerial = _safeStr(u['serial']);
+      final fn = _safeStr(u['first_name']);
+      final ln = _safeStr(u['last_name']);
       _teacherName = ('$fn $ln').trim();
 
       if (!_isTeacherRole(u['role'])) {
         throw Exception('Your account role is not "teacher". Found: "${u['role']}"');
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _onlineError = e.toString();
+      });
+    }
+  }
+
+  // ===================== IN-CLASS tab (your existing behavior) =====================
+
+  Future<void> _loadMyClasses() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _myClasses = [];
+      _classProgCache.clear();
+    });
+
+    try {
+      if (_teacherUid.isEmpty) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) throw Exception('Not logged in.');
+        _teacherUid = user.uid;
       }
 
       final classesSnap = await _classesRef.get();
@@ -168,11 +285,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         final cur = c['instructor_current'];
         if (cur is Map) {
           final curMap = Map<String, dynamic>.from(cur);
-          curUid = (curMap['uid'] ?? '').toString().trim();
-          curName = (curMap['name'] ?? '').toString().trim();
+          curUid = _safeStr(curMap['uid']);
+          curName = _safeStr(curMap['name']);
         }
 
-        final legacyInstructorName = (c['instructor'] ?? '').toString().trim();
+        final legacyInstructorName = _safeStr(c['instructor']);
 
         final matchesUid = curUid.isNotEmpty && curUid == _teacherUid;
 
@@ -180,7 +297,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             _norm(legacyInstructorName.isNotEmpty ? legacyInstructorName : curName) ==
                 _norm(_teacherName);
 
-        final legacySerial = (c['instructorserial'] ?? c['serial'] ?? '').toString().trim();
+        final legacySerial = _safeStr(c['instructorserial'] ?? c['serial']);
         final matchesSerial = _teacherSerial.isNotEmpty && legacySerial == _teacherSerial;
 
         if (matchesUid || matchesName || matchesSerial) {
@@ -227,360 +344,27 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
     if (schedule is Map) {
-      final firstDate = (schedule['first_session_date'] ?? '').toString().trim();
+      final firstDate = _safeStr(schedule['first_session_date']);
       return firstDate.isEmpty ? '-' : firstDate;
     }
     return '-';
   }
 
-  Future<Map<String, dynamic>> _loadLearner(String uid) async {
-    final snap = await _usersRef.child(uid).get();
-    if (!snap.exists) return {'uid': uid};
-
-    final data = (snap.value is Map)
-        ? Map<String, dynamic>.from(snap.value as Map)
-        : <String, dynamic>{};
-
-    return {
-      'uid': uid,
-      'first_name': (data['first_name'] ?? '').toString(),
-      'last_name': (data['last_name'] ?? '').toString(),
-      'email': (data['email'] ?? '').toString(),
-      'phone1': (data['phone1'] ?? '').toString(),
-      'status': (data['status'] ?? '').toString(),
-      'serial': (data['serial'] ?? '').toString(),
-    };
+  int? _plannedMeetingsFromClass(Map<String, dynamic> classData) {
+    final schedule = classData['schedule'];
+    if (schedule is Map) {
+      final m = Map<String, dynamic>.from(schedule);
+      final v = m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount'];
+      final n = _asInt(v);
+      if (n > 0) return n;
+    }
+    return null;
   }
-
-  // ----------------------------
-  // Teacher -> Learner quick actions (unchanged)
-  // ----------------------------
-
-  void _toast(String msg) {
-    if (!mounted) return;
-
-    Fluttertoast.cancel();
-    Fluttertoast.showToast(
-      msg: msg,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.CENTER,
-      backgroundColor: Colors.black.withOpacity(0.85),
-      textColor: Colors.white,
-      fontSize: 15,
-    );
-  }
-
-  Future<String?> _getLearnerFcmToken(String learnerUid) async {
-    final snap = FirebaseDatabase.instance.ref('fcm_tokens/$learnerUid/token');
-    final got = await snap.get();
-    final token = got.value?.toString().trim();
-    if (token == null || token.isEmpty) return null;
-    return token;
-  }
-
-  Future<void> _sendLearnerReminderWithPush({
-    required String learnerUid,
-    required String title,
-    required String message,
-    required String kind,
-  }) async {
-    final teacher = FirebaseAuth.instance.currentUser;
-
-    final reminderRef = FirebaseDatabase.instance.ref('reminders/$learnerUid').push();
-
-    try {
-      await reminderRef.set({
-        'kind': kind,
-        'title': title,
-        'description': message,
-        'attachment_name': '',
-        'attachment_url': '',
-        'createdAt': ServerValue.timestamp,
-        'createdByUid': teacher?.uid ?? '',
-        'teacher': {
-          'name': _teacherName.isEmpty ? 'Teacher' : _teacherName,
-          'email': teacher?.email ?? '',
-        },
-        'status': 'queued',
-        'readAt': null,
-        'doneAt': null,
-        'push': {
-          'attemptedAt': null,
-          'sentAt': null,
-          'error': null,
-        }
-      });
-    } catch (e) {
-      _toast('RTDB write failed: $e');
-      return;
-    }
-
-    final token = await _getLearnerFcmToken(learnerUid);
-
-    await reminderRef.child('push/attemptedAt').set(ServerValue.timestamp);
-
-    if (token == null || token.isEmpty) {
-      await reminderRef.update({'status': 'push_skipped_no_token'});
-      _toast('Reminder saved ✅ (learner offline)');
-      return;
-    }
-
-    try {
-      await PushClient.sendToToken(
-        token: token,
-        title: title,
-        message: message,
-        data: {
-          'type': 'reminder',
-          'route': 'learner',
-          'learnerUid': learnerUid,
-          'kind': kind,
-          'reminderId': reminderRef.key,
-        },
-      );
-
-      await reminderRef.update({
-        'status': 'push_sent',
-        'push/sentAt': ServerValue.timestamp,
-        'push/error': null,
-      });
-
-      _toast('Reminder saved & push sent ✅');
-    } catch (e) {
-      await reminderRef.update({
-        'status': 'push_error',
-        'push/error': e.toString(),
-      });
-      _toast('Reminder saved but push failed');
-    }
-  }
-
-  Future<void> _askAndSendCustomReminder({required String learnerUid}) async {
-    final c = TextEditingController();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Reminder'),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          minLines: 2,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            hintText: 'Type your reminder…',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    ) ??
-        false;
-
-    if (!ok) return;
-
-    final text = c.text.trim();
-    if (text.isEmpty) {
-      _toast('Nothing to send.');
-      return;
-    }
-
-    await _sendLearnerReminderWithPush(
-      learnerUid: learnerUid,
-      title: 'Reminder',
-      message: text,
-      kind: 'custom',
-    );
-  }
-
-  Future<void> _openOrCreateMailThread({
-    required String learnerUid,
-    required String learnerName,
-  }) async {
-    final meUid = FirebaseAuth.instance.currentUser!.uid;
-    final a = meUid.compareTo(learnerUid) < 0 ? meUid : learnerUid;
-    final b = meUid.compareTo(learnerUid) < 0 ? learnerUid : meUid;
-
-    final threadId = 't_${a}_$b';
-
-    final threadRef = FirebaseDatabase.instance.ref('mail_threads/$threadId');
-    final indexRef = FirebaseDatabase.instance.ref('mail_index');
-
-    const subject = 'Mail';
-
-    final tSnap = await threadRef.get();
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    if (!tSnap.exists) {
-      await threadRef.set({
-        'subject': subject,
-        'createdAt': now,
-        'updatedAt': now,
-        'lastMessage': '',
-      });
-    }
-
-    await indexRef.child(meUid).child(threadId).update({
-      'subject': subject,
-      'updatedAt': now,
-      'lastMessage': '',
-      'unreadCount': 0,
-      'peerUid': learnerUid,
-      'peerName': learnerName,
-      'deletedAt': null,
-    });
-
-    await indexRef.child(learnerUid).child(threadId).update({
-      'subject': subject,
-      'updatedAt': now,
-      'lastMessage': '',
-      'unreadCount': 0,
-      'peerUid': meUid,
-      'peerName': _teacherName.isEmpty ? 'Teacher' : _teacherName,
-      'deletedAt': null,
-    });
-
-    if (!mounted) return;
-
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        settings: RouteSettings(name: '/mail/thread/$threadId'),
-        builder: (_) => TeacherMailThreadScreen(
-          threadId: threadId,
-          peerUid: learnerUid,
-          peerName: learnerName.isEmpty ? 'Learner' : learnerName,
-          subject: subject,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _callLearnerInApp({
-    required String learnerUid,
-    required String learnerName,
-  }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Call learner?'),
-        content: Text('Call ${learnerName.isEmpty ? 'this learner' : learnerName}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Call'),
-          ),
-        ],
-      ),
-    ) ??
-        false;
-
-    if (!ok) return;
-    if (!mounted) return;
-
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AudioCallScreen(
-          peerUid: learnerUid,
-          peerName: learnerName.isEmpty ? 'Learner' : learnerName,
-          isCaller: true,
-          callerName: _teacherName.isEmpty ? 'Teacher' : _teacherName,
-          startWithVideo: false,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showLearnerQuickActionsSheet({
-    required String learnerUid,
-    required String learnerName,
-  }) async {
-    if (!mounted) return;
-
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 6),
-            ListTile(
-              leading: const Icon(Icons.menu_book_rounded),
-              title: const Text('Reminder: homework'),
-              onTap: () => Navigator.pop(ctx, 'homework'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_note_rounded),
-              title: const Text('Reminder: type your message'),
-              onTap: () => Navigator.pop(ctx, 'custom'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.mail_rounded),
-              title: const Text('Send a mail'),
-              onTap: () => Navigator.pop(ctx, 'mail'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.call_rounded),
-              title: const Text('Call (in-app)'),
-              onTap: () => Navigator.pop(ctx, 'call'),
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
-
-    if (picked == null) return;
-
-    if (picked == 'homework') {
-      await _sendLearnerReminderWithPush(
-        learnerUid: learnerUid,
-        title: 'Homework Reminder',
-        message: 'Please don’t forget your homework for the next session.',
-        kind: 'homework',
-      );
-      return;
-    }
-
-    if (picked == 'custom') {
-      await _askAndSendCustomReminder(learnerUid: learnerUid);
-      return;
-    }
-
-    if (picked == 'mail') {
-      await _openOrCreateMailThread(learnerUid: learnerUid, learnerName: learnerName);
-      return;
-    }
-
-    if (picked == 'call') {
-      await _callLearnerInApp(learnerUid: learnerUid, learnerName: learnerName);
-      return;
-    }
-  }
-
-  // ----------------------------
-  // ✅ PROGRESS (UPDATED)
-  // ----------------------------
 
   Future<_ClassProg> _loadClassProgress(String classId, Map<String, dynamic> classData) async {
-    // cache hit
     if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
 
-    // A) total lessons from syllabi/<course_id>
-    final courseId = (classData['course_id'] ?? '').toString().trim();
+    final courseId = _safeStr(classData['course_id']);
     int totalLessons = 0;
 
     if (courseId.isNotEmpty) {
@@ -599,9 +383,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
       }
     }
 
-    // B) meetings held + syllabus lessons covered from classes/<classId>/attendance
     final att = classData['attendance'];
-    final Set<String> coveredLessonSessionIds = {}; // unique syllabus sessions across all meetings
+    final Set<String> coveredLessonSessionIds = {};
     int meetingsHeld = 0;
 
     if (att is Map) {
@@ -613,7 +396,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         if (rec is! Map) continue;
         final r = Map<String, dynamic>.from(rec);
 
-        // ✅ NEW: preferred format (multiple taught items)
         final taughtItems = r['taughtItems'];
         bool countedFromNewFormat = false;
 
@@ -623,20 +405,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
             if (it is! Map) continue;
             final item = Map<String, dynamic>.from(it);
 
-            final type = (item['type'] ?? '').toString().trim().toLowerCase();
-            if (type != 'syllabus') continue; // only syllabus counts to syllabus progress
+            final type = _safeStr(item['type']).toLowerCase();
+            if (type != 'syllabus') continue;
 
-            final sid = (item['sessionId'] ?? '').toString().trim();
+            final sid = _safeStr(item['sessionId']);
             if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
           }
         }
 
-        // ✅ BACKWARD COMPAT: old single taught map
         if (!countedFromNewFormat) {
           final taught = r['taught'];
           if (taught is Map) {
             final tm = Map<String, dynamic>.from(taught);
-            final sid = (tm['sessionId'] ?? '').toString().trim();
+            final sid = _safeStr(tm['sessionId']);
             if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
           }
         }
@@ -644,11 +425,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     }
 
     final coveredLessons = coveredLessonSessionIds.length;
-
-    // Meetings total (optional recommended)
     final plannedMeetings = _plannedMeetingsFromClass(classData);
 
-    // percent for syllabus only (keeps your existing bar meaning)
     final syllabusPct =
     totalLessons <= 0 ? 0 : ((coveredLessons / totalLessons) * 100).round().clamp(0, 100);
 
@@ -664,9 +442,220 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
     return prog;
   }
 
-  // ----------------------------
-  // UI
-  // ----------------------------
+  // ===================== ONLINE tab =====================
+
+  Future<_AvailMeta> _loadAvailMeta(String teacherId, String courseId) async {
+    // from booking_availability/<teacherId>/<courseId>/ {meetUrl, durationMinutes}
+    try {
+      if (teacherId.isEmpty || courseId.isEmpty) return const _AvailMeta.empty();
+      final snap = await _db.child('$bookingAvailabilityNode/$teacherId/$courseId').get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+
+        final meetUrl = _safeStr(m['meetUrl'] ?? m['meet_url'] ?? m['googleMeetUrl'] ?? m['google_meet_url']);
+        int dur = _asInt(m['durationMinutes'] ?? m['durationMin'] ?? m['duration']);
+        if (dur <= 0) dur = 60;
+
+        final teacherName = _safeStr(m['teacherName'] ?? m['teacher_name']);
+        return _AvailMeta(meetUrl: meetUrl, durationMinutes: dur, teacherName: teacherName);
+      }
+    } catch (_) {}
+    return const _AvailMeta.empty();
+  }
+
+  bool _isInJoinWindow(DateTime start, int durationMinutes) {
+    final now = DateTime.now();
+    final openFrom = start.subtract(const Duration(minutes: 10));
+    final dur = durationMinutes <= 0 ? 60 : durationMinutes;
+    final openUntil = start.add(Duration(minutes: dur)).add(const Duration(minutes: 15));
+    return now.isAfter(openFrom) && now.isBefore(openUntil);
+  }
+
+  Future<void> _loadMyOnlineBookings() async {
+    setState(() {
+      _onlineBusy = true;
+      _onlineError = null;
+      _onlineAll = [];
+      _onlineProgCache.clear();
+    });
+
+    try {
+      if (_teacherUid.isEmpty) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) throw Exception('Not logged in.');
+        _teacherUid = user.uid;
+      }
+
+      final rootSnap = await _db.child(bookingReservationsNode).get();
+      if (!rootSnap.exists || rootSnap.value == null || rootSnap.value is! Map) {
+        setState(() {
+          _onlineAll = [];
+          _onlineBusy = false;
+        });
+        return;
+      }
+
+      final Map<dynamic, dynamic> byCourse = Map<dynamic, dynamic>.from(rootSnap.value as Map);
+      final List<_OnlineBooking> out = [];
+
+      // iterate: courseId -> date -> time -> slot
+      for (final courseEntry in byCourse.entries) {
+        final courseId = courseEntry.key.toString();
+        final courseNode = courseEntry.value;
+        if (courseNode is! Map) continue;
+
+        final Map<dynamic, dynamic> byDate = Map<dynamic, dynamic>.from(courseNode);
+
+        for (final dateEntry in byDate.entries) {
+          final dayKey = dateEntry.key.toString(); // yyyy-mm-dd
+          final dateNode = dateEntry.value;
+          if (dateNode is! Map) continue;
+
+          final Map<dynamic, dynamic> byTime = Map<dynamic, dynamic>.from(dateNode);
+
+          for (final timeEntry in byTime.entries) {
+            final hhmm = timeEntry.key.toString(); // HH:MM
+            final slotNode = timeEntry.value;
+            if (slotNode is! Map) continue;
+
+            final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
+
+            final teacherId = _safeStr(slot['teacherId'] ?? slot['teacherUid'] ?? slot['teacher_id']);
+            if (teacherId != _teacherUid) continue; // ✅ only assigned to me
+
+            final dt = _parseSlotStart(dayKey, hhmm);
+            if (dt == null) continue;
+
+            // learners list
+            final learnersRaw = slot['learners'];
+            final List<String> learnerUids = [];
+            if (learnersRaw is Map) {
+              final lm = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
+              for (final uid in lm.keys) {
+                learnerUids.add(uid);
+              }
+            }
+
+            final teacherNameFromSlot = _safeStr(slot['teacherName']);
+            final sessionNo = _asInt(slot['sessionNo']);
+            final createdAt = slot['createdAt'];
+
+            // availability meta (meetUrl + duration)
+            final meta = await _loadAvailMeta(teacherId, courseId);
+
+            final bookingKey = _OnlineBooking.makeKey(courseId, dayKey, hhmm);
+
+            out.add(
+              _OnlineBooking(
+                bookingKey: bookingKey,
+                courseId: courseId,
+                dayKey: dayKey,
+                time: hhmm,
+                startAtMillis: dt.millisecondsSinceEpoch,
+                teacherId: teacherId,
+                teacherName: meta.teacherName.isNotEmpty
+                    ? meta.teacherName
+                    : (teacherNameFromSlot.isNotEmpty ? teacherNameFromSlot : (_teacherName.isNotEmpty ? _teacherName : 'Teacher')),
+                learnerUids: learnerUids,
+                sessionNo: sessionNo,
+                createdAtRaw: createdAt,
+                meetUrl: meta.meetUrl,
+                durationMinutes: meta.durationMinutes <= 0 ? 60 : meta.durationMinutes,
+              ),
+            );
+          }
+        }
+      }
+
+      // Sort by time
+      out.sort((a, b) => a.startAtMillis.compareTo(b.startAtMillis));
+
+      setState(() {
+        _onlineAll = out;
+        _onlineBusy = false;
+      });
+    } catch (e) {
+      setState(() {
+        _onlineError = e.toString();
+        _onlineBusy = false;
+      });
+    }
+  }
+
+  Future<_OnlineProg> _loadOnlineProgressForCourse(String courseId) async {
+    final key = '${_teacherUid}_$courseId';
+    if (_onlineProgCache.containsKey(key)) return _onlineProgCache[key]!;
+
+    int totalLessons = 0;
+    if (courseId.isNotEmpty) {
+      final sSnap = await _syllabiRef.child(courseId).get();
+      if (sSnap.exists && sSnap.value is Map) {
+        final s = Map<String, dynamic>.from(sSnap.value as Map);
+        final units = s['units'];
+        if (units is List) {
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final sessions = unit['sessions'];
+            if (sessions is List) totalLessons += sessions.length;
+          }
+        }
+      }
+    }
+
+    int meetingsHeld = 0;
+    final Set<String> coveredLessonSessionIds = {};
+
+    final attSnap = await _db.child(onlineAttendanceNode).get();
+    if (attSnap.exists && attSnap.value is Map) {
+      final m = Map<dynamic, dynamic>.from(attSnap.value as Map);
+      for (final entry in m.entries) {
+        if (entry.value is! Map) continue;
+        final rec = Map<String, dynamic>.from(entry.value as Map);
+
+        final tUid = _safeStr(rec['teacherUid']);
+        final cId = _safeStr(rec['courseId']);
+        if (tUid != _teacherUid) continue;
+        if (courseId.isNotEmpty && cId != courseId) continue;
+
+        meetingsHeld++;
+
+        final taughtItems = rec['taughtItems'];
+        if (taughtItems is List) {
+          for (final it in taughtItems) {
+            if (it is! Map) continue;
+            final item = Map<String, dynamic>.from(it);
+            final type = _safeStr(item['type']).toLowerCase();
+            if (type != 'syllabus') continue;
+            final sid = _safeStr(item['sessionId']);
+            if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
+          }
+        } else {
+          final taught = rec['taught'];
+          if (taught is Map) {
+            final tm = Map<String, dynamic>.from(taught);
+            final sid = _safeStr(tm['sessionId']);
+            if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
+          }
+        }
+      }
+    }
+
+    final coveredLessons = coveredLessonSessionIds.length;
+    final pct = totalLessons <= 0 ? 0 : ((coveredLessons / totalLessons) * 100).round().clamp(0, 100);
+
+    final prog = _OnlineProg(
+      meetingsHeld: meetingsHeld,
+      coveredLessons: coveredLessons,
+      totalLessons: totalLessons,
+      syllabusPercent: pct,
+    );
+
+    _onlineProgCache[key] = prog;
+    return prog;
+  }
+
+  // ===================== UI =====================
 
   @override
   Widget build(BuildContext context) {
@@ -678,141 +667,105 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
         title: const Text(
-          'My Classes',
+          'My Teaching',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        ),
+        bottom: TabBar(
+          controller: _tab,
+          labelColor: primaryBlue,
+          unselectedLabelColor: Colors.grey.shade600,
+          indicatorColor: actionOrange,
+          tabs: const [
+            Tab(icon: Icon(Icons.groups_rounded), text: 'In-class'),
+            Tab(icon: Icon(Icons.wifi_tethering_rounded), text: 'Online'),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded, color: actionOrange),
-            onPressed: _busy ? null : _loadMyClasses,
+            onPressed: () async {
+              await _loadAll();
+              _toast('Refreshed ✅');
+            },
           ),
         ],
       ),
-      body: Stack(
+      body: TabBarView(
+        controller: _tab,
         children: [
-          Container(color: appBg),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.05,
-                child: Center(
-                  child: FractionallySizedBox(
-                    widthFactor: 0.75,
-                    child: Image.asset(
-                      'assets/images/ybs_logo.png',
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (_busy)
-            const Center(child: CircularProgressIndicator())
-          else if (_error != null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          else
-            ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // ✅ Recommendation card (safe + helpful)
-                Card(
-                  elevation: 0,
-                  color: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    side: BorderSide(color: uiBorder.withOpacity(0.8)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Recommendation',
-                          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'To show Meetings progress like 3/8, save a number in:\n'
-                              'classes/<classId>/schedule/meetingsCount = 8',
-                          style: TextStyle(color: mainText, fontWeight: FontWeight.w700, height: 1.3),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                Card(
-                  elevation: 0,
-                  color: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    side: BorderSide(color: uiBorder.withOpacity(0.8)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Teacher',
-                          style: TextStyle(
-                            color: primaryBlue,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _teacherName.isEmpty ? '-' : _teacherName,
-                          style: const TextStyle(
-                            color: mainText,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                if (_myClasses.isEmpty)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'No classes found for you yet.',
-                        style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  )
-                else
-                  ..._myClasses.map((c) => _classCard(c)).toList(),
-              ],
-            ),
+          _buildInClassTab(),
+          _buildOnlineTab(),
         ],
       ),
     );
   }
 
+  // -------------------- In-class tab UI --------------------
+
+  Widget _buildInClassTab() {
+    if (_busy) return const Center(child: CircularProgressIndicator());
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            _error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: uiBorder.withOpacity(0.8)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Teacher',
+                    style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
+                const SizedBox(height: 6),
+                Text(
+                  _teacherName.isEmpty ? '-' : _teacherName,
+                  style: const TextStyle(color: mainText, fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_myClasses.isEmpty)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No classes found for you yet.',
+                style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
+              ),
+            ),
+          )
+        else
+          ..._myClasses.map((c) => _classCard(c)).toList(),
+      ],
+    );
+  }
+
   Widget _classCard(Map<String, dynamic> c) {
-    final classId = (c['id'] ?? c['class_id'] ?? '').toString().trim();
-    final title = (c['course_title'] ?? 'Class').toString();
-    final duration = (c['course_duration'] ?? '').toString();
+    final classId = _safeStr(c['id'] ?? c['class_id']);
+    final title = _safeStr(c['course_title']).isEmpty ? 'Class' : _safeStr(c['course_title']);
+    final duration = _safeStr(c['course_duration']);
     final learnersCount = _learnersCount(c);
 
     return Card(
@@ -834,25 +787,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Duration: ${duration.isEmpty ? '-' : duration}',
-                style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700),
-              ),
+              Text('Duration: ${duration.isEmpty ? '-' : duration}',
+                  style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              Text(
-                'First session: ${_firstSessionDate(c)}',
-                style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700),
-              ),
+              Text('First session: ${_firstSessionDate(c)}',
+                  style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              Text(
-                'Learners: $learnersCount',
-                style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
-              ),
-
-              // ✅ NEW: Meeting progress + Syllabus progress (safe loader)
+              Text('Learners: $learnersCount',
+                  style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),
               FutureBuilder<_ClassProg>(
-                future: (classId.isEmpty) ? Future.value(_ClassProg.zero()) : _loadClassProgress(classId, c),
+                future: classId.isEmpty ? Future.value(_ClassProg.zero()) : _loadClassProgress(classId, c),
                 builder: (context, snap) {
                   final p = snap.data ?? _ClassProg.zero();
 
@@ -860,43 +805,33 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                   (p.plannedMeetings == null || p.plannedMeetings! <= 0) ? '-' : '${p.plannedMeetings}';
 
                   final syllabusTotalStr = p.totalLessons <= 0 ? '-' : '${p.totalLessons}';
-
                   final syllabusPct = p.syllabusPercent.clamp(0, 100);
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Meetings progress line
                       Row(
                         children: [
                           const Icon(Icons.event_available_rounded, size: 16, color: actionOrange),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              'Meetings: ${p.meetingsHeld}/$plannedMeetingsStr',
-                              style: TextStyle(color: mainText.withOpacity(0.80), fontWeight: FontWeight.w900),
-                            ),
+                            child: Text('Meetings: ${p.meetingsHeld}/$plannedMeetingsStr',
+                                style: TextStyle(color: mainText.withOpacity(0.80), fontWeight: FontWeight.w900)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
-
-                      // Syllabus progress line
                       Row(
                         children: [
                           const Icon(Icons.menu_book_rounded, size: 16, color: actionOrange),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              'Syllabus: ${p.coveredLessons}/$syllabusTotalStr  •  $syllabusPct%',
-                              style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
-                            ),
+                            child: Text('Syllabus: ${p.coveredLessons}/$syllabusTotalStr  •  $syllabusPct%',
+                                style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
-
-                      // Syllabus progress bar (same as before, but now correct)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
@@ -915,8 +850,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
         ),
         children: [
           const SizedBox(height: 8),
-
-          // Buttons row 1: Take / History / Stats
           Row(
             children: [
               Expanded(
@@ -966,10 +899,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 10),
-
-          // Progress button
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -986,111 +916,428 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TeacherClassProgressScreen(
-                      classId: classId,
-                      classData: c,
-                    ),
+                    builder: (_) => TeacherClassProgressScreen(classId: classId, classData: c),
                   ),
                 );
               },
             ),
           ),
-
-          const SizedBox(height: 14),
-
-          Row(
-            children: [
-              const Icon(Icons.people_alt_rounded, color: primaryBlue, size: 18),
-              const SizedBox(width: 8),
-              Text('Learners ($learnersCount)', style: const TextStyle(color: mainText, fontWeight: FontWeight.w900)),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          _learnersList(c),
         ],
       ),
     );
   }
 
-  Widget _learnersList(Map<String, dynamic> c) {
-    final learners = c['learners'];
-    if (learners is! Map || learners.isEmpty) {
-      return Text(
-        'No learners in this class yet.',
-        style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
+  // -------------------- Online tab UI --------------------
+
+  Widget _buildOnlineTab() {
+    if (_onlineBusy) return const Center(child: CircularProgressIndicator());
+
+    if (_onlineError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            _onlineError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
+            textAlign: TextAlign.center,
+          ),
+        ),
       );
     }
 
-    final m = Map<String, dynamic>.from(learners);
-    final uids = m.keys.map((e) => e.toString()).toList();
+    if (_onlineAll.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No online bookings found for you yet.',
+            style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+    }
 
-    return Column(children: uids.map((uid) => _learnerTile(uid)).toList());
+    final now = DateTime.now();
+    final pastLimit = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 7));
+
+    final List<_OnlineBooking> startingOrOngoing = [];
+    final List<_OnlineBooking> upcoming = [];
+    final List<_OnlineBooking> past = [];
+
+    for (final b in _onlineAll) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
+
+      final inWindow = _isInJoinWindow(dt, b.durationMinutes);
+      if (inWindow) {
+        startingOrOngoing.add(b);
+        continue;
+      }
+
+      if (dt.isAfter(now)) {
+        upcoming.add(b);
+        continue;
+      }
+
+      // dt <= now AND not inWindow => past
+      if (dt.isAfter(pastLimit)) past.add(b);
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: uiBorder.withOpacity(0.8)),
+          ),
+          child: const Padding(
+            padding: EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Online (Bookings)',
+                    style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
+                SizedBox(height: 8),
+                Text(
+                  'Shows: Starting soon/Ongoing • Upcoming • Past (last 7 days).\n'
+                      'You can take attendance even if you are late.',
+                  style: TextStyle(color: mainText, fontWeight: FontWeight.w700, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        _sectionTitle('Starting soon / Ongoing', badge: '${startingOrOngoing.length}'),
+        const SizedBox(height: 8),
+        if (startingOrOngoing.isEmpty)
+          _emptyHint('No ongoing sessions right now.')
+        else
+          ...startingOrOngoing.map(_bookingCard).toList(),
+
+        const SizedBox(height: 14),
+        _sectionTitle('Upcoming', badge: '${upcoming.length}'),
+        const SizedBox(height: 8),
+        if (upcoming.isEmpty) _emptyHint('No upcoming sessions.') else ...upcoming.map(_bookingCard).toList(),
+
+        const SizedBox(height: 14),
+        _sectionTitle('Past (last 7 days)', badge: '${past.length}'),
+        const SizedBox(height: 8),
+        if (past.isEmpty)
+          _emptyHint('No past sessions in the last 7 days.')
+        else
+          ...past.reversed.map(_bookingCard).toList(),
+      ],
+    );
   }
 
-  Widget _learnerTile(String uid) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _loadLearner(uid),
-      builder: (context, snap) {
-        final loading = snap.connectionState == ConnectionState.waiting;
-        final data = snap.data ?? {'uid': uid};
-
-        final fn = (data['first_name'] ?? '').toString().trim();
-        final ln = (data['last_name'] ?? '').toString().trim();
-        final name = ('$fn $ln').trim();
-        final serial = (data['serial'] ?? '').toString().trim();
-        final email = (data['email'] ?? '').toString().trim();
-        final phone = (data['phone1'] ?? '').toString().trim();
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
+  Widget _sectionTitle(String title, {required String badge}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(title, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: uiBorder.withOpacity(0.85)),
+            color: actionOrange.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: actionOrange.withOpacity(0.25)),
           ),
-          child: ListTile(
-            dense: true,
-            leading: GestureDetector(
-              onLongPress: () async {
-                if (loading) return;
+          child: Text(badge, style: const TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
+        )
+      ],
+    );
+  }
 
-                await _showLearnerQuickActionsSheet(
-                  learnerUid: uid,
-                  learnerName: name.isEmpty ? 'Learner' : name,
-                );
-              },
-              child: CircleAvatar(
-                backgroundColor: primaryBlue.withOpacity(0.08),
-                child: const Icon(Icons.person_rounded, color: primaryBlue),
+  Widget _emptyHint(String text) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+    );
+  }
+
+  Widget _bookingCard(_OnlineBooking b) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
+    final when = '${dt.year}-${_two(dt.month)}-${_two(dt.day)}  ${_two(dt.hour)}:${_two(dt.minute)}';
+
+    final inWindow = _isInJoinWindow(dt, b.durationMinutes);
+    final statusText = inWindow
+        ? 'Ongoing / join window'
+        : dt.isAfter(DateTime.now())
+        ? 'Upcoming'
+        : 'Past';
+
+    final statusBg = inWindow
+        ? const Color(0xFFEAF7EE)
+        : (dt.isAfter(DateTime.now()) ? const Color(0xFFFFF1E3) : const Color(0xFFEFF3F8));
+
+    final statusBorder = inWindow
+        ? const Color(0xFFB9E2C5)
+        : (dt.isAfter(DateTime.now()) ? const Color(0xFFF9C59D) : uiBorder.withOpacity(0.8));
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Course: ${b.courseId}', style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            Text('When: $when', style: TextStyle(color: mainText.withOpacity(0.85), fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('Teacher: ${b.teacherName}', style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('Learners: ${b.learnerUids.length}', style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('SessionNo: ${b.sessionNo <= 0 ? '-' : b.sessionNo}', style: TextStyle(color: mainText.withOpacity(0.70), fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: statusBg,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: statusBorder),
+              ),
+              child: Row(
+                children: [
+                  Icon(inWindow ? Icons.play_circle_fill_rounded : Icons.schedule_rounded,
+                      color: primaryBlue, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(statusText, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                  ),
+                  if (b.meetUrl.trim().isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () => _openExternalUrl(b.meetUrl),
+                      icon: const Icon(Icons.video_call_rounded, color: actionOrange),
+                      label: const Text('Meet', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
+                    ),
+                ],
               ),
             ),
-            title: Text(
-              loading ? 'Loading...' : (name.isEmpty ? 'Learner: $uid' : name),
-              style: const TextStyle(color: mainText, fontWeight: FontWeight.w900),
+
+            const SizedBox(height: 12),
+
+            // Online progress (per course) + quick buttons
+            FutureBuilder<_OnlineProg>(
+              future: _loadOnlineProgressForCourse(b.courseId),
+              builder: (context, snap) {
+                final p = snap.data ?? const _OnlineProg.zero();
+                final totalStr = p.totalLessons <= 0 ? '-' : '${p.totalLessons}';
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.event_available_rounded, size: 16, color: actionOrange),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Meetings held (online): ${p.meetingsHeld}',
+                            style: TextStyle(color: mainText.withOpacity(0.80), fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.menu_book_rounded, size: 16, color: actionOrange),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Syllabus (online): ${p.coveredLessons}/$totalStr  •  ${p.syllabusPercent}%',
+                            style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: p.totalLessons <= 0 ? 0 : (p.coveredLessons / p.totalLessons).clamp(0, 1),
+                        minHeight: 8,
+                        backgroundColor: primaryBlue.withOpacity(0.10),
+                        valueColor: const AlwaysStoppedAnimation(actionOrange),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
-            subtitle: Text(
-              [
-                if (serial.isNotEmpty) 'Serial: $serial',
-                if (email.isNotEmpty) email,
-                if (phone.isNotEmpty) phone,
-                if (serial.isEmpty && email.isEmpty && phone.isEmpty) 'UID: $uid',
-              ].join(' • '),
-              style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.fact_check_rounded),
+                    label: const Text("Take"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: actionOrange,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => OnlineTakeAttendanceScreen(
+                            booking: b,
+                            teacherUid: _teacherUid,
+                            teacherName: _teacherName.isEmpty ? 'Teacher' : _teacherName,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.history_rounded, color: primaryBlue),
+                    label: const Text("History", style: TextStyle(color: primaryBlue)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => OnlineAttendanceHistoryScreen(
+                            booking: b,
+                            teacherUid: _teacherUid,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.bar_chart_rounded, color: primaryBlue),
+                    label: const Text("Stats", style: TextStyle(color: primaryBlue)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => OnlineAttendanceStatsScreen(
+                            courseId: b.courseId,
+                            teacherUid: _teacherUid,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-        );
-      },
+
+            const SizedBox(height: 10),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.insights_rounded, color: primaryBlue),
+                label: const Text("Progress",
+                    style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => OnlineClassProgressScreen(
+                        courseId: b.courseId,
+                        teacherUid: _teacherUid,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 10),
+            _learnersPreview(b),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _learnersPreview(_OnlineBooking b) {
+    final uids = b.learnerUids;
+    if (uids.isEmpty) return const SizedBox.shrink();
+
+    final show = uids.take(3).toList();
+    final more = uids.length - show.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Learners (preview)', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+        const SizedBox(height: 6),
+        ...show.map((uid) {
+          return FutureBuilder<Map<String, String>>(
+            future: _loadUserName(uid),
+            builder: (context, snap) {
+              final full = snap.data?['full'] ?? '';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• ${full.isNotEmpty ? full : uid}',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                ),
+              );
+            },
+          );
+        }).toList(),
+        if (more > 0)
+          Text('… +$more more', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+      ],
     );
   }
 }
 
+// ============================================================
+// Models
+// ============================================================
+
 class _ClassProg {
-  // syllabus progress
   final int syllabusPercent;
   final int coveredLessons;
   final int totalLessons;
-
-  // meeting progress
   final int meetingsHeld;
   final int? plannedMeetings;
 
@@ -1109,4 +1356,753 @@ class _ClassProg {
     meetingsHeld: 0,
     plannedMeetings: null,
   );
+}
+
+class _AvailMeta {
+  final String meetUrl;
+  final int durationMinutes;
+  final String teacherName;
+
+  const _AvailMeta({
+    required this.meetUrl,
+    required this.durationMinutes,
+    required this.teacherName,
+  });
+
+  const _AvailMeta.empty()
+      : meetUrl = '',
+        durationMinutes = 60,
+        teacherName = '';
+}
+
+class _OnlineBooking {
+  final String bookingKey; // courseId|yyyy-mm-dd|HH:MM
+
+  final String courseId;
+  final String dayKey; // yyyy-mm-dd
+  final String time; // HH:MM
+
+  final int startAtMillis;
+
+  final String teacherId;
+  final String teacherName;
+
+  final List<String> learnerUids;
+
+  final int sessionNo;
+  final dynamic createdAtRaw;
+
+  final String meetUrl;
+  final int durationMinutes;
+
+  const _OnlineBooking({
+    required this.bookingKey,
+    required this.courseId,
+    required this.dayKey,
+    required this.time,
+    required this.startAtMillis,
+    required this.teacherId,
+    required this.teacherName,
+    required this.learnerUids,
+    required this.sessionNo,
+    required this.createdAtRaw,
+    required this.meetUrl,
+    required this.durationMinutes,
+  });
+
+  static String makeKey(String courseId, String dayKey, String hhmm) => '$courseId|$dayKey|$hhmm';
+}
+
+class _OnlineProg {
+  final int meetingsHeld;
+  final int coveredLessons;
+  final int totalLessons;
+  final int syllabusPercent;
+
+  const _OnlineProg({
+    required this.meetingsHeld,
+    required this.coveredLessons,
+    required this.totalLessons,
+    required this.syllabusPercent,
+  });
+
+  const _OnlineProg.zero()
+      : meetingsHeld = 0,
+        coveredLessons = 0,
+        totalLessons = 0,
+        syllabusPercent = 0;
+}
+
+// ============================================================
+// ONLINE SCREENS (Attendance / History / Stats / Progress)
+// These are self-contained and won’t affect your in-class logic.
+// ============================================================
+
+class OnlineTakeAttendanceScreen extends StatefulWidget {
+  const OnlineTakeAttendanceScreen({
+    super.key,
+    required this.booking,
+    required this.teacherUid,
+    required this.teacherName,
+  });
+
+  final _OnlineBooking booking;
+  final String teacherUid;
+  final String teacherName;
+
+  @override
+  State<OnlineTakeAttendanceScreen> createState() => _OnlineTakeAttendanceScreenState();
+}
+
+class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen> {
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const actionOrange = Color(0xFFF98D28);
+  static const uiBorder = Color(0xFFD1D9E0);
+  static const appBg = Color(0xFFF4F7F9);
+
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  bool saving = false;
+
+  // per learner present/absent (default: present)
+  final Map<String, bool> presentMap = {};
+
+  // taught items: {type: syllabus/custom, sessionId, title}
+  final List<Map<String, dynamic>> taughtItems = [];
+
+  void _toast(String msg) {
+    Fluttertoast.cancel();
+    Fluttertoast.showToast(
+      msg: msg,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black.withOpacity(0.85),
+      textColor: Colors.white,
+      fontSize: 15,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    for (final uid in widget.booking.learnerUids) {
+      presentMap[uid] = true;
+    }
+  }
+
+  DatabaseReference _teacherAttendanceRef() =>
+      _db.child('${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}');
+
+  DatabaseReference _learnerAttendanceRef(String learnerUid) => _db.child(
+      '${_TeacherClassesScreenState.bookingProgressNode}/$learnerUid/${widget.booking.courseId}/online_attendance/${widget.booking.bookingKey}');
+
+  Future<void> _save() async {
+    setState(() => saving = true);
+
+    try {
+      // Build learners map to store
+      final Map<String, dynamic> learners = {};
+      for (final uid in widget.booking.learnerUids) {
+        learners[uid] = {
+          'present': presentMap[uid] == true,
+        };
+      }
+
+      final payload = {
+        'bookingKey': widget.booking.bookingKey,
+        'courseId': widget.booking.courseId,
+        'dayKey': widget.booking.dayKey,
+        'time': widget.booking.time,
+        'startAt': widget.booking.startAtMillis,
+        'teacherUid': widget.teacherUid,
+        'teacherName': widget.teacherName,
+        'teacherId': widget.booking.teacherId,
+        'teacherNameFromBooking': widget.booking.teacherName,
+        'meetUrl': widget.booking.meetUrl,
+        'durationMinutes': widget.booking.durationMinutes,
+        'sessionNo': widget.booking.sessionNo,
+        'learners': learners,
+        'taughtItems': taughtItems,
+        'updatedAt': ServerValue.timestamp,
+      };
+
+      // A) teacher/global node
+      await _teacherAttendanceRef().set(payload);
+
+      // B) mirror to each learner inside their course node ✅
+      for (final uid in widget.booking.learnerUids) {
+        await _learnerAttendanceRef(uid).set({
+          'bookingKey': widget.booking.bookingKey,
+          'courseId': widget.booking.courseId,
+          'dayKey': widget.booking.dayKey,
+          'time': widget.booking.time,
+          'startAt': widget.booking.startAtMillis,
+          'teacherUid': widget.teacherUid,
+          'teacherName': widget.teacherName,
+          'present': presentMap[uid] == true,
+          'taughtItems': taughtItems,
+          'updatedAt': ServerValue.timestamp,
+        });
+      }
+
+      _toast('Online attendance saved ✅');
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _toast('Save failed: $e');
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> _addTaughtItemDialog() async {
+    final typeCtrl = ValueNotifier<String>('syllabus');
+    final sessionIdCtrl = TextEditingController();
+    final titleCtrl = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Add taught item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ValueListenableBuilder<String>(
+              valueListenable: typeCtrl,
+              builder: (_, v, __) => DropdownButtonFormField<String>(
+                value: v,
+                items: const [
+                  DropdownMenuItem(value: 'syllabus', child: Text('Syllabus lesson')),
+                  DropdownMenuItem(value: 'custom', child: Text('Custom / extra')),
+                ],
+                onChanged: (x) => typeCtrl.value = x ?? 'syllabus',
+                decoration: const InputDecoration(labelText: 'Type'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: sessionIdCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Session ID (for syllabus)',
+                hintText: 'e.g. unit1_s3',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: titleCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Title / Notes',
+                hintText: 'What did you teach?',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Add')),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return;
+
+    taughtItems.add({
+      'type': typeCtrl.value,
+      'sessionId': sessionIdCtrl.text.trim(),
+      'title': titleCtrl.text.trim(),
+    });
+
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final b = widget.booking;
+    final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
+    final when = '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
+        '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
+
+    return Scaffold(
+      backgroundColor: appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: primaryBlue),
+        title: const Text('Online Attendance',
+            style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(
+            tooltip: 'Save',
+            onPressed: saving ? null : _save,
+            icon: saving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.save_rounded, color: actionOrange),
+          )
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          _box(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Course: ${b.courseId}', style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                const SizedBox(height: 6),
+                Text('When: $when', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                const SizedBox(height: 4),
+                Text('Learners: ${b.learnerUids.length}', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+                const SizedBox(height: 4),
+                Text('Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          _box(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Presence',
+                    style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                const SizedBox(height: 10),
+                if (b.learnerUids.isEmpty)
+                  Text('No learners found in this booking.',
+                      style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700))
+                else
+                  ...b.learnerUids.map((uid) {
+                    final v = presentMap[uid] == true;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: uiBorder.withOpacity(0.85)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(uid, style: const TextStyle(fontWeight: FontWeight.w900)),
+                          ),
+                          const SizedBox(width: 10),
+                          Switch(
+                            value: v,
+                            onChanged: (x) => setState(() => presentMap[uid] = x),
+                            activeColor: actionOrange,
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+          _box(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Taught items', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                const SizedBox(height: 10),
+                if (taughtItems.isEmpty)
+                  Text('No items yet.', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700))
+                else
+                  ...taughtItems.asMap().entries.map((e) {
+                    final i = e.key;
+                    final it = e.value;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: uiBorder.withOpacity(0.85)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${(it['type'] ?? '').toString()} • ${(it['sessionId'] ?? '').toString()} • ${(it['title'] ?? '').toString()}',
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              taughtItems.removeAt(i);
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                          )
+                        ],
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: actionOrange,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: _addTaughtItemDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add taught item', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _box({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: child,
+    );
+  }
+}
+
+class OnlineAttendanceHistoryScreen extends StatelessWidget {
+  const OnlineAttendanceHistoryScreen({super.key, required this.booking, required this.teacherUid});
+  final _OnlineBooking booking;
+  final String teacherUid;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('${_TeacherClassesScreenState.onlineAttendanceNode}/${booking.bookingKey}');
+
+    return Scaffold(
+      backgroundColor: appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: primaryBlue),
+        title: const Text('Online Attendance History',
+            style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+      ),
+      body: FutureBuilder<DataSnapshot>(
+        future: ref.get(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snap.hasData || !snap.data!.exists || snap.data!.value == null) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No online attendance found yet.', style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            );
+          }
+
+          final data = (snap.data!.value is Map)
+              ? Map<String, dynamic>.from(snap.data!.value as Map)
+              : <String, dynamic>{};
+
+          final taughtItems = data['taughtItems'];
+          final learners = data['learners'];
+
+          return ListView(
+            padding: const EdgeInsets.all(14),
+            children: [
+              _box(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Course: ${booking.courseId}',
+                        style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const SizedBox(height: 10),
+                    const Text('Learners:', style: TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    if (learners is Map && learners.isNotEmpty)
+                      ...learners.entries.map((e) {
+                        final uid = e.key.toString();
+                        final v = e.value;
+                        bool present = false;
+                        if (v is Map) {
+                          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+                          present = m['present'] == true;
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text('• $uid  —  ${present ? "Present" : "Absent"}',
+                              style: const TextStyle(fontWeight: FontWeight.w800)),
+                        );
+                      }).toList()
+                    else
+                      const Text('No learners map saved.', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 12),
+                    const Text('Taught items:', style: TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    if (taughtItems is List && taughtItems.isNotEmpty)
+                      ...taughtItems.map((e) {
+                        if (e is! Map) return const SizedBox.shrink();
+                        final m = Map<String, dynamic>.from(e);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text('• ${m['type']}  ${m['sessionId'] ?? ''}  ${m['title'] ?? ''}',
+                              style: const TextStyle(fontWeight: FontWeight.w700)),
+                        );
+                      }).toList()
+                    else
+                      const Text('No taught items saved.', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _box({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: child,
+    );
+  }
+}
+
+class OnlineAttendanceStatsScreen extends StatefulWidget {
+  const OnlineAttendanceStatsScreen({super.key, required this.courseId, required this.teacherUid});
+  final String courseId;
+  final String teacherUid;
+
+  @override
+  State<OnlineAttendanceStatsScreen> createState() => _OnlineAttendanceStatsScreenState();
+}
+
+class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScreen> {
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  bool loading = true;
+  int totalRecords = 0;
+  int presentCount = 0;
+  int absentCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => loading = true);
+
+    int t = 0;
+    int p = 0;
+    int a = 0;
+
+    try {
+      final snap = await _db.child(_TeacherClassesScreenState.onlineAttendanceNode).get();
+      if (snap.exists && snap.value is Map) {
+        final m = Map<dynamic, dynamic>.from(snap.value as Map);
+        for (final entry in m.entries) {
+          if (entry.value is! Map) continue;
+          final rec = Map<String, dynamic>.from(entry.value as Map);
+
+          final teacherUid = (rec['teacherUid'] ?? '').toString();
+          final courseId = (rec['courseId'] ?? '').toString();
+          if (teacherUid != widget.teacherUid) continue;
+          if (widget.courseId.isNotEmpty && courseId != widget.courseId) continue;
+
+          t++;
+
+          // count learner present/absent from learners map if exists
+          final learners = rec['learners'];
+          if (learners is Map) {
+            final lm = learners.map((k, v) => MapEntry(k.toString(), v));
+            for (final v in lm.values) {
+              if (v is Map) {
+                final mm = v.map((k, vv) => MapEntry(k.toString(), vv));
+                if (mm['present'] == true) {
+                  p++;
+                } else {
+                  a++;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    setState(() {
+      totalRecords = t;
+      presentCount = p;
+      absentCount = a;
+      loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: primaryBlue),
+        title: const Text('Online Stats', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          _box(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('CourseId: ${widget.courseId}',
+                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                const SizedBox(height: 10),
+                Text('Attendance records (sessions): $totalRecords',
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Text('Learner present marks: $presentCount',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text('Learner absent marks: $absentCount',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _box({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: child,
+    );
+  }
+}
+
+class OnlineClassProgressScreen extends StatelessWidget {
+  const OnlineClassProgressScreen({super.key, required this.courseId, required this.teacherUid});
+
+  final String courseId;
+  final String teacherUid;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    final db = FirebaseDatabase.instance.ref();
+
+    return Scaffold(
+      backgroundColor: appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: primaryBlue),
+        title: const Text('Online Progress', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+      ),
+      body: FutureBuilder<DataSnapshot>(
+        future: db.child(_TeacherClassesScreenState.onlineAttendanceNode).get(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          int meetings = 0;
+          final Set<String> syllabusSessionIds = {};
+
+          if (snap.hasData && snap.data!.exists && snap.data!.value is Map) {
+            final m = Map<dynamic, dynamic>.from(snap.data!.value as Map);
+            for (final e in m.entries) {
+              if (e.value is! Map) continue;
+              final rec = Map<String, dynamic>.from(e.value as Map);
+
+              if ((rec['teacherUid'] ?? '').toString() != teacherUid) continue;
+              if (courseId.isNotEmpty && (rec['courseId'] ?? '').toString() != courseId) continue;
+
+              meetings++;
+
+              final taughtItems = rec['taughtItems'];
+              if (taughtItems is List) {
+                for (final it in taughtItems) {
+                  if (it is! Map) continue;
+                  final item = Map<String, dynamic>.from(it);
+                  final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                  if (type != 'syllabus') continue;
+                  final sid = (item['sessionId'] ?? '').toString().trim();
+                  if (sid.isNotEmpty) syllabusSessionIds.add(sid);
+                }
+              }
+            }
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(14),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Summary', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const SizedBox(height: 10),
+                    Text('Meetings held (online): $meetings', style: const TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 6),
+                    Text('Unique syllabus lessons covered: ${syllabusSessionIds.length}',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Note: This counts ONLY taughtItems where type="syllabus".',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }

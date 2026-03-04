@@ -32,6 +32,9 @@ class TeacherOnlineBookingScreen extends StatefulWidget {
 }
 
 class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen> {
+  // ✅ Google Meet link (used by learner "Join")
+  final TextEditingController _meetCtrl = TextEditingController();
+  int _durationMinutes = 60;
   // ===== Brand colors =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -85,6 +88,11 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     _init();
   }
 
+  @override
+  void dispose() {
+    _meetCtrl.dispose();
+    super.dispose();
+  }
   // ===================== Helpers =====================
 
   void _toast(String msg) {
@@ -321,7 +329,19 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       }
 
       final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+      // ✅ Load Meet link + duration (so teacher can edit it)
+      final meetUrl = (m['meetUrl'] ??
+          m['meet_url'] ??
+          m['googleMeetUrl'] ??
+          m['google_meet_url'] ??
+          '')
+          .toString()
+          .trim();
 
+      _meetCtrl.text = meetUrl;
+
+      final dur = _toInt(m['durationMinutes'], fallback: 0);
+      _durationMinutes = (dur > 0) ? dur : 60;
       final sh = _toInt(m['startHour'], fallback: startHour);
       final eh = _toInt(m['endHour'], fallback: endHour);
 
@@ -423,6 +443,8 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       await _availRef(courseId).set({
         'teacherId': myUid,
         'teacherName': myName,
+        'meetUrl': _meetCtrl.text.trim(),
+        'durationMinutes': _durationMinutes,
         'startHour': startHour,
         'endHour': endHour,
         'slotMinutes': 60,
@@ -481,6 +503,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                   children: [
                     Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                     const SizedBox(height: 10),
+
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -681,6 +704,12 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _courseDropdown(),
+                const SizedBox(height: 10),
+                _MeetLinkCard(
+                  controller: _meetCtrl,
+                  durationMinutes: _durationMinutes,
+                  onDurationChanged: (v) => setState(() => _durationMinutes = v),
+                ),
                 const SizedBox(height: 10),
                 _InfoBox(
                   text: cid == null
@@ -1232,6 +1261,81 @@ class _SheetHeader extends StatelessWidget {
               '$count slot${count == 1 ? '' : 's'}',
               style: const TextStyle(fontWeight: FontWeight.w900, color: actionOrange, fontSize: 12),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+class _MeetLinkCard extends StatelessWidget {
+  const _MeetLinkCard({
+    required this.controller,
+    required this.durationMinutes,
+    required this.onDurationChanged,
+  });
+
+  final TextEditingController controller;
+  final int durationMinutes;
+  final void Function(int v) onDurationChanged;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.video_call_rounded, color: primaryBlue, size: 18),
+              SizedBox(width: 8),
+              Text('Google Meet link', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              hintText: 'https://meet.google.com/xxx-xxxx-xxx',
+              filled: true,
+              fillColor: const Color(0xFFF4F7F9),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Text('Duration', style: TextStyle(fontWeight: FontWeight.w900)),
+              const Spacer(),
+              DropdownButton<int>(
+                value: durationMinutes,
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(value: 30, child: Text('30 min')),
+                  DropdownMenuItem(value: 45, child: Text('45 min')),
+                  DropdownMenuItem(value: 60, child: Text('60 min')),
+                  DropdownMenuItem(value: 90, child: Text('90 min')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  onDurationChanged(v);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'This link will be used for learners to join the booked session.',
+            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey, fontSize: 12),
           ),
         ],
       ),
