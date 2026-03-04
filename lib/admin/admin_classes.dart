@@ -844,7 +844,7 @@
       if (_teachers.isEmpty) return _notify("No teachers found.", error: true);
   
       final bool isEdit = existingClass != null;
-  
+
       final String classId = isEdit ? (existingClass!["class_id"] ?? "").toString() : await _generateUniqueClassId();
   
       Map<String, dynamic> selectedCourse = _courses.first;
@@ -1135,9 +1135,9 @@
                           ],
                         ),
                       ),
-  
+
                       const SizedBox(height: 12),
-  
+
                       TextField(
                         controller: sessionsCountCtrl,
                         keyboardType: TextInputType.number,
@@ -1149,7 +1149,7 @@
                       ),
   
                       const SizedBox(height: 12),
-  
+
                       OutlinedButton.icon(
                         onPressed: saving ? null : () => pickDate(setModalState),
                         icon: const Icon(Icons.event),

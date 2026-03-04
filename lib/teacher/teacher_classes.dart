@@ -1,31 +1,13 @@
 // ✅ FULL REPLACEMENT (SAFE): lib/teacher/teacher_classes_screen.dart
 //
-// What you get (based on your exact DB shape):
-// ✅ 2 Tabs: 1) In-class   2) Online (Bookings)
-// ✅ Online reads your REAL node:
-//    booking_reservations/<courseId>/<yyyy-mm-dd>/<HH:MM>/ { teacherId, teacherName, sessionNo, learners{uid:true}, createdAt }
-// ✅ Teacher sees ONLY bookings assigned to them (teacherId == auth.uid)
-// ✅ Online shows 3 sections:
-//    1) Starting soon / Ongoing  (for late attendance + live session)
-//    2) Upcoming
-//    3) Past (last 7 days) (so teacher can confirm late attendance)
-// ✅ Online attendance SAVED IN TWO PLACES (safe):
-//    A) online_attendance/<bookingKey>  (teacher view/stats/progress)
-//    B) booking_progress/<learnerUid>/<courseId>/online_attendance/<bookingKey>  ✅ "inside the learner node inside that course"
-//       (does NOT touch your currentSession field; no breaking changes)
+// ✅ In-class tab: unchanged behavior (your existing screens still used)
+// ✅ Online tab: bookings + attendance ONLY (Present / Absent)
+// ✅ Online UI shows learner NAMES (no UID shown anywhere)
+// ✅ Online attendance saved in TWO places (safe):
+//    A) online_attendance/<bookingKey>
+//    B) booking_progress/<learnerUid>/<courseId>/online_attendance/<bookingKey>   ✅ inside learner uid inside course
 //
-// ✅ Does NOT break your existing In-class logic/screens:
-//    - TakeAttendanceScreen
-//    - AttendanceHistoryScreen
-//    - AttendanceStatsScreen
-//    - TeacherClassProgressScreen
-//
-// Optional (but recommended):
-// - If you want Meet links on teacher cards, store them in:
-//   booking_availability/<teacherId>/<courseId>/meetUrl
-//   booking_availability/<teacherId>/<courseId>/durationMinutes
-//   (same structure you already use in learner booking screen)
-//
+// NOTE: This file does NOT change your in-class DB writes.
 // ------------------------------------------------------------
 
 import 'package:flutter/material.dart';
@@ -69,7 +51,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   // Online attendance storage (NEW, safe)
   static const String onlineAttendanceNode = "online_attendance";
 
-  // Learner course node (you already use this in learner booking screen)
+  // Learner course node (same base you use in learner booking screen)
   // booking_progress/<learnerUid>/<courseId>/...
   static const String bookingProgressNode = "booking_progress";
 
@@ -93,8 +75,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   bool _onlineBusy = true;
   String? _onlineError;
   List<_OnlineBooking> _onlineAll = [];
-  final Map<String, _OnlineProg> _onlineProgCache = {};
-  final Map<String, Map<String, String>> _nameCache = {}; // uid -> {first,last,full}
+
+  // Cache user names: uid -> {full}
+  final Map<String, Map<String, String>> _nameCache = {};
 
   late TabController _tab;
 
@@ -144,8 +127,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   static String _two(int n) => n < 10 ? '0$n' : '$n';
 
-  static String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
-
   DateTime? _parseSlotStart(String dayKey, String hhmm) {
     try {
       final dp = dayKey.split('-');
@@ -192,7 +173,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         final fn = _safeStr(m['first_name']);
         final ln = _safeStr(m['last_name']);
         final full = ('$fn $ln').trim();
-        final out = {'first': fn, 'last': ln, 'full': full};
+        final out = {'full': full};
         _nameCache[uid] = out;
         return out;
       }
@@ -452,7 +433,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
 
-        final meetUrl = _safeStr(m['meetUrl'] ?? m['meet_url'] ?? m['googleMeetUrl'] ?? m['google_meet_url']);
+        final meetUrl =
+        _safeStr(m['meetUrl'] ?? m['meet_url'] ?? m['googleMeetUrl'] ?? m['google_meet_url']);
         int dur = _asInt(m['durationMinutes'] ?? m['durationMin'] ?? m['duration']);
         if (dur <= 0) dur = 60;
 
@@ -476,7 +458,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       _onlineBusy = true;
       _onlineError = null;
       _onlineAll = [];
-      _onlineProgCache.clear();
     });
 
     try {
@@ -555,7 +536,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 teacherId: teacherId,
                 teacherName: meta.teacherName.isNotEmpty
                     ? meta.teacherName
-                    : (teacherNameFromSlot.isNotEmpty ? teacherNameFromSlot : (_teacherName.isNotEmpty ? _teacherName : 'Teacher')),
+                    : (teacherNameFromSlot.isNotEmpty
+                    ? teacherNameFromSlot
+                    : (_teacherName.isNotEmpty ? _teacherName : 'Teacher')),
                 learnerUids: learnerUids,
                 sessionNo: sessionNo,
                 createdAtRaw: createdAt,
@@ -580,79 +563,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         _onlineBusy = false;
       });
     }
-  }
-
-  Future<_OnlineProg> _loadOnlineProgressForCourse(String courseId) async {
-    final key = '${_teacherUid}_$courseId';
-    if (_onlineProgCache.containsKey(key)) return _onlineProgCache[key]!;
-
-    int totalLessons = 0;
-    if (courseId.isNotEmpty) {
-      final sSnap = await _syllabiRef.child(courseId).get();
-      if (sSnap.exists && sSnap.value is Map) {
-        final s = Map<String, dynamic>.from(sSnap.value as Map);
-        final units = s['units'];
-        if (units is List) {
-          for (final u in units) {
-            if (u is! Map) continue;
-            final unit = Map<String, dynamic>.from(u);
-            final sessions = unit['sessions'];
-            if (sessions is List) totalLessons += sessions.length;
-          }
-        }
-      }
-    }
-
-    int meetingsHeld = 0;
-    final Set<String> coveredLessonSessionIds = {};
-
-    final attSnap = await _db.child(onlineAttendanceNode).get();
-    if (attSnap.exists && attSnap.value is Map) {
-      final m = Map<dynamic, dynamic>.from(attSnap.value as Map);
-      for (final entry in m.entries) {
-        if (entry.value is! Map) continue;
-        final rec = Map<String, dynamic>.from(entry.value as Map);
-
-        final tUid = _safeStr(rec['teacherUid']);
-        final cId = _safeStr(rec['courseId']);
-        if (tUid != _teacherUid) continue;
-        if (courseId.isNotEmpty && cId != courseId) continue;
-
-        meetingsHeld++;
-
-        final taughtItems = rec['taughtItems'];
-        if (taughtItems is List) {
-          for (final it in taughtItems) {
-            if (it is! Map) continue;
-            final item = Map<String, dynamic>.from(it);
-            final type = _safeStr(item['type']).toLowerCase();
-            if (type != 'syllabus') continue;
-            final sid = _safeStr(item['sessionId']);
-            if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
-          }
-        } else {
-          final taught = rec['taught'];
-          if (taught is Map) {
-            final tm = Map<String, dynamic>.from(taught);
-            final sid = _safeStr(tm['sessionId']);
-            if (sid.isNotEmpty) coveredLessonSessionIds.add(sid);
-          }
-        }
-      }
-    }
-
-    final coveredLessons = coveredLessonSessionIds.length;
-    final pct = totalLessons <= 0 ? 0 : ((coveredLessons / totalLessons) * 100).round().clamp(0, 100);
-
-    final prog = _OnlineProg(
-      meetingsHeld: meetingsHeld,
-      coveredLessons: coveredLessons,
-      totalLessons: totalLessons,
-      syllabusPercent: pct,
-    );
-
-    _onlineProgCache[key] = prog;
-    return prog;
   }
 
   // ===================== UI =====================
@@ -978,7 +888,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         continue;
       }
 
-      // dt <= now AND not inWindow => past
       if (dt.isAfter(pastLimit)) past.add(b);
     }
 
@@ -1001,8 +910,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
                 SizedBox(height: 8),
                 Text(
-                  'Shows: Starting soon/Ongoing • Upcoming • Past (last 7 days).\n'
-                      'You can take attendance even if you are late.',
+                  'Attendance = Present / Absent only.\n'
+                      'Shows: Starting soon/Ongoing • Upcoming • Past (last 7 days).',
                   style: TextStyle(color: mainText, fontWeight: FontWeight.w700, height: 1.3),
                 ),
               ],
@@ -1135,57 +1044,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
             const SizedBox(height: 12),
 
-            // Online progress (per course) + quick buttons
-            FutureBuilder<_OnlineProg>(
-              future: _loadOnlineProgressForCourse(b.courseId),
-              builder: (context, snap) {
-                final p = snap.data ?? const _OnlineProg.zero();
-                final totalStr = p.totalLessons <= 0 ? '-' : '${p.totalLessons}';
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.event_available_rounded, size: 16, color: actionOrange),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Meetings held (online): ${p.meetingsHeld}',
-                            style: TextStyle(color: mainText.withOpacity(0.80), fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(Icons.menu_book_rounded, size: 16, color: actionOrange),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Syllabus (online): ${p.coveredLessons}/$totalStr  •  ${p.syllabusPercent}%',
-                            style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: p.totalLessons <= 0 ? 0 : (p.coveredLessons / p.totalLessons).clamp(0, 1),
-                        minHeight: 8,
-                        backgroundColor: primaryBlue.withOpacity(0.10),
-                        valueColor: const AlwaysStoppedAnimation(actionOrange),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-
-            const SizedBox(height: 12),
-
             Row(
               children: [
                 Expanded(
@@ -1262,33 +1120,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             ),
 
             const SizedBox(height: 10),
-
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.insights_rounded, color: primaryBlue),
-                label: const Text("Progress",
-                    style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => OnlineClassProgressScreen(
-                        courseId: b.courseId,
-                        teacherUid: _teacherUid,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 10),
             _learnersPreview(b),
           ],
         ),
@@ -1312,11 +1143,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           return FutureBuilder<Map<String, String>>(
             future: _loadUserName(uid),
             builder: (context, snap) {
-              final full = snap.data?['full'] ?? '';
+              final full = (snap.data?['full'] ?? '').trim();
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '• ${full.isNotEmpty ? full : uid}',
+                  '• ${full.isEmpty ? "Learner" : full}',
                   style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
                 ),
               );
@@ -1413,29 +1244,9 @@ class _OnlineBooking {
   static String makeKey(String courseId, String dayKey, String hhmm) => '$courseId|$dayKey|$hhmm';
 }
 
-class _OnlineProg {
-  final int meetingsHeld;
-  final int coveredLessons;
-  final int totalLessons;
-  final int syllabusPercent;
-
-  const _OnlineProg({
-    required this.meetingsHeld,
-    required this.coveredLessons,
-    required this.totalLessons,
-    required this.syllabusPercent,
-  });
-
-  const _OnlineProg.zero()
-      : meetingsHeld = 0,
-        coveredLessons = 0,
-        totalLessons = 0,
-        syllabusPercent = 0;
-}
-
 // ============================================================
-// ONLINE SCREENS (Attendance / History / Stats / Progress)
-// These are self-contained and won’t affect your in-class logic.
+// ONLINE SCREENS (Attendance / History / Stats)
+// Present/Absent ONLY + show learner NAMES (no UID shown)
 // ============================================================
 
 class OnlineTakeAttendanceScreen extends StatefulWidget {
@@ -1466,9 +1277,7 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
 
   // per learner present/absent (default: present)
   final Map<String, bool> presentMap = {};
-
-  // taught items: {type: syllabus/custom, sessionId, title}
-  final List<Map<String, dynamic>> taughtItems = [];
+  final Map<String, String> _localNameCache = {}; // uid -> full name
 
   void _toast(String msg) {
     Fluttertoast.cancel();
@@ -1482,14 +1291,32 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
     );
   }
 
+  Future<String> _loadLearnerFullName(String uid) async {
+    if (_localNameCache.containsKey(uid)) return _localNameCache[uid]!;
+    try {
+      final snap = await _db.child('${_TeacherClassesScreenState.usersNode}/$uid').get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final fn = (m['first_name'] ?? '').toString().trim();
+        final ln = (m['last_name'] ?? '').toString().trim();
+        final full = ('$fn $ln').trim();
+        final out = full.isEmpty ? 'Learner' : full;
+        _localNameCache[uid] = out;
+        return out;
+      }
+    } catch (_) {}
+    _localNameCache[uid] = 'Learner';
+    return 'Learner';
+  }
+
   @override
   void initState() {
     super.initState();
+    // default everyone to Present
     for (final uid in widget.booking.learnerUids) {
       presentMap[uid] = true;
     }
   }
-
   DatabaseReference _teacherAttendanceRef() =>
       _db.child('${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}');
 
@@ -1522,15 +1349,18 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
         'durationMinutes': widget.booking.durationMinutes,
         'sessionNo': widget.booking.sessionNo,
         'learners': learners,
-        'taughtItems': taughtItems,
         'updatedAt': ServerValue.timestamp,
       };
 
       // A) teacher/global node
       await _teacherAttendanceRef().set(payload);
 
-      // B) mirror to each learner inside their course node ✅
+// B) mirror to each learner inside their course node ✅
+// + ✅ advance currentSession ONLY when Present
       for (final uid in widget.booking.learnerUids) {
+        final isPresent = presentMap[uid] == true;
+
+        // 1) save online attendance record inside learner course
         await _learnerAttendanceRef(uid).set({
           'bookingKey': widget.booking.bookingKey,
           'courseId': widget.booking.courseId,
@@ -1539,10 +1369,32 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
           'startAt': widget.booking.startAtMillis,
           'teacherUid': widget.teacherUid,
           'teacherName': widget.teacherName,
-          'present': presentMap[uid] == true,
-          'taughtItems': taughtItems,
+          'present': isPresent,
           'updatedAt': ServerValue.timestamp,
         });
+
+        // 2) ✅ Only if Present -> advance booking progress
+        // currentSession should become sessionNo + 1 (but never go backwards)
+        if (isPresent && widget.booking.sessionNo > 0) {
+          final curRef = _db.child(
+            '${_TeacherClassesScreenState.bookingProgressNode}/$uid/${widget.booking.courseId}/currentSession',
+          );
+
+          final curSnap = await curRef.get();
+          final curVal = curSnap.value;
+
+          int cur = 0;
+          if (curVal is int) cur = curVal;
+          else if (curVal is num) cur = curVal.toInt();
+          else cur = int.tryParse(curVal?.toString() ?? '') ?? 0;
+
+          final next = widget.booking.sessionNo + 1;
+
+          // Don't decrease if someone already progressed further
+          if (cur < next) {
+            await curRef.set(next);
+          }
+        }
       }
 
       _toast('Online attendance saved ✅');
@@ -1554,72 +1406,12 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
     }
   }
 
-  Future<void> _addTaughtItemDialog() async {
-    final typeCtrl = ValueNotifier<String>('syllabus');
-    final sessionIdCtrl = TextEditingController();
-    final titleCtrl = TextEditingController();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Add taught item'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ValueListenableBuilder<String>(
-              valueListenable: typeCtrl,
-              builder: (_, v, __) => DropdownButtonFormField<String>(
-                value: v,
-                items: const [
-                  DropdownMenuItem(value: 'syllabus', child: Text('Syllabus lesson')),
-                  DropdownMenuItem(value: 'custom', child: Text('Custom / extra')),
-                ],
-                onChanged: (x) => typeCtrl.value = x ?? 'syllabus',
-                decoration: const InputDecoration(labelText: 'Type'),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: sessionIdCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Session ID (for syllabus)',
-                hintText: 'e.g. unit1_s3',
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Title / Notes',
-                hintText: 'What did you teach?',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Add')),
-        ],
-      ),
-    ) ??
-        false;
-
-    if (!ok) return;
-
-    taughtItems.add({
-      'type': typeCtrl.value,
-      'sessionId': sessionIdCtrl.text.trim(),
-      'title': titleCtrl.text.trim(),
-    });
-
-    setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final b = widget.booking;
     final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
-    final when = '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
+    final when =
+        '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
 
     return Scaffold(
@@ -1648,7 +1440,8 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Course: ${b.courseId}', style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                Text('Course: ${b.courseId}',
+                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                 const SizedBox(height: 6),
                 Text('When: $when', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
                 const SizedBox(height: 4),
@@ -1664,8 +1457,7 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Presence',
-                    style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                const Text('Presence', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                 const SizedBox(height: 10),
                 if (b.learnerUids.isEmpty)
                   Text('No learners found in this booking.',
@@ -1683,7 +1475,16 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(uid, style: const TextStyle(fontWeight: FontWeight.w900)),
+                            child: FutureBuilder<String>(
+                              future: _loadLearnerFullName(uid),
+                              builder: (context, snap) {
+                                final name = (snap.data ?? 'Learner').trim();
+                                return Text(
+                                  name.isEmpty ? 'Learner' : name,
+                                  style: const TextStyle(fontWeight: FontWeight.w900),
+                                );
+                              },
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Switch(
@@ -1695,64 +1496,6 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
                       ),
                     );
                   }).toList(),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-          _box(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Taught items', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-                const SizedBox(height: 10),
-                if (taughtItems.isEmpty)
-                  Text('No items yet.', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700))
-                else
-                  ...taughtItems.asMap().entries.map((e) {
-                    final i = e.key;
-                    final it = e.value;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: uiBorder.withOpacity(0.85)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${(it['type'] ?? '').toString()} • ${(it['sessionId'] ?? '').toString()} • ${(it['title'] ?? '').toString()}',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              taughtItems.removeAt(i);
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-                          )
-                        ],
-                      ),
-                    );
-                  }),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: actionOrange,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: _addTaughtItemDialog,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add taught item', style: TextStyle(fontWeight: FontWeight.w900)),
-                  ),
-                ),
               ],
             ),
           ),
@@ -1785,7 +1528,8 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ref = FirebaseDatabase.instance.ref('${_TeacherClassesScreenState.onlineAttendanceNode}/${booking.bookingKey}');
+    final ref = FirebaseDatabase.instance
+        .ref('${_TeacherClassesScreenState.onlineAttendanceNode}/${booking.bookingKey}');
 
     return Scaffold(
       backgroundColor: appBg,
@@ -1816,7 +1560,6 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
               ? Map<String, dynamic>.from(snap.data!.value as Map)
               : <String, dynamic>{};
 
-          final taughtItems = data['taughtItems'];
           final learners = data['learners'];
 
           return ListView(
@@ -1840,29 +1583,36 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
                           final m = v.map((k, vv) => MapEntry(k.toString(), vv));
                           present = m['present'] == true;
                         }
+
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 6),
-                          child: Text('• $uid  —  ${present ? "Present" : "Absent"}',
-                              style: const TextStyle(fontWeight: FontWeight.w800)),
+                          child: FutureBuilder<DataSnapshot>(
+                            future: FirebaseDatabase.instance
+                                .ref('${_TeacherClassesScreenState.usersNode}/$uid')
+                                .get(),
+                            builder: (context, userSnap) {
+                              String fullName = 'Learner';
+                              if (userSnap.hasData &&
+                                  userSnap.data!.exists &&
+                                  userSnap.data!.value is Map) {
+                                final um = (userSnap.data!.value as Map)
+                                    .map((k, vv) => MapEntry(k.toString(), vv));
+                                final fn = (um['first_name'] ?? '').toString().trim();
+                                final ln = (um['last_name'] ?? '').toString().trim();
+                                final f = ('$fn $ln').trim();
+                                if (f.isNotEmpty) fullName = f;
+                              }
+
+                              return Text(
+                                '• $fullName  —  ${present ? "Present" : "Absent"}',
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              );
+                            },
+                          ),
                         );
                       }).toList()
                     else
                       const Text('No learners map saved.', style: TextStyle(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 12),
-                    const Text('Taught items:', style: TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 8),
-                    if (taughtItems is List && taughtItems.isNotEmpty)
-                      ...taughtItems.map((e) {
-                        if (e is! Map) return const SizedBox.shrink();
-                        final m = Map<String, dynamic>.from(e);
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text('• ${m['type']}  ${m['sessionId'] ?? ''}  ${m['title'] ?? ''}',
-                              style: const TextStyle(fontWeight: FontWeight.w700)),
-                        );
-                      }).toList()
-                    else
-                      const Text('No taught items saved.', style: TextStyle(fontWeight: FontWeight.w700)),
                   ],
                 ),
               ),
@@ -1903,7 +1653,7 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool loading = true;
-  int totalRecords = 0;
+  int totalSessions = 0;
   int presentCount = 0;
   int absentCount = 0;
 
@@ -1916,7 +1666,7 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
   Future<void> _load() async {
     setState(() => loading = true);
 
-    int t = 0;
+    int sessions = 0;
     int p = 0;
     int a = 0;
 
@@ -1933,9 +1683,8 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
           if (teacherUid != widget.teacherUid) continue;
           if (widget.courseId.isNotEmpty && courseId != widget.courseId) continue;
 
-          t++;
+          sessions++;
 
-          // count learner present/absent from learners map if exists
           final learners = rec['learners'];
           if (learners is Map) {
             final lm = learners.map((k, v) => MapEntry(k.toString(), v));
@@ -1955,7 +1704,7 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
     } catch (_) {}
 
     setState(() {
-      totalRecords = t;
+      totalSessions = sessions;
       presentCount = p;
       absentCount = a;
       loading = false;
@@ -1985,14 +1734,11 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
                 Text('CourseId: ${widget.courseId}',
                     style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                 const SizedBox(height: 10),
-                Text('Attendance records (sessions): $totalRecords',
-                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                Text('Sessions with attendance: $totalSessions', style: const TextStyle(fontWeight: FontWeight.w900)),
                 const SizedBox(height: 6),
-                Text('Learner present marks: $presentCount',
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text('Total Present marks: $presentCount', style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                Text('Learner absent marks: $absentCount',
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text('Total Absent marks: $absentCount', style: const TextStyle(fontWeight: FontWeight.w800)),
               ],
             ),
           ),
@@ -2010,99 +1756,6 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
         border: Border.all(color: uiBorder.withOpacity(0.85)),
       ),
       child: child,
-    );
-  }
-}
-
-class OnlineClassProgressScreen extends StatelessWidget {
-  const OnlineClassProgressScreen({super.key, required this.courseId, required this.teacherUid});
-
-  final String courseId;
-  final String teacherUid;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  @override
-  Widget build(BuildContext context) {
-    final db = FirebaseDatabase.instance.ref();
-
-    return Scaffold(
-      backgroundColor: appBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text('Online Progress', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
-      ),
-      body: FutureBuilder<DataSnapshot>(
-        future: db.child(_TeacherClassesScreenState.onlineAttendanceNode).get(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          int meetings = 0;
-          final Set<String> syllabusSessionIds = {};
-
-          if (snap.hasData && snap.data!.exists && snap.data!.value is Map) {
-            final m = Map<dynamic, dynamic>.from(snap.data!.value as Map);
-            for (final e in m.entries) {
-              if (e.value is! Map) continue;
-              final rec = Map<String, dynamic>.from(e.value as Map);
-
-              if ((rec['teacherUid'] ?? '').toString() != teacherUid) continue;
-              if (courseId.isNotEmpty && (rec['courseId'] ?? '').toString() != courseId) continue;
-
-              meetings++;
-
-              final taughtItems = rec['taughtItems'];
-              if (taughtItems is List) {
-                for (final it in taughtItems) {
-                  if (it is! Map) continue;
-                  final item = Map<String, dynamic>.from(it);
-                  final type = (item['type'] ?? '').toString().trim().toLowerCase();
-                  if (type != 'syllabus') continue;
-                  final sid = (item['sessionId'] ?? '').toString().trim();
-                  if (sid.isNotEmpty) syllabusSessionIds.add(sid);
-                }
-              }
-            }
-          }
-
-          return ListView(
-            padding: const EdgeInsets.all(14),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: uiBorder.withOpacity(0.85)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Summary', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-                    const SizedBox(height: 10),
-                    Text('Meetings held (online): $meetings', style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 6),
-                    Text('Unique syllabus lessons covered: ${syllabusSessionIds.length}',
-                        style: const TextStyle(fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Note: This counts ONLY taughtItems where type="syllabus".',
-                      style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
     );
   }
 }
