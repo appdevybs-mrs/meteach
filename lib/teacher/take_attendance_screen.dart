@@ -891,7 +891,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Meeting: $_meetingNumber',
+                    'Session Count: $_meetingNumber',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),

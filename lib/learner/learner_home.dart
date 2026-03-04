@@ -1,11 +1,23 @@
-// ✅ REPLACE your whole LearnerHome screen file with this.
-// Changes made (without breaking other features):
-// 1) ✅ Booking button is now TOP, ORANGE, FULL-WIDTH (whole row).
-// 2) ✅ Booking course picker now passes the REAL courseId from users/<uid>/courses/<course_x>/id
-//    (so booking_config/courses/<REAL_ID>/enabled works).
-// 3) ✅ Booking picker filters to ONLY courses enabled by admin (booking_config/courses/<id>/enabled == true).
+// learner_home.dart (or your LearnerHome screen file)
+// ✅ FULL DROP-IN REPLACEMENT (SAFE)
 //
-// Everything else (Support calls, Mail/Homework/Reminders/CallLogs) is kept as-is.
+// Keeps your working logic intact (Support calls, Mail/Homework/Reminders/CallLogs, Booking filter, Logout, etc).
+//
+// ✅ NEW: Learner Dashboard progress is now CORRECT (matches the new teacher logic):
+// - Meetings progress = attendance records count (meetings held)
+// - Syllabus progress = unique syllabus sessionIds covered across meetings
+//   supports NEW format:
+//     attendance/<meetingId>/taughtItems : List
+//       - type == "syllabus" => counts (sessionId)
+//       - type == "custom"   => does NOT count
+//   and OLD format:
+//     attendance/<meetingId>/taught.sessionId
+//
+// ✅ Also shows planned meetings as X / N when available:
+// - recommended: classes/<classId>/schedule/meetingsCount = 8
+// - if missing => shows "-" for N
+//
+// Everything else is preserved.
 
 import 'dart:async';
 
@@ -643,27 +655,376 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 }
 
-/// Simple home dashboard with cards
-class _LearnerDashboardLite extends StatelessWidget {
+/// Simple home dashboard with cards + ✅ correct progress
+class _LearnerDashboardLite extends StatefulWidget {
   const _LearnerDashboardLite();
 
   @override
+  State<_LearnerDashboardLite> createState() => _LearnerDashboardLiteState();
+}
+
+class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  // memoize expensive reads per course
+  final Map<String, Future<_CourseMeta>> _metaFutures = {};
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  Future<_CourseMeta> _loadCourseMeta({
+    required String courseKey,
+    required Map<String, dynamic> course,
+  }) async {
+    // courseId for syllabi
+    final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    final courseId = (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+
+    // planned meetings
+    int? planned;
+    // try inside class snapshot
+    final schedule = cls['schedule'];
+    if (schedule is Map) {
+      planned = _toInt((schedule as Map)['meetingsCount'] ?? (schedule as Map)['totalMeetings'] ?? (schedule as Map)['sessionsCount']);
+      if (planned != null && planned <= 0) planned = null;
+    }
+    planned ??= _toInt(cls['meetingsCount'] ?? cls['totalMeetings'] ?? cls['sessionsCount']);
+    if (planned != null && planned <= 0) planned = null;
+
+    // fallback: classes/<classId>/schedule/meetingsCount
+    if ((planned == null || planned <= 0) && classId.isNotEmpty) {
+      try {
+        final snap = await _db.child('classes/$classId/schedule').get();
+        if (snap.exists && snap.value is Map) {
+          final m = Map<String, dynamic>.from(snap.value as Map);
+          final n = _toInt(m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount']);
+          if (n > 0) planned = n;
+        }
+      } catch (_) {}
+    }
+
+    // syllabus total lessons
+    int totalLessons = 0;
+    if (courseId.isNotEmpty) {
+      try {
+        final sSnap = await _db.child('syllabi/$courseId').get();
+        if (sSnap.exists && sSnap.value is Map) {
+          final s = Map<String, dynamic>.from(sSnap.value as Map);
+          final units = s['units'];
+          if (units is List) {
+            for (final u in units) {
+              if (u is! Map) continue;
+              final unit = Map<String, dynamic>.from(u);
+              final sessions = unit['sessions'];
+              if (sessions is List) totalLessons += sessions.length;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return _CourseMeta(
+      courseKey: courseKey,
+      classId: classId,
+      courseId: courseId,
+      plannedMeetings: planned,
+      totalLessons: totalLessons,
+    );
+  }
+
+  Set<String> _coveredSessionIdsFromAttendance(Map<String, dynamic> course) {
+    final covered = <String>{};
+
+    final att = course['attendance'];
+    if (att is! Map) return covered;
+
+    final attMap = Map<String, dynamic>.from(att as Map);
+
+    for (final entry in attMap.entries) {
+      final rec = entry.value;
+      if (rec is! Map) continue;
+      final m = Map<String, dynamic>.from(rec);
+
+      // NEW: taughtItems list
+      final taughtItems = m['taughtItems'];
+      bool usedNew = false;
+
+      if (taughtItems is List) {
+        usedNew = true;
+        for (final it in taughtItems) {
+          if (it is! Map) continue;
+          final item = Map<String, dynamic>.from(it);
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
+          if (type != 'syllabus') continue;
+          final sid = (item['sessionId'] ?? '').toString().trim();
+          if (sid.isNotEmpty) covered.add(sid);
+        }
+      }
+
+      // OLD: taught map
+      if (!usedNew) {
+        final taught = m['taught'];
+        if (taught is Map) {
+          final tm = Map<String, dynamic>.from(taught as Map);
+          final sid = (tm['sessionId'] ?? '').toString().trim();
+          if (sid.isNotEmpty) covered.add(sid);
+        }
+      }
+    }
+
+    return covered;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+
+    if (uid.isEmpty) {
+      return const Center(child: Text('Not logged in.'));
+    }
+
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const _HomeCardsGrid(),
-          const SizedBox(height: 12),
-          Card(
-            elevation: 0,
-            color: Colors.white,
-            shape: UiK.cardShape(),
-          ),
-        ],
+      child: StreamBuilder<DatabaseEvent>(
+        stream: _db.child('users/$uid/courses').onValue,
+        builder: (context, snap) {
+          final v = snap.data?.snapshot.value;
+
+          final List<Map<String, dynamic>> courses = [];
+          if (v is Map) {
+            final raw = Map<dynamic, dynamic>.from(v);
+            for (final e in raw.entries) {
+              final key = e.key.toString(); // course_1
+              if (e.value is! Map) continue;
+              final course = Map<String, dynamic>.from(e.value as Map);
+
+              int assignedAt = _toInt(course['assignedAt']);
+              courses.add({
+                'courseKey': key,
+                'assignedAt': assignedAt,
+                'course': course,
+              });
+            }
+            courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
+          }
+
+          return ListView(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
+            children: [
+              const _HomeCardsGrid(),
+              const SizedBox(height: 12),
+
+              Card(
+                elevation: 0,
+                color: Colors.white,
+                shape: UiK.cardShape(),
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.insights_rounded, size: 18, color: UiK.actionOrange),
+                      SizedBox(width: 8),
+                      Text('Your Progress', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              if (courses.isEmpty)
+                Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: UiK.cardShape(),
+                  child: const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'No courses yet.',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                )
+              else
+                ...courses.map((c) {
+                  final courseKey = (c['courseKey'] ?? '').toString();
+                  final course = (c['course'] as Map<String, dynamic>);
+
+                  // memoize meta future per courseKey
+                  _metaFutures.putIfAbsent(
+                    courseKey,
+                        () => _loadCourseMeta(courseKey: courseKey, course: course),
+                  );
+
+                  final title = (course['title'] ?? course['course_title'] ?? 'Course').toString();
+                  final code = (course['course_code'] ?? '').toString().trim();
+
+                  final attendance = course['attendance'];
+                  final meetingsHeld = attendance is Map ? Map<dynamic, dynamic>.from(attendance).length : 0;
+
+                  final coveredIds = _coveredSessionIdsFromAttendance(course);
+                  final coveredLessons = coveredIds.length;
+
+                  return FutureBuilder<_CourseMeta>(
+                    future: _metaFutures[courseKey],
+                    builder: (context, metaSnap) {
+                      final meta = metaSnap.data;
+
+                      final planned = meta?.plannedMeetings;
+                      final plannedStr = (planned == null || planned <= 0) ? '-' : '$planned';
+
+                      final totalLessons = meta?.totalLessons ?? 0;
+                      final syllabusPct = totalLessons == 0 ? 0 : ((coveredLessons / totalLessons) * 100).round();
+
+                      return Card(
+                        elevation: 0,
+                        color: Colors.white,
+                        shape: UiK.cardShape(),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: UiK.primaryBlue.withOpacity(0.08),
+                                    child: const Icon(Icons.school_rounded, color: UiK.primaryBlue),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: UiK.mainText,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          code.isEmpty ? '—' : 'Code: $code',
+                                          style: UiK.subtleText(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              // meetings progress
+                              Row(
+                                children: [
+                                  const Icon(Icons.event_available_rounded, size: 18, color: UiK.actionOrange),
+                                  const SizedBox(width: 8),
+                                  const Text('Meetings', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                                  const Spacer(),
+                                  Text(
+                                    '$meetingsHeld/$plannedStr',
+                                    style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+                                  ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 10),
+
+                              // syllabus progress + bar
+                              Row(
+                                children: [
+                                  const Icon(Icons.menu_book_rounded, size: 18, color: UiK.actionOrange),
+                                  const SizedBox(width: 8),
+                                  const Text('Syllabus', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                                  const Spacer(),
+                                  Text('$syllabusPct%', style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: totalLessons == 0 ? 0 : (coveredLessons / totalLessons).clamp(0, 1),
+                                  minHeight: 10,
+                                  backgroundColor: UiK.primaryBlue.withOpacity(0.10),
+                                  valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                totalLessons == 0
+                                    ? 'Covered: $coveredLessons lessons'
+                                    : 'Covered: $coveredLessons / $totalLessons lessons',
+                                style: UiK.subtleText(),
+                              ),
+
+                              if ((planned == null || planned <= 0) || (meta?.classId.isEmpty ?? true)) ...[
+                                const SizedBox(height: 10),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                                    color: UiK.primaryBlue.withOpacity(0.04),
+                                  ),
+                                  child: const Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                                          SizedBox(width: 8),
+                                          Text('Recommendation',
+                                              style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                                        ],
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'To show Meetings progress like 3/8, save:\nclasses/<classId>/schedule/meetingsCount = 8',
+                                        style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w700, height: 1.3),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }).toList(),
+            ],
+          );
+        },
       ),
     );
   }
+}
+
+class _CourseMeta {
+  final String courseKey;
+  final String classId;
+  final String courseId;
+  final int? plannedMeetings;
+  final int totalLessons;
+
+  _CourseMeta({
+    required this.courseKey,
+    required this.classId,
+    required this.courseId,
+    required this.plannedMeetings,
+    required this.totalLessons,
+  });
 }
 
 class _HomeCardsGrid extends StatelessWidget {
@@ -707,7 +1068,7 @@ class _HomeCardsGrid extends StatelessWidget {
   }
 }
 
-/// ✅ NEW: Full width orange booking card on top
+/// ✅ Full width orange booking card on top
 class _BookingTopOrangeCard extends StatelessWidget {
   const _BookingTopOrangeCard();
 
@@ -1469,10 +1830,9 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
               if (sessionVal is! Map) continue;
               final session = Map<dynamic, dynamic>.from(sessionVal);
 
-              final hw = session['homework'];
-              if (hw is! Map) continue;
-
-              final hwMap = Map<dynamic, dynamic>.from(hw);
+              final hwMapAny = session['homework'];
+              if (hwMapAny is! Map) continue;
+              final hwMap = Map<dynamic, dynamic>.from(hwMapAny);
 
               final text = (hwMap['text'] ?? '').toString().trim();
               final due = (hwMap['dueDate'] ?? '').toString().trim();

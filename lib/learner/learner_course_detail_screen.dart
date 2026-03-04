@@ -72,7 +72,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   List<Map<String, dynamic>> _syllabiFlat = [];
   Set<String> _coveredSessionIds = {};
-
+  Map<int, String> _sessionIdByNumber = {}; // sessionNumber -> sessionId (fallback)
   // ✅ NEW: meetings total (optional)
   int? _plannedMeetings;
 
@@ -249,11 +249,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               // safe normalize
               final String title = (item['title'] ?? item['name'] ?? '').toString().trim();
               final String sid = (item['sessionId'] ?? '').toString().trim();
-
+              final int sn = _asInt(item['sessionNumber']); // ✅ fallback if sessionId missing
               taughtItemsList.add(item);
 
               if (type == 'syllabus') {
-                if (sid.isNotEmpty) covered.add(sid);
+                if (sid.isNotEmpty) {
+                  covered.add(sid);
+                } else if (sn > 0) {
+                  final mapped = _sessionIdByNumber[sn];
+                  if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+                }
+
                 if (title.isNotEmpty) taughtSyllabusTitles.add(title);
               } else if (type == 'custom') {
                 if (title.isNotEmpty) taughtCustomTitles.add(title);
@@ -265,7 +271,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           final taughtOld = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
           if (!hasNewFormat) {
             final taughtSessionId = (taughtOld['sessionId'] ?? '').toString().trim();
-            if (taughtSessionId.isNotEmpty) covered.add(taughtSessionId);
+            final taughtSn = _asInt(taughtOld['sessionNumber']); // ✅ fallback
+
+            if (taughtSessionId.isNotEmpty) {
+              covered.add(taughtSessionId);
+            } else if (taughtSn > 0) {
+              final mapped = _sessionIdByNumber[taughtSn];
+              if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+            }
           }
 
           // ✅ build a nice summary string for Attendance UI
@@ -333,6 +346,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     'order': sess['order'] ?? 0,
                     'sessionId': (sess['id'] ?? '').toString(),
                     'title': (sess['title'] ?? '').toString(),
+                    'sessionNumber': sess['sessionNumber'] ?? 0, // ✅ add sessionNumber to support old attendance fix
                     'skillType': (sess['skillType'] ?? '').toString(),
                     'objective': (sess['objective'] ?? '').toString(),
                     'content': (sess['content'] ?? '').toString(),
@@ -352,6 +366,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           });
 
           _syllabiFlat = flat;
+          // ✅ build sessionNumber -> sessionId map (fallback for old attendance that only has sessionNumber)
+          _sessionIdByNumber = {};
+          for (final s in _syllabiFlat) {
+            final sn = _asInt(s['sessionNumber']);
+            final sid = (s['sessionId'] ?? '').toString().trim();
+            if (sn > 0 && sid.isNotEmpty) _sessionIdByNumber[sn] = sid;
+          }
         }
       }
 
@@ -963,34 +984,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
       children: [
-        // recommendation card
-        Card(
-          elevation: 0,
-          color: Colors.white,
-          shape: UiK.cardShape(),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Row(
-                  children: [
-                    Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
-                    SizedBox(width: 8),
-                    Text('Recommendation', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'To show Meetings progress like 3/8, save:\n'
-                      'classes/<classId>/schedule/meetingsCount = 8',
-                  style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w700, height: 1.3),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
 
         // summary card
         Card(
