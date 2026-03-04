@@ -781,7 +781,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                               context,
                               'My Classes',
                               Icons.school_rounded,
-                              const TeacherClassesScreen(),
+                               TeacherClassesScreen(),
                               subtitle: subtitle,
                             );
                           },
