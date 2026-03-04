@@ -78,7 +78,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   // Cache user names: uid -> {full}
   final Map<String, Map<String, String>> _nameCache = {};
-
+  final Map<String, String> _sessionTitleCache = {}; // courseId|sessionNo -> title
   late TabController _tab;
 
   @override
@@ -423,7 +423,121 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return prog;
   }
 
+  Future<Map<String, dynamic>?> _loadSessionDetails(String courseId, int sessionNo) async {
+    if (courseId.isEmpty || sessionNo <= 0) return null;
+    try {
+      final snap = await _db.child('booking_curriculum/$courseId/sessions/$sessionNo').get();
+      if (snap.exists && snap.value is Map) {
+        return (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _openSessionDetailsSheet(String courseId, int sessionNo) async {
+    final info = await _loadSessionDetails(courseId, sessionNo);
+    if (!mounted) return;
+
+    if (info == null) {
+      _toast('Session details not found.');
+      return;
+    }
+
+    final titleRaw = (info['sessionTitle'] ?? info['title'] ?? '').toString().trim();
+    final title = titleRaw.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $titleRaw';
+
+    final objective = (info['objective'] ?? '').toString().trim();
+    final content = (info['content'] ?? '').toString().trim();
+    final homework = (info['homework'] ?? '').toString().trim();
+    final duration = _asInt(info['durationMinutes'] ?? info['durationMin'] ?? 0);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) {
+        final bottomPad = MediaQuery.of(context).padding.bottom;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: primaryBlue)),
+                  const SizedBox(height: 8),
+                  Text('Course: $courseId', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                  const SizedBox(height: 6),
+                  if (duration > 0)
+                    Text('Duration: $duration min',
+                        style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+                  const SizedBox(height: 12),
+
+                  if (objective.isNotEmpty) ...[
+                    const Text('Objectives', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const SizedBox(height: 6),
+                    Text(objective, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (content.isNotEmpty) ...[
+                    const Text('Content', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const SizedBox(height: 6),
+                    Text(content, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (homework.isNotEmpty) ...[
+                    const Text('Homework', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const SizedBox(height: 6),
+                    Text(homework, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                    const SizedBox(height: 12),
+                  ],
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: actionOrange,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w900)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // ===================== ONLINE tab =====================
+
+  Future<String> _loadSessionTitle(String courseId, int sessionNo) async {
+    if (courseId.isEmpty || sessionNo <= 0) return '';
+    final key = '$courseId|$sessionNo';
+    if (_sessionTitleCache.containsKey(key)) return _sessionTitleCache[key]!;
+
+    try {
+      final snap = await _db.child('booking_curriculum/$courseId/sessions/$sessionNo').get();
+      if (snap.exists && snap.value is Map) {
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final title = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
+        _sessionTitleCache[key] = title;
+        return title;
+      }
+    } catch (_) {}
+
+    _sessionTitleCache[key] = '';
+    return '';
+  }
 
   Future<_AvailMeta> _loadAvailMeta(String teacherId, String courseId) async {
     // from booking_availability/<teacherId>/<courseId>/ {meetUrl, durationMinutes}
@@ -901,22 +1015,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             borderRadius: BorderRadius.circular(18),
             side: BorderSide(color: uiBorder.withOpacity(0.8)),
           ),
-          child: const Padding(
-            padding: EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Online (Bookings)',
-                    style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
-                SizedBox(height: 8),
-                Text(
-                  'Attendance = Present / Absent only.\n'
-                      'Shows: Starting soon/Ongoing • Upcoming • Past (last 7 days).',
-                  style: TextStyle(color: mainText, fontWeight: FontWeight.w700, height: 1.3),
-                ),
-              ],
-            ),
-          ),
+
         ),
         const SizedBox(height: 14),
 
@@ -1014,7 +1113,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             const SizedBox(height: 4),
             Text('Learners: ${b.learnerUids.length}', style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text('SessionNo: ${b.sessionNo <= 0 ? '-' : b.sessionNo}', style: TextStyle(color: mainText.withOpacity(0.70), fontWeight: FontWeight.w700)),
+            FutureBuilder<String>(
+              future: _loadSessionTitle(b.courseId, b.sessionNo),
+              builder: (context, snap) {
+                final title = (snap.data ?? '').trim();
+                final sNo = b.sessionNo <= 0 ? '-' : '${b.sessionNo}';
+                final label = title.isEmpty ? 'Session: $sNo' : 'Session: $sNo — $title';
+
+                return Text(
+                  label,
+                  style: TextStyle(color: mainText.withOpacity(0.70), fontWeight: FontWeight.w700),
+                );
+              },
+            ),
             const SizedBox(height: 10),
 
             Container(
@@ -1043,7 +1154,15 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             ),
 
             const SizedBox(height: 12),
-
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _openSessionDetailsSheet(b.courseId, b.sessionNo),
+                icon: const Icon(Icons.info_outline_rounded, color: actionOrange),
+                label: const Text('Details', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
+              ),
+            ),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
@@ -1325,7 +1444,31 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
 
   Future<void> _save() async {
     setState(() => saving = true);
+    // ✅ NEW: what was taught (online = booked sessionNo)
+    final int sessionNo = widget.booking.sessionNo;
 
+    String sessionTitle = '';
+    if (sessionNo > 0) {
+      try {
+        final snap = await _db
+            .child('booking_curriculum/${widget.booking.courseId}/sessions/$sessionNo')
+            .get();
+        if (snap.exists && snap.value is Map) {
+          final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+          sessionTitle = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
+        }
+      } catch (_) {}
+    }
+
+    final List<Map<String, dynamic>> taughtItems = (sessionNo > 0)
+        ? [
+      {
+        'type': 'syllabus',
+        'sessionNumber': sessionNo,
+        'title': sessionTitle,
+      }
+    ]
+        : <Map<String, dynamic>>[];
     try {
       // Build learners map to store
       final Map<String, dynamic> learners = {};
@@ -1348,6 +1491,7 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
         'meetUrl': widget.booking.meetUrl,
         'durationMinutes': widget.booking.durationMinutes,
         'sessionNo': widget.booking.sessionNo,
+        'taughtItems': taughtItems,
         'learners': learners,
         'updatedAt': ServerValue.timestamp,
       };
@@ -1370,6 +1514,7 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
           'teacherUid': widget.teacherUid,
           'teacherName': widget.teacherName,
           'present': isPresent,
+          'taughtItems': taughtItems,
           'updatedAt': ServerValue.timestamp,
         });
 

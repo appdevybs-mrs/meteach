@@ -4,30 +4,24 @@
 // Keeps your working Firebase/loading logic intact.
 // Tabs kept: Payment / Attendance / Progress
 //
-// ✅ NEW (matches your new teacher logic):
-// 1) Progress is now split into TWO things:
-//    - Meetings progress  = how many attendance records exist (each save = 1 meeting)
-//    - Syllabus progress  = how many SYLLABUS lessons were taught across meetings (unique sessionIds)
+// ✅ NEW (requested):
+// 1) Progress now includes BOTH:
+//    - In-class attendance: users/<uid>/courses/<courseKey>/attendance
+//    - Online attendance:   booking_progress/<uid>/<courseId>/online_attendance
 //
-// 2) Supports NEW attendance format (preferred):
-//    users/<uid>/courses/<courseKey>/attendance/<meetingId>/taughtItems : List
-//      - item.type == "syllabus" => counts to syllabus progress
-//      - item.type == "custom"   => does NOT count to syllabus progress (meeting-only)
+// 2) Meetings progress = total attendance records (in-class + online)
+// 3) Syllabus progress = unique SYLLABUS lessons covered from:
+//    - In-class: taughtItems (type=syllabus) OR old taught.sessionId
+//    - Online: sessionNo -> mapped to sessionId using syllabi sessionNumber
 //
-// 3) Backward compatible with OLD format:
-//    users/<uid>/courses/<courseKey>/attendance/<meetingId>/taught : Map
-//      - taught.sessionId counts to syllabus progress
+// 4) Attendance tab shows BOTH in-class + online records
+//    - Online entries show (Online) + Session No + Present/Absent
 //
-// 4) Attendance tab shows a nice “Taught (meeting)” summary:
-//    - If taughtItems exists: shows syllabus lessons + custom notes
-//    - Else falls back to taught.title (old)
+// Notes:
+// - This does NOT change your teacher writes.
+// - It only reads the new online attendance and merges it into learner UI.
 //
-// ✅ Recommendation (important for 3/8 display):
-// - Store planned meetings in classes/<classId>/schedule/meetingsCount = 8
-//   (If missing, total meetings shows as "-")
-//
-// UI safety:
-// - Bottom sheets + lists won’t be covered by bottom navigation bar (SafeArea + bottom padding)
+// ------------------------------------------------------------
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -58,6 +52,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   static const syllabiNode = 'syllabi';
   static const classesNode = 'classes';
 
+  // ✅ NEW (online progress node)
+  static const bookingProgressNode = 'booking_progress';
+
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
@@ -68,12 +65,22 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   String _uid = '';
   Map<String, dynamic> _course = {};
+
+  // In-class attendance (existing)
   List<Map<String, dynamic>> _attendance = [];
+
+  // ✅ NEW: online attendance list
+  List<Map<String, dynamic>> _onlineAttendance = [];
+
+  // ✅ NEW: merged list (in-class + online) used by UI + counts
+  List<Map<String, dynamic>> _attendanceAll = [];
 
   List<Map<String, dynamic>> _syllabiFlat = [];
   Set<String> _coveredSessionIds = {};
   Map<int, String> _sessionIdByNumber = {}; // sessionNumber -> sessionId (fallback)
-  // ✅ NEW: meetings total (optional)
+  Map<int, String> _sessionTitleByNumber = {}; // sessionNumber -> title (for online taughtSummary)
+
+  // ✅ meetings total (optional)
   int? _plannedMeetings;
 
   late final TabController _tab;
@@ -104,12 +111,34 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
   static String _fmtDateFromMs(dynamic ms) {
     final t = _asInt(ms);
     if (t <= 0) return '';
     final d = DateTime.fromMillisecondsSinceEpoch(t);
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)}';
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}';
+  }
+
+  static String _fmtDateTimeFromMs(dynamic ms) {
+    final t = _asInt(ms);
+    if (t <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(t);
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
+  }
+
+  static int? _tryParseYmdToMillis(String ymd) {
+    try {
+      final p = ymd.trim().split('-');
+      if (p.length != 3) return null;
+      final y = int.tryParse(p[0]);
+      final m = int.tryParse(p[1]);
+      final d = int.tryParse(p[2]);
+      if (y == null || m == null || d == null) return null;
+      return DateTime(y, m, d).millisecondsSinceEpoch;
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _fmtMoney(int v) {
@@ -129,10 +158,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   String get _courseTitle => (_course['title'] ?? _course['course_title'] ?? 'Course').toString();
   String get _courseCode => (_course['course_code'] ?? '').toString();
   String get _classId => (_cls['class_id'] ?? '').toString();
-  String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString(); // syllabi key
+
+  // syllabi key (courseId)
+  String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString();
 
   DatabaseReference get _paymentSummaryRef =>
       _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
+
+  // ✅ NEW: online attendance ref for this learner + course
+  DatabaseReference get _onlineAttendanceRef =>
+      _db.child('$bookingProgressNode/$_uid/$_courseId/online_attendance');
 
   int? _plannedMeetingsFromCourseOrClass(Map<String, dynamic> course) {
     // try in course/class snapshot first
@@ -178,8 +213,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       _error = null;
       _course = {};
       _attendance = [];
+      _onlineAttendance = [];
+      _attendanceAll = [];
       _syllabiFlat = [];
       _coveredSessionIds = {};
+      _sessionIdByNumber = {};
+      _sessionTitleByNumber = {};
       _plannedMeetings = null;
     });
 
@@ -218,103 +257,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       _plannedMeetings = _plannedMeetingsFromCourseOrClass(_course);
       _plannedMeetings ??= await _fetchPlannedMeetingsFromClassesNode(_classId);
 
-      // Attendance list
-      final att = _course['attendance'];
-      final List<Map<String, dynamic>> attList = [];
-      final Set<String> covered = {};
-
-      if (att is Map) {
-        final m = Map<String, dynamic>.from(att);
-        for (final entry in m.entries) {
-          final meetingId = entry.key.toString();
-          if (entry.value is! Map) continue;
-
-          final rec = Map<String, dynamic>.from(entry.value as Map);
-
-          // ✅ NEW: parse taughtItems (preferred)
-          final taughtItems = rec['taughtItems'];
-          final List<Map<String, dynamic>> taughtItemsList = [];
-          final List<String> taughtSyllabusTitles = [];
-          final List<String> taughtCustomTitles = [];
-
-          bool hasNewFormat = false;
-          if (taughtItems is List) {
-            hasNewFormat = true;
-
-            for (final it in taughtItems) {
-              if (it is! Map) continue;
-              final item = Map<String, dynamic>.from(it);
-              final type = (item['type'] ?? '').toString().trim().toLowerCase();
-
-              // safe normalize
-              final String title = (item['title'] ?? item['name'] ?? '').toString().trim();
-              final String sid = (item['sessionId'] ?? '').toString().trim();
-              final int sn = _asInt(item['sessionNumber']); // ✅ fallback if sessionId missing
-              taughtItemsList.add(item);
-
-              if (type == 'syllabus') {
-                if (sid.isNotEmpty) {
-                  covered.add(sid);
-                } else if (sn > 0) {
-                  final mapped = _sessionIdByNumber[sn];
-                  if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
-                }
-
-                if (title.isNotEmpty) taughtSyllabusTitles.add(title);
-              } else if (type == 'custom') {
-                if (title.isNotEmpty) taughtCustomTitles.add(title);
-              }
-            }
-          }
-
-          // ✅ BACKWARD COMPAT: old single taught map
-          final taughtOld = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
-          if (!hasNewFormat) {
-            final taughtSessionId = (taughtOld['sessionId'] ?? '').toString().trim();
-            final taughtSn = _asInt(taughtOld['sessionNumber']); // ✅ fallback
-
-            if (taughtSessionId.isNotEmpty) {
-              covered.add(taughtSessionId);
-            } else if (taughtSn > 0) {
-              final mapped = _sessionIdByNumber[taughtSn];
-              if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
-            }
-          }
-
-          // ✅ build a nice summary string for Attendance UI
-          String taughtSummary = '';
-          if (hasNewFormat) {
-            final parts = <String>[];
-            if (taughtSyllabusTitles.isNotEmpty) parts.add(taughtSyllabusTitles.join(', '));
-            if (taughtCustomTitles.isNotEmpty) parts.add('Notes: ${taughtCustomTitles.join(', ')}');
-            taughtSummary = parts.join(' • ');
-          } else {
-            // old format
-            taughtSummary = (taughtOld['title'] ?? '').toString().trim();
-          }
-
-          attList.add({
-            'meetingId': meetingId, // meeting record id
-            ...rec,
-
-            // for UI
-            'taughtItems': taughtItemsList,
-            'taughtSummary': taughtSummary,
-          });
-        }
-      }
-
-      // newest first
-      attList.sort((a, b) {
-        final ad = (a['date'] ?? '').toString();
-        final bd = (b['date'] ?? '').toString();
-        return bd.compareTo(ad);
-      });
-
-      _attendance = attList;
-      _coveredSessionIds = covered;
-
-      // Load syllabi flat list
+      // --------------------
+      // Load syllabi flat list FIRST (so we can map sessionNo -> sessionId for online)
+      // --------------------
       if (_courseId.isNotEmpty) {
         final sSnap = await _syllabiRef.child(_courseId).get();
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
@@ -346,7 +291,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     'order': sess['order'] ?? 0,
                     'sessionId': (sess['id'] ?? '').toString(),
                     'title': (sess['title'] ?? '').toString(),
-                    'sessionNumber': sess['sessionNumber'] ?? 0, // ✅ add sessionNumber to support old attendance fix
+                    'sessionNumber': sess['sessionNumber'] ?? 0,
                     'skillType': (sess['skillType'] ?? '').toString(),
                     'objective': (sess['objective'] ?? '').toString(),
                     'content': (sess['content'] ?? '').toString(),
@@ -366,15 +311,258 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           });
 
           _syllabiFlat = flat;
-          // ✅ build sessionNumber -> sessionId map (fallback for old attendance that only has sessionNumber)
+
+          // ✅ build sessionNumber -> sessionId map
           _sessionIdByNumber = {};
+          _sessionTitleByNumber = {};
           for (final s in _syllabiFlat) {
             final sn = _asInt(s['sessionNumber']);
             final sid = (s['sessionId'] ?? '').toString().trim();
-            if (sn > 0 && sid.isNotEmpty) _sessionIdByNumber[sn] = sid;
+            final title = (s['title'] ?? '').toString().trim();
+            if (sn > 0) {
+              if (sid.isNotEmpty) _sessionIdByNumber[sn] = sid;
+              if (title.isNotEmpty) _sessionTitleByNumber[sn] = title;
+            }
           }
         }
       }
+
+      // --------------------
+      // Attendance list (IN-CLASS) - your existing logic (kept)
+      // --------------------
+      final att = _course['attendance'];
+      final List<Map<String, dynamic>> attList = [];
+      final Set<String> covered = {}; // syllabus covered (merge both sources)
+
+      if (att is Map) {
+        final m = Map<String, dynamic>.from(att);
+        for (final entry in m.entries) {
+          final meetingId = entry.key.toString();
+          if (entry.value is! Map) continue;
+
+          final rec = Map<String, dynamic>.from(entry.value as Map);
+
+          // ✅ parse taughtItems (preferred)
+          final taughtItems = rec['taughtItems'];
+          final List<Map<String, dynamic>> taughtItemsList = [];
+          final List<String> taughtSyllabusTitles = [];
+          final List<String> taughtCustomTitles = [];
+
+          bool hasNewFormat = false;
+          if (taughtItems is List) {
+            hasNewFormat = true;
+
+            for (final it in taughtItems) {
+              if (it is! Map) continue;
+              final item = Map<String, dynamic>.from(it);
+              final type = (item['type'] ?? '').toString().trim().toLowerCase();
+
+              final String title = (item['title'] ?? item['name'] ?? '').toString().trim();
+              final String sid = (item['sessionId'] ?? '').toString().trim();
+              final int sn = _asInt(item['sessionNumber']); // fallback if sessionId missing
+              taughtItemsList.add(item);
+
+              if (type == 'syllabus') {
+                if (sid.isNotEmpty) {
+                  covered.add(sid);
+                } else if (sn > 0) {
+                  final mapped = _sessionIdByNumber[sn];
+                  if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+                }
+
+                if (title.isNotEmpty) taughtSyllabusTitles.add(title);
+              } else if (type == 'custom') {
+                if (title.isNotEmpty) taughtCustomTitles.add(title);
+              }
+            }
+          }
+
+          // ✅ old single taught map
+          final taughtOld = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
+          if (!hasNewFormat) {
+            final taughtSessionId = (taughtOld['sessionId'] ?? '').toString().trim();
+            final taughtSn = _asInt(taughtOld['sessionNumber']); // fallback
+
+            if (taughtSessionId.isNotEmpty) {
+              covered.add(taughtSessionId);
+            } else if (taughtSn > 0) {
+              final mapped = _sessionIdByNumber[taughtSn];
+              if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+            }
+          }
+
+          // ✅ build taught summary string for Attendance UI
+          String taughtSummary = '';
+          if (hasNewFormat) {
+            final parts = <String>[];
+            if (taughtSyllabusTitles.isNotEmpty) parts.add(taughtSyllabusTitles.join(', '));
+            if (taughtCustomTitles.isNotEmpty) parts.add('Notes: ${taughtCustomTitles.join(', ')}');
+            taughtSummary = parts.join(' • ');
+          } else {
+            taughtSummary = (taughtOld['title'] ?? '').toString().trim();
+          }
+
+          // sort key (best effort)
+          int sortMs = 0;
+          final updatedAt = rec['updatedAt'];
+          final createdAt = rec['createdAt'] ?? rec['created_at'];
+          if (updatedAt is num) sortMs = updatedAt.toInt();
+          else if (createdAt is num) sortMs = createdAt.toInt();
+          else {
+            final dateStr = (rec['date'] ?? '').toString();
+            sortMs = _tryParseYmdToMillis(dateStr) ?? 0;
+          }
+
+          attList.add({
+            'source': 'in_class',
+            'meetingId': meetingId,
+            ...rec,
+            'taughtItems': taughtItemsList,
+            'taughtSummary': taughtSummary,
+            'sortMs': sortMs,
+          });
+        }
+      }
+
+      // --------------------
+      // ✅ NEW: Load ONLINE attendance for this learner/course
+      // booking_progress/<uid>/<courseId>/online_attendance/<bookingKey>
+      // --------------------
+      final List<Map<String, dynamic>> onlineList = [];
+      if (_courseId.isNotEmpty) {
+        try {
+          final oSnap = await _onlineAttendanceRef.get();
+          if (oSnap.exists && oSnap.value is Map) {
+            final om = Map<String, dynamic>.from(oSnap.value as Map);
+            for (final e in om.entries) {
+              final bookingKey = e.key.toString();
+              if (e.value is! Map) continue;
+              final rec = Map<String, dynamic>.from(e.value as Map);
+
+              final bool present = rec['present'] == true;
+
+              final int startAt = _asInt(rec['startAt']);
+              final String dayKey = (rec['dayKey'] ?? '').toString().trim();
+              final String time = (rec['time'] ?? '').toString().trim();
+              final int sessionNo = _asInt(rec['sessionNo']);
+
+              // If startAt missing, try dayKey+time
+              int sortMs = startAt;
+              if (sortMs <= 0 && dayKey.isNotEmpty) {
+                final base = _tryParseYmdToMillis(dayKey);
+                if (base != null) sortMs = base; // still OK
+              }
+
+              // taught summary for online: SessionNo + title from syllabus map if possible
+              String taughtSummary = '';
+              if (sessionNo > 0) {
+                final title = (_sessionTitleByNumber[sessionNo] ?? '').trim();
+                taughtSummary = title.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $title';
+
+                // ✅ syllabus covered from online sessionNo -> sessionId
+                final sid = _sessionIdByNumber[sessionNo];
+                if (sid != null && sid.isNotEmpty) covered.add(sid);
+              }
+
+              // display date for UI
+              String dateLabel = '';
+              if (startAt > 0) {
+                dateLabel = _fmtDateTimeFromMs(startAt);
+              } else if (dayKey.isNotEmpty) {
+                dateLabel = (time.isEmpty) ? dayKey : '$dayKey  $time';
+              }
+
+              onlineList.add({
+                'source': 'online',
+                'meetingId': bookingKey,
+                'date': dateLabel,
+                'status': present ? 'present' : 'absent',
+                'taughtSummary': taughtSummary,
+                'sessionNo': sessionNo,
+                'startAt': startAt,
+                'dayKey': dayKey,
+                'time': time,
+                ...rec,
+                'sortMs': sortMs,
+              });
+            }
+          }
+        } catch (_) {
+          // ignore online read errors (UI will still work for in-class)
+        }
+      }
+
+      // --------------------
+      // finalize state
+      // --------------------
+      _attendance = attList;
+      _onlineAttendance = onlineList;
+
+      _coveredSessionIds = covered;
+      // ✅ NEW: also include ONLINE taught items (from booking_progress)
+      if (_courseId.isNotEmpty) {
+        try {
+          final onlineSnap = await _db
+              .child('booking_progress/$_uid/$_courseId/online_attendance')
+              .get();
+
+          if (onlineSnap.exists && onlineSnap.value is Map) {
+            final om = Map<String, dynamic>.from(onlineSnap.value as Map);
+
+            for (final entry in om.entries) {
+              final v = entry.value;
+              if (v is! Map) continue;
+              final rec = Map<String, dynamic>.from(v);
+
+              // Prefer taughtItems if present
+              final taughtItems = rec['taughtItems'];
+              if (taughtItems is List) {
+                for (final it in taughtItems) {
+                  if (it is! Map) continue;
+                  final item = Map<String, dynamic>.from(it);
+
+                  final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                  if (type != 'syllabus') continue;
+
+                  final sn = _asInt(item['sessionNumber']);
+                  final sid = (item['sessionId'] ?? '').toString().trim();
+
+                  if (sid.isNotEmpty) {
+                    covered.add(sid);
+                  } else if (sn > 0) {
+                    final mapped = _sessionIdByNumber[sn];
+                    if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+                  }
+                }
+              } else {
+                // fallback: sessionNo -> map to sessionId
+                final sn = _asInt(rec['sessionNo']);
+                if (sn > 0) {
+                  final mapped = _sessionIdByNumber[sn];
+                  if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+                }
+              }
+            }
+
+            _coveredSessionIds = covered; // refresh after adding online coverage
+          }
+        } catch (_) {}
+      }
+      // merge + sort (newest first)
+      final all = <Map<String, dynamic>>[];
+      all.addAll(attList);
+      all.addAll(onlineList);
+
+      all.sort((a, b) {
+        final am = _asInt(a['sortMs']);
+        final bm = _asInt(b['sortMs']);
+        if (am != bm) return bm.compareTo(am); // newest first
+        final ad = (a['date'] ?? '').toString();
+        final bd = (b['date'] ?? '').toString();
+        return bd.compareTo(ad);
+      });
+
+      _attendanceAll = all;
 
       setState(() => _busy = false);
     } catch (e) {
@@ -385,9 +573,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     }
   }
 
-  Map<String, int> _attendanceCounts() {
-    final total = _attendance.length;
-    final present = _attendance.where((x) => (x['status'] ?? '').toString().toLowerCase() == 'present').length;
+  Map<String, int> _attendanceCountsAll() {
+    final total = _attendanceAll.length;
+    final present =
+        _attendanceAll.where((x) => (x['status'] ?? '').toString().toLowerCase() == 'present').length;
     return {'total': total, 'present': present};
   }
 
@@ -507,14 +696,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   @override
   Widget build(BuildContext context) {
-    final counts = _attendanceCounts();
+    final counts = _attendanceCountsAll();
 
-    // ✅ Meetings = attendance records
+    // ✅ Meetings = attendance records (in-class + online)
     final meetingsHeld = counts['total'] ?? 0;
     final present = counts['present'] ?? 0;
     final attPct = meetingsHeld == 0 ? 0 : ((present / meetingsHeld) * 100).round();
 
-    // ✅ Syllabus coverage (unique sessionIds)
+    // ✅ Syllabus coverage (unique sessionIds) from BOTH sources
     final totalLessons = _syllabiFlat.length;
     final coveredLessons = _coveredSessionIds.length;
     final syllabusPct = totalLessons == 0 ? 0 : ((coveredLessons / totalLessons) * 100).round();
@@ -818,7 +1007,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- ATTENDANCE TAB (UPDATED taught summary) --------------------
+  // -------------------- ATTENDANCE TAB (NOW SHOWS IN-CLASS + ONLINE) --------------------
 
   Widget _attendanceTab({required int attPct, required int present, required int total}) {
     return ListView(
@@ -846,6 +1035,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                   children: [
                     _kpi(icon: Icons.how_to_reg_rounded, label: 'Attendance', value: '$attPct%'),
                     _kpi(icon: Icons.check_circle_rounded, label: 'Present', value: '$present/$total'),
+                    _kpi(
+                      icon: Icons.wifi_tethering_rounded,
+                      label: 'Online records',
+                      value: '${_onlineAttendance.length}',
+                    ),
                   ],
                 ),
               ],
@@ -853,7 +1047,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           ),
         ),
         const SizedBox(height: 14),
-        if (_attendance.isEmpty)
+        if (_attendanceAll.isEmpty)
           const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
@@ -864,29 +1058,37 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             ),
           )
         else
-          ..._attendance.map(_attendanceCard).toList(),
+          ..._attendanceAll.map(_attendanceCard).toList(),
       ],
     );
   }
 
   Widget _attendanceCard(Map<String, dynamic> a) {
+    final source = (a['source'] ?? 'in_class').toString();
+    final isOnline = source == 'online';
+
     final date = (a['date'] ?? '').toString();
     final status = (a['status'] ?? '').toString().toLowerCase();
     final rate = (a['successRate'] ?? '').toString();
 
-    // ✅ NEW: taught summary (supports taughtItems)
     final taughtSummary = (a['taughtSummary'] ?? '').toString().trim();
 
     // old taught details still supported
     final taughtOld = (a['taught'] is Map) ? Map<String, dynamic>.from(a['taught'] as Map) : <String, dynamic>{};
     final unitTitle = (taughtOld['unitTitle'] ?? '').toString();
 
-    // Homework
+    // Homework (in-class only)
     final hw = (a['homework'] is Map) ? Map<String, dynamic>.from(a['homework'] as Map) : <String, dynamic>{};
     final hwText = (hw['text'] ?? '').toString().trim();
     final hwDue = (hw['dueDate'] ?? '').toString().trim();
 
     final isPresent = status == 'present';
+
+    final tagBg = isOnline ? UiK.actionOrange.withOpacity(0.10) : UiK.primaryBlue.withOpacity(0.08);
+    final tagFg = isOnline ? UiK.actionOrange : UiK.primaryBlue;
+    final tagText = isOnline ? 'Online' : 'In-class';
+
+    final sessionNo = _asInt(a['sessionNo']);
 
     return Card(
       elevation: 0,
@@ -910,24 +1112,57 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(date.isEmpty ? 'Meeting' : date, style: UiK.titleText(size: 15)),
+                  // title row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          date.isEmpty ? 'Meeting' : date,
+                          style: UiK.titleText(size: 15),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color: tagBg,
+                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(isOnline ? Icons.wifi_tethering_rounded : Icons.groups_rounded, size: 14, color: tagFg),
+                            const SizedBox(width: 6),
+                            Text(tagText, style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 6),
                   Text(
-                    'Status: ${isPresent ? 'Present' : 'Absent'}${rate.isEmpty ? '' : ' • Success: $rate%'}',
+                    'Status: ${isPresent ? 'Present' : 'Absent'}'
+                        '${rate.isEmpty ? '' : ' • Success: $rate%'}'
+                        '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
                     style: UiK.subtleText(),
                   ),
+
                   if (taughtSummary.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text('Taught: $taughtSummary', style: UiK.subtleText()),
                   ],
-                  if (unitTitle.isNotEmpty) ...[
+
+                  if (!isOnline && unitTitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       'Unit: $unitTitle',
                       style: TextStyle(color: UiK.mainText.withOpacity(0.6), fontWeight: FontWeight.w700),
                     ),
                   ],
-                  if (hwText.isNotEmpty || hwDue.isNotEmpty) ...[
+
+                  // homework shown only for in-class
+                  if (!isOnline && (hwText.isNotEmpty || hwDue.isNotEmpty)) ...[
                     const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -967,7 +1202,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  // -------------------- PROGRESS TAB (UPDATED like teacher) --------------------
+  // -------------------- PROGRESS TAB (NOW MERGED ONLINE + IN-CLASS) --------------------
 
   Widget _progressTab({
     required int meetingsHeld,
@@ -984,8 +1219,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
       children: [
-
-        // summary card
         Card(
           elevation: 0,
           color: Colors.white,
@@ -1010,7 +1243,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     const SizedBox(width: 8),
                     const Text('Meetings', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
                     const Spacer(),
-                    Text('$meetingsHeld/$plannedStr', style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    Text('$meetingsHeld/$plannedStr',
+                        style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
                   ],
                 ),
 
@@ -1042,9 +1276,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             ),
           ),
         ),
-
         const SizedBox(height: 14),
-
         if (_syllabiFlat.isEmpty)
           const Center(
             child: Padding(

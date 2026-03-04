@@ -190,7 +190,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           final id = (sess['id'] ?? '').toString();
           final skillType = (sess['skillType'] ?? '').toString();
           final order = sess['order'] ?? 0;
-
+          final sessionNumber = (sess['sessionNumber'] is num)
+              ? (sess['sessionNumber'] as num).toInt()
+              : int.tryParse('${sess['sessionNumber']}') ?? 0;
           out.add({
             'include': true,
             'unitTitle': unitTitle,
@@ -200,6 +202,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             'sessionId': id,
             'skillType': skillType,
             'sessionOrder': order,
+            'sessionNumber': sessionNumber, // ✅ from syllabus
             'objective': (sess['objective'] ?? '').toString(),
             'content': (sess['content'] ?? '').toString(),
             'homework': (sess['homework'] ?? '').toString(),
@@ -209,9 +212,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       }
 
       out.sort((a, b) {
+        final an = (a['sessionNumber'] as num?)?.toInt() ?? 0;
+        final bn = (b['sessionNumber'] as num?)?.toInt() ?? 0;
+
+        // ✅ If both have sessionNumber, sort by it
+        if (an > 0 && bn > 0 && an != bn) return an.compareTo(bn);
+
+        // fallback to existing order
         final u = (a['unitOrder'] as num?)?.toInt() ?? 0;
         final uu = (b['unitOrder'] as num?)?.toInt() ?? 0;
         if (u != uu) return u.compareTo(uu);
+
         final s = (a['sessionOrder'] as num?)?.toInt() ?? 0;
         final ss = (b['sessionOrder'] as num?)?.toInt() ?? 0;
         return s.compareTo(ss);
@@ -609,6 +620,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
                         return _SessionRow(
                           index: i + 1,
+                          sessionNumber: (item['sessionNumber'] as num?)?.toInt() ?? 0,
                           included: included,
                           title: title.isEmpty ? '(No title)' : title,
                           subtitle: [
@@ -921,6 +933,7 @@ class _SummaryRow extends StatelessWidget {
 class _SessionRow extends StatelessWidget {
   const _SessionRow({
     required this.index,
+    required this.sessionNumber,
     required this.included,
     required this.title,
     required this.subtitle,
@@ -930,6 +943,7 @@ class _SessionRow extends StatelessWidget {
   });
 
   final int index;
+  final int sessionNumber;
   final bool included;
   final String title;
   final String subtitle;
@@ -966,7 +980,7 @@ class _SessionRow extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                '$index',
+                sessionNumber > 0 ? '#$sessionNumber' : '$index',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   color: included ? Colors.green.shade700 : Colors.grey.shade700,

@@ -821,11 +821,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                         style: const TextStyle(fontWeight: FontWeight.w900)),
                   ),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Saved to: booking_availability/$myUid/<courseId>',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: mainText.withOpacity(0.75)),
-                ),
               ],
             ),
           ),
