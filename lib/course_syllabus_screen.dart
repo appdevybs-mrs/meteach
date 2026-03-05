@@ -41,10 +41,14 @@ class CourseSyllabusScreen extends StatefulWidget {
     super.key,
     required this.courseId,
     required this.courseTitle,
+    required this.variantKey,
   });
 
   final String courseId;
   final String courseTitle;
+
+  /// One of: recorded, live, in_class, online
+  final String variantKey;
 
   @override
   State<CourseSyllabusScreen> createState() => _CourseSyllabusScreenState();
@@ -53,7 +57,8 @@ class CourseSyllabusScreen extends StatefulWidget {
 class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   final _db = FirebaseDatabase.instance;
 
-  DatabaseReference get _syllabusRef => _db.ref('syllabi').child(widget.courseId);
+  DatabaseReference get _syllabusRef =>
+      _db.ref('syllabi').child(widget.courseId).child(widget.variantKey);
 
   bool _loading = true;
   bool _saving = false;
@@ -70,8 +75,19 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _loadSyllabus() async {
     setState(() => _loading = true);
     try {
+      // 1) Try new per-variant location first
       final snap = await _syllabusRef.get();
-      final v = snap.value;
+      dynamic v = snap.value;
+
+      // If this variant doesn't exist yet, create a placeholder flag in the course node
+      if (v == null) {
+        await _db
+            .ref('courses')
+            .child(widget.courseId)
+            .child('syllabi_flags')
+            .child(widget.variantKey)
+            .set(false);
+      }
 
       if (v is Map && v['units'] is List) {
         final rawUnits = (v['units'] as List).whereType<Map>().toList();
@@ -149,10 +165,23 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'title': courseTitle,       // <- new
         'duration': courseDuration, // <- new
         'updatedAt': ServerValue.timestamp,
-        'units': _units.map((u) => u.toMap()).toList(),
+        'units': _units
+            .map((u) => u.toMap(
+          includeRecordedExtras: widget.variantKey == 'recorded',
+          includeOnlineExtras: widget.variantKey == 'online',
+        ))
+            .toList(),
       };
 
       await _syllabusRef.set(payload);
+
+// ✅ write a quick “tick flag” so Admin list can show ✅ without scanning syllabi
+      await _db
+          .ref('courses')
+          .child(widget.courseId)
+          .child('syllabi_flags')
+          .child(widget.variantKey)
+          .set(true);
 
 
       if (!mounted) return;
@@ -260,6 +289,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       isScrollControlled: true,
       builder: (_) => _SessionEditorSheet(
         title: 'Add Session',
+        isRecorded: widget.variantKey.trim().toLowerCase() == 'recorded',
         initial: _SessionDraft(
           title: '',
           skillType: SkillType.listening,
@@ -267,6 +297,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           content: '',
           homework: '',
           durationMinutes: 45, // default
+          videoUrl: '',
+          videoThumbnailUrl: '',
+          materialsUrl: '',
         ),
       ),
     );
@@ -284,6 +317,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       durationMinutes: res.durationMinutes,
       order: unit.sessions.length + 1,
       sessionNumber: _totalSessions + 1, // temporary; _ensureSessionNumbers() will finalize
+      videoUrl: res.videoUrl.trim(),
+      videoThumbnailUrl: res.videoThumbnailUrl.trim(),
+      materialsUrl: res.materialsUrl.trim(),
     );
 
     setState(() {
@@ -302,6 +338,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       isScrollControlled: true,
       builder: (_) => _SessionEditorSheet(
         title: 'Edit Session',
+        isRecorded: widget.variantKey.trim().toLowerCase() == 'recorded',
         initial: _SessionDraft(
           title: s.title,
           skillType: s.skillType,
@@ -309,6 +346,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           content: s.content,
           homework: s.homework,
           durationMinutes: s.durationMinutes,
+          videoUrl: s.videoUrl,
+          videoThumbnailUrl: s.videoThumbnailUrl,
+          materialsUrl: s.materialsUrl,
         ),
       ),
     );
@@ -322,6 +362,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       content: res.content.trim(),
       homework: res.homework.trim(),
       durationMinutes: res.durationMinutes,
+      videoUrl: res.videoUrl.trim(),
+      videoThumbnailUrl: res.videoThumbnailUrl.trim(),
+      materialsUrl: res.materialsUrl.trim(),
     );
 
     setState(() {
@@ -389,7 +432,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               ),
             ),
             Text(
-              widget.courseTitle,
+              '${widget.courseTitle} • ${_variantLabel(widget.variantKey)}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -510,6 +553,21 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
   bool _isExpanded(String unitId) => _unitExpanded[unitId] ?? true;
+
+  String _variantLabel(String key) {
+    switch (key.trim().toLowerCase()) {
+      case 'recorded':
+        return 'Recorded';
+      case 'live':
+        return 'Live';
+      case 'in_class':
+        return 'In-Class';
+      case 'online':
+        return 'Online';
+      default:
+        return key;
+    }
+  }
 
   void _toggleExpanded(String unitId) {
     setState(() => _unitExpanded[unitId] = !(_unitExpanded[unitId] ?? true));
@@ -930,6 +988,9 @@ class _SessionDraft {
     required this.content,
     required this.homework,
     required this.durationMinutes,
+    this.videoUrl = '',
+    this.videoThumbnailUrl = '',
+    this.materialsUrl = '',
   });
 
   final String title;
@@ -938,12 +999,23 @@ class _SessionDraft {
   final String content;
   final String homework;
   final int durationMinutes;
+
+  final String videoUrl;
+  final String videoThumbnailUrl;
+
+  final String materialsUrl;
 }
 
 class _SessionEditorSheet extends StatefulWidget {
-  const _SessionEditorSheet({required this.title, required this.initial});
+  const _SessionEditorSheet({
+    required this.title,
+    required this.initial,
+    required this.isRecorded,
+  });
+
   final String title;
   final _SessionDraft initial;
+  final bool isRecorded;
 
   @override
   State<_SessionEditorSheet> createState() => _SessionEditorSheetState();
@@ -957,7 +1029,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   late final TextEditingController contentC;
   late final TextEditingController homeworkC;
   late final TextEditingController durationC;
-
+  late final TextEditingController videoUrlC;
+  late final TextEditingController videoThumbC;
+  late final TextEditingController materialsUrlC;
   SkillType _skill = SkillType.listening;
 
   @override
@@ -968,6 +1042,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     contentC = TextEditingController(text: widget.initial.content);
     homeworkC = TextEditingController(text: widget.initial.homework);
     durationC = TextEditingController(text: widget.initial.durationMinutes.toString());
+    videoUrlC = TextEditingController(text: widget.initial.videoUrl);
+    videoThumbC = TextEditingController(text: widget.initial.videoThumbnailUrl);
+    materialsUrlC = TextEditingController(text: widget.initial.materialsUrl);
     _skill = widget.initial.skillType;
   }
 
@@ -978,6 +1055,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     contentC.dispose();
     homeworkC.dispose();
     durationC.dispose();
+    videoUrlC.dispose();
+    videoThumbC.dispose();
+    materialsUrlC.dispose();
     super.dispose();
   }
 
@@ -1079,7 +1159,37 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     filled: true,
                   ),
                 ),
-
+                if (widget.isRecorded) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: videoUrlC,
+                    decoration: const InputDecoration(
+                      labelText: 'Recorded video URL',
+                      hintText: 'https://...',
+                      filled: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: videoThumbC,
+                    decoration: const InputDecoration(
+                      labelText: 'Video thumbnail URL',
+                      hintText: 'https://...',
+                      filled: true,
+                    ),
+                  ),
+                ],
+                if (!widget.isRecorded) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: materialsUrlC,
+                    decoration: const InputDecoration(
+                      labelText: 'Materials link (PowerPoint/Drive)',
+                      hintText: 'https://...',
+                      filled: true,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -1096,6 +1206,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           content: contentC.text,
                           homework: homeworkC.text,
                           durationMinutes: int.parse(durationC.text.trim()),
+                          videoUrl: widget.isRecorded ? videoUrlC.text.trim() : '',
+                          videoThumbnailUrl: widget.isRecorded ? videoThumbC.text.trim() : '',
+                          materialsUrl: widget.isRecorded ? '' : materialsUrlC.text.trim(),
                         ),
                       );
                     },
@@ -1192,14 +1305,22 @@ class SyllabusUnit {
     );
   }
 
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toMap({
+    required bool includeRecordedExtras,
+    required bool includeOnlineExtras,
+  }) {
     return {
       'id': id,
       'title': title,
       'otherTitle': otherTitle,
       'description': description,
       'order': order,
-      'sessions': sessions.map((s) => s.toMap()).toList(),
+      'sessions': sessions
+          .map((s) => s.toMap(
+        includeRecordedExtras: includeRecordedExtras,
+        includeOnlineExtras: includeOnlineExtras,
+      ))
+          .toList(),
     };
   }
 
@@ -1222,6 +1343,7 @@ class SyllabusUnit {
 }
 
 class SyllabusSession {
+
   SyllabusSession({
     required this.id,
     required this.title,
@@ -1232,7 +1354,11 @@ class SyllabusSession {
     required this.durationMinutes,
     required this.order,
     required this.sessionNumber,
+    this.videoUrl = '',
+    this.videoThumbnailUrl = '',
+    this.materialsUrl = '',
   });
+
 
   final String id;
   final String title;
@@ -1245,7 +1371,10 @@ class SyllabusSession {
 
   // ✅ NEW
   final int sessionNumber;
-
+// ✅ Recorded-only extras (optional)
+  final String videoUrl;
+  final String videoThumbnailUrl;
+  final String materialsUrl;
   SyllabusSession copyWith({
     String? title,
     SkillType? skillType,
@@ -1255,6 +1384,9 @@ class SyllabusSession {
     int? durationMinutes,
     int? order,
     int? sessionNumber,
+    String? videoUrl,
+    String? videoThumbnailUrl,
+    String? materialsUrl,
   }) {
     return SyllabusSession(
       id: id,
@@ -1266,11 +1398,17 @@ class SyllabusSession {
       durationMinutes: durationMinutes ?? this.durationMinutes,
       order: order ?? this.order,
       sessionNumber: sessionNumber ?? this.sessionNumber,
+      videoUrl: videoUrl ?? this.videoUrl,
+      videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
+      materialsUrl: materialsUrl ?? this.materialsUrl,
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
+  Map<String, dynamic> toMap({
+    required bool includeRecordedExtras,
+    required bool includeOnlineExtras,
+  }) {
+    final map = {
       'id': id,
       'title': title,
       'skillType': skillType.label,
@@ -1279,10 +1417,20 @@ class SyllabusSession {
       'homework': homework,
       'durationMinutes': durationMinutes,
       'order': order,
-      'sessionNumber': sessionNumber, // ✅ NEW
+      'sessionNumber': sessionNumber,
     };
-  }
 
+    if (includeRecordedExtras) {
+      map['videoUrl'] = videoUrl;
+      map['videoThumbnailUrl'] = videoThumbnailUrl;
+
+    }
+    if (includeOnlineExtras) {
+      map['materialsUrl'] = materialsUrl;
+    }
+
+    return map;
+  }
   factory SyllabusSession.fromMap(Map m) {
     return SyllabusSession(
       id: (m['id'] ?? '').toString(),
@@ -1302,6 +1450,9 @@ class SyllabusSession {
       sessionNumber: (m['sessionNumber'] is num)
           ? (m['sessionNumber'] as num).toInt()
           : (int.tryParse('${m['sessionNumber']}') ?? 0),
+      videoUrl: (m['videoUrl'] ?? '').toString(),
+      videoThumbnailUrl: (m['videoThumbnailUrl'] ?? '').toString(),
+      materialsUrl: (m['materialsUrl'] ?? '').toString(),
     );
   }
 }

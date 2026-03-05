@@ -711,6 +711,57 @@ class _CourseCard extends StatelessWidget {
 
   // NEW: drag handle support
   final Widget? trailing;
+  Future<void> _openSyllabusPicker(BuildContext context) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        Widget tile(String key, String label, IconData icon) {
+          return ListTile(
+            leading: Icon(icon),
+            title: Text(label),
+            onTap: () => Navigator.pop(context, key),
+          );
+        }
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Choose syllabus type',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  ),
+                ),
+              ),
+              tile('in_class', 'In-Class', Icons.class_),
+              tile('online', 'Online', Icons.language),
+              tile('recorded', 'Recorded', Icons.ondemand_video),
+              tile('live', 'Live', Icons.videocam),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (picked == null || picked.trim().isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourseSyllabusScreen(
+          courseId: courseId,
+          courseTitle: course.title,
+          variantKey: picked,
+        ),
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -787,16 +838,7 @@ class _CourseCard extends StatelessWidget {
             // 📘 Syllabus button
             IconButton(
               tooltip: 'Syllabus',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => CourseSyllabusScreen(
-                      courseId: courseId,
-                      courseTitle: course.title,
-                    ),
-                  ),
-                );
-              },
+              onPressed: () => _openSyllabusPicker(context),
               icon: const Text('📘', style: TextStyle(fontSize: 18)),
             ),
 
