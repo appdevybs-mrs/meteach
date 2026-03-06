@@ -1,18 +1,3 @@
-// ✅ FULL REPLACEMENT: lib/admin/admin_booking.dart
-//
-// Updated per your decisions:
-// ✅ 1) Total sessions (N) is now AUTOMATIC based on included sessions (checkbox).
-//    - Removed the manual "Total sessions (N)" input.
-//    - N = count(included sessions)
-// ✅ Admin can still EDIT per-session details (Title + Objectives required).
-// ✅ Admin sets only:
-//    - K = min choices per session within 4 weeks
-// ✅ Save writes:
-//    booking_curriculum/<courseId> (sessions 1..N with full details)
-//    booking_config/courses/<courseId> enabled + totalLessons(N) + coverageTarget{weeks:4, minChoicesPerSession:K}
-//
-// NOTE: Teacher enforcement is later (as you said).
-
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
@@ -29,43 +14,43 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   static const actionOrange = Color(0xFFF98D28);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
+  static const successGreen = Color(0xFF2F9E44);
 
-  // ===== RTDB refs =====
-  final DatabaseReference _configRef = FirebaseDatabase.instance.ref('booking_config');
-  final DatabaseReference _coursesRef = FirebaseDatabase.instance.ref('courses');
-  final DatabaseReference _syllabiRef = FirebaseDatabase.instance.ref('syllabi');
-  final DatabaseReference _curriculumRef = FirebaseDatabase.instance.ref('booking_curriculum');
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  // ===== Courses =====
+  // ===== Data =====
   bool loadingCourses = true;
+  bool loadingBookings = false;
+  bool busyAction = false;
+
   List<_CourseItem> allCourses = [];
   String? selectedCourseId;
 
-  // ===== Builder =====
-  bool loadingSyllabus = false;
-  bool saving = false;
+  List<_AdminBookedSlot> bookedSlots = [];
+  Map<String, _LearnerProfile> learnerCache = {};
 
-  // Each item is a session row loaded from syllabus, editable by admin
-  // keys used:
-  // include(bool), unitTitle, unitId, unitOrder,
-  // sessionTitle, sessionId, skillType, sessionOrder,
-  // objective, content, homework, durationMinutes
-  List<Map<String, dynamic>> suggested = [];
+  final TextEditingController searchC = TextEditingController();
 
-  // Admin input: K (per 4 weeks)
-  final minChoicesC = TextEditingController(text: '2');
+  String teacherFilter = 'all';
+  String dateFilter = 'all'; // all | today | future
+  bool onlyMultiLearner = false;
 
   @override
   void initState() {
     super.initState();
     _loadCourses();
+    searchC.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
-    minChoicesC.dispose();
+    searchC.dispose();
     super.dispose();
   }
+
+  // ========================= Helpers =========================
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -74,13 +59,83 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     );
   }
 
-  // ========================= Data =========================
+  String _two(int n) => n < 10 ? '0$n' : '$n';
+
+  String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
+
+  String _friendlyDate(DateTime d) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final wd = days[d.weekday - 1];
+    final mo = months[d.month - 1];
+    return '$wd, ${_two(d.day)} $mo';
+  }
+
+  String _friendlyDateLong(DateTime d) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${days[d.weekday - 1]}, ${_two(d.day)} ${months[d.month - 1]} ${d.year}';
+  }
+
+  int _toInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  DateTime? _parseSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+
+      if (y == null || m == null || d == null || hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _weekdayKey(DateTime d) {
+    switch (d.weekday) {
+      case DateTime.monday:
+        return 'mon';
+      case DateTime.tuesday:
+        return 'tue';
+      case DateTime.wednesday:
+        return 'wed';
+      case DateTime.thursday:
+        return 'thu';
+      case DateTime.friday:
+        return 'fri';
+      case DateTime.saturday:
+        return 'sat';
+      default:
+        return 'sun';
+    }
+  }
+
+  DatabaseReference _reservationsRootRef(String cid) => _db.child('booking_reservations/$cid');
+  DatabaseReference _reservationsRef(String cid, String dayKey, String hhmm) =>
+      _db.child('booking_reservations/$cid/$dayKey/$hhmm');
+
+  // ========================= Load Courses =========================
 
   Future<void> _loadCourses() async {
     setState(() => loadingCourses = true);
 
     try {
-      final snap = await _coursesRef.get();
+      final snap = await _db.child('courses').get();
       final v = snap.value;
 
       final List<_CourseItem> out = [];
@@ -90,13 +145,14 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
         root.forEach((courseId, courseVal) {
           if (courseVal is! Map) return;
-          final m = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-          final status = (m['status'] ?? '').toString().toLowerCase().trim();
+          final m = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
+          final status = (m['status'] ?? '').toString().trim().toLowerCase();
+
           if (status.isNotEmpty && status != 'published') return;
 
           final title = (m['title'] ?? '').toString().trim();
-          final levelTxt = (m['level'] ?? '').toString().trim();
+          final level = (m['level'] ?? '').toString().trim();
           final category = (m['category'] ?? '').toString().trim();
           final orderIndex = (m['order_index'] is num) ? (m['order_index'] as num).toInt() : 999;
 
@@ -104,7 +160,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             _CourseItem(
               id: courseId,
               title: title.isEmpty ? 'Untitled' : title,
-              levelText: levelTxt,
+              levelText: level,
               category: category,
               orderIndex: orderIndex,
             ),
@@ -119,10 +175,12 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
       setState(() {
         allCourses = out;
-        selectedCourseId ??= allCourses.isNotEmpty ? allCourses.first.id : null;
+        selectedCourseId ??= out.isNotEmpty ? out.first.id : null;
       });
 
-      if (allCourses.isEmpty) _toast('No published courses found in /courses.');
+      if (selectedCourseId != null) {
+        await _loadBookingsForCourse(selectedCourseId!);
+      }
     } catch (e) {
       _toast('Failed loading courses: $e');
     } finally {
@@ -132,356 +190,789 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   }
 
   _CourseItem? _selectedCourse() {
-    final id = selectedCourseId;
-    if (id == null) return null;
+    final cid = selectedCourseId;
+    if (cid == null) return null;
     for (final c in allCourses) {
-      if (c.id == id) return c;
+      if (c.id == cid) return c;
     }
     return null;
   }
 
-  Future<void> _loadSuggestedFromSyllabus() async {
-    final courseId = selectedCourseId;
-    if (courseId == null || courseId.isEmpty) {
-      _toast('Please select a course first.');
-      return;
-    }
+  // ========================= Load Bookings =========================
 
+  Future<void> _loadBookingsForCourse(String cid) async {
     setState(() {
-      loadingSyllabus = true;
-      suggested = [];
+      loadingBookings = true;
+      bookedSlots = [];
+      teacherFilter = 'all';
     });
 
     try {
-      final snap = await _syllabiRef.child(courseId).get();
+      final snap = await _reservationsRootRef(cid).get();
       final v = snap.value;
 
-      if (v is! Map) {
-        _toast('No syllabus found at syllabi/$courseId');
-        return;
-      }
+      final List<_AdminBookedSlot> out = [];
 
-      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-      final units = m['units'];
+      if (v is Map) {
+        final days = v.map((k, vv) => MapEntry(k.toString(), vv));
 
-      if (units is! List) {
-        _toast('Syllabus format unexpected: units is not a List.');
-        return;
-      }
+        for (final dayEntry in days.entries) {
+          final dayKey = dayEntry.key;
+          final dayNode = dayEntry.value;
+          if (dayNode is! Map) continue;
 
-      final List<Map<String, dynamic>> out = [];
+          final times = dayNode.map((k, vv) => MapEntry(k.toString(), vv));
 
-      for (final u in units) {
-        if (u is! Map) continue;
-        final unit = u.map((k, vv) => MapEntry(k.toString(), vv));
+          for (final timeEntry in times.entries) {
+            final hhmm = timeEntry.key;
+            final slotVal = timeEntry.value;
+            if (slotVal is! Map) continue;
 
-        final unitTitle = (unit['title'] ?? '').toString();
-        final unitId = (unit['id'] ?? '').toString();
-        final unitOrder = unit['order'] ?? 0;
+            final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-        final sessions = unit['sessions'];
-        if (sessions is! List) continue;
+            final learnersRaw = m['learners'];
+            if (learnersRaw is! Map) continue;
 
-        for (final s in sessions) {
-          if (s is! Map) continue;
-          final sess = s.map((k, vv) => MapEntry(k.toString(), vv));
+            final learnersMap = learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
+            final learnerUids = learnersMap.keys.map((e) => e.toString()).toList();
+            if (learnerUids.isEmpty) continue;
 
-          final title = (sess['title'] ?? '').toString();
-          final id = (sess['id'] ?? '').toString();
-          final skillType = (sess['skillType'] ?? '').toString();
-          final order = sess['order'] ?? 0;
-          final sessionNumber = (sess['sessionNumber'] is num)
-              ? (sess['sessionNumber'] as num).toInt()
-              : int.tryParse('${sess['sessionNumber']}') ?? 0;
-          out.add({
-            'include': true,
-            'unitTitle': unitTitle,
-            'unitId': unitId,
-            'unitOrder': unitOrder,
-            'sessionTitle': title,
-            'sessionId': id,
-            'skillType': skillType,
-            'sessionOrder': order,
-            'sessionNumber': sessionNumber, // ✅ from syllabus
-            'objective': (sess['objective'] ?? '').toString(),
-            'content': (sess['content'] ?? '').toString(),
-            'homework': (sess['homework'] ?? '').toString(),
-            'durationMinutes': (sess['durationMinutes'] ?? 0),
-          });
+            final start = _parseSlotStart(dayKey, hhmm);
+            if (start == null) continue;
+
+            out.add(
+              _AdminBookedSlot(
+                courseId: cid,
+                dayKey: dayKey,
+                time: hhmm,
+                start: start,
+                teacherId: (m['teacherId'] ?? '').toString().trim(),
+                teacherName: (m['teacherName'] ?? 'Teacher').toString().trim(),
+                sessionNo: _toInt(m['sessionNo'], fallback: 0),
+                learnerUids: learnerUids,
+                createdAt: _toInt(m['createdAt'], fallback: 0),
+              ),
+            );
+          }
         }
       }
 
-      out.sort((a, b) {
-        final an = (a['sessionNumber'] as num?)?.toInt() ?? 0;
-        final bn = (b['sessionNumber'] as num?)?.toInt() ?? 0;
+      out.sort((a, b) => a.start.compareTo(b.start));
 
-        // ✅ If both have sessionNumber, sort by it
-        if (an > 0 && bn > 0 && an != bn) return an.compareTo(bn);
-
-        // fallback to existing order
-        final u = (a['unitOrder'] as num?)?.toInt() ?? 0;
-        final uu = (b['unitOrder'] as num?)?.toInt() ?? 0;
-        if (u != uu) return u.compareTo(uu);
-
-        final s = (a['sessionOrder'] as num?)?.toInt() ?? 0;
-        final ss = (b['sessionOrder'] as num?)?.toInt() ?? 0;
-        return s.compareTo(ss);
-      });
-
-      setState(() => suggested = out);
-      _toast('Loaded ${out.length} sessions ✅');
+      if (!mounted) return;
+      setState(() => bookedSlots = out);
     } catch (e) {
-      _toast('Load failed: $e');
+      _toast('Failed loading bookings: $e');
     } finally {
       if (!mounted) return;
-      setState(() => loadingSyllabus = false);
+      setState(() => loadingBookings = false);
     }
   }
 
-  void _autoExcludeCommon() {
-    if (suggested.isEmpty) return;
-    setState(() {
-      for (final item in suggested) {
-        final unitTitle = (item['unitTitle'] ?? '').toString().toLowerCase();
-        final sessionTitle = (item['sessionTitle'] ?? '').toString().toLowerCase();
+  // ========================= Learner Profiles =========================
 
-        final isPreUnit = unitTitle.contains('pre-unit') || unitTitle.contains('pre unit');
-        final isMock = sessionTitle.contains('mock');
-        final isProject = sessionTitle.contains('project');
+  Future<void> _ensureLearnerProfiles(List<String> uids) async {
+    final missing = <String>[];
+    for (final uid in uids) {
+      if (!learnerCache.containsKey(uid)) missing.add(uid);
+    }
+    if (missing.isEmpty) return;
 
-        item['include'] = !(isPreUnit || isMock || isProject);
+    try {
+      final futures = missing.map((uid) async {
+        final snap = await _db.child('users/$uid').get();
+
+        if (!snap.exists || snap.value is! Map) {
+          return MapEntry(
+            uid,
+            _LearnerProfile(
+              uid: uid,
+              fullName: 'Unknown learner',
+              serial: '',
+              email: '',
+              phone: '',
+              status: '',
+            ),
+          );
+        }
+
+        final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final fullName = '$first $last'.trim();
+
+        return MapEntry(
+          uid,
+          _LearnerProfile(
+            uid: uid,
+            fullName: fullName.isEmpty ? 'Unknown learner' : fullName,
+            serial: (m['serial'] ?? '').toString().trim(),
+            email: (m['email'] ?? '').toString().trim(),
+            phone: (m['phone1'] ?? '').toString().trim(),
+            status: (m['status'] ?? '').toString().trim(),
+          ),
+        );
+      }).toList();
+
+      final entries = await Future.wait(futures);
+
+      if (!mounted) return;
+      setState(() {
+        for (final e in entries) {
+          learnerCache[e.key] = e.value;
+        }
+      });
+    } catch (e) {
+      _toast('Failed loading learner profiles: $e');
+    }
+  }
+
+  // ========================= Filters =========================
+
+  List<_AdminBookedSlot> _filteredSlots() {
+    final q = searchC.text.trim().toLowerCase();
+    final now = DateTime.now();
+    final todayKey = _dateKey(DateTime(now.year, now.month, now.day));
+
+    final out = <_AdminBookedSlot>[];
+
+    for (final s in bookedSlots) {
+      if (teacherFilter != 'all' && s.teacherId != teacherFilter) continue;
+      if (onlyMultiLearner && s.learnerCount < 2) continue;
+
+      if (dateFilter == 'today' && s.dayKey != todayKey) continue;
+      if (dateFilter == 'future' && !s.start.isAfter(now)) continue;
+
+      if (q.isNotEmpty) {
+        final haystack = '${s.teacherName} ${s.time} ${s.dayKey} ${s.sessionNo}'.toLowerCase();
+        if (!haystack.contains(q)) continue;
       }
-    });
-    _toast('Auto-excluded Pre-unit / Mock / Project (you can still edit).');
+
+      out.add(s);
+    }
+
+    return out;
   }
 
-  bool _isMissingDetails(Map<String, dynamic> item) {
-    final title = (item['sessionTitle'] ?? '').toString().trim();
-    final obj = (item['objective'] ?? '').toString().trim();
-    return title.isEmpty || obj.isEmpty;
+  // ========================= Cancel =========================
+
+  Future<void> _cancelLearnerFromSlot(_AdminBookedSlot slot, String learnerUid) async {
+    if (busyAction) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancel booking'),
+        content: Text(
+          'Remove this learner from:\n\n${_friendlyDateLong(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes, Cancel')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => busyAction = true);
+
+    try {
+      final ref = _reservationsRef(slot.courseId, slot.dayKey, slot.time);
+
+      final result = await ref.runTransaction((Object? currentData) {
+        if (currentData is! Map) return Transaction.abort();
+
+        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+        final learnersRaw = node['learners'];
+        if (learnersRaw is! Map) return Transaction.abort();
+
+        final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
+        if (!learners.containsKey(learnerUid)) return Transaction.abort();
+
+        learners.remove(learnerUid);
+
+        if (learners.isEmpty) {
+          return Transaction.success(null);
+        }
+
+        node['learners'] = learners;
+        return Transaction.success(node);
+      });
+
+      if (!result.committed) {
+        _toast('Cancel failed.');
+        return;
+      }
+
+      _toast('Booking canceled ✅');
+      await _loadBookingsForCourse(slot.courseId);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      _toast('Cancel failed: $e');
+    } finally {
+      if (!mounted) return;
+      setState(() => busyAction = false);
+    }
   }
 
-  int _includedCount() => suggested.where((x) => x['include'] == true).length;
+  // ========================= Reschedule =========================
 
-  int _missingDetailsIncludedCount() =>
-      suggested.where((x) => x['include'] == true && _isMissingDetails(x)).length;
+  Future<List<_AvailSlot>> _buildAvailableSlotsForCourse(String cid) async {
+    final now = DateTime.now();
+    final List<_AvailSlot> out = [];
 
-  Future<void> _editSessionDetails(int index) async {
-    final item = suggested[index];
+    try {
+      final reservationsSnap = await _reservationsRootRef(cid).get();
+      final Map<String, _ReservationSummary> summaries = {};
 
-    final titleC = TextEditingController(text: (item['sessionTitle'] ?? '').toString());
-    final objectiveC = TextEditingController(text: (item['objective'] ?? '').toString());
-    final contentC = TextEditingController(text: (item['content'] ?? '').toString());
-    final homeworkC = TextEditingController(text: (item['homework'] ?? '').toString());
-    final durationC = TextEditingController(text: (item['durationMinutes'] ?? 0).toString());
+      if (reservationsSnap.value is Map) {
+        final days = (reservationsSnap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
+        for (final dayEntry in days.entries) {
+          if (dayEntry.value is! Map) continue;
+          final dayMap = (dayEntry.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
+          for (final timeEntry in dayMap.entries) {
+            if (timeEntry.value is! Map) continue;
+            final m = (timeEntry.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
+            final learnersRaw = m['learners'];
+            int count = 0;
+            if (learnersRaw is Map) count = learnersRaw.length;
+
+            if (count <= 0) continue;
+
+            final key = '${dayEntry.key}|${timeEntry.key}';
+            final sessionNo = _toInt(m['sessionNo'], fallback: 0);
+
+            summaries[key] = _ReservationSummary(
+              bookedCount: count,
+              groupSessionNo: sessionNo > 0 ? sessionNo : null,
+            );
+          }
+        }
+      }
+
+      final availabilitySnap = await _db.child('booking_availability').get();
+      if (!availabilitySnap.exists || availabilitySnap.value is! Map) return out;
+
+      final root = (availabilitySnap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
+      for (final teacherEntry in root.entries) {
+        final teacherId = teacherEntry.key;
+        final teacherNode = teacherEntry.value;
+        if (teacherNode is! Map) continue;
+
+        final tn = teacherNode.map((k, vv) => MapEntry(k.toString(), vv));
+
+        final perCourse = tn[cid];
+        if (perCourse is! Map) continue;
+
+        final m = perCourse.map((k, vv) => MapEntry(k.toString(), vv));
+
+        final teacherName = (m['teacherName'] ??
+            m['teacher_name'] ??
+            tn['teacherName'] ??
+            tn['teacher_name'] ??
+            'Teacher')
+            .toString()
+            .trim();
+
+        int maxLearners = _toInt(m['maxLearnersPerSlot'], fallback: 0);
+        if (maxLearners <= 0) maxLearners = 6;
+
+        final week = m['week'];
+        if (week is! Map) continue;
+
+        final wm = week.map((k, vv) => MapEntry(k.toString(), vv));
+
+        for (int i = 0; i < 21; i++) {
+          final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+          final dayKey = _dateKey(day);
+          final weekday = _weekdayKey(day);
+
+          final rawList = wm[weekday];
+          if (rawList is! List) continue;
+
+          for (final item in rawList) {
+            final hhmm = item.toString().trim();
+            if (!hhmm.contains(':')) continue;
+
+            final start = _parseSlotStart(dayKey, hhmm);
+            if (start == null) continue;
+
+            final key = '$dayKey|$hhmm';
+            final summary = summaries[key];
+
+            out.add(
+              _AvailSlot(
+                courseId: cid,
+                dayKey: dayKey,
+                time: hhmm,
+                start: start,
+                teacherId: teacherId,
+                teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
+                bookedCount: summary?.bookedCount ?? 0,
+                groupSessionNo: summary?.groupSessionNo,
+                maxLearnersPerSlot: maxLearners,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      _toast('Failed loading available slots: $e');
+    }
+
+    out.sort((a, b) => a.start.compareTo(b.start));
+    return out;
+  }
+
+  Future<void> _pickRescheduleTarget(_AdminBookedSlot sourceSlot, String learnerUid) async {
+    final available = await _buildAvailableSlotsForCourse(sourceSlot.courseId);
+
+    if (!mounted) return;
+
+    final possible = available.where((s) {
+      if (s.dayKey == sourceSlot.dayKey && s.time == sourceSlot.time) return false;
+      if (s.start.isBefore(DateTime.now().subtract(const Duration(minutes: 1)))) return false;
+
+      // keep slot data safe:
+      // admin can move freely in time, but we do NOT merge into a different existing session group
+      if (s.groupSessionNo != null && s.groupSessionNo != sourceSlot.sessionNo) return false;
+      if (s.isFull) return false;
+
+      return true;
+    }).toList();
+
+    if (possible.isEmpty) {
+      _toast('No valid target slots found.');
+      return;
+    }
+
+    String query = '';
+
+    final chosen = await showModalBottomSheet<_AvailSlot>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setInner) {
+            final filtered = possible.where((s) {
+              if (query.trim().isEmpty) return true;
+              final q = query.trim().toLowerCase();
+              final text = '${s.teacherName} ${s.dayKey} ${s.time}'.toLowerCase();
+              return text.contains(q);
+            }).toList();
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 8,
+                  bottom: MediaQuery.of(context).padding.bottom + 12,
+                ),
+                child: Column(
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Choose new slot',
+                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: primaryBlue),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search teacher / date / time',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: uiBorder.withOpacity(0.9)),
+                        ),
+                      ),
+                      onChanged: (v) => setInner(() => query = v),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(
+                        child: Text(
+                          'No slots match your search.',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      )
+                          : ListView.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) {
+                          final s = filtered[i];
+                          final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => Navigator.pop(context, s),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: uiBorder.withOpacity(0.9)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${_friendlyDateLong(s.start)} • ${s.time}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryBlue,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Teacher: ${s.teacherName}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    s.groupSessionNo == null
+                                        ? 'Empty slot • Capacity ${s.bookedCount}/$cap'
+                                        : 'Session ${s.groupSessionNo} group • Capacity ${s.bookedCount}/$cap',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: s.groupSessionNo == null ? successGreen : actionOrange,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (chosen == null) return;
+
+    await _moveLearnerToNewSlot(
+      sourceSlot: sourceSlot,
+      learnerUid: learnerUid,
+      target: chosen,
+    );
+  }
+
+  Future<void> _moveLearnerToNewSlot({
+    required _AdminBookedSlot sourceSlot,
+    required String learnerUid,
+    required _AvailSlot target,
+  }) async {
+    if (busyAction) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reschedule booking'),
+        content: Text(
+          'Move this learner?\n\n'
+              'From:\n${_friendlyDateLong(sourceSlot.start)} at ${sourceSlot.time}\n${sourceSlot.teacherName}\n\n'
+              'To:\n${_friendlyDateLong(target.start)} at ${target.time}\n${target.teacherName}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes, Move')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => busyAction = true);
+
+    try {
+      final sourceRef = _reservationsRef(sourceSlot.courseId, sourceSlot.dayKey, sourceSlot.time);
+      final targetRef = _reservationsRef(target.courseId, target.dayKey, target.time);
+
+      // Step 1: add learner to target
+      final tx = await targetRef.runTransaction((Object? currentData) {
+        final Map<String, dynamic> node =
+        (currentData is Map) ? currentData.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+
+        final Map<String, dynamic> learners = <String, dynamic>{};
+        final learnersRaw = node['learners'];
+        if (learnersRaw is Map) {
+          learners.addAll(learnersRaw.map((k, v) => MapEntry(k.toString(), v)));
+        }
+
+        final existingSession = _toInt(node['sessionNo'], fallback: 0);
+        if (existingSession > 0 && existingSession != sourceSlot.sessionNo) {
+          return Transaction.abort();
+        }
+
+        final cap = target.maxLearnersPerSlot <= 0 ? 6 : target.maxLearnersPerSlot;
+        if (!learners.containsKey(learnerUid) && learners.length >= cap) {
+          return Transaction.abort();
+        }
+
+        learners[learnerUid] = true;
+        node['teacherId'] = target.teacherId;
+        node['teacherName'] = target.teacherName;
+        node['sessionNo'] = sourceSlot.sessionNo;
+        node['learners'] = learners;
+        node['createdAt'] = ServerValue.timestamp;
+
+        return Transaction.success(node);
+      });
+
+      if (!tx.committed) {
+        _toast('Could not move learner to the selected slot.');
+        return;
+      }
+
+      // Step 2: remove learner from source
+      final removeTx = await sourceRef.runTransaction((Object? currentData) {
+        if (currentData is! Map) return Transaction.abort();
+
+        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+        final learnersRaw = node['learners'];
+        if (learnersRaw is! Map) return Transaction.abort();
+
+        final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
+        if (!learners.containsKey(learnerUid)) return Transaction.abort();
+
+        learners.remove(learnerUid);
+
+        if (learners.isEmpty) {
+          return Transaction.success(null);
+        }
+
+        node['learners'] = learners;
+        return Transaction.success(node);
+      });
+
+      if (!removeTx.committed) {
+        _toast('Moved to new slot, but old slot cleanup failed. Please refresh and check.');
+      } else {
+        _toast('Booking moved ✅');
+      }
+
+      await _loadBookingsForCourse(sourceSlot.courseId);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      _toast('Reschedule failed: $e');
+    } finally {
+      if (!mounted) return;
+      setState(() => busyAction = false);
+    }
+  }
+
+  // ========================= Slot Details =========================
+
+  Future<void> _openSlotDetails(_AdminBookedSlot slot) async {
+    await _ensureLearnerProfiles(slot.learnerUids);
+
+    if (!mounted) return;
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
+      showDragHandle: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (_) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 12,
-            bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Session details',
-                style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 16),
-              ),
-              const SizedBox(height: 10),
-              _Input(
-                controller: titleC,
-                label: 'Title (required)',
-                hint: 'Example: Alphabet & Greetings',
-                maxLines: 2,
-              ),
-              const SizedBox(height: 10),
-              _Input(
-                controller: objectiveC,
-                label: 'Objectives (required)',
-                hint: 'What will learner achieve?',
-                maxLines: 4,
-              ),
-              const SizedBox(height: 10),
-              _Input(
-                controller: contentC,
-                label: 'Content (optional)',
-                hint: 'Topics / notes for teacher & learner',
-                maxLines: 4,
-              ),
-              const SizedBox(height: 10),
-              _Input(
-                controller: homeworkC,
-                label: 'Homework (optional)',
-                hint: 'Homework tasks / exercises',
-                maxLines: 3,
-              ),
-              const SizedBox(height: 10),
-              _Input(
-                controller: durationC,
-                label: 'Duration minutes (optional)',
-                hint: 'Example: 30',
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        side: BorderSide(color: primaryBlue.withOpacity(0.25)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-                      ),
+        final bottomPad = MediaQuery.of(context).padding.bottom;
+
+        final learners = slot.learnerUids
+            .map((uid) => learnerCache[uid] ?? _LearnerProfile(uid: uid, fullName: uid, serial: '', email: '', phone: '', status: ''))
+            .toList()
+          ..sort((a, b) => a.fullName.compareTo(b.fullName));
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 10, 16, bottomPad + 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${_friendlyDateLong(slot.start)} • ${slot.time}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: primaryBlue,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: actionOrange,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () {
-                        final t = titleC.text.trim();
-                        final o = objectiveC.text.trim();
-                        if (t.isEmpty || o.isEmpty) {
-                          _toast('Title + Objectives are required.');
-                          return;
-                        }
-
-                        final dur = int.tryParse(durationC.text.trim()) ?? 0;
-
-                        setState(() {
-                          suggested[index]['sessionTitle'] = t;
-                          suggested[index]['objective'] = o;
-                          suggested[index]['content'] = contentC.text.trim();
-                          suggested[index]['homework'] = homeworkC.text.trim();
-                          suggested[index]['durationMinutes'] = dur;
-                        });
-
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w900)),
-                    ),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Teacher: ${slot.teacherName}',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
                   ),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Session ${slot.sessionNo <= 0 ? '—' : slot.sessionNo} • ${slot.learnerCount} learner${slot.learnerCount == 1 ? '' : 's'}',
+                    style: const TextStyle(fontWeight: FontWeight.w900, color: actionOrange),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                Flexible(
+                  child: learners.isEmpty
+                      ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Text(
+                      'No learners found.',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  )
+                      : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: learners.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) {
+                      final p = learners[i];
+
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: uiBorder.withOpacity(0.9)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    p.fullName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryBlue,
+                                    ),
+                                  ),
+                                ),
+                                if (p.status.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: p.status.toLowerCase() == 'active'
+                                          ? const Color(0xFFEAF7EE)
+                                          : const Color(0xFFFFF1E3),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      p.status,
+                                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (p.serial.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                p.serial,
+                                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                              ),
+                            ],
+                            if (p.email.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                p.email,
+                                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                              ),
+                            ],
+                            if (p.phone.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                p.phone,
+                                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: primaryBlue,
+                                      side: BorderSide(color: primaryBlue.withOpacity(0.25)),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                    ),
+                                    onPressed: busyAction
+                                        ? null
+                                        : () => _pickRescheduleTarget(slot, p.uid),
+                                    icon: const Icon(Icons.swap_horiz_rounded),
+                                    label: const Text(
+                                      'Reschedule',
+                                      style: TextStyle(fontWeight: FontWeight.w900),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade600,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                    ),
+                                    onPressed: busyAction
+                                        ? null
+                                        : () => _cancelLearnerFromSlot(slot, p.uid),
+                                    icon: const Icon(Icons.close_rounded),
+                                    label: const Text(
+                                      'Cancel',
+                                      style: TextStyle(fontWeight: FontWeight.w900),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
-
-    titleC.dispose();
-    objectiveC.dispose();
-    contentC.dispose();
-    homeworkC.dispose();
-    durationC.dispose();
-  }
-
-  Future<void> _saveCurriculumAndEnable() async {
-    final courseId = selectedCourseId;
-    final course = _selectedCourse();
-
-    if (courseId == null || courseId.isEmpty || course == null) {
-      _toast('Select a course first.');
-      return;
-    }
-    if (suggested.isEmpty) {
-      _toast('Load syllabus first.');
-      return;
-    }
-
-    int minChoices = int.tryParse(minChoicesC.text.trim()) ?? 2;
-    if (minChoices <= 0) minChoices = 1;
-
-    final included = suggested.where((x) => x['include'] == true).toList();
-    final desiredN = included.length; // ✅ AUTO: N = included count
-
-    if (desiredN <= 0) {
-      _toast('Please include at least 1 session.');
-      return;
-    }
-
-    // Validate required details for ALL included sessions (since all become N)
-    for (int i = 0; i < desiredN; i++) {
-      final it = included[i];
-      final title = (it['sessionTitle'] ?? '').toString().trim();
-      final obj = (it['objective'] ?? '').toString().trim();
-      if (title.isEmpty || obj.isEmpty) {
-        _toast('Included session ${i + 1} is missing required details (Title/Objectives).');
-        return;
-      }
-    }
-
-    // Build sessions payload (1..N)
-    final Map<String, dynamic> sessionsOut = {};
-    for (int i = 0; i < desiredN; i++) {
-      final item = included[i];
-      sessionsOut['${i + 1}'] = {
-        'sessionNo': i + 1,
-        'unitTitle': item['unitTitle'],
-        'unitId': item['unitId'],
-        'sessionTitle': item['sessionTitle'],
-        'sessionId': item['sessionId'],
-        'skillType': item['skillType'],
-        'objective': item['objective'],
-        'content': item['content'],
-        'homework': item['homework'],
-        'durationMinutes': item['durationMinutes'] ?? 0,
-        'sourceCourseId': courseId,
-      };
-    }
-
-    setState(() => saving = true);
-    try {
-      await _curriculumRef.child(courseId).set({
-        'courseId': courseId,
-        'courseTitle': course.title,
-        'courseLevelText': course.levelText,
-        'courseCategory': course.category,
-        'totalSessions': desiredN,
-        'updatedAt': ServerValue.timestamp,
-        'sessions': sessionsOut,
-      });
-
-      await _configRef.child('courses/$courseId').set({
-        'enabled': true,
-        'title': course.title,
-        'totalLessons': desiredN,
-        'requireSessionDetails': true,
-        'coverageTarget': {
-          'weeks': 4,
-          'minChoicesPerSession': minChoices,
-        },
-        'updatedAt': ServerValue.timestamp,
-      });
-
-      _toast('Saved & enabled booking ✅');
-    } catch (e) {
-      _toast('Save failed: $e');
-    } finally {
-      if (!mounted) return;
-      setState(() => saving = false);
-    }
   }
 
   // ========================= UI =========================
@@ -489,8 +980,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   @override
   Widget build(BuildContext context) {
     final course = _selectedCourse();
-    final includedCount = _includedCount();
-    final missingDetailsCount = _missingDetailsIncludedCount();
+    final filtered = _filteredSlots();
+
+    final teacherMap = <String, String>{};
+    for (final s in bookedSlots) {
+      teacherMap[s.teacherId] = s.teacherName;
+    }
+    final teacherIds = teacherMap.keys.toList()
+      ..sort((a, b) => (teacherMap[a] ?? '').compareTo(teacherMap[b] ?? ''));
+
+    final totalLearners = filtered.fold<int>(0, (sum, s) => sum + s.learnerCount);
+    final futureCount = filtered.where((s) => s.start.isAfter(DateTime.now())).length;
 
     return Scaffold(
       backgroundColor: appBg,
@@ -500,13 +1000,15 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
         title: const Text(
-          'Booking Setup',
+          'Admin Booking',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
-            tooltip: 'Reload courses',
-            onPressed: (loadingCourses || saving) ? null : _loadCourses,
+            tooltip: 'Refresh',
+            onPressed: (loadingCourses || loadingBookings || selectedCourseId == null)
+                ? null
+                : () => _loadBookingsForCourse(selectedCourseId!),
             icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
           ),
           const SizedBox(width: 6),
@@ -515,149 +1017,191 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       body: loadingCourses
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
         children: [
-          _HeaderCard(
+          _Card(
             title: course?.title ?? 'Select a course',
-            subtitle: course == null
-                ? 'Choose a published course to prepare booking'
-                : [
-              if (course.levelText.isNotEmpty) course.levelText,
-              if (course.category.isNotEmpty) course.category,
-            ].join(' • '),
-          ),
-          const SizedBox(height: 12),
-
-          _Card(
-            title: '1) Course',
-            child: Column(
-              children: [
-                _courseDropdown(),
-                const SizedBox(height: 10),
-                const _Hint(
-                  icon: Icons.info_outline_rounded,
-                  text: 'Sessions load from syllabi/<courseId>.\nInclude/exclude, edit details, then enable booking.',
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _Card(
-            title: '2) Sessions',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _courseDropdown(),
+                const SizedBox(height: 12),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _ActionButton(
-                      label: 'Load syllabus',
-                      icon: Icons.download_rounded,
-                      busy: loadingSyllabus,
-                      onPressed: (loadingSyllabus || saving) ? null : _loadSuggestedFromSyllabus,
-                    ),
-                    if (suggested.isNotEmpty)
-                      _ActionButton(
-                        label: 'Auto exclude',
-                        icon: Icons.auto_fix_high_rounded,
-                        onPressed: saving ? null : _autoExcludeCommon,
-                      ),
+                    _StatPill(label: 'Booked slots', value: '${filtered.length}', icon: Icons.event_note_rounded),
+                    _StatPill(label: 'Learners', value: '$totalLearners', icon: Icons.people_alt_rounded),
+                    _StatPill(label: 'Upcoming', value: '$futureCount', icon: Icons.schedule_rounded),
                   ],
                 ),
-                const SizedBox(height: 12),
-
-                // ✅ N is automatic now
-                _SummaryRow(
-                  left: 'Total sessions (auto)',
-                  right: suggested.isEmpty ? '—' : '$includedCount',
-                  icon: Icons.confirmation_number_rounded,
-                ),
-                const SizedBox(height: 10),
-
-                _SmallField(
-                  controller: minChoicesC,
-                  label: 'Min choices per session (within 4 weeks)',
-                  hint: '2',
-                ),
-
-                const SizedBox(height: 10),
-
-                if (suggested.isEmpty)
-                  const _Hint(
-                    icon: Icons.tips_and_updates_outlined,
-                    text: 'Load syllabus first.\nThen tap any included session to edit details (Title + Objectives required).',
-                  )
-                else
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _SummaryRow(
-                        left: 'Included',
-                        right: '$includedCount',
-                        icon: Icons.check_circle_rounded,
-                      ),
-                      const SizedBox(height: 8),
-                      _SummaryRow(
-                        left: 'Included missing details',
-                        right: '$missingDetailsCount',
-                        icon: Icons.warning_amber_rounded,
-                      ),
-                      const SizedBox(height: 12),
-
-                      ...suggested.asMap().entries.map((entry) {
-                        final i = entry.key;
-                        final item = entry.value;
-
-                        final included = item['include'] == true;
-                        final title = (item['sessionTitle'] ?? '').toString().trim();
-                        final unitTitle = (item['unitTitle'] ?? '').toString().trim();
-                        final skillType = (item['skillType'] ?? '').toString().trim();
-
-                        final missing = included && _isMissingDetails(item);
-
-                        return _SessionRow(
-                          index: i + 1,
-                          sessionNumber: (item['sessionNumber'] as num?)?.toInt() ?? 0,
-                          included: included,
-                          title: title.isEmpty ? '(No title)' : title,
-                          subtitle: [
-                            if (unitTitle.isNotEmpty) unitTitle,
-                            if (skillType.isNotEmpty) skillType,
-                          ].join(' • '),
-                          showWarning: missing,
-                          onToggle: (v) => setState(() => suggested[i]['include'] = v),
-                          onEdit: () => _editSessionDetails(i),
-                        );
-                      }).toList(),
-
-                      const SizedBox(height: 12),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: actionOrange,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          ),
-                          onPressed: saving ? null : _saveCurriculumAndEnable,
-                          icon: saving
-                              ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                              : const Icon(Icons.check_circle_rounded),
-                          label: Text(saving ? 'Saving…' : 'Save & Enable Booking'),
-                        ),
-                      ),
-                    ],
-                  ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _Card(
+            title: 'Filters',
+            child: Column(
+              children: [
+                TextField(
+                  controller: searchC,
+                  decoration: InputDecoration(
+                    hintText: 'Search teacher / date / time / session',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: uiBorder.withOpacity(0.9)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: uiBorder.withOpacity(0.9)),
+                  ),
+                  child: DropdownButton<String>(
+                    value: teacherFilter,
+                    isExpanded: true,
+                    underline: const SizedBox.shrink(),
+                    icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('All teachers')),
+                      ...teacherIds.map((id) {
+                        return DropdownMenuItem(
+                          value: id,
+                          child: Text(
+                            teacherMap[id] ?? 'Teacher',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => teacherFilter = v);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _chip('All dates', dateFilter == 'all', () => setState(() => dateFilter = 'all')),
+                    _chip('Today', dateFilter == 'today', () => setState(() => dateFilter = 'today')),
+                    _chip('Upcoming', dateFilter == 'future', () => setState(() => dateFilter = 'future')),
+                    _togglePill(
+                      label: 'Only group slots',
+                      value: onlyMultiLearner,
+                      onChanged: (v) => setState(() => onlyMultiLearner = v),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _Card(
+            title: 'All bookings',
+            child: loadingBookings
+                ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(child: CircularProgressIndicator()),
+            )
+                : filtered.isEmpty
+                ? const Text(
+              'No bookings found for this course.',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            )
+                : ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: filtered.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final s = filtered[i];
+                final isPast = s.start.isBefore(DateTime.now());
+
+                return InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _openSlotDetails(s),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: uiBorder.withOpacity(0.9)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: isPast
+                                ? Colors.grey.withOpacity(0.10)
+                                : actionOrange.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isPast
+                                  ? Colors.grey.withOpacity(0.25)
+                                  : actionOrange.withOpacity(0.25),
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              s.time,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                                color: isPast ? Colors.grey.shade700 : actionOrange,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _friendlyDateLong(s.start),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Teacher: ${s.teacherName}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Session ${s.sessionNo <= 0 ? '—' : s.sessionNo} • ${s.learnerCount} learner${s.learnerCount == 1 ? '' : 's'}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: actionOrange,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.chevron_right_rounded, color: primaryBlue),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -667,7 +1211,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   Widget _courseDropdown() {
     if (allCourses.isEmpty) {
-      return const _Hint(icon: Icons.warning_amber_rounded, text: 'No published courses found.');
+      return const Text('No published courses found.');
     }
 
     final safeValue = allCourses.any((x) => x.id == selectedCourseId) ? selectedCourseId : allCourses.first.id;
@@ -676,8 +1220,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: uiBorder.withOpacity(0.9)),
       ),
       child: DropdownButton<String>(
         value: safeValue,
@@ -702,389 +1246,63 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           ),
         )
             .toList(),
-        onChanged: (v) {
+        onChanged: (v) async {
+          if (v == null) return;
           setState(() {
             selectedCourseId = v;
-            suggested = [];
+            bookedSlots = [];
+            teacherFilter = 'all';
           });
+          await _loadBookingsForCourse(v);
         },
       ),
     );
   }
-}
 
-// ===================== UI Widgets =====================
-
-class _HeaderCard extends StatelessWidget {
-  const _HeaderCard({required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  static const uiBorder = Color(0xFFD1D9E0);
-  static const primaryBlue = Color(0xFF1A2B48);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withOpacity(0.8)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: primaryBlue.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: primaryBlue.withOpacity(0.12)),
-            ),
-            child: const Icon(Icons.calendar_month_rounded, color: primaryBlue),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 16),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w700, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Card extends StatelessWidget {
-  const _Card({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  static const uiBorder = Color(0xFFD1D9E0);
-  static const primaryBlue = Color(0xFF1A2B48);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withOpacity(0.8)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-          const SizedBox(height: 10),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _Hint extends StatelessWidget {
-  const _Hint({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  static const uiBorder = Color(0xFFD1D9E0);
-  static const appBg = Color(0xFFF4F7F9);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: appBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Colors.grey.shade700, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontWeight: FontWeight.w700, height: 1.25),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    this.onPressed,
-    this.busy = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final bool busy;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: busy
-          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-          : Icon(icon, color: primaryBlue),
-      label: Text(label, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: primaryBlue.withOpacity(0.25)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      ),
-    );
-  }
-}
-
-class _SmallField extends StatelessWidget {
-  const _SmallField({required this.controller, required this.label, required this.hint});
-
-  final TextEditingController controller;
-  final String label;
-  final String hint;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+  Widget _chip(String label, bool on, VoidCallback tap) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: tap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: on ? actionOrange.withOpacity(0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: on ? actionOrange.withOpacity(0.35) : uiBorder.withOpacity(0.9)),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade400),
+        child: Text(
+          label,
+          style: TextStyle(fontWeight: FontWeight.w900, color: on ? actionOrange : primaryBlue, fontSize: 12),
         ),
       ),
     );
   }
-}
 
-class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({required this.left, required this.right, required this.icon});
-
-  final String left;
-  final String right;
-  final IconData icon;
-
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _togglePill({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.8)),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: uiBorder.withOpacity(0.9)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: Colors.grey.shade700),
-          const SizedBox(width: 10),
-          Expanded(child: Text(left, style: const TextStyle(fontWeight: FontWeight.w900))),
-          Text(right, style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12)),
+          const SizedBox(width: 8),
+          Switch(value: value, onChanged: onChanged, activeColor: actionOrange),
         ],
       ),
     );
   }
 }
 
-class _SessionRow extends StatelessWidget {
-  const _SessionRow({
-    required this.index,
-    required this.sessionNumber,
-    required this.included,
-    required this.title,
-    required this.subtitle,
-    required this.showWarning,
-    required this.onToggle,
-    required this.onEdit,
-  });
-
-  final int index;
-  final int sessionNumber;
-  final bool included;
-  final String title;
-  final String subtitle;
-  final bool showWarning;
-  final ValueChanged<bool> onToggle;
-  final VoidCallback onEdit;
-
-  static const uiBorder = Color(0xFFD1D9E0);
-  static const primaryBlue = Color(0xFF1A2B48);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.8)),
-      ),
-      child: Row(
-        children: [
-          Checkbox(
-            value: included,
-            onChanged: (v) => onToggle(v == true),
-          ),
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: included ? Colors.green.withOpacity(0.10) : Colors.grey.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: included ? Colors.green.withOpacity(0.25) : Colors.grey.withOpacity(0.25)),
-            ),
-            child: Center(
-              child: Text(
-                sessionNumber > 0 ? '#$sessionNumber' : '$index',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: included ? Colors.green.shade700 : Colors.grey.shade700,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: InkWell(
-              onTap: onEdit,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-                          ),
-                        ),
-                        if (showWarning)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 6),
-                            child: Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
-                          ),
-                      ],
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, fontSize: 12),
-                      ),
-                    ],
-                    const SizedBox(height: 2),
-                    Text(
-                      'Tap to edit details',
-                      style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade600, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          IconButton(
-            tooltip: 'Edit',
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_rounded, color: primaryBlue),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Input extends StatelessWidget {
-  const _Input({
-    required this.controller,
-    required this.label,
-    required this.hint,
-    this.maxLines = 1,
-    this.keyboardType,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final String hint;
-  final int maxLines;
-  final TextInputType? keyboardType;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade400),
-        ),
-      ),
-    );
-  }
-}
-
-// ===================== MODEL =====================
+// ========================= Models =========================
 
 class _CourseItem {
   final String id;
@@ -1100,4 +1318,161 @@ class _CourseItem {
     required this.category,
     required this.orderIndex,
   });
+}
+
+class _AdminBookedSlot {
+  final String courseId;
+  final String dayKey;
+  final String time;
+  final DateTime start;
+  final String teacherId;
+  final String teacherName;
+  final int sessionNo;
+  final List<String> learnerUids;
+  final int createdAt;
+
+  _AdminBookedSlot({
+    required this.courseId,
+    required this.dayKey,
+    required this.time,
+    required this.start,
+    required this.teacherId,
+    required this.teacherName,
+    required this.sessionNo,
+    required this.learnerUids,
+    required this.createdAt,
+  });
+
+  int get learnerCount => learnerUids.length;
+}
+
+class _LearnerProfile {
+  final String uid;
+  final String fullName;
+  final String serial;
+  final String email;
+  final String phone;
+  final String status;
+
+  _LearnerProfile({
+    required this.uid,
+    required this.fullName,
+    required this.serial,
+    required this.email,
+    required this.phone,
+    required this.status,
+  });
+}
+
+class _ReservationSummary {
+  final int bookedCount;
+  final int? groupSessionNo;
+
+  _ReservationSummary({
+    required this.bookedCount,
+    required this.groupSessionNo,
+  });
+}
+
+class _AvailSlot {
+  final String courseId;
+  final String dayKey;
+  final String time;
+  final DateTime start;
+  final String teacherId;
+  final String teacherName;
+  final int bookedCount;
+  final int? groupSessionNo;
+  final int maxLearnersPerSlot;
+
+  _AvailSlot({
+    required this.courseId,
+    required this.dayKey,
+    required this.time,
+    required this.start,
+    required this.teacherId,
+    required this.teacherName,
+    required this.bookedCount,
+    required this.groupSessionNo,
+    required this.maxLearnersPerSlot,
+  });
+
+  bool get isFull {
+    final cap = maxLearnersPerSlot <= 0 ? 6 : maxLearnersPerSlot;
+    return bookedCount >= cap;
+  }
+}
+
+// ========================= Small UI Widgets =========================
+
+class _Card extends StatelessWidget {
+  const _Card({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: uiBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  const _StatPill({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: uiBorder.withOpacity(0.9)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: primaryBlue),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.w800, color: primaryBlue),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+          ),
+        ],
+      ),
+    );
+  }
 }

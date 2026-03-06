@@ -2386,6 +2386,78 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     return ids;
   }
 
+  Future<bool> _confirmRemoveAssignedCourses(
+      List<Map<String, String>> removedCourses,
+      ) async {
+    if (removedCourses.isEmpty) return true;
+
+    final lines = removedCourses.map((c) {
+      final title = c['title']?.trim() ?? '';
+      final code = c['code']?.trim() ?? '';
+      if (title.isNotEmpty && code.isNotEmpty) return '• $title ($code)';
+      if (title.isNotEmpty) return '• $title';
+      if (code.isNotEmpty) return '• $code';
+      return '• Course';
+    }).join('\n');
+
+    return (await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remove course?'),
+        content: Text(
+          'This will remove the learner from the selected course(s) and permanently delete:\n'
+              '- attendance/progress for that course\n'
+              '- class link for that course\n\n'
+              'If the learner is the last learner in a class, that class will also be deleted.\n'
+              'Global payment ledger will be kept.\n\n'
+              'Courses to remove:\n$lines',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove course'),
+          ),
+        ],
+      ),
+    )) ??
+        false;
+  }
+
+  Future<void> _cleanupClassAfterCourseRemoval(
+      Map<String, dynamic> existingCourseNode,
+      ) async {
+    final classRaw = existingCourseNode['class'];
+    if (classRaw is! Map) return;
+
+    final classMap = classRaw.map((k, v) => MapEntry(k.toString(), v));
+    final classId = (classMap['class_id'] ?? '').toString().trim();
+    if (classId.isEmpty) return;
+
+    final classRef = widget.db.ref('classes/$classId');
+    final learnerRef = classRef.child('learners/${widget.uid}');
+
+    // Remove learner from class
+    await learnerRef.remove();
+
+    // If class has no learners left, delete the whole class
+    final learnersSnap = await classRef.child('learners').get();
+
+    bool hasLearnersLeft = false;
+    final learnersVal = learnersSnap.value;
+    if (learnersVal is Map) {
+      hasLearnersLeft = learnersVal.isNotEmpty;
+    }
+
+    if (!hasLearnersLeft) {
+      await classRef.remove();
+    }
+  }
+
   Future<void> _saveAssignedCourses(
       Set<String> selectedIds,
       Map<String, String> variantByCourseId,
@@ -2411,26 +2483,55 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       });
     }
 
-
     int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
     final Map<String, dynamic> updates = {};
 
-    // Remove courses that are no longer selected
+    // Collect removed courses first, so we can confirm before deleting anything
+    final List<Map<String, dynamic>> removedCourses = [];
+
     if (existingVal is Map) {
       existingVal.forEach((k, v) {
         if (k == null) return;
         final key = k.toString();
         if (!key.startsWith('course_')) return;
 
-        String existingId = '';
-        if (v is Map) {
-          final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-          existingId = (mm['id'] ?? '').toString().trim();
-        }
+        if (v is! Map) return;
+
+        final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
+        final existingId = (mm['id'] ?? '').toString().trim();
+
         if (existingId.isNotEmpty && !selectedIds.contains(existingId)) {
-          updates[key] = null;
+          removedCourses.add({
+            'courseKey': key,
+            'courseId': existingId,
+            'title': (mm['title'] ?? '').toString(),
+            'code': (mm['course_code'] ?? '').toString(),
+            'node': Map<String, dynamic>.from(mm),
+          });
         }
       });
+    }
+
+    // Confirm removals
+    final ok = await _confirmRemoveAssignedCourses(
+      removedCourses
+          .map((e) => {
+        'title': (e['title'] ?? '').toString(),
+        'code': (e['code'] ?? '').toString(),
+      })
+          .toList(),
+    );
+    if (!ok) return;
+
+    // Clean class side first, then delete learner course node
+    for (final removed in removedCourses) {
+      final courseKey = (removed['courseKey'] ?? '').toString();
+      final node = (removed['node'] is Map<String, dynamic>)
+          ? removed['node'] as Map<String, dynamic>
+          : <String, dynamic>{};
+
+      await _cleanupClassAfterCourseRemoval(node);
+      updates[courseKey] = null;
     }
 
     // Add / keep selected
@@ -2452,16 +2553,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
       final existingIdOnKey = (keyToExistingId[key] ?? '').trim();
 
-      // ✅ If this courseKey previously belonged to a different course, wipe old children
+      // If this courseKey previously belonged to a different course, wipe old children
       if (existingIdOnKey.isNotEmpty && existingIdOnKey != courseId) {
         updates['$key/payment_summary'] = null;
         updates['$key/attendance'] = null;
-
-        // If you store anything else under course nodes, clear it too:
-        // updates['$key/report'] = null;
-        // updates['$key/notes'] = null;
       }
-
 
       final c = _allCourses[courseId];
       final code = (c?['course_code'] ?? '').toString().trim();
@@ -2473,14 +2569,15 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       updates['$key/title'] = title;
       updates['$key/category'] = category;
       updates['$key/assignedAt'] = ServerValue.timestamp;
+
       final chosenVariant = (variantByCourseId[courseId] ?? 'in_class').trim();
       updates['$key/variantKey'] =
       _variantKeys.contains(chosenVariant) ? chosenVariant : 'in_class';
     }
 
-
     await coursesRef.update(updates);
   }
+
 
   Future<void> _openAssignCoursesDialog() async {
     await _ensureAllCoursesLoaded();

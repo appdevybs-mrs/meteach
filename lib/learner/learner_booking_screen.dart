@@ -143,10 +143,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     return int.tryParse(v?.toString() ?? '') ?? fallback;
   }
 
-  bool _toBool(dynamic v) {
-    if (v == true) return true;
+  bool _toBool(dynamic v, {bool fallback = false}) {
+    if (v is bool) return v;
     final s = (v ?? '').toString().trim().toLowerCase();
-    return s == 'true' || s == '1' || s == 'yes';
+    if (s == 'true' || s == '1' || s == 'yes') return true;
+    if (s == 'false' || s == '0' || s == 'no') return false;
+    return fallback;
   }
 
   DatabaseReference _curriculumRef(String cid) => _db.child('booking_curriculum/$cid');
@@ -584,11 +586,26 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final tn = teacherNode.map((k, vv) => MapEntry(k.toString(), vv));
 
+        // ✅ Teacher-level ON/OFF
+        bool teacherOnlineEnabled = true;
+        final settingsNode = tn['settings'];
+        if (settingsNode is Map) {
+          final sm = settingsNode.map((k, vv) => MapEntry(k.toString(), vv));
+          teacherOnlineEnabled = _toBool(sm['teacherOnlineEnabled'], fallback: true);
+        }
+        if (!teacherOnlineEnabled) continue;
+
         final perCourse = tn[cid];
         if (perCourse is! Map) continue;
 
         final effective = perCourse.map((k, vv) => MapEntry(k.toString(), vv));
 
+        // ✅ Course-level ON/OFF
+        final courseOnlineEnabled = _toBool(
+          effective['courseOnlineEnabled'],
+          fallback: true,
+        );
+        if (!courseOnlineEnabled) continue;
         final resolvedTeacherName =
         (effective['teacherName'] ??
             effective['teacher_name'] ??

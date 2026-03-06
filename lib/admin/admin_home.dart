@@ -213,8 +213,8 @@ class AdminHome extends StatelessWidget {
                           ),
                         ),
                         _DashCard(
-                          title: 'Booking',
-                          subtitle: 'Levels & slots setup',
+                          title: 'Online Booking',
+                          subtitle: 'Online Booking management',
                           icon: Icons.event_available_rounded,
                           color: primaryBlue,
                           onTap: () => Navigator.of(context).push(

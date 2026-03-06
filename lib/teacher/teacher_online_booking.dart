@@ -1,23 +1,3 @@
-// ✅ FULL REPLACEMENT: lib/teacher/teacher_online_booking.dart
-//
-// Goals (as requested):
-// ✅ Keep SAME saving format + location (do not break logic):
-//    booking_availability/<teacherUid>/<courseId>/week/<day> = ["08:00", ...]
-// ✅ Cleaner UI (less clutter) + clearer steps
-// ✅ Add rules/features for the new booking model:
-//    1) Teacher must provide enough slots for the course to be "Ready":
-//       requiredMonthlySlots = totalSessions (N) * minChoicesPerSession (K)
-//       approxMonthlySlots   = weeklySlots * weeksTarget
-//    2) Live "Coverage meter" shown.
-//    3) Enforce coverage ON SAVE: if not enough, block saving and show message.
-// ✅ Do NOT change slot editing logic (still weekly repeating 1-hour slots).
-//
-// Reads:
-// - booking_config/courses/<courseId>/coverageTarget/{weeks, minChoicesPerSession}
-// - booking_curriculum/<courseId>/totalSessions (+ title fallback)
-// Writes (unchanged):
-// - booking_availability/<teacherUid>/<courseId> {week: {mon:[...], ...}, ...}
-
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -32,9 +12,6 @@ class TeacherOnlineBookingScreen extends StatefulWidget {
 }
 
 class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen> {
-  // ✅ Google Meet link (used by learner "Join")
-  final TextEditingController _meetCtrl = TextEditingController();
-  int _durationMinutes = 60;
   // ===== Brand colors =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -42,36 +19,50 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   static const uiBorder = Color(0xFFD1D9E0);
   static const mainText = Color(0xFF2D2D2D);
 
+  final TextEditingController _meetCtrl = TextEditingController();
+
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  final DatabaseReference _curriculumRef = FirebaseDatabase.instance.ref('booking_curriculum');
   final DatabaseReference _configRef = FirebaseDatabase.instance.ref('booking_config');
 
   // Teacher info
   String myUid = '';
   String myName = 'Teacher';
 
-  // Courses
+  // UI state
   bool loading = true;
   bool saving = false;
+  bool togglingTeacher = false;
+  bool togglingCourse = false;
+
+  // Teacher-level online switch
+  bool teacherOnlineEnabled = true;
+
+  // Course list
   List<_CoursePick> myCourses = [];
   String? selectedCourseId;
 
-  // Course requirements (from admin)
+  // Course-level online switch
+  bool courseOnlineEnabled = true;
+
+  // Course requirement info
   String selectedCourseTitle = '';
-  int totalSessionsN = 0; // N
-  int minChoicesK = 2; // K (per 4 weeks)
+  int totalSessionsN = 0;
+  int minChoicesK = 2;
   int weeksTarget = 4;
 
+  // Saved meeting/session info
+  int _durationMinutes = 60;
+
   // Timetable range
-  int startHour = 8; // inclusive
-  int endHour = 21; // exclusive
+  int startHour = 8;
+  int endHour = 21;
   final int slotMinutes = 60;
 
   // Days
   final List<String> dayKeys = const ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   final List<String> dayLabels = const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  // Map dayKey -> set of selected slot start minutes (e.g., 08:00 = 480)
+  // Weekly slot map
   final Map<String, Set<int>> weekSlots = {
     'mon': <int>{},
     'tue': <int>{},
@@ -93,6 +84,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     _meetCtrl.dispose();
     super.dispose();
   }
+
   // ===================== Helpers =====================
 
   void _toast(String msg) {
@@ -102,6 +94,8 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     );
   }
 
+  DatabaseReference _teacherRootRef() => _db.child('booking_availability/$myUid');
+  DatabaseReference _teacherSettingsRef() => _db.child('booking_availability/$myUid/settings');
   DatabaseReference _availRef(String courseId) => _db.child('booking_availability/$myUid/$courseId');
 
   String _two(int n) => n < 10 ? '0$n' : '$n';
@@ -111,6 +105,14 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? fallback;
+  }
+
+  bool _toBool(dynamic v, {bool fallback = false}) {
+    if (v is bool) return v;
+    final s = (v ?? '').toString().trim().toLowerCase();
+    if (s == 'true' || s == '1' || s == 'yes') return true;
+    if (s == 'false' || s == '0' || s == 'no') return false;
+    return fallback;
   }
 
   int _tToMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
@@ -139,6 +141,8 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     return List.generate(b - a, (i) => a + i);
   }
 
+  String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
+
   int _totalWeeklySlots() {
     int sum = 0;
     for (final dk in dayKeys) {
@@ -156,15 +160,24 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   int _requiredWeeklySlotsFromMonthly(int requiredMonthly) {
     final w = weeksTarget <= 0 ? 4 : weeksTarget;
     if (requiredMonthly <= 0) return 0;
-    return (requiredMonthly / w).ceil(); // minimum weekly slots to meet the monthly target
+    return (requiredMonthly / w).ceil();
   }
 
-  String _coverageStatusLabel(int weeklySlots, int requiredMonthly) {
-    if (requiredMonthly <= 0) return 'Unknown';
+  String _coverageStatusLabel({
+    required bool teacherOn,
+    required bool courseOn,
+    required int weeklySlots,
+    required int requiredMonthly,
+  }) {
+    if (!teacherOn) return 'Teacher OFF';
+    if (!courseOn) return 'Course OFF';
+    if (requiredMonthly <= 0) return 'No target';
     final approxMonthly = weeklySlots * (weeksTarget <= 0 ? 4 : weeksTarget);
     if (approxMonthly >= requiredMonthly) return 'Ready ✅';
-    return 'Not ready ❌';
+    return 'Draft';
   }
+
+  bool get _slotEditingEnabled => teacherOnlineEnabled && courseOnlineEnabled;
 
   // ===================== Init / Load =====================
 
@@ -177,7 +190,9 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     }
 
     myUid = uid;
+
     await _loadMyName();
+    await _loadTeacherSettings();
     await _loadMyCourses();
 
     final cid = selectedCourseId;
@@ -204,9 +219,22 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     } catch (_) {}
   }
 
+  Future<void> _loadTeacherSettings() async {
+    try {
+      final snap = await _teacherSettingsRef().get();
+      if (!snap.exists || snap.value is! Map) {
+        teacherOnlineEnabled = true;
+        return;
+      }
+
+      final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+      teacherOnlineEnabled = _toBool(m['teacherOnlineEnabled'], fallback: true);
+    } catch (_) {
+      teacherOnlineEnabled = true;
+    }
+  }
+
   Future<Set<String>> _loadEnabledCourseIds() async {
-    // NEW logic:
-    // a course is online-enabled if syllabi/<courseId>/online exists
     final enabled = <String>{};
 
     try {
@@ -260,11 +288,9 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         }
       }
 
-      // Filter: only courses that exist in booking_curriculum (admin created plan)
       final enabledIds = await _loadEnabledCourseIds();
-      final filtered = out.where((c) => enabledIds.contains(c.id)).toList();
-
-      filtered.sort((a, b) => a.title.compareTo(b.title));
+      final filtered = out.where((c) => enabledIds.contains(c.id)).toList()
+        ..sort((a, b) => a.title.compareTo(b.title));
 
       setState(() {
         myCourses = filtered;
@@ -282,7 +308,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     }
   }
 
-
   Future<void> _loadCourseRequirements(String courseId) async {
     try {
       int n = 0;
@@ -290,7 +315,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       int w = 4;
       String title = '';
 
-      // 1) Read ONLINE syllabus
       final syllabusSnap = await _db.child('syllabi/$courseId/online').get();
       if (syllabusSnap.exists && syllabusSnap.value is Map) {
         final s = (syllabusSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
@@ -311,7 +335,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         }
       }
 
-      // 2) Optional fallback: course title from /courses
       if (title.isEmpty) {
         final courseSnap = await _db.child('courses/$courseId').get();
         if (courseSnap.exists && courseSnap.value is Map) {
@@ -320,7 +343,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         }
       }
 
-      // 3) Keep existing booking_config coverage settings if they still exist
       final cfgSnap = await _configRef.child('courses/$courseId').get();
       if (cfgSnap.exists && cfgSnap.value is Map) {
         final m = (cfgSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
@@ -343,9 +365,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         weeksTarget = w;
         if (title.isNotEmpty) selectedCourseTitle = title;
       });
-    } catch (_) {
-      // keep defaults
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadAvailability(String courseId) async {
@@ -355,19 +375,16 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
 
     try {
       final snap = await _availRef(courseId).get();
-      if (!snap.exists || snap.value == null) {
+      if (!snap.exists || snap.value == null || snap.value is! Map) {
+        _meetCtrl.text = '';
+        _durationMinutes = 60;
+        courseOnlineEnabled = true;
         setState(() {});
         return;
       }
 
-      final v = snap.value;
-      if (v is! Map) {
-        setState(() {});
-        return;
-      }
+      final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
 
-      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-      // ✅ Load Meet link + duration (so teacher can edit it)
       final meetUrl = (m['meetUrl'] ??
           m['meet_url'] ??
           m['googleMeetUrl'] ??
@@ -375,18 +392,19 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
           '')
           .toString()
           .trim();
-
       _meetCtrl.text = meetUrl;
 
       final dur = _toInt(m['durationMinutes'], fallback: 0);
-      _durationMinutes = (dur > 0) ? dur : 60;
+      _durationMinutes = dur > 0 ? dur : 60;
+
       final sh = _toInt(m['startHour'], fallback: startHour);
       final eh = _toInt(m['endHour'], fallback: endHour);
-
       if (sh > 0 && eh > sh) {
         startHour = sh;
         endHour = eh;
       }
+
+      courseOnlineEnabled = _toBool(m['courseOnlineEnabled'], fallback: true);
 
       final weekNode = m['week'];
       if (weekNode is Map) {
@@ -396,7 +414,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
           final list = wm[dk];
           final set = <int>{};
 
-          // NEW FORMAT: list of "HH:MM"
           if (list is List && list.isNotEmpty && list.first is! Map) {
             for (final item in list) {
               final s = item.toString().trim();
@@ -410,7 +427,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
             }
           }
 
-          // OLD FORMAT: list of blocks [{start,end}]
           if (list is List && list.isNotEmpty && list.first is Map) {
             for (final item in list) {
               if (item is! Map) continue;
@@ -443,30 +459,155 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     }
   }
 
-  // ===================== Save (ENFORCED) =====================
+  // ===================== Booking checks =====================
+
+  Future<bool> _hasUpcomingBookingsForCourse(String courseId) async {
+    final now = DateTime.now();
+
+    try {
+      final snap = await _db.child('booking_reservations/$courseId').get();
+      if (!snap.exists || snap.value is! Map) return false;
+
+      final daysMap = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
+      for (final dayEntry in daysMap.entries) {
+        final dayKey = dayEntry.key;
+        final slotsNode = dayEntry.value;
+        if (slotsNode is! Map) continue;
+
+        final slotsMap = slotsNode.map((k, vv) => MapEntry(k.toString(), vv));
+        for (final slotEntry in slotsMap.entries) {
+          final hhmm = slotEntry.key;
+          final slotNode = slotEntry.value;
+          if (slotNode is! Map) continue;
+
+          final sm = slotNode.map((k, vv) => MapEntry(k.toString(), vv));
+          final teacherId = (sm['teacherId'] ?? '').toString().trim();
+          if (teacherId != myUid) continue;
+
+          final start = _parseDateAndTime(dayKey, hhmm);
+          if (start == null) continue;
+          if (!start.isAfter(now)) continue;
+
+          final learnersRaw = sm['learners'];
+          if (learnersRaw is Map && learnersRaw.isNotEmpty) {
+            return true;
+          }
+        }
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  Future<bool> _hasUpcomingBookingsForAnyCourse() async {
+    for (final c in myCourses) {
+      final has = await _hasUpcomingBookingsForCourse(c.id);
+      if (has) return true;
+    }
+    return false;
+  }
+
+  DateTime? _parseDateAndTime(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ===================== Status toggles =====================
+
+  Future<void> _toggleTeacherOnline(bool nextValue) async {
+    if (togglingTeacher) return;
+
+    if (!nextValue) {
+      final hasUpcoming = await _hasUpcomingBookingsForAnyCourse();
+      if (hasUpcoming) {
+        _toast('You have upcoming bookings. You cannot turn OFF teacher online status yet.');
+        return;
+      }
+    }
+
+    setState(() => togglingTeacher = true);
+
+    try {
+      await _teacherSettingsRef().update({
+        'teacherOnlineEnabled': nextValue,
+        'updatedAt': ServerValue.timestamp,
+      });
+
+      if (!mounted) return;
+      setState(() {
+        teacherOnlineEnabled = nextValue;
+      });
+
+      _toast(nextValue ? 'Teacher online status turned ON.' : 'Teacher online status turned OFF.');
+    } catch (e) {
+      _toast('Could not update teacher status: $e');
+    } finally {
+      if (!mounted) return;
+      setState(() => togglingTeacher = false);
+    }
+  }
+
+  Future<void> _toggleCourseOnline(bool nextValue) async {
+    final courseId = selectedCourseId;
+    if (courseId == null || courseId.isEmpty || togglingCourse) return;
+
+    if (!nextValue) {
+      final hasUpcoming = await _hasUpcomingBookingsForCourse(courseId);
+      if (hasUpcoming) {
+        _toast('This course has upcoming bookings. You cannot turn it OFF yet.');
+        return;
+      }
+    }
+
+    setState(() => togglingCourse = true);
+
+    try {
+      await _availRef(courseId).update({
+        'courseOnlineEnabled': nextValue,
+        'teacherId': myUid,
+        'teacherName': myName,
+        'updatedAt': ServerValue.timestamp,
+      });
+
+      if (!mounted) return;
+      setState(() {
+        courseOnlineEnabled = nextValue;
+      });
+
+      _toast(nextValue ? 'Course online status turned ON.' : 'Course online status turned OFF.');
+    } catch (e) {
+      _toast('Could not update course status: $e');
+    } finally {
+      if (!mounted) return;
+      setState(() => togglingCourse = false);
+    }
+  }
+
+  // ===================== Save =====================
 
   Future<void> _saveAvailability() async {
     final courseId = selectedCourseId;
     if (courseId == null || courseId.isEmpty) {
       _toast('Select a course first.');
-      return;
-    }
-
-    // ✅ enforcement (Problem #2)
-    final weeklySlots = _totalWeeklySlots();
-    final requiredMonthly = _requiredMonthlySlots();
-    final w = weeksTarget <= 0 ? 4 : weeksTarget;
-    final approxMonthly = weeklySlots * w;
-
-    if (requiredMonthly > 0 && approxMonthly < requiredMonthly) {
-      final needWeekly = _requiredWeeklySlotsFromMonthly(requiredMonthly);
-      final missingWeekly = math.max(0, needWeekly - weeklySlots);
-
-      _toast(
-        'Not ready yet: add more slots.\n'
-            'Need ~${needWeekly} weekly slots (you have $weeklySlots). '
-            '${missingWeekly > 0 ? 'Add $missingWeekly more.' : ''}',
-      );
       return;
     }
 
@@ -486,8 +627,14 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         'startHour': startHour,
         'endHour': endHour,
         'slotMinutes': 60,
+        'courseOnlineEnabled': courseOnlineEnabled,
         'updatedAt': ServerValue.timestamp,
         'week': payloadWeek,
+      });
+
+      await _teacherSettingsRef().update({
+        'teacherOnlineEnabled': teacherOnlineEnabled,
+        'updatedAt': ServerValue.timestamp,
       });
 
       _toast('Availability saved ✅');
@@ -502,6 +649,11 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   // ===================== Day Editor =====================
 
   Future<void> _openDayEditor(String dayKey, String label) async {
+    if (!_slotEditingEnabled) {
+      _toast('Turn ON teacher and course online status to edit slots.');
+      return;
+    }
+
     final local = <int>{...(weekSlots[dayKey] ?? <int>{})};
 
     const splitHour = 13;
@@ -541,7 +693,6 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                   children: [
                     Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
                     const SizedBox(height: 10),
-
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -605,7 +756,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                   children: [
                     _SheetHeader(
                       title: '$label availability',
-                      subtitle: 'Select 1-hour slots you can teach (weekly repeating).',
+                      subtitle: 'Select weekly 1-hour teaching slots.',
                       count: local.length,
                     ),
                     const SizedBox(height: 12),
@@ -702,12 +853,18 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
     final requiredMonthly = _requiredMonthlySlots();
     final w = weeksTarget <= 0 ? 4 : weeksTarget;
     final approxMonthly = weeklySlots * w;
-
-    final status = _coverageStatusLabel(weeklySlots, requiredMonthly);
-
-    final double progress = (requiredMonthly <= 0) ? 0 : (approxMonthly / requiredMonthly).clamp(0.0, 1.0);
-
     final reqWeekly = _requiredWeeklySlotsFromMonthly(requiredMonthly);
+
+    final status = _coverageStatusLabel(
+      teacherOn: teacherOnlineEnabled,
+      courseOn: courseOnlineEnabled,
+      weeklySlots: weeklySlots,
+      requiredMonthly: requiredMonthly,
+    );
+
+    final double progress = (requiredMonthly <= 0)
+        ? 0
+        : (approxMonthly / requiredMonthly).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: appBg,
@@ -737,7 +894,39 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
         padding: const EdgeInsets.all(12),
         children: [
           _CardBox(
-            title: '1) Course',
+            title: '1) Status',
+            child: Column(
+              children: [
+                _ToggleRowCard(
+                  title: 'Teacher online booking',
+                  subtitle: teacherOnlineEnabled
+                      ? 'You are open for online booking.'
+                      : 'You are OFF for online booking.',
+                  value: teacherOnlineEnabled,
+                  busy: togglingTeacher,
+                  onChanged: _toggleTeacherOnline,
+                ),
+                const SizedBox(height: 10),
+                _ToggleRowCard(
+                  title: 'This course',
+                  subtitle: courseOnlineEnabled
+                      ? 'This course is open for online booking.'
+                      : 'This course is OFF for online booking.',
+                  value: courseOnlineEnabled,
+                  busy: togglingCourse,
+                  onChanged: cid == null ? null : _toggleCourseOnline,
+                ),
+                const SizedBox(height: 10),
+                _InfoBox(
+                  text: 'Turning OFF is blocked if there is an upcoming booking.\n'
+                      'Saved slots stay preserved.',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _CardBox(
+            title: '2) Course',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -746,21 +935,23 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                 _MeetLinkCard(
                   controller: _meetCtrl,
                   durationMinutes: _durationMinutes,
+                  enabled: _slotEditingEnabled,
                   onDurationChanged: (v) => setState(() => _durationMinutes = v),
                 ),
                 const SizedBox(height: 10),
                 _InfoBox(
                   text: cid == null
                       ? 'Select a course to set availability.'
-                      : 'Pick a day → choose 1-hour slots.\nThis repeats every week.',
+                      : !_slotEditingEnabled
+                      ? 'Turn ON teacher and course status to edit slots.'
+                      : 'Pick a day and choose 1-hour slots.\nThis repeats every week.',
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-
           _CardBox(
-            title: '2) Coverage target',
+            title: '3) Readiness',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -786,7 +977,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Your availability (estimate)',
+                        'Coverage estimate',
                         style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
                       ),
                       const SizedBox(height: 8),
@@ -808,8 +999,11 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                       Text(
                         requiredMonthly <= 0
                             ? 'Admin has not set course requirements yet.'
-                            : 'To be Ready, your weekly slots × $w weeks should reach N×K.',
-                        style: TextStyle(fontWeight: FontWeight.w700, color: mainText.withOpacity(0.7)),
+                            : 'This meter is informational. Saving is allowed even if not ready.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: mainText.withOpacity(0.7),
+                        ),
                       ),
                     ],
                   ),
@@ -817,11 +1011,9 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
               ],
             ),
           ),
-
           const SizedBox(height: 12),
-
           _CardBox(
-            title: '3) Weekly timetable',
+            title: '4) Weekly timetable',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -829,6 +1021,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                   dayKeys: dayKeys,
                   dayLabels: dayLabels,
                   weekSlots: weekSlots,
+                  enabled: _slotEditingEnabled,
                   onTapDay: saving ? null : (dk, label) => _openDayEditor(dk, label),
                 ),
                 const SizedBox(height: 12),
@@ -839,7 +1032,8 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                     label: label,
                     slotCount: (weekSlots[dk] ?? <int>{}).length,
                     preview: _previewSlots(weekSlots[dk] ?? <int>{}),
-                    onTap: saving ? null : () => _openDayEditor(dk, label),
+                    enabled: _slotEditingEnabled,
+                    onTap: (saving || !_slotEditingEnabled) ? null : () => _openDayEditor(dk, label),
                   );
                 }),
                 const SizedBox(height: 12),
@@ -855,8 +1049,9 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
                     onPressed: saving ? null : _saveAvailability,
                     icon: const Icon(Icons.check_circle_rounded),
                     label: Text(
-                        saving ? 'Saving…' : 'Save availability',
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                      saving ? 'Saving…' : 'Save availability',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ),
               ],
@@ -931,7 +1126,12 @@ class _CoursePick {
   final String id;
   final String title;
   final String code;
-  _CoursePick({required this.id, required this.title, required this.code});
+
+  _CoursePick({
+    required this.id,
+    required this.title,
+    required this.code,
+  });
 }
 
 // ===================== UI Components =====================
@@ -968,6 +1168,7 @@ class _CardBox extends StatelessWidget {
 
 class _InfoBox extends StatelessWidget {
   const _InfoBox({required this.text});
+
   final String text;
 
   static const appBg = Color(0xFFF4F7F9);
@@ -984,6 +1185,63 @@ class _InfoBox extends StatelessWidget {
         border: Border.all(color: uiBorder),
       ),
       child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _ToggleRowCard extends StatelessWidget {
+  const _ToggleRowCard({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.busy,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final bool busy;
+  final ValueChanged<bool>? onChanged;
+
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const actionOrange = Color(0xFFF98D28);
+  static const uiBorder = Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          busy
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: actionOrange,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1079,12 +1337,14 @@ class _DayChips extends StatelessWidget {
     required this.dayKeys,
     required this.dayLabels,
     required this.weekSlots,
+    required this.enabled,
     required this.onTapDay,
   });
 
   final List<String> dayKeys;
   final List<String> dayLabels;
   final Map<String, Set<int>> weekSlots;
+  final bool enabled;
   final void Function(String dayKey, String label)? onTapDay;
 
   static const primaryBlue = Color(0xFF1A2B48);
@@ -1104,18 +1364,24 @@ class _DayChips extends StatelessWidget {
 
         return InkWell(
           borderRadius: BorderRadius.circular(999),
-          onTap: onTapDay == null ? null : () => onTapDay!(dk, label),
+          onTap: (!enabled || onTapDay == null) ? null : () => onTapDay!(dk, label),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: enabled ? Colors.white : appBg,
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: uiBorder.withOpacity(0.85)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: enabled ? primaryBlue : primaryBlue.withOpacity(0.5),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1147,12 +1413,14 @@ class _DayCard extends StatelessWidget {
     required this.label,
     required this.slotCount,
     required this.preview,
+    required this.enabled,
     required this.onTap,
   });
 
   final String label;
   final int slotCount;
   final String preview;
+  final bool enabled;
   final VoidCallback? onTap;
 
   static const primaryBlue = Color(0xFF1A2B48);
@@ -1164,72 +1432,78 @@ class _DayCard extends StatelessWidget {
     final has = slotCount > 0;
 
     return InkWell(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(18),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: uiBorder.withOpacity(0.85)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 6),
-            )
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: has ? actionOrange.withOpacity(0.10) : primaryBlue.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: has ? actionOrange.withOpacity(0.25) : uiBorder.withOpacity(0.85)),
+      child: Opacity(
+        opacity: enabled ? 1 : 0.65,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: uiBorder.withOpacity(0.85)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
               ),
-              child: Icon(
-                has ? Icons.check_circle_rounded : Icons.event_available_rounded,
-                color: has ? actionOrange : primaryBlue,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 15)),
-                  const SizedBox(height: 6),
-                  Text(
-                    preview,
-                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: has ? actionOrange.withOpacity(0.10) : const Color(0xFFF4F7F9),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: (has ? actionOrange : uiBorder).withOpacity(0.35)),
-              ),
-              child: Text(
-                '$slotCount',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: has ? actionOrange : primaryBlue.withOpacity(0.6),
-                  fontSize: 12,
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: has ? actionOrange.withOpacity(0.10) : primaryBlue.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: has ? actionOrange.withOpacity(0.25) : uiBorder.withOpacity(0.85)),
+                ),
+                child: Icon(
+                  has ? Icons.check_circle_rounded : Icons.event_available_rounded,
+                  color: has ? actionOrange : primaryBlue,
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 15)),
+                    const SizedBox(height: 6),
+                    Text(
+                      preview,
+                      style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: has ? actionOrange.withOpacity(0.10) : const Color(0xFFF4F7F9),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: (has ? actionOrange : uiBorder).withOpacity(0.35)),
+                ),
+                child: Text(
+                  '$slotCount',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: has ? actionOrange : primaryBlue.withOpacity(0.6),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: enabled ? Colors.grey : Colors.grey.shade400,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1300,15 +1574,18 @@ class _SheetHeader extends StatelessWidget {
     );
   }
 }
+
 class _MeetLinkCard extends StatelessWidget {
   const _MeetLinkCard({
     required this.controller,
     required this.durationMinutes,
+    required this.enabled,
     required this.onDurationChanged,
   });
 
   final TextEditingController controller;
   final int durationMinutes;
+  final bool enabled;
   final void Function(int v) onDurationChanged;
 
   static const primaryBlue = Color(0xFF1A2B48);
@@ -1316,61 +1593,67 @@ class _MeetLinkCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.video_call_rounded, color: primaryBlue, size: 18),
-              SizedBox(width: 8),
-              Text('Google Meet link', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: controller,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(
-              hintText: 'https://meet.google.com/xxx-xxxx-xxx',
-              filled: true,
-              fillColor: const Color(0xFFF4F7F9),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    return Opacity(
+      opacity: enabled ? 1 : 0.65,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: uiBorder.withOpacity(0.85)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.video_call_rounded, color: primaryBlue, size: 18),
+                SizedBox(width: 8),
+                Text('Google Meet link', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+              ],
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Text('Duration', style: TextStyle(fontWeight: FontWeight.w900)),
-              const Spacer(),
-              DropdownButton<int>(
-                value: durationMinutes,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(value: 30, child: Text('30 min')),
-                  DropdownMenuItem(value: 45, child: Text('45 min')),
-                  DropdownMenuItem(value: 60, child: Text('60 min')),
-                  DropdownMenuItem(value: 90, child: Text('90 min')),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  onDurationChanged(v);
-                },
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              enabled: enabled,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                hintText: 'https://meet.google.com/xxx-xxxx-xxx',
+                filled: true,
+                fillColor: const Color(0xFFF4F7F9),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'This link will be used for learners to join the booked session.',
-            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey, fontSize: 12),
-          ),
-        ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('Duration', style: TextStyle(fontWeight: FontWeight.w900)),
+                const Spacer(),
+                DropdownButton<int>(
+                  value: durationMinutes,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 30, child: Text('30 min')),
+                    DropdownMenuItem(value: 45, child: Text('45 min')),
+                    DropdownMenuItem(value: 60, child: Text('60 min')),
+                    DropdownMenuItem(value: 90, child: Text('90 min')),
+                  ],
+                  onChanged: !enabled
+                      ? null
+                      : (v) {
+                    if (v == null) return;
+                    onDurationChanged(v);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'This link will be used for learners to join the booked session.',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1461,7 +1461,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   if (courses.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('No online courses available. Admin has not added the online syllabus yet.'),
+        content: Text('No Seats available. Please try again later.'),
       ),
     );
     return;
