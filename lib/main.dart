@@ -13,6 +13,7 @@ import 'enroll_screen.dart';
 import 'teacher/teacher_home.dart';
 import 'services/fcm_service.dart';
 import 'firebase_options.dart';
+import 'widgets/teacher_media_sheet.dart';
 // Keeping your imports (even if not used yet) so nothing breaks in your project
 import 'learner/learner_home.dart';
 import 'auth/auth_gate.dart';
@@ -1320,14 +1321,37 @@ class _CourseLite {
 
     if (v == null) return out;
 
-    void addInstructorFromMap(Map map) {
-      final mm = map.map((k, vv) => MapEntry(k.toString(), vv));
-      final uid = (mm['uid'] ?? '').toString().trim();
-      final name = (mm['name'] ?? '').toString().trim();
-
-      if (uid.isNotEmpty || name.isNotEmpty) {
-        out.add(_InstructorLite(uid: uid, name: name));
+    void addInstructor(String uid, String name) {
+      final cleanUid = uid.trim();
+      final cleanName = name.trim();
+      if (cleanUid.isNotEmpty || cleanName.isNotEmpty) {
+        out.add(_InstructorLite(uid: cleanUid, name: cleanName));
       }
+    }
+
+    void addInstructorFromMap(Map map, {String fallbackUid = ''}) {
+      final mm = map.map((k, vv) => MapEntry(k.toString(), vv));
+      final uid = (mm['uid'] ?? fallbackUid).toString().trim();
+      final name = (mm['name'] ?? '').toString().trim();
+      addInstructor(uid, name);
+    }
+    void addInstructorFromString(String raw) {
+      final s = raw.trim();
+      if (s.isEmpty) return;
+
+      // Case 1: stringified map like:
+      // "{uid: abc123, name: John Doe}"
+      final mapLike = RegExp(r'^\{\s*uid:\s*(.+?),\s*name:\s*(.+?)\s*\}$');
+      final match = mapLike.firstMatch(s);
+      if (match != null) {
+        final uid = (match.group(1) ?? '').trim();
+        final name = (match.group(2) ?? '').trim();
+        addInstructor(uid, name);
+        return;
+      }
+
+      // Case 2: plain teacher name
+      addInstructor('', s);
     }
 
     if (v is List) {
@@ -1335,10 +1359,7 @@ class _CourseLite {
         if (item is Map) {
           addInstructorFromMap(item);
         } else {
-          final name = item.toString().trim();
-          if (name.isNotEmpty) {
-            out.add(_InstructorLite(uid: '', name: name));
-          }
+          addInstructorFromString(item.toString());
         }
       }
       return out;
@@ -1347,45 +1368,46 @@ class _CourseLite {
     if (v is Map) {
       final vm = v.map((k, vv) => MapEntry(k.toString(), vv));
 
-      // CASE 1: a single instructor object like {uid: "...", name: "..."}
+      // Single instructor object
       if (vm.containsKey('uid') || vm.containsKey('name')) {
         addInstructorFromMap(vm);
         return out;
       }
 
-      // CASE 2: a Firebase map/list-like structure
+      // Firebase keyed structure
       final entries = vm.entries.toList()
         ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
 
       for (final e in entries) {
+        final key = e.key.toString().trim();
         final item = e.value;
 
         if (item is Map) {
-          addInstructorFromMap(item);
+          addInstructorFromMap(item, fallbackUid: key);
         } else {
-          final name = item.toString().trim();
-          if (name.isNotEmpty) {
-            out.add(_InstructorLite(uid: '', name: name));
-          }
+          addInstructor(key, item.toString());
         }
       }
       return out;
     }
 
     if (v is String) {
-      final parts = v
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty);
+      final s = v.trim();
 
+      // whole value itself is one stringified map
+      if (s.startsWith('{') && s.contains('uid:') && s.contains('name:')) {
+        addInstructorFromString(s);
+        return out;
+      }
+
+      final parts = s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
       for (final name in parts) {
-        out.add(_InstructorLite(uid: '', name: name));
+        addInstructor('', name);
       }
     }
 
     return out;
   }
-
   static double? _parseDouble(dynamic v) {
     if (v == null) return null;
     if (v is num) return v.toDouble();
@@ -1440,7 +1462,10 @@ class _CourseLite {
       deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
 
       instructors: _parseInstructors(
-        m['instructors'] ?? m['teacher'] ?? m['teachers'],
+        m['instructors_map'] ??
+            m['instructors'] ??
+            m['teacher'] ??
+            m['teachers'],
       ),
       pricePerMonth: _parseDouble(m['price_per_month'] ?? m['pricePerMonth']),
       pricePerLevel: _parseDouble(m['price_per_level'] ?? m['pricePerLevel']),
@@ -2365,7 +2390,7 @@ class _TeacherChip extends StatelessWidget {
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          builder: (_) => _TeacherMediaSheet(
+          builder: (_) => TeacherMediaSheet(
             teacherUid: teacher.uid,
             teacherName: teacher.name,
           ),
@@ -2376,294 +2401,6 @@ class _TeacherChip extends StatelessWidget {
         child: _PrettyChip(
           icon: Icons.person_rounded,
           label: teacher.name.isEmpty ? 'Teacher' : teacher.name,
-        ),
-      ),
-    );
-  }
-}
-
-class _TeacherMediaSheet extends StatefulWidget {
-  const _TeacherMediaSheet({
-    required this.teacherUid,
-    required this.teacherName,
-  });
-
-  final String teacherUid;
-  final String teacherName;
-
-  @override
-  State<_TeacherMediaSheet> createState() => _TeacherMediaSheetState();
-}
-
-class _TeacherMediaSheetState extends State<_TeacherMediaSheet> {
-  bool _loading = true;
-  String? _error;
-
-  String _teacherName = '';
-  List<String> _photos = [];
-  String? _videoUrl;
-
-  VideoPlayerController? _videoController;
-  bool _videoReady = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _teacherName = widget.teacherName;
-    _loadTeacher();
-  }
-
-  @override
-  void dispose() {
-    _videoController?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadTeacher() async {
-    try {
-      final snap =
-      await FirebaseDatabase.instance.ref('users/${widget.teacherUid}').get();
-
-      if (!snap.exists || snap.value == null) {
-        throw Exception('Teacher profile not found.');
-      }
-
-      final raw = snap.value;
-      if (raw is! Map) {
-        throw Exception('Invalid teacher profile.');
-      }
-
-      final Map<String, dynamic> data = {};
-      raw.forEach((k, v) {
-        data[k.toString()] = v;
-      });
-
-      final first = (data['first_name'] ?? '').toString().trim();
-      final last = (data['last_name'] ?? '').toString().trim();
-      final dbName = ('$first $last').trim();
-
-      final photos = <String>[];
-      final rawPhotos = data['profile_photos'];
-
-      if (rawPhotos is List) {
-        for (final item in rawPhotos) {
-          final s = (item ?? '').toString().trim();
-          if (s.isNotEmpty) photos.add(s);
-        }
-      } else if (rawPhotos is Map) {
-        final entries = rawPhotos.entries.toList()
-          ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
-        for (final e in entries) {
-          final s = (e.value ?? '').toString().trim();
-          if (s.isNotEmpty) photos.add(s);
-        }
-      } else if (rawPhotos is String) {
-        final s = rawPhotos.trim();
-        if (s.isNotEmpty) photos.add(s);
-      }
-
-      final rawVideo = data['intro_video_url'];
-      String? video;
-
-      if (rawVideo is String) {
-        final s = rawVideo.trim();
-        video = s.isEmpty ? null : s;
-      } else {
-        final s = (rawVideo ?? '').toString().trim();
-        video = s.isEmpty ? null : s;
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _teacherName = dbName.isNotEmpty ? dbName : widget.teacherName;
-        _photos = photos;
-        _videoUrl = video;
-      });
-
-      if (_videoUrl != null) {
-        final controller =
-        VideoPlayerController.networkUrl(Uri.parse(_videoUrl!));
-        await controller.initialize();
-        await controller.setLooping(false);
-
-        if (!mounted) {
-          await controller.dispose();
-          return;
-        }
-
-        setState(() {
-          _videoController = controller;
-          _videoReady = true;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-      });
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-      });
-    }
-  }
-
-  Widget _buildPhotos() {
-    if (_photos.isEmpty) {
-      return Container(
-        height: 180,
-        decoration: BoxDecoration(
-          color: Brand.appBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Brand.uiBorder),
-        ),
-        child: const Center(
-          child: Icon(
-            Icons.person_rounded,
-            size: 56,
-            color: Brand.primaryBlue,
-          ),
-        ),
-      );
-    }
-
-    return SizedBox(
-      height: 220,
-      child: PageView.builder(
-        itemCount: _photos.length,
-        controller: PageController(viewportFraction: 0.92),
-        itemBuilder: (context, index) {
-          final url = _photos[index];
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                color: Brand.appBg,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Icon(Icons.image_not_supported),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildVideo() {
-    if (_videoUrl == null) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Intro video',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
-            color: Brand.primaryBlue,
-          ),
-        ),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            color: Colors.black,
-            child: AspectRatio(
-              aspectRatio: (_videoReady && _videoController != null)
-                  ? _videoController!.value.aspectRatio
-                  : 16 / 9,
-              child: !_videoReady || _videoController == null
-                  ? const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              )
-                  : Stack(
-                alignment: Alignment.center,
-                children: [
-                  VideoPlayer(_videoController!),
-                  IconButton(
-                    iconSize: 60,
-                    color: Colors.white,
-                    onPressed: () {
-                      final c = _videoController!;
-                      if (c.value.isPlaying) {
-                        c.pause();
-                      } else {
-                        c.play();
-                      }
-                      setState(() {});
-                    },
-                    icon: Icon(
-                      _videoController!.value.isPlaying
-                          ? Icons.pause_circle_filled_rounded
-                          : Icons.play_circle_fill_rounded,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _teacherName.isEmpty ? 'Teacher' : _teacherName,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Brand.primaryBlue,
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 30),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.red.withOpacity(0.20)),
-                  ),
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                )
-              else ...[
-                  _buildPhotos(),
-                  if (_videoUrl != null) ...[
-                    const SizedBox(height: 18),
-                    _buildVideo(),
-                  ],
-                ],
-            ],
-          ),
         ),
       ),
     );

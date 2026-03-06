@@ -39,7 +39,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/push_client.dart';
 import '../services/notification_service.dart';
-
+import '../widgets/teacher_media_sheet.dart';
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
 
@@ -1467,7 +1467,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       ],
     );
   }
-
   Widget _buildFilters() {
     // teacher list from generated slots
     final Map<String, String> teacherIdToName = {};
@@ -1480,31 +1479,86 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Teacher dropdown
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: uiBorder.withOpacity(0.9)),
-          ),
-          child: DropdownButton<String>(
-            value: teacherFilter,
-            isExpanded: true,
-            underline: const SizedBox.shrink(),
-            icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
-            items: [
-              const DropdownMenuItem(value: 'all', child: Text('All teachers')),
-              ...teacherIds.map((id) {
-                final name = teacherIdToName[id] ?? 'Teacher';
-                return DropdownMenuItem(value: id, child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis));
-              }),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: uiBorder.withOpacity(0.9)),
+                ),
+                child: DropdownButton<String>(
+                  value: teacherFilter,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'all',
+                      child: Text('All teachers'),
+                    ),
+                    ...teacherIds.map((id) {
+                      final name = teacherIdToName[id] ?? 'Teacher';
+                      return DropdownMenuItem(
+                        value: id,
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => teacherFilter = v);
+                  },
+                ),
+              ),
+            ),
+            if (teacherFilter != 'all') ...[
+              const SizedBox(width: 8),
+              InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () {
+                  final selectedTeacherName =
+                      teacherIdToName[teacherFilter] ?? 'Teacher';
+
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    showDragHandle: true,
+                    backgroundColor: Colors.white,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius:
+                      BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    builder: (_) => TeacherMediaSheet(
+                      teacherUid: teacherFilter,
+                      teacherName: selectedTeacherName,
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: actionOrange.withOpacity(0.10),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: actionOrange.withOpacity(0.30),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.question_mark_rounded,
+                    color: actionOrange,
+                  ),
+                ),
+              ),
             ],
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => teacherFilter = v);
-            },
-          ),
+          ],
         ),
         const SizedBox(height: 10),
 
@@ -1513,9 +1567,21 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            _chip('All day', timeFilter == 'all', () => setState(() => timeFilter = 'all')),
-            _chip('Morning', timeFilter == 'morning', () => setState(() => timeFilter = 'morning')),
-            _chip('Afternoon', timeFilter == 'afternoon', () => setState(() => timeFilter = 'afternoon')),
+            _chip(
+              'All day',
+              timeFilter == 'all',
+                  () => setState(() => timeFilter = 'all'),
+            ),
+            _chip(
+              'Morning',
+              timeFilter == 'morning',
+                  () => setState(() => timeFilter = 'morning'),
+            ),
+            _chip(
+              'Afternoon',
+              timeFilter == 'afternoon',
+                  () => setState(() => timeFilter = 'afternoon'),
+            ),
             _togglePill(
               label: 'Only joinable',
               value: onlyJoinable,
@@ -1531,7 +1597,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       ],
     );
   }
-
   Widget _togglePill({required String label, required bool value, required ValueChanged<bool> onChanged}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
