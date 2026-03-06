@@ -23,6 +23,8 @@ import 'attendance_history_screen.dart';
 import 'attendance_stats_screen.dart';
 import 'teacher_class_progress_screen.dart';
 
+import 'teacher_learner_gallery_screen.dart';
+
 class TeacherClassesScreen extends StatefulWidget {
   const TeacherClassesScreen({super.key});
 
@@ -1071,6 +1073,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final classId = _safeStr(c['id'] ?? c['class_id']);
     final title = _safeStr(c['course_title']).isEmpty ? 'Class' : _safeStr(c['course_title']);
     final duration = _safeStr(c['course_duration']);
+    final classTitle = title;
     final learnersCount = _learnersCount(c);
     final learnersList = _inClassLearnersList(c);
 
@@ -1188,6 +1191,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   ...learnersList.map((learner) {
                     final name = _safeStr(learner['name']);
 
+                    final learnerUid = _safeStr(learner['uid']);
+                    final learnerDisplayName = name.isEmpty ? 'Learner' : name;
+
                     return Container(
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1206,7 +1212,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              name.isEmpty ? 'Learner' : name,
+                              learnerDisplayName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -1216,6 +1222,38 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                 height: 1.15,
                               ),
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.photo_library_rounded, size: 16),
+                            label: const Text('Gallery'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: primaryBlue,
+                              side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
+                            onPressed: learnerUid.isEmpty
+                                ? null
+                                : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TeacherLearnerGalleryScreen(
+                                    learnerUid: learnerUid,
+                                    learnerName: learnerDisplayName,
+                                    classId: classId,
+                                    classTitle: classTitle,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),

@@ -12,6 +12,8 @@ import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
 import 'teacher/teacher_home.dart';
 import 'services/fcm_service.dart';
+import 'learner/learner_gallery_screen.dart';
+import 'learner/learner_gallery_screen.dart';
 import 'firebase_options.dart';
 import 'widgets/teacher_media_sheet.dart';
 // Keeping your imports (even if not used yet) so nothing breaks in your project
@@ -162,8 +164,8 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Classroom',
           ),
           NavigationDestination(
-            icon: Icon(Icons.menu_book_rounded),
-            label: 'Activities',
+            icon: Icon(Icons.photo_library_rounded),
+            label: 'Gallery',
           ),
         ],
       ),
@@ -1179,59 +1181,468 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     );
   }
 }
+
 class StoriesHome extends StatelessWidget {
   const StoriesHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _PublicGalleryShowcase();
+  }
+}
+class _PublicGalleryShowcase extends StatefulWidget {
+  const _PublicGalleryShowcase();
+
+  @override
+  State<_PublicGalleryShowcase> createState() => _PublicGalleryShowcaseState();
+}
+
+class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  DatabaseReference _galleryRef() => _db.child('public_gallery_teasers');
+
+  List<Map<String, dynamic>> _itemsFromSnapshot(dynamic value) {
+    if (value is! Map) return [];
+
+    final raw = Map<dynamic, dynamic>.from(value);
+    final out = <Map<String, dynamic>>[];
+
+    raw.forEach((key, val) {
+      if (val is! Map) return;
+
+      final m = val.map((k, vv) => MapEntry(k.toString(), vv));
+      out.add({
+        'id': key.toString(),
+        ...m,
+      });
+    });
+
+    out.sort((a, b) {
+      final aTs = _toInt(a['createdAt']);
+      final bTs = _toInt(b['createdAt']);
+      return bTs.compareTo(aTs);
+    });
+
+    return out;
+  }
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static String _two(int n) => n < 10 ? '0$n' : '$n';
+
+  String _fmtDate(dynamic ts) {
+    final ms = _toInt(ts);
+    if (ms <= 0) return '-';
+
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
+  }
 
   @override
   Widget build(BuildContext context) {
     return SoftBackground(
       child: Column(
         children: [
-          const SimpleTopBar(title: 'Activities'),
+          const SimpleTopBar(title: 'Gallery'),
+          Expanded(
+            child: StreamBuilder<DatabaseEvent>(
+              stream: _galleryRef().onValue,
+              builder: (context, snap) {
+                final items = _itemsFromSnapshot(snap.data?.snapshot.value);
+
+                if (items.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                      child: CardShell(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 54,
+                              height: 54,
+                              decoration: BoxDecoration(
+                                color: Brand.accentCyan.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Brand.uiBorder),
+                              ),
+                              child: const Icon(
+                                Icons.photo_library_rounded,
+                                color: Brand.primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Gallery Coming Soon',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Public gallery teaser media will appear here.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Brand.mainText.withOpacity(0.75),
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                    final url = (item['url'] ?? '').toString().trim();
+                    final uploadedByName =
+                    (item['uploadedByName'] ?? '').toString().trim();
+                    final createdAt = _fmtDate(item['createdAt']);
+
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _PublicGalleryViewerScreen(
+                              type: type,
+                              url: url,
+                              uploadedByName: uploadedByName,
+                              createdAt: createdAt,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Brand.uiBorder.withOpacity(0.85),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 10,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (type == 'video')
+                                const _PublicGalleryVideoTile()
+                              else
+                                Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Colors.grey.shade200,
+                                    alignment: Alignment.center,
+                                    child: const Icon(Icons.broken_image_outlined),
+                                  ),
+                                ),
+                              Positioned(
+                                left: 10,
+                                right: 10,
+                                bottom: 10,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.58),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        type == 'video'
+                                            ? Icons.play_circle_fill_rounded
+                                            : Icons.photo_rounded,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          type == 'video' ? 'Video' : 'Photo',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicGalleryVideoTile extends StatelessWidget {
+  const _PublicGalleryVideoTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          color: Colors.black,
+          child: const Center(
+            child: Icon(
+              Icons.videocam_rounded,
+              color: Colors.white70,
+              size: 42,
+            ),
+          ),
+        ),
+        Container(
+          color: Colors.black.withOpacity(0.18),
+        ),
+        const Center(
+          child: Icon(
+            Icons.play_circle_fill_rounded,
+            color: Colors.white,
+            size: 52,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PublicGalleryViewerScreen extends StatelessWidget {
+  const _PublicGalleryViewerScreen({
+    required this.type,
+    required this.url,
+    required this.uploadedByName,
+    required this.createdAt,
+  });
+
+  final String type;
+  final String url;
+  final String uploadedByName;
+  final String createdAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final isVideo = type.trim().toLowerCase() == 'video';
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          isVideo ? 'Video' : 'Photo',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      body: Column(
+        children: [
           Expanded(
             child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                  child: CardShell(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 54,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            color: Brand.accentCyan.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Brand.uiBorder),
-                          ),
-                          child: const Icon(
-                            Icons.menu_book_rounded,
-                            color: Brand.primaryBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Stories & Quizzes (SOON)',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Next step: story levels, audio player, and quizzes.',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Brand.mainText.withOpacity(0.75),
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ),
+              child: isVideo
+                  ? _PublicGalleryViewerVideo(url: url)
+                  : InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.broken_image_outlined,
+                    color: Colors.white,
+                    size: 44,
                   ),
                 ),
               ),
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              border: Border(
+                top: BorderSide(color: Colors.white.withOpacity(0.12)),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isVideo ? 'Video' : 'Photo',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                if (uploadedByName.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Uploaded by: $uploadedByName',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  'Added: $createdAt',
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicGalleryViewerVideo extends StatefulWidget {
+  const _PublicGalleryViewerVideo({required this.url});
+
+  final String url;
+
+  @override
+  State<_PublicGalleryViewerVideo> createState() =>
+      _PublicGalleryViewerVideoState();
+}
+
+class _PublicGalleryViewerVideoState extends State<_PublicGalleryViewerVideo> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await controller.initialize();
+      controller.setLooping(false);
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _controller = controller;
+        _ready = true;
+        _failed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _ready = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    final c = _controller;
+    _controller = null;
+    c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) {
+      return const Icon(
+        Icons.broken_image_outlined,
+        color: Colors.white,
+        size: 44,
+      );
+    }
+
+    if (!_ready || _controller == null) {
+      return const SizedBox(
+        width: 40,
+        height: 40,
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    return AspectRatio(
+      aspectRatio: _controller!.value.aspectRatio,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          VideoPlayer(_controller!),
+          IconButton(
+            onPressed: () {
+              if (_controller!.value.isPlaying) {
+                _controller!.pause();
+              } else {
+                _controller!.play();
+              }
+              setState(() {});
+            },
+            iconSize: 60,
+            color: Colors.white,
+            icon: Icon(
+              _controller!.value.isPlaying
+                  ? Icons.pause_circle_filled_rounded
+                  : Icons.play_circle_fill_rounded,
             ),
           ),
         ],

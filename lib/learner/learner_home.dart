@@ -14,7 +14,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-
+import 'learner_gallery_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -955,10 +955,10 @@ class _HomeCardsGrid extends StatelessWidget {
             _RemindersHomeCard(),
             _CallLogsHomeCard(),
             _HomeCard(
-              icon: Icons.group_rounded,
-              title: 'Activities',
-              subtitle: 'Coming soon',
-              routeType: _HomeCardRoute.friends,
+              icon: Icons.photo_library_rounded,
+              title: 'Gallery',
+              subtitle: 'Photos & videos',
+              routeType: _HomeCardRoute.gallery,
             ),
             _HomeCard(
               icon: Icons.info_outline_rounded,
@@ -1908,9 +1908,8 @@ class _MailHomeCard extends StatelessWidget {
   }
 }
 
-/// ✅ NEW route type for Call Logs
-enum _HomeCardRoute { mail, homework, reminders, callLogs, friends }
 
+enum _HomeCardRoute { mail, homework, reminders, callLogs, gallery, friends }
 class _HomeCard extends StatelessWidget {
   const _HomeCard({
     required this.icon,
@@ -2002,6 +2001,13 @@ class _HomeCard extends StatelessWidget {
         if (routeType == _HomeCardRoute.callLogs) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+          );
+          return;
+        }
+
+        if (routeType == _HomeCardRoute.gallery) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()),
           );
           return;
         }

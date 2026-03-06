@@ -12,6 +12,7 @@ import 'admin_courses.dart';
 import 'admin_learners.dart';
 import 'admin_staff.dart';
 import 'admin_classes.dart';
+import 'admin_public_gallery_screen.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
 import '../shared/session_manager.dart';
@@ -213,6 +214,7 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
                           ),
                         ),
+
                         const _AdminOnlineBookingDashCard(),
                         _DashCard(
                           title: 'Classes',
@@ -292,6 +294,17 @@ class AdminHome extends StatelessWidget {
                           color: primaryBlue,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const AdminContractScreen()),
+                          ),
+                        ),
+                        _DashCard(
+                          title: 'Public Gallery',
+                          subtitle: 'Teaser media',
+                          icon: Icons.photo_library_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AdminPublicGalleryScreen(),
+                            ),
                           ),
                         ),
                       ],
