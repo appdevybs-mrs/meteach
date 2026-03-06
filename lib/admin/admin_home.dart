@@ -212,15 +212,7 @@ class AdminHome extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
                           ),
                         ),
-                        _DashCard(
-                          title: 'Online Booking',
-                          subtitle: 'Online Booking management',
-                          icon: Icons.event_available_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminBookingScreen()),
-                          ),
-                        ),
+                        const _AdminOnlineBookingDashCard(),
                         _DashCard(
                           title: 'Classes',
                           subtitle: 'Manage classes',
@@ -315,7 +307,98 @@ class AdminHome extends StatelessWidget {
 }
 
 // ===================== SUBSCRIPTIONS CARD =====================
+class _AdminOnlineBookingDashCard extends StatelessWidget {
+  const _AdminOnlineBookingDashCard();
 
+  DateTime? _parseSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int _countUpcomingBookings(dynamic rootValue) {
+    if (rootValue is! Map) return 0;
+
+    final now = DateTime.now();
+    int count = 0;
+
+    final byCourse = Map<dynamic, dynamic>.from(rootValue);
+
+    for (final courseEntry in byCourse.entries) {
+      final courseNode = courseEntry.value;
+      if (courseNode is! Map) continue;
+
+      final byDate = Map<dynamic, dynamic>.from(courseNode);
+
+      for (final dateEntry in byDate.entries) {
+        final dayKey = dateEntry.key.toString();
+        final dateNode = dateEntry.value;
+        if (dateNode is! Map) continue;
+
+        final byTime = Map<dynamic, dynamic>.from(dateNode);
+
+        for (final timeEntry in byTime.entries) {
+          final hhmm = timeEntry.key.toString();
+          final slotNode = timeEntry.value;
+          if (slotNode is! Map) continue;
+
+          final dt = _parseSlotStart(dayKey, hhmm);
+          if (dt == null) continue;
+
+          if (dt.isAfter(now)) {
+            count += 1;
+          }
+        }
+      }
+    }
+
+    return count;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('booking_reservations');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        final count = _countUpcomingBookings(snap.data?.snapshot.value);
+
+        final subtitle = count == 0
+            ? 'Online Booking management'
+            : '$count upcoming booking${count == 1 ? '' : 's'}';
+
+        return _DashCard(
+          title: 'Online Booking',
+          subtitle: subtitle,
+          icon: Icons.event_available_rounded,
+          color: AdminHome.primaryBlue,
+          badgeCount: count,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminBookingScreen()),
+          ),
+        );
+      },
+    );
+  }
+}
 class _SubscriptionsDashCard extends StatelessWidget {
   const _SubscriptionsDashCard();
 
@@ -652,13 +735,14 @@ class _DashCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
-
+  final int badgeCount;
   const _DashCard({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.color,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -687,15 +771,41 @@ class _DashCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: color.withOpacity(0.12)),
-                ),
-                child: Icon(icon, color: color, size: 20),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: color.withOpacity(0.12)),
+                    ),
+                    child: Icon(icon, color: color, size: 20),
+                  ),
+                  if (badgeCount > 0)
+                    Positioned(
+                      right: -6,
+                      top: -6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: Text(
+                          badgeCount > 99 ? '99+' : badgeCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 10),
               Text(
