@@ -1,16 +1,14 @@
 // teacher_syllabus_details_screen.dart
-// ✅ FULL DROP-IN REPLACEMENT (copy/paste)
+// ✅ FULL DROP-IN REPLACEMENT
 //
-// Goal:
-// - Force this screen to be LTR (so it won't look RTL even if the app locale is Arabic)
-// - Remove ALL Arabic text/comments and use clear English everywhere
-// - Keep your current Firebase schema assumptions exactly the same (read-only UI)
-// - Make the UI easier to follow: summary + recommendations + search + clean empty states
-//
-// Data expected (same as your code):
-// syllabi/<courseId> -> { title, courseCode, duration, updatedAt, units:[...] or units:{...} }
-// units -> { id, order, title, otherTitle, description, sessions:[...] or sessions:{...} }
-// sessions -> { id, order, title, skillType, objective, durationMinutes, content, homework }
+// What this version fixes:
+// - Reads the NEW variant-based schema from: syllabi/<courseId>
+// - Shows a tab for each variant: In-Class, Online, Live, Recorded
+// - Keeps the screen forced to LTR
+// - Uses top-level course meta as fallback
+// - Reads units from each variant separately
+// - Search works inside the selected tab
+// - Clean empty states for variants with no units
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -23,23 +21,40 @@ class TeacherSyllabusDetailsScreen extends StatefulWidget {
   final String courseId;
 
   @override
-  State<TeacherSyllabusDetailsScreen> createState() => _TeacherSyllabusDetailsScreenState();
+  State<TeacherSyllabusDetailsScreen> createState() =>
+      _TeacherSyllabusDetailsScreenState();
 }
 
-class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScreen> {
+class _TeacherSyllabusDetailsScreenState
+    extends State<TeacherSyllabusDetailsScreen>
+    with SingleTickerProviderStateMixin {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  static const List<String> _variantKeys = [
+    'in_class',
+    'online',
+    'live',
+    'recorded',
+  ];
+
+  late final TabController _tabController;
 
   bool _loading = true;
   String? _error;
   _SyllabusCourse? _course;
 
-  // Search
   final TextEditingController _search = TextEditingController();
   String _query = '';
 
   @override
   void initState() {
     super.initState();
+
+    _tabController = TabController(length: _variantKeys.length, vsync: this);
+    _tabController.addListener(() {
+      if (!mounted) return;
+      setState(() {});
+    });
 
     _search.addListener(() {
       final v = _search.text.trim();
@@ -52,6 +67,7 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
 
   @override
   void dispose() {
+    _tabController.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -76,40 +92,81 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
         return;
       }
 
-      final data = raw.map((k, v) => MapEntry(k.toString(), v));
+      final data = Map<String, dynamic>.from(
+        raw.map((k, v) => MapEntry(k.toString(), v)),
+      );
 
-      final title = (data['title'] ?? widget.courseId).toString().trim();
-      final code = (data['courseCode'] ?? '').toString().trim();
-      final duration = (data['duration'] ?? '').toString().trim();
-      final updatedAt = _toInt(data['updatedAt']);
+      final topTitle = _readString(data['title']);
+      final topCode = _readString(data['courseCode']);
+      final topDuration = _readString(data['duration']);
+      final topUpdatedAt = _toInt(data['updatedAt']);
 
-      final units = _parseUnits(data['units']);
+      final variants = <String, _SyllabusVariant>{};
 
-      // Sort units by order, then title
-      units.sort((a, b) {
-        final c = a.order.compareTo(b.order);
-        if (c != 0) return c;
-        return a.title.compareTo(b.title);
-      });
+      for (final key in _variantKeys) {
+        final variantMap = _asStringKeyMap(data[key]);
 
-      // Sort sessions by order inside each unit
-      for (final u in units) {
-        u.sessions.sort((a, b) {
+        final title = _firstNonEmpty([
+          _readString(variantMap?['title']),
+          topTitle,
+          'Syllabus',
+        ]);
+
+        final code = _firstNonEmpty([
+          _readString(variantMap?['courseCode']),
+          topCode,
+          '',
+        ]);
+
+        final duration = _firstNonEmpty([
+          _readString(variantMap?['duration']),
+          topDuration,
+          '',
+        ]);
+
+        final updatedAt = _maxInt([
+          _toInt(variantMap?['updatedAt']),
+          topUpdatedAt,
+        ]);
+
+        final units = _parseUnits(variantMap?['units']);
+
+        units.sort((a, b) {
           final c = a.order.compareTo(b.order);
           if (c != 0) return c;
           return a.title.compareTo(b.title);
         });
+
+        for (final u in units) {
+          u.sessions.sort((a, b) {
+            final c = a.order.compareTo(b.order);
+            if (c != 0) return c;
+            return a.title.compareTo(b.title);
+          });
+        }
+
+        variants[key] = _SyllabusVariant(
+          key: key,
+          title: title,
+          code: code,
+          duration: duration,
+          updatedAt: updatedAt,
+          units: units,
+        );
       }
 
       setState(() {
         _loading = false;
         _course = _SyllabusCourse(
           id: widget.courseId,
-          title: title.isEmpty ? 'Syllabus' : title,
-          code: code,
-          duration: duration,
-          updatedAt: updatedAt,
-          units: units,
+          title: _firstNonEmpty([topTitle, variants['in_class']?.title ?? '', 'Syllabus']),
+          code: _firstNonEmpty([topCode, variants['in_class']?.code ?? '', '']),
+          duration: _firstNonEmpty([topDuration, variants['in_class']?.duration ?? '', '']),
+          updatedAt: _maxInt([
+            topUpdatedAt,
+            ...variants.values.map((e) => e.updatedAt),
+          ]),
+          variants: variants,
         );
       });
     } catch (e) {
@@ -121,12 +178,37 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     }
   }
 
-  // ---------- Parsing helpers (same schema expectations) ----------
+  Map<String, dynamic>? _asStringKeyMap(dynamic value) {
+    if (value is! Map) return null;
+    final out = <String, dynamic>{};
+    value.forEach((k, v) {
+      out[k.toString()] = v;
+    });
+    return out;
+  }
+
+  static String _readString(dynamic v) => (v ?? '').toString().trim();
+
+  static String _firstNonEmpty(List<String> values) {
+    for (final v in values) {
+      if (v.trim().isNotEmpty) return v.trim();
+    }
+    return '';
+  }
 
   static int _toInt(dynamic v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static int _maxInt(List<int> values) {
+    if (values.isEmpty) return 0;
+    var max = values.first;
+    for (final v in values) {
+      if (v > max) max = v;
+    }
+    return max;
   }
 
   static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
@@ -156,22 +238,24 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     final unitMaps = _asListOfMaps(node);
 
     for (final um in unitMaps) {
-      final title = (um['title'] ?? '').toString().trim();
-      final otherTitle = (um['otherTitle'] ?? '').toString().trim();
-      final desc = (um['description'] ?? '').toString().trim();
-      final id = (um['id'] ?? '').toString().trim();
+      final title = _readString(um['title']);
+      final otherTitle = _readString(um['otherTitle']);
+      final desc = _readString(um['description']);
+      final id = _readString(um['id']);
       final order = _toInt(um['order']);
 
       final sessions = _parseSessions(um['sessions']);
 
-      out.add(_Unit(
-        id: id,
-        order: order <= 0 ? 999999 : order,
-        title: title.isEmpty ? 'Unit' : title,
-        otherTitle: otherTitle,
-        description: desc,
-        sessions: sessions,
-      ));
+      out.add(
+        _Unit(
+          id: id,
+          order: order <= 0 ? 999999 : order,
+          title: title.isEmpty ? 'Unit' : title,
+          otherTitle: otherTitle,
+          description: desc,
+          sessions: sessions,
+        ),
+      );
     }
 
     return out;
@@ -182,16 +266,18 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     final sessionMaps = _asListOfMaps(node);
 
     for (final sm in sessionMaps) {
-      out.add(_Session(
-        id: (sm['id'] ?? '').toString().trim(),
-        order: _toInt(sm['order']) <= 0 ? 999999 : _toInt(sm['order']),
-        title: (sm['title'] ?? '').toString().trim(),
-        skillType: (sm['skillType'] ?? '').toString().trim(),
-        objective: (sm['objective'] ?? '').toString().trim(),
-        durationMinutes: _toInt(sm['durationMinutes']),
-        content: (sm['content'] ?? '').toString().trim(),
-        homework: (sm['homework'] ?? '').toString().trim(),
-      ));
+      out.add(
+        _Session(
+          id: _readString(sm['id']),
+          order: _toInt(sm['order']) <= 0 ? 999999 : _toInt(sm['order']),
+          title: _readString(sm['title']),
+          skillType: _readString(sm['skillType']),
+          objective: _readString(sm['objective']),
+          durationMinutes: _toInt(sm['durationMinutes']),
+          content: _readString(sm['content']),
+          homework: _readString(sm['homework']),
+        ),
+      );
     }
 
     return out;
@@ -210,7 +296,20 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     }
   }
 
-  // ---------- Search helpers ----------
+  String _variantLabel(String key) {
+    switch (key) {
+      case 'in_class':
+        return 'In-Class';
+      case 'online':
+        return 'Online';
+      case 'live':
+        return 'Live';
+      case 'recorded':
+        return 'Recorded';
+      default:
+        return key;
+    }
+  }
 
   bool _matches(_Session s, String q) {
     if (q.isEmpty) return true;
@@ -225,29 +324,31 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
         t(s.id).contains(z);
   }
 
-  List<_Unit> _filteredUnits(_SyllabusCourse c) {
-    if (_query.isEmpty) return c.units;
+  List<_Unit> _filteredUnits(_SyllabusVariant variant) {
+    if (_query.isEmpty) return variant.units;
 
     final out = <_Unit>[];
-    for (final u in c.units) {
+    for (final u in variant.units) {
       final filteredSessions = u.sessions.where((s) => _matches(s, _query)).toList();
       if (filteredSessions.isEmpty) continue;
 
-      out.add(_Unit(
-        id: u.id,
-        order: u.order,
-        title: u.title,
-        otherTitle: u.otherTitle,
-        description: u.description,
-        sessions: filteredSessions,
-      ));
+      out.add(
+        _Unit(
+          id: u.id,
+          order: u.order,
+          title: u.title,
+          otherTitle: u.otherTitle,
+          description: u.description,
+          sessions: filteredSessions,
+        ),
+      );
     }
     return out;
   }
 
-  int _totalMinutes(_SyllabusCourse c) {
+  int _totalMinutes(_SyllabusVariant variant) {
     int sum = 0;
-    for (final u in c.units) {
+    for (final u in variant.units) {
       for (final s in u.sessions) {
         if (s.durationMinutes > 0) sum += s.durationMinutes;
       }
@@ -263,11 +364,17 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
     return sum;
   }
 
+  _SyllabusVariant? get _currentVariant {
+    final c = _course;
+    if (c == null) return null;
+    final index = _tabController.index.clamp(0, _variantKeys.length - 1);
+    return c.variants[_variantKeys[index]];
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = _course;
 
-    // ✅ Force this screen to stay LTR even if the app locale is RTL.
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Scaffold(
@@ -286,6 +393,16 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
               fontWeight: FontWeight.w900,
             ),
           ),
+          bottom: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            labelColor: UiK.primaryBlue,
+            unselectedLabelColor: UiK.primaryBlue.withOpacity(0.55),
+            indicatorColor: UiK.primaryBlue,
+            tabs: _variantKeys
+                .map((e) => Tab(text: _variantLabel(e)))
+                .toList(),
+          ),
           actions: [
             IconButton(
               tooltip: 'Refresh',
@@ -299,48 +416,58 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                ? _ErrorBox(message: 'Failed to load the syllabus.\n\n$_error', onRetry: _load)
+                ? _ErrorBox(
+              message: 'Failed to load the syllabus.\n\n$_error',
+              onRetry: _load,
+            )
                 : c == null
                 ? const _InfoBox(
               title: 'Not found',
               message: 'We could not find this course syllabus.',
               icon: Icons.info_rounded,
             )
-                : _buildContent(c),
+                : TabBarView(
+              controller: _tabController,
+              children: _variantKeys.map((key) {
+                final variant = c.variants[key]!;
+                return _buildVariantContent(variant);
+              }).toList(),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildContent(_SyllabusCourse c) {
-    final unitsFiltered = _filteredUnits(c);
+  Widget _buildVariantContent(_SyllabusVariant variant) {
+    final unitsFiltered = _filteredUnits(variant);
     final filteredSessionsCount = _countFilteredSessions(unitsFiltered);
+    final unitsCount = variant.units.length;
+    final sessionsCount =
+    variant.units.fold<int>(0, (p, u) => p + u.sessions.length);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       children: [
         _CourseTopCard(
-          title: c.title,
-          code: c.code,
-          duration: c.duration,
-          updatedLabel: _fmtDate(c.updatedAt),
-          unitsCount: c.units.length,
-          sessionsCount: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
+          title: variant.title,
+          code: variant.code,
+          duration: variant.duration,
+          updatedLabel: _fmtDate(variant.updatedAt),
+          unitsCount: unitsCount,
+          sessionsCount: sessionsCount,
+          variantLabel: _variantLabel(variant.key),
         ),
         const SizedBox(height: 12),
-
         _SummaryTableCard(
-          units: c.units.length,
-          sessions: c.units.fold<int>(0, (p, u) => p + u.sessions.length),
-          totalMinutes: _totalMinutes(c),
-          updatedLabel: _fmtDate(c.updatedAt),
+          units: unitsCount,
+          sessions: sessionsCount,
+          totalMinutes: _totalMinutes(variant),
+          updatedLabel: _fmtDate(variant.updatedAt),
         ),
         const SizedBox(height: 12),
-
-        _RecommendationsCard(course: c),
+        _RecommendationsCard(variant: variant),
         const SizedBox(height: 12),
-
         _SearchCard(
           controller: _search,
           onClear: () => _search.clear(),
@@ -349,15 +476,15 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
               : '$filteredSessionsCount session(s) match “$_query”.',
         ),
         const SizedBox(height: 12),
-
-        if (_query.isNotEmpty && unitsFiltered.isEmpty)
+        if (variant.units.isEmpty)
+          _VariantEmptyState(variantLabel: _variantLabel(variant.key))
+        else if (_query.isNotEmpty && unitsFiltered.isEmpty)
           _EmptySearchResults(
             query: _query,
             onClear: () => _search.clear(),
           )
         else
           ...unitsFiltered.map((u) => _UnitCard(unit: u)),
-
         const SizedBox(height: 12),
         const _FooterHint(),
       ],
@@ -366,6 +493,20 @@ class _TeacherSyllabusDetailsScreenState extends State<TeacherSyllabusDetailsScr
 }
 
 /* ================== UI WIDGETS ================== */
+
+class _VariantEmptyState extends StatelessWidget {
+  const _VariantEmptyState({required this.variantLabel});
+  final String variantLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return _InfoBox(
+      title: 'No units in $variantLabel',
+      message: 'This variant does not have any syllabus units yet.',
+      icon: Icons.menu_book_outlined,
+    );
+  }
+}
 
 class _SearchCard extends StatelessWidget {
   const _SearchCard({
@@ -394,7 +535,10 @@ class _SearchCard extends StatelessWidget {
         children: [
           const Text(
             'Search',
-            style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+            style: TextStyle(
+              color: UiK.primaryBlue,
+              fontWeight: FontWeight.w900,
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -402,12 +546,14 @@ class _SearchCard extends StatelessWidget {
             textInputAction: TextInputAction.search,
             style: const TextStyle(fontWeight: FontWeight.w800),
             decoration: InputDecoration(
-              hintText: 'Search sessions (title, objective, content, skill type, ID...)',
+              hintText:
+              'Search sessions (title, objective, content, skill type, ID...)',
               hintStyle: TextStyle(
                 color: UiK.mainText.withOpacity(0.55),
                 fontWeight: FontWeight.w700,
               ),
-              prefixIcon: const Icon(Icons.search_rounded, color: UiK.primaryBlue),
+              prefixIcon:
+              const Icon(Icons.search_rounded, color: UiK.primaryBlue),
               suffixIcon: hasText
                   ? IconButton(
                 tooltip: 'Clear',
@@ -417,12 +563,15 @@ class _SearchCard extends StatelessWidget {
                   : null,
               filled: true,
               fillColor: UiK.primaryBlue.withOpacity(0.04),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
           if (resultLabel != null) ...[
@@ -464,7 +613,10 @@ class _EmptySearchResults extends StatelessWidget {
               SizedBox(width: 8),
               Text(
                 'No results',
-                style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: UiK.primaryBlue,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
@@ -483,9 +635,14 @@ class _EmptySearchResults extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: onClear,
               icon: const Icon(Icons.clear_rounded),
-              label: const Text('Clear search', style: TextStyle(fontWeight: FontWeight.w900)),
+              label: const Text(
+                'Clear search',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
               style: OutlinedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 side: BorderSide(color: UiK.uiBorder.withOpacity(0.95)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 foregroundColor: UiK.primaryBlue,
@@ -547,12 +704,15 @@ class _SummaryTableCard extends StatelessWidget {
         child: Table(
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           border: TableBorder(
-            horizontalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
-            verticalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            horizontalInside:
+            BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            verticalInside:
+            BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
           ),
           children: [
             TableRow(
-              decoration: BoxDecoration(color: UiK.primaryBlue.withOpacity(0.04)),
+              decoration:
+              BoxDecoration(color: UiK.primaryBlue.withOpacity(0.04)),
               children: [
                 cell('Units', head: true),
                 cell('Sessions', head: true),
@@ -576,12 +736,12 @@ class _SummaryTableCard extends StatelessWidget {
 }
 
 class _RecommendationsCard extends StatelessWidget {
-  const _RecommendationsCard({required this.course});
-  final _SyllabusCourse course;
+  const _RecommendationsCard({required this.variant});
+  final _SyllabusVariant variant;
 
   int _countMissingDuration() {
     int miss = 0;
-    for (final u in course.units) {
+    for (final u in variant.units) {
       for (final s in u.sessions) {
         if (s.durationMinutes <= 0) miss++;
       }
@@ -591,7 +751,7 @@ class _RecommendationsCard extends StatelessWidget {
 
   int _countMissingObjectives() {
     int miss = 0;
-    for (final u in course.units) {
+    for (final u in variant.units) {
       for (final s in u.sessions) {
         if (s.objective.trim().isEmpty) miss++;
       }
@@ -601,7 +761,7 @@ class _RecommendationsCard extends StatelessWidget {
 
   int _countMissingContent() {
     int miss = 0;
-    for (final u in course.units) {
+    for (final u in variant.units) {
       for (final s in u.sessions) {
         if (s.content.trim().isEmpty) miss++;
       }
@@ -611,7 +771,7 @@ class _RecommendationsCard extends StatelessWidget {
 
   int _countMissingHomework() {
     int miss = 0;
-    for (final u in course.units) {
+    for (final u in variant.units) {
       for (final s in u.sessions) {
         if (s.homework.trim().isEmpty) miss++;
       }
@@ -621,7 +781,8 @@ class _RecommendationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessionsTotal = course.units.fold<int>(0, (p, u) => p + u.sessions.length);
+    final sessionsTotal =
+    variant.units.fold<int>(0, (p, u) => p + u.sessions.length);
 
     final missingDur = _countMissingDuration();
     final missingObj = _countMissingObjectives();
@@ -631,47 +792,65 @@ class _RecommendationsCard extends StatelessWidget {
     final List<_RecItem> recs = [];
 
     if (missingObj > 0) {
-      recs.add(_RecItem(
-        icon: Icons.flag_rounded,
-        title: 'Add objectives',
-        desc: '$missingObj session(s) have no objective. Objectives help teachers and learners stay aligned.',
-      ));
+      recs.add(
+        _RecItem(
+          icon: Icons.flag_rounded,
+          title: 'Add objectives',
+          desc:
+          '$missingObj session(s) have no objective. Objectives help teachers and learners stay aligned.',
+        ),
+      );
     }
     if (missingCont > 0) {
-      recs.add(_RecItem(
-        icon: Icons.article_rounded,
-        title: 'Add content details',
-        desc: '$missingCont session(s) have empty content. Add key points / activities for consistency.',
-      ));
+      recs.add(
+        _RecItem(
+          icon: Icons.article_rounded,
+          title: 'Add content details',
+          desc:
+          '$missingCont session(s) have empty content. Add key points / activities for consistency.',
+        ),
+      );
     }
     if (missingDur > 0) {
-      recs.add(_RecItem(
-        icon: Icons.timelapse_rounded,
-        title: 'Add duration',
-        desc: '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
-      ));
+      recs.add(
+        _RecItem(
+          icon: Icons.timelapse_rounded,
+          title: 'Add duration',
+          desc:
+          '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
+        ),
+      );
     }
 
     if (sessionsTotal > 0 && missingHw == sessionsTotal) {
-      recs.add(const _RecItem(
-        icon: Icons.assignment_rounded,
-        title: 'Consider homework',
-        desc: 'No sessions have homework. Even short practice tasks improve retention.',
-      ));
+      recs.add(
+        const _RecItem(
+          icon: Icons.assignment_rounded,
+          title: 'Consider homework',
+          desc:
+          'No sessions have homework. Even short practice tasks improve retention.',
+        ),
+      );
     } else if (missingHw > 0) {
-      recs.add(_RecItem(
-        icon: Icons.assignment_rounded,
-        title: 'Improve homework coverage',
-        desc: '$missingHw session(s) have no homework. Optional practice tasks are helpful.',
-      ));
+      recs.add(
+        _RecItem(
+          icon: Icons.assignment_rounded,
+          title: 'Improve homework coverage',
+          desc:
+          '$missingHw session(s) have no homework. Optional practice tasks are helpful.',
+        ),
+      );
     }
 
     if (recs.isEmpty) {
-      recs.add(const _RecItem(
-        icon: Icons.verified_rounded,
-        title: 'Looks consistent',
-        desc: 'Objectives, content, and durations look complete. Keep the same structure for new courses.',
-      ));
+      recs.add(
+        const _RecItem(
+          icon: Icons.verified_rounded,
+          title: 'Looks consistent',
+          desc:
+          'Objectives, content, and durations look complete. Keep the same structure for new courses.',
+        ),
+      );
     }
 
     return Container(
@@ -690,7 +869,10 @@ class _RecommendationsCard extends StatelessWidget {
               SizedBox(width: 8),
               Text(
                 'Recommendations',
-                style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: UiK.primaryBlue,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
@@ -706,7 +888,11 @@ class _RecItem {
   final IconData icon;
   final String title;
   final String desc;
-  const _RecItem({required this.icon, required this.title, required this.desc});
+  const _RecItem({
+    required this.icon,
+    required this.title,
+    required this.desc,
+  });
 }
 
 class _RecRow extends StatelessWidget {
@@ -734,7 +920,10 @@ class _RecRow extends StatelessWidget {
               children: [
                 Text(
                   item.title,
-                  style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                    color: UiK.primaryBlue,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -762,6 +951,7 @@ class _CourseTopCard extends StatelessWidget {
     required this.updatedLabel,
     required this.unitsCount,
     required this.sessionsCount,
+    required this.variantLabel,
   });
 
   final String title;
@@ -770,6 +960,7 @@ class _CourseTopCard extends StatelessWidget {
   final String updatedLabel;
   final int unitsCount;
   final int sessionsCount;
+  final String variantLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -793,7 +984,10 @@ class _CourseTopCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
                 ),
-                child: const Icon(Icons.menu_book_rounded, color: UiK.primaryBlue),
+                child: const Icon(
+                  Icons.menu_book_rounded,
+                  color: UiK.primaryBlue,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -814,11 +1008,18 @@ class _CourseTopCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (code.trim().isNotEmpty) _Pill(icon: Icons.qr_code_rounded, text: code),
-              if (duration.trim().isNotEmpty) _Pill(icon: Icons.timer_rounded, text: duration),
+              _Pill(icon: Icons.layers_rounded, text: variantLabel),
+              if (code.trim().isNotEmpty)
+                _Pill(icon: Icons.qr_code_rounded, text: code),
+              if (duration.trim().isNotEmpty)
+                _Pill(icon: Icons.timer_rounded, text: duration),
               _Pill(icon: Icons.layers_rounded, text: '$unitsCount units'),
-              _Pill(icon: Icons.playlist_play_rounded, text: '$sessionsCount sessions'),
-              if (updatedLabel.isNotEmpty) _Pill(icon: Icons.update_rounded, text: updatedLabel),
+              _Pill(
+                icon: Icons.playlist_play_rounded,
+                text: '$sessionsCount sessions',
+              ),
+              if (updatedLabel.isNotEmpty)
+                _Pill(icon: Icons.update_rounded, text: updatedLabel),
             ],
           ),
         ],
@@ -856,7 +1057,10 @@ class _UnitCardState extends State<_UnitCard> {
           child: ExpansionTile(
             initiallyExpanded: _expanded,
             onExpansionChanged: (v) => setState(() => _expanded = v),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             title: Row(
               children: [
@@ -867,7 +1071,9 @@ class _UnitCardState extends State<_UnitCard> {
                   decoration: BoxDecoration(
                     color: UiK.actionOrange.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: UiK.actionOrange.withOpacity(0.22)),
+                    border: Border.all(
+                      color: UiK.actionOrange.withOpacity(0.22),
+                    ),
                   ),
                   child: Text(
                     (u.order >= 999999) ? '•' : u.order.toString(),
@@ -918,7 +1124,9 @@ class _UnitCardState extends State<_UnitCard> {
               ],
             ),
             trailing: Icon(
-              _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              _expanded
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
               color: UiK.primaryBlue,
             ),
             children: [
@@ -964,40 +1172,54 @@ class _SessionExpansionState extends State<_SessionExpansion> {
     final out = <_RecItem>[];
 
     if (s.objective.trim().isEmpty) {
-      out.add(const _RecItem(
-        icon: Icons.flag_rounded,
-        title: 'Objective missing',
-        desc: 'Add a short objective (1–2 lines): what learners should be able to do after this session.',
-      ));
+      out.add(
+        const _RecItem(
+          icon: Icons.flag_rounded,
+          title: 'Objective missing',
+          desc:
+          'Add a short objective (1–2 lines): what learners should be able to do after this session.',
+        ),
+      );
     }
     if (s.content.trim().isEmpty) {
-      out.add(const _RecItem(
-        icon: Icons.article_rounded,
-        title: 'Content missing',
-        desc: 'Add key points + activities (warm-up, practice, production) for consistent delivery.',
-      ));
+      out.add(
+        const _RecItem(
+          icon: Icons.article_rounded,
+          title: 'Content missing',
+          desc:
+          'Add key points + activities (warm-up, practice, production) for consistent delivery.',
+        ),
+      );
     }
     if (s.durationMinutes <= 0) {
-      out.add(const _RecItem(
-        icon: Icons.timelapse_rounded,
-        title: 'Duration missing',
-        desc: 'Set duration minutes to improve planning and pacing.',
-      ));
+      out.add(
+        const _RecItem(
+          icon: Icons.timelapse_rounded,
+          title: 'Duration missing',
+          desc: 'Set duration minutes to improve planning and pacing.',
+        ),
+      );
     }
     if (s.homework.trim().isEmpty) {
-      out.add(const _RecItem(
-        icon: Icons.assignment_rounded,
-        title: 'Homework is optional',
-        desc: 'Consider short practice (5–10 minutes) to reinforce the session.',
-      ));
+      out.add(
+        const _RecItem(
+          icon: Icons.assignment_rounded,
+          title: 'Homework is optional',
+          desc:
+          'Consider short practice (5–10 minutes) to reinforce the session.',
+        ),
+      );
     }
 
     if (out.isEmpty) {
-      out.add(const _RecItem(
-        icon: Icons.verified_rounded,
-        title: 'Ready to teach',
-        desc: 'Objective, content, duration, and homework look good.',
-      ));
+      out.add(
+        const _RecItem(
+          icon: Icons.verified_rounded,
+          title: 'Ready to teach',
+          desc:
+          'Objective, content, duration, and homework look good.',
+        ),
+      );
     }
     return out;
   }
@@ -1026,7 +1248,8 @@ class _SessionExpansionState extends State<_SessionExpansion> {
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: CircleAvatar(
               backgroundColor: UiK.primaryBlue.withOpacity(0.08),
-              child: const Icon(Icons.play_lesson_rounded, color: UiK.primaryBlue),
+              child:
+              const Icon(Icons.play_lesson_rounded, color: UiK.primaryBlue),
             ),
             title: Text(
               title,
@@ -1049,7 +1272,9 @@ class _SessionExpansionState extends State<_SessionExpansion> {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: Icon(
-              _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              _expanded
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
               color: UiK.primaryBlue,
             ),
             children: [
@@ -1064,25 +1289,44 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (s.objective.trim().isNotEmpty) ...[
-                      _Line(icon: Icons.flag_rounded, label: 'Objective', text: s.objective),
+                      _Line(
+                        icon: Icons.flag_rounded,
+                        label: 'Objective',
+                        text: s.objective,
+                      ),
                       const SizedBox(height: 8),
                     ],
                     if (s.content.trim().isNotEmpty) ...[
-                      _Line(icon: Icons.article_rounded, label: 'Content', text: s.content),
+                      _Line(
+                        icon: Icons.article_rounded,
+                        label: 'Content',
+                        text: s.content,
+                      ),
                       const SizedBox(height: 8),
                     ],
                     if (s.homework.trim().isNotEmpty) ...[
-                      _Line(icon: Icons.assignment_rounded, label: 'Homework', text: s.homework),
+                      _Line(
+                        icon: Icons.assignment_rounded,
+                        label: 'Homework',
+                        text: s.homework,
+                      ),
                       const SizedBox(height: 8),
                     ],
                     const SizedBox(height: 2),
                     const Row(
                       children: [
-                        Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                        Icon(
+                          Icons.tips_and_updates_rounded,
+                          size: 18,
+                          color: UiK.actionOrange,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'Suggestions',
-                          style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+                          style: TextStyle(
+                            color: UiK.primaryBlue,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ],
                     ),
@@ -1100,7 +1344,11 @@ class _SessionExpansionState extends State<_SessionExpansion> {
 }
 
 class _Line extends StatelessWidget {
-  const _Line({required this.icon, required this.label, required this.text});
+  const _Line({
+    required this.icon,
+    required this.label,
+    required this.text,
+  });
   final IconData icon;
   final String label;
   final String text;
@@ -1123,7 +1371,10 @@ class _Line extends StatelessWidget {
               children: [
                 TextSpan(
                   text: '$label: ',
-                  style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: UiK.primaryBlue,
+                  ),
                 ),
                 TextSpan(text: text),
               ],
@@ -1190,7 +1441,10 @@ class _FooterHint extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
             ),
-            child: const Icon(Icons.info_outline_rounded, color: UiK.actionOrange),
+            child: const Icon(
+              Icons.info_outline_rounded,
+              color: UiK.actionOrange,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1210,7 +1464,11 @@ class _FooterHint extends StatelessWidget {
 }
 
 class _InfoBox extends StatelessWidget {
-  const _InfoBox({required this.title, required this.message, required this.icon});
+  const _InfoBox({
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
   final String title;
   final String message;
   final IconData icon;
@@ -1275,11 +1533,19 @@ class _ErrorBox extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: UiK.actionOrange, size: 34),
+            const Icon(
+              Icons.error_outline_rounded,
+              color: UiK.actionOrange,
+              size: 34,
+            ),
             const SizedBox(height: 10),
             const Text(
               'Error',
-              style: TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue, fontSize: 16),
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: UiK.primaryBlue,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -1299,12 +1565,17 @@ class _ErrorBox extends StatelessWidget {
                   backgroundColor: UiK.actionOrange,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.w900)),
+                label: const Text(
+                  'Retry',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
             ),
           ],
@@ -1323,10 +1594,28 @@ class _SyllabusCourse {
     required this.code,
     required this.duration,
     required this.updatedAt,
-    required this.units,
+    required this.variants,
   });
 
   final String id;
+  final String title;
+  final String code;
+  final String duration;
+  final int updatedAt;
+  final Map<String, _SyllabusVariant> variants;
+}
+
+class _SyllabusVariant {
+  const _SyllabusVariant({
+    required this.key,
+    required this.title,
+    required this.code,
+    required this.duration,
+    required this.updatedAt,
+    required this.units,
+  });
+
+  final String key;
   final String title;
   final String code;
   final String duration;
