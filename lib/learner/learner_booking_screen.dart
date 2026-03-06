@@ -37,6 +37,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/push_client.dart';
+import '../services/notification_service.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -225,7 +227,130 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   bool _isPeerGroup(_Slot s) {
     return (s.groupSessionNo == currentSession) && (s.bookedCount > 0) && !s.bookedByMe && !s.isFull;
   }
+  Future<String> _getMyFullName() async {
+    try {
+      final snap = await _db.child('users/$myUid').get();
+      if (!snap.exists || snap.value is! Map) return 'Learner';
 
+      final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+
+      final first = (m['first_name'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? '').toString().trim();
+
+      final full = '$first $last'.trim();
+      if (full.isNotEmpty) return full;
+
+      return 'Learner';
+    } catch (_) {
+      return 'Learner';
+    }
+  }
+
+  Future<String?> _getUserToken(String uid) async {
+    try {
+      final snap = await _db.child('fcm_tokens/$uid/token').get();
+      if (!snap.exists || snap.value == null) return null;
+
+      final token = snap.value.toString().trim();
+      if (token.isEmpty) return null;
+
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _sendBookingNotifications(_Slot slot) async {
+    try {
+      final learnerName = await _getMyFullName();
+
+      final sessionNo = slot.groupSessionNo ?? currentSession;
+      final safeCourseTitle = courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+
+      final adminTitle = 'New learner booking';
+      final adminBody =
+          '$learnerName booked Session $sessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time} with ${slot.teacherName}.';
+
+      await PushClient.sendToTopic(
+        topic: 'admins',
+        title: adminTitle,
+        message: adminBody,
+        data: {
+          'type': 'booking',
+          'targetRole': 'admin',
+          'courseId': slot.courseId,
+          'courseTitle': safeCourseTitle,
+          'teacherId': slot.teacherId,
+          'teacherName': slot.teacherName,
+          'learnerUid': myUid,
+          'learnerName': learnerName,
+          'dayKey': slot.dayKey,
+          'time': slot.time,
+          'sessionNo': sessionNo.toString(),
+        },
+      );
+
+      final teacherToken = await _getUserToken(slot.teacherId);
+      if (teacherToken == null || teacherToken.isEmpty) return;
+
+      final teacherTitle = 'New class booking';
+      final teacherBody =
+          '$learnerName booked Session $sessionNo for $safeCourseTitle on ${slot.dayKey} at ${slot.time}.';
+
+      await PushClient.sendToToken(
+        token: teacherToken,
+        title: teacherTitle,
+        message: teacherBody,
+        data: {
+          'type': 'booking',
+          'targetRole': 'teacher',
+          'courseId': slot.courseId,
+          'courseTitle': safeCourseTitle,
+          'teacherId': slot.teacherId,
+          'teacherName': slot.teacherName,
+          'learnerUid': myUid,
+          'learnerName': learnerName,
+          'dayKey': slot.dayKey,
+          'time': slot.time,
+          'sessionNo': sessionNo.toString(),
+        },
+      );
+    } catch (e) {
+      debugPrint('Booking notification failed: $e');
+    }
+  }
+
+  Future<void> _scheduleLearnerLocalReminder(_Slot slot) async {
+    try {
+      await NotificationService.I.init();
+      await NotificationService.I.requestPermissions();
+
+      final sessionNo = slot.groupSessionNo ?? currentSession;
+      final safeCourseTitle = courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+
+      await NotificationService.I.scheduleSessionReminder(
+        classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
+        title: 'Upcoming class',
+        body: 'Session $sessionNo for $safeCourseTitle with ${slot.teacherName}',
+        sessionStart: slot.start,
+        minutesBefore: 30,
+      );
+    } catch (e) {
+      debugPrint('Local booking reminder failed: $e');
+    }
+  }
+  Future<void> _cancelLearnerLocalReminder(_Slot slot) async {
+    try {
+      await NotificationService.I.init();
+
+      await NotificationService.I.cancelSessionReminder(
+        classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
+        sessionStart: slot.start,
+      );
+    } catch (e) {
+      debugPrint('Cancel local booking reminder failed: $e');
+    }
+  }
   // ================== Init ==================
 
   Future<void> _init() async {
@@ -782,6 +907,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           _toast('Could not change booking (cancel failed).');
           return;
         }
+
+        final oldSlotStart = _parseSlotStart(existing.dayKey, existing.time);
+        if (oldSlotStart != null) {
+          try {
+            await NotificationService.I.init();
+            await NotificationService.I.cancelSessionReminder(
+              classId: '${cid}_${existing.dayKey}_${existing.time}',
+              sessionStart: oldSlotStart,
+            );
+          } catch (e) {
+            debugPrint('Old reminder cancel failed: $e');
+          }
+        }
       }
 
       final ref = _reservationsRef(cid, slot.dayKey, slot.time);
@@ -874,6 +1012,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         _toast('Joined ✅ Session $currentSession group ($newCount/$cap)');
       }
 
+      await _sendBookingNotifications(slot);
+      await _scheduleLearnerLocalReminder(slot);
+
       await _loadReservationsSummary(cid);
       await _generateSlots(cid);
     } catch (e) {
@@ -939,6 +1080,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         _toast('Cancel failed.');
         return;
       }
+
+      await _cancelLearnerLocalReminder(slot);
 
       _toast('Booking canceled ✅');
 

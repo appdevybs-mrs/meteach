@@ -49,6 +49,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   // Classes summary (count classes + total learners)
   Future<_ClassesSummary>? _classesSummaryFuture;
+  // Upcoming online sessions count
+  Future<int>? _upcomingOnlineCountFuture;
 
   // ✅ Display name (first + last from RTDB)
   Future<String>? _displayNameFuture;
@@ -62,7 +64,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _remindersStream = _db.child('reminders/$uid').onValue.asBroadcastStream();
       _mailIndexStream = _db.child('mail_index/$uid').onValue.asBroadcastStream();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
-
+      _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       // ✅ Load teacher name once (used in AppBar + Welcome)
       _displayNameFuture = _myDisplayName();
     }
@@ -75,6 +77,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     setState(() {
       _displayNameFuture = _myDisplayName();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
+      _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       // Streams already live; no need to reset them.
     });
 
@@ -190,6 +193,82 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       return _ClassesSummary(classesCount: classesCount, learnersCount: learnersTotal);
     } catch (_) {
       return const _ClassesSummary(classesCount: 0, learnersCount: 0);
+    }
+  }
+
+  DateTime? _parseBookingSlotStart(String dayKey, String hhmm) {
+    try {
+      final dp = dayKey.split('-');
+      if (dp.length != 3) return null;
+
+      final y = int.tryParse(dp[0]);
+      final m = int.tryParse(dp[1]);
+      final d = int.tryParse(dp[2]);
+      if (y == null || m == null || d == null) return null;
+
+      final tp = hhmm.split(':');
+      if (tp.length != 2) return null;
+
+      final hh = int.tryParse(tp[0]);
+      final mm = int.tryParse(tp[1]);
+      if (hh == null || mm == null) return null;
+
+      return DateTime(y, m, d, hh, mm);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<int> _loadUpcomingOnlineCountForHome(String teacherUid) async {
+    try {
+      final snap = await _db.child('booking_reservations').get();
+      if (!snap.exists || snap.value == null || snap.value is! Map) return 0;
+
+      final now = DateTime.now();
+      int count = 0;
+
+      final byCourse = Map<dynamic, dynamic>.from(snap.value as Map);
+
+      for (final courseEntry in byCourse.entries) {
+        final courseNode = courseEntry.value;
+        if (courseNode is! Map) continue;
+
+        final byDate = Map<dynamic, dynamic>.from(courseNode);
+
+        for (final dateEntry in byDate.entries) {
+          final dayKey = dateEntry.key.toString();
+          final dateNode = dateEntry.value;
+          if (dateNode is! Map) continue;
+
+          final byTime = Map<dynamic, dynamic>.from(dateNode);
+
+          for (final timeEntry in byTime.entries) {
+            final hhmm = timeEntry.key.toString();
+            final slotNode = timeEntry.value;
+            if (slotNode is! Map) continue;
+
+            final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
+
+            final teacherId =
+            (slot['teacherId'] ?? slot['teacherUid'] ?? slot['teacher_id'] ?? '')
+                .toString()
+                .trim();
+
+            if (teacherId != teacherUid) continue;
+
+            final dt = _parseBookingSlotStart(dayKey, hhmm);
+            if (dt == null) continue;
+
+            if (dt.isAfter(now)) {
+              count += 1;
+            }
+          }
+        }
+      }
+
+      return count;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -777,12 +856,21 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             final subtitle = (s == null)
                                 ? ''
                                 : '${s.classesCount} classes • ${s.learnersCount} learners';
-                            return _buildQuickCard(
-                              context,
-                              'My Classes',
-                              Icons.school_rounded,
-                               TeacherClassesScreen(),
-                              subtitle: subtitle,
+
+                            return FutureBuilder<int>(
+                              future: _upcomingOnlineCountFuture,
+                              builder: (context, onlineSnap) {
+                                final upcomingCount = onlineSnap.data ?? 0;
+
+                                return _buildQuickCard(
+                                  context,
+                                  'My Classes',
+                                  Icons.school_rounded,
+                                  const TeacherClassesScreen(),
+                                  subtitle: subtitle,
+                                  badgeCount: upcomingCount,
+                                );
+                              },
                             );
                           },
                         ),

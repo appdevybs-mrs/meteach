@@ -35,8 +35,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   @override
   void initState() {
     super.initState();
-    // NOTE: orderByChild('updatedAt') is fine even if nested exists;
-    // we parse the snapshot ourselves.
     _stream = _indexRef.onValue.asBroadcastStream();
   }
 
@@ -58,7 +56,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   String _normalizeRole(dynamic raw) {
     final s = (raw ?? '').toString().trim().toLowerCase();
 
-    // admins (include common typos)
     if (s == 'admin' ||
         s == 'adin' ||
         s == 'admn' ||
@@ -68,7 +65,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       return 'admin';
     }
 
-    // teachers
     if (s == 'teacher' ||
         s == 'teach' ||
         s == 'instructor' ||
@@ -76,7 +72,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       return 'teacher';
     }
 
-    // learners (include typos)
     if (s == 'learner' ||
         s == 'lerner' ||
         s == 'student' ||
@@ -84,7 +79,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       return 'learner';
     }
 
-    // default: learner (safer UX)
     return 'learner';
   }
 
@@ -155,7 +149,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   // IMPORTANT: robust parser for your mail_index shapes
   // -----------------------------------------
   bool _looksLikeThreadObject(Map<String, dynamic> m) {
-    // any of these keys means it's probably a thread preview object
     return m.containsKey('peerUid') ||
         m.containsKey('peerName') ||
         m.containsKey('subject') ||
@@ -173,17 +166,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       final row = _TopicRow.fromMap(threadId, m);
       if (row.deletedAtMs != null) return;
 
-      // must have at least threadId + peerUid or subject to be useful
-      // (prevents garbage rows from nested buckets)
       if (row.threadId.trim().isEmpty) return;
       if (row.peerUid.trim().isEmpty && row.subject.trim().isEmpty) return;
 
       out.add(row);
     }
 
-    // Top-level can contain:
-    // - threadId -> {fields}
-    // - peerUid -> { threadId -> true OR threadId -> {fields} }
     v.forEach((k, vv) {
       if (k == null || vv == null) return;
 
@@ -192,18 +180,14 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       if (vv is Map) {
         final asMap = vv.map((kk, vvv) => MapEntry(kk.toString(), vvv));
 
-        // Case 1: direct thread object at top
         if (_looksLikeThreadObject(asMap)) {
           addIfThreadObject(key, vv);
           return;
         }
 
-        // Case 2: bucket by peerUid:
-        //   peerUid -> { threadId -> true OR threadId -> {fields} }
         asMap.forEach((innerK, innerV) {
           if (innerK.trim().isEmpty || innerV == null) return;
 
-          // if the inner value is a full object, parse it
           if (innerV is Map) {
             final innerMap = innerV.map((kk, vvv) => MapEntry(kk.toString(), vvv));
             if (_looksLikeThreadObject(innerMap)) {
@@ -211,27 +195,18 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             }
             return;
           }
-
-          // if inner value is just true/false, we cannot build a preview from it
-          // without reading mail_threads/<threadId>.
-          // We'll ignore it because you already have the real object at top-level
-          // in your examples.
         });
 
         return;
       }
-
-      // ignore non-map nodes
     });
 
-    // Deduplicate by threadId (because your index may reference same thread multiple ways)
     final byId = <String, _TopicRow>{};
     for (final r in out) {
       final existing = byId[r.threadId];
       if (existing == null) {
         byId[r.threadId] = r;
       } else {
-        // keep the one with newest updatedAt
         if (r.updatedAtMs > existing.updatedAtMs) {
           byId[r.threadId] = r;
         }
@@ -277,6 +252,71 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       s += r.unreadCount;
     }
     return s;
+  }
+
+  String _previewFromMessage(String body) {
+    final clean = body.trim();
+    if (clean.isEmpty) return '(No messages yet)';
+    return clean.length > 80 ? clean.substring(0, 80) : clean;
+  }
+
+  Future<String> _createThreadWithFirstMessage({
+    required String subject,
+    required String firstMessage,
+    required String toUid,
+    required String toName,
+    required String teacherName,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final threadId = _db.ref('mail_threads').push().key;
+    if (threadId == null || threadId.trim().isEmpty) {
+      throw Exception('Failed to create thread id.');
+    }
+
+    final msgRef = _db.ref('mail_messages/$threadId').push();
+    final preview = _previewFromMessage(firstMessage);
+
+    final updates = <String, dynamic>{
+      'mail_threads/$threadId': {
+        'subject': subject,
+        'createdAt': now,
+        'updatedAt': now,
+        'lastMessage': preview,
+      },
+      'mail_messages/$threadId/${msgRef.key}': {
+        'fromUid': _meUid,
+        'body': firstMessage.trim(),
+        'toUids': {toUid: true},
+        'ccUids': {},
+        'bccUids': {},
+        'attachments': [],
+        'createdAt': now,
+        'deletedFor': {},
+        'reactions': {},
+      },
+      'mail_index/$_meUid/$threadId': {
+        'subject': subject,
+        'updatedAt': now,
+        'lastMessage': preview,
+        'unreadCount': 0,
+        'peerUid': toUid,
+        'peerName': toName,
+        'deletedAt': null,
+      },
+      'mail_index/$toUid/$threadId': {
+        'subject': subject,
+        'updatedAt': now,
+        'lastMessage': preview,
+        'unreadCount': 1,
+        'peerUid': _meUid,
+        'peerName': teacherName,
+        'deletedAt': null,
+      },
+    };
+
+    await _db.ref().update(updates);
+    return threadId;
   }
 
   Future<void> _deleteThreadForMe(_TopicRow row) async {
@@ -479,7 +519,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   // -----------------------------------------
-  // Compose (unchanged)
+  // Compose
   // -----------------------------------------
   Future<void> _composeNewTopic() async {
     try {
@@ -493,51 +533,29 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       if (picked == null) return;
 
       final subject = picked.subject.trim();
-      final now = DateTime.now().millisecondsSinceEpoch;
+      final firstMessage = picked.firstMessage.trim();
 
       if (subject.isEmpty) {
         _snack('Write subject.');
         return;
       }
 
-      const placeholderLastMessage = '(No messages yet)';
+      if (firstMessage.isEmpty) {
+        _snack('Write your message.');
+        return;
+      }
 
       if (picked.mode == _ComposeMode.single && picked.receiverUid != null) {
         final toUid = picked.receiverUid!;
         final toName = picked.receiverName ?? '';
 
-        final threadId = _db.ref('mail_threads').push().key;
-        if (threadId == null) {
-          _snack('Failed to create thread id.');
-          return;
-        }
-
-        await _db.ref('mail_threads/$threadId').set({
-          'subject': subject,
-          'createdAt': now,
-          'updatedAt': now,
-          'lastMessage': placeholderLastMessage,
-        });
-
-        await _db.ref('mail_index/$_meUid/$threadId').set({
-          'subject': subject,
-          'updatedAt': now,
-          'lastMessage': placeholderLastMessage,
-          'unreadCount': 0,
-          'peerUid': toUid,
-          'peerName': toName,
-          'deletedAt': null,
-        });
-
-        await _db.ref('mail_index/$toUid/$threadId').set({
-          'subject': subject,
-          'updatedAt': now,
-          'lastMessage': placeholderLastMessage,
-          'unreadCount': 1,
-          'peerUid': _meUid,
-          'peerName': picked.teacherName,
-          'deletedAt': null,
-        });
+        final threadId = await _createThreadWithFirstMessage(
+          subject: subject,
+          firstMessage: firstMessage,
+          toUid: toUid,
+          toName: toName,
+          teacherName: picked.teacherName,
+        );
 
         if (!mounted) return;
 
@@ -582,11 +600,13 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
             final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
             final email = (m['email'] ?? '').toString().trim();
             final n = ('$fn $ln').trim();
-            nameByUid[uid.toString()] = n.isNotEmpty ? n : (email.isNotEmpty ? email : uid.toString());
+            nameByUid[uid.toString()] =
+            n.isNotEmpty ? n : (email.isNotEmpty ? email : uid.toString());
           });
         }
 
         int sent = 0;
+        final classSubject = '[$classId] $subject';
 
         for (final entry in cVal.entries) {
           final learnerUid = entry.key.toString().trim();
@@ -594,38 +614,17 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           if (learnerUid == _meUid) continue;
 
           final learnerName = nameByUid[learnerUid] ??
-              (entry.value is Map ? ((entry.value as Map)['name'] ?? '').toString() : '') ??
-              'Learner';
+              (entry.value is Map
+                  ? (((entry.value as Map)['name'] ?? '').toString())
+                  : 'Learner');
 
-          final threadId = _db.ref('mail_threads').push().key;
-          if (threadId == null) continue;
-
-          await _db.ref('mail_threads/$threadId').set({
-            'subject': '[$classId] $subject',
-            'createdAt': now,
-            'updatedAt': now,
-            'lastMessage': placeholderLastMessage,
-          });
-
-          await _db.ref('mail_index/$_meUid/$threadId').set({
-            'subject': '[$classId] $subject',
-            'updatedAt': now,
-            'lastMessage': placeholderLastMessage,
-            'unreadCount': 0,
-            'peerUid': learnerUid,
-            'peerName': learnerName,
-            'deletedAt': null,
-          });
-
-          await _db.ref('mail_index/$learnerUid/$threadId').set({
-            'subject': '[$classId] $subject',
-            'updatedAt': now,
-            'lastMessage': placeholderLastMessage,
-            'unreadCount': 1,
-            'peerUid': _meUid,
-            'peerName': picked.teacherName,
-            'deletedAt': null,
-          });
+          await _createThreadWithFirstMessage(
+            subject: classSubject,
+            firstMessage: firstMessage,
+            toUid: learnerUid,
+            toName: learnerName,
+            teacherName: picked.teacherName,
+          );
 
           sent++;
         }
@@ -648,7 +647,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           return const Center(child: Text('No mail yet.'));
         }
 
-        // Warm cache (names + roles) for peers we see
         for (final r in rows) {
           final uid = r.peerUid.trim();
           if (uid.isNotEmpty) _ensureUserCached(uid);
@@ -863,7 +861,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 }
 
 // ----------------------------
-// Compose Sheet (UNCHANGED FROM YOUR CODE, but kept here so file compiles)
+// Compose Sheet
 // ----------------------------
 
 class _ComposeSheet extends StatefulWidget {
@@ -880,6 +878,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   bool _loading = true;
 
   final _subjectC = TextEditingController();
+  final _messageC = TextEditingController();
   String _teacherName = 'Teacher';
 
   List<_RecipientRow> _recipients = [];
@@ -899,12 +898,19 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   @override
   void dispose() {
     _subjectC.dispose();
+    _messageC.dispose();
     super.dispose();
   }
 
   String _normalizeRole(dynamic raw) {
     final s = (raw ?? '').toString().trim().toLowerCase();
-    if (s == 'admin' || s == 'adin' || s == 'admn' || s == 'administration' || s == 'administrator') return 'admin';
+    if (s == 'admin' ||
+        s == 'adin' ||
+        s == 'admn' ||
+        s == 'administration' ||
+        s == 'administrator') {
+      return 'admin';
+    }
     if (s == 'teacher' || s == 'instructor' || s == 'teach') return 'teacher';
     if (s == 'learner' || s == 'lerner' || s == 'student') return 'learner';
     return 'learner';
@@ -972,8 +978,15 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           }
           if (tUid != widget.meUid) return;
 
-          final title = (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId).toString().trim();
-          myClasses.add(_ClassRow(classId: classId.toString(), title: title.isEmpty ? classId.toString() : title));
+          final title = (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId)
+              .toString()
+              .trim();
+          myClasses.add(
+            _ClassRow(
+              classId: classId.toString(),
+              title: title.isEmpty ? classId.toString() : title,
+            ),
+          );
 
           final learners = c['learners'];
           if (learners is Map) {
@@ -1022,9 +1035,10 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 
   void _submit() {
     final subject = _subjectC.text.trim();
-    if (subject.isEmpty) return;
+    final msg = _messageC.text.trim();
 
-    const msg = '';
+    if (subject.isEmpty) return;
+    if (msg.isEmpty) return;
 
     if (_mode == _ComposeMode.single) {
       final r = _picked;
@@ -1145,12 +1159,26 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                TextFormField(
+                  controller: _messageC,
+                  minLines: 4,
+                  maxLines: 8,
+                  textInputAction: TextInputAction.newline,
+                  decoration: const InputDecoration(
+                    labelText: 'Mail message',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: _submit,
                     icon: const Icon(Icons.send_rounded),
-                    label: Text(_mode == _ComposeMode.classGroup ? 'Send to class' : 'Create topic'),
+                    label: Text(
+                      _mode == _ComposeMode.classGroup ? 'Send to class' : 'Create and send',
+                    ),
                   ),
                 ),
               ],
@@ -1190,19 +1218,17 @@ class _ComposeResult {
   });
 
   final _ComposeMode mode;
-
   final String teacherName;
   final String subject;
   final String firstMessage;
-
   final String? receiverUid;
   final String? receiverName;
-
   final String? classId;
 }
 
 // ----------------------------
-// Topic model (unchanged)
+// Topic model
+// ----------------------------
 class _TopicRow {
   _TopicRow({
     required this.threadId,
