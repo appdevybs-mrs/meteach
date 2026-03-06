@@ -16,6 +16,7 @@ class LearnerCoursesScreen extends StatefulWidget {
 class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   static const usersNode = 'users';
   static const syllabiNode = 'syllabi';
+  static const bookingProgressNode = 'booking_progress';
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
@@ -58,7 +59,6 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         return {'courseKey': e.key.toString(), ...m};
       }).toList();
 
-      // Sort by assignedAt desc if exists
       int numVal(dynamic v) => (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
       list.sort((a, b) => numVal(b['assignedAt']).compareTo(numVal(a['assignedAt'])));
 
@@ -74,12 +74,76 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     }
   }
 
-  // Attendance summary from learner node
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  String _courseIdOf(Map<String, dynamic> course) {
+    final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
+    return (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+  }
+
+  String _variantKeyOf(Map<String, dynamic> course) {
+    return (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+  }
+
+  bool _isOnlineCourse(Map<String, dynamic> course) {
+    return _variantKeyOf(course) == 'online';
+  }
+
+  ({Color bg, Color border, Color fg, IconData icon, String label}) _variantStyle(String variantKey) {
+    switch (variantKey) {
+      case 'online':
+        return (
+        bg: const Color(0xFFEAF4FF),
+        border: const Color(0xFFB8D6FF),
+        fg: const Color(0xFF2563EB),
+        icon: Icons.wifi_tethering_rounded,
+        label: 'ONLINE',
+        );
+      case 'in_class':
+        return (
+        bg: const Color(0xFFEAF7EE),
+        border: const Color(0xFFBFE3C8),
+        fg: const Color(0xFF1E8E3E),
+        icon: Icons.groups_rounded,
+        label: 'IN-CLASS',
+        );
+      case 'live':
+        return (
+        bg: const Color(0xFFFFF4E8),
+        border: const Color(0xFFF7D3A8),
+        fg: const Color(0xFFF98D28),
+        icon: Icons.live_tv_rounded,
+        label: 'LIVE',
+        );
+      case 'recorded':
+        return (
+        bg: const Color(0xFFF3EEFF),
+        border: const Color(0xFFD8C8FF),
+        fg: const Color(0xFF7C3AED),
+        icon: Icons.play_circle_rounded,
+        label: 'RECORDED',
+        );
+      default:
+        return (
+        bg: UiK.primaryBlue.withOpacity(0.06),
+        border: UiK.uiBorder.withOpacity(0.85),
+        fg: UiK.primaryBlue,
+        icon: Icons.school_rounded,
+        label: 'COURSE',
+        );
+    }
+  }
+
   Map<String, int> _attendanceCounts(Map<String, dynamic> course) {
     final att = course['attendance'];
     if (att is! Map) return {'total': 0, 'present': 0};
-    final m = Map<String, dynamic>.from(att);
 
+    final m = Map<String, dynamic>.from(att);
     int total = 0;
     int present = 0;
 
@@ -90,55 +154,145 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       final status = (rec['status'] ?? '').toString().toLowerCase();
       if (status == 'present') present += 1;
     }
+
     return {'total': total, 'present': present};
   }
 
-  // Progress = (unique taught sessionIds in attendance) / (total syllabi sessions)
   Future<Map<String, int>> _progressCounts(Map<String, dynamic> course) async {
-    final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
-    final courseId = (cls['course_id'] ?? course['id'] ?? '').toString(); // you store course_id inside class
+    final courseId = _courseIdOf(course);
+    final variantKey = _variantKeyOf(course);
+
     if (courseId.isEmpty) return {'total': 0, 'covered': 0};
 
-    // 1) total syllabus sessions
+    final Set<String> covered = {};
+    final Map<int, String> sessionIdByNumber = {};
     int totalSyllabiSessions = 0;
-    final sSnap = await _syllabiRef.child(courseId).get();
-    if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
-      final s = Map<String, dynamic>.from(sSnap.value as Map);
-      final units = s['units'];
-      if (units is List) {
-        for (final u in units) {
-          if (u is! Map) continue;
-          final unit = Map<String, dynamic>.from(u);
-          final sessions = unit['sessions'];
-          if (sessions is List) totalSyllabiSessions += sessions.length;
+
+    try {
+      DatabaseReference syllabusRef = _syllabiRef.child(courseId);
+      if (variantKey.isNotEmpty) {
+        syllabusRef = syllabusRef.child(variantKey);
+      }
+
+      final sSnap = await syllabusRef.get();
+      if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
+        final s = Map<String, dynamic>.from(sSnap.value as Map);
+        final units = s['units'];
+
+        if (units is List) {
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = Map<String, dynamic>.from(u);
+            final sessions = unit['sessions'];
+
+            if (sessions is List) {
+              totalSyllabiSessions += sessions.length;
+
+              for (final ss in sessions) {
+                if (ss is! Map) continue;
+                final sess = Map<String, dynamic>.from(ss);
+                final sid = (sess['id'] ?? '').toString().trim();
+                final sn = _asInt(sess['sessionNumber']);
+
+                if (sn > 0 && sid.isNotEmpty) {
+                  sessionIdByNumber[sn] = sid;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    final att = course['attendance'];
+    if (att is Map) {
+      final a = Map<String, dynamic>.from(att);
+
+      for (final v in a.values) {
+        if (v is! Map) continue;
+        final rec = Map<String, dynamic>.from(v);
+
+        final taughtItems = rec['taughtItems'];
+        bool usedNewFormat = false;
+
+        if (taughtItems is List) {
+          usedNewFormat = true;
+
+          for (final it in taughtItems) {
+            if (it is! Map) continue;
+            final item = Map<String, dynamic>.from(it);
+
+            final type = (item['type'] ?? '').toString().trim().toLowerCase();
+            if (type != 'syllabus') continue;
+
+            final sid = (item['sessionId'] ?? '').toString().trim();
+            final sn = _asInt(item['sessionNumber']);
+
+            if (sid.isNotEmpty) {
+              covered.add(sid);
+            } else if (sn > 0) {
+              final mapped = sessionIdByNumber[sn];
+              if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+            }
+          }
+        }
+
+        if (!usedNewFormat) {
+          final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
+          final sid = (taught['sessionId'] ?? '').toString().trim();
+          final sn = _asInt(taught['sessionNumber']);
+
+          if (sid.isNotEmpty) {
+            covered.add(sid);
+          } else if (sn > 0) {
+            final mapped = sessionIdByNumber[sn];
+            if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+          }
         }
       }
     }
 
-    // 2) covered taught session ids from attendance
-    final att = course['attendance'];
-    final Set<String> covered = {};
-    if (att is Map) {
-      final a = Map<String, dynamic>.from(att);
-      for (final v in a.values) {
-        if (v is! Map) continue;
-        final rec = Map<String, dynamic>.from(v);
-        final taught = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
-        final taughtSessionId = (taught['sessionId'] ?? '').toString().trim();
-        if (taughtSessionId.isNotEmpty) covered.add(taughtSessionId);
+    try {
+      final onlineSnap = await _db.child('$bookingProgressNode/$_uid/$courseId/online_attendance').get();
+      if (onlineSnap.exists && onlineSnap.value is Map) {
+        final om = Map<String, dynamic>.from(onlineSnap.value as Map);
+
+        for (final entry in om.entries) {
+          final v = entry.value;
+          if (v is! Map) continue;
+          final rec = Map<String, dynamic>.from(v);
+
+          final taughtItems = rec['taughtItems'];
+          if (taughtItems is List) {
+            for (final it in taughtItems) {
+              if (it is! Map) continue;
+              final item = Map<String, dynamic>.from(it);
+
+              final type = (item['type'] ?? '').toString().trim().toLowerCase();
+              if (type != 'syllabus') continue;
+
+              final sid = (item['sessionId'] ?? '').toString().trim();
+              final sn = _asInt(item['sessionNumber']);
+
+              if (sid.isNotEmpty) {
+                covered.add(sid);
+              } else if (sn > 0) {
+                final mapped = sessionIdByNumber[sn];
+                if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+              }
+            }
+          } else {
+            final sn = _asInt(rec['sessionNo']);
+            if (sn > 0) {
+              final mapped = sessionIdByNumber[sn];
+              if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+            }
+          }
+        }
       }
-    }
+    } catch (_) {}
 
     return {'total': totalSyllabiSessions, 'covered': covered.length};
-  }
-
-  // ---------- Payment helpers (for badge) ----------
-
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
   }
 
   String _paymentStateFromSummary({
@@ -148,7 +302,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     final sessionsPaidTotal = _asInt(summary['sessionsPaidTotal']);
     final remindBeforeSession = _asInt(summary['remindBeforeSession']);
 
-    if (sessionsPaidTotal <= 0) return ''; // no info => no badge
+    if (sessionsPaidTotal <= 0) return '';
 
     final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
 
@@ -160,7 +314,6 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
     return '';
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -218,9 +371,13 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     final code = (course['course_code'] ?? '').toString();
 
     final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
-    final classId = (cls['class_id'] ?? '').toString();
-    final instructor = (cls['instructor'] ?? '').toString();
-    final status = (cls['status'] ?? course['status'] ?? '').toString();
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    final instructor = (cls['instructor'] ?? cls['teacher_name'] ?? '').toString().trim();
+    final status = (cls['status'] ?? course['status'] ?? '').toString().trim();
+
+    final variantKey = _variantKeyOf(course);
+    final isOnline = _isOnlineCourse(course);
+    final variantStyle = _variantStyle(variantKey);
 
     final attCounts = _attendanceCounts(course);
     final total = attCounts['total'] ?? 0;
@@ -232,138 +389,204 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       color: Colors.white,
       shape: UiK.cardShape(),
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text(title, style: UiK.titleText())),
-                const SizedBox(width: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: variantStyle.border.withOpacity(0.85)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(title, style: UiK.titleText())),
+                  const SizedBox(width: 8),
 
-                // Payment badge (live)
-                StreamBuilder<DatabaseEvent>(
-                  stream: _usersRef.child(_uid).child('courses').child(courseKey).child('payment_summary').onValue,
-                  builder: (context, snap) {
-                    final raw = snap.data?.snapshot.value;
-                    final sum = raw is Map
-                        ? raw.map((k, v) => MapEntry(k.toString(), v))
-                        : <String, dynamic>{};
-
-                    // sessionsDone = attendance count you already have in this screen
-                    final attCounts = _attendanceCounts(course);
-                    final sessionsDone = attCounts['total'] ?? 0;
-
-                    final state = _paymentStateFromSummary(
-                      sessionsDone: sessionsDone,
-                      summary: sum,
-                    );
-
-                    if (state.isEmpty) return const SizedBox.shrink();
-
-                    final bool isDue = state == 'DUE';
-
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: (isDue ? Colors.red : UiK.actionOrange).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: (isDue ? Colors.red : UiK.actionOrange).withOpacity(0.28),
-                        ),
-                      ),
-                      child: Text(
-                        state,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                          color: isDue ? Colors.red : UiK.actionOrange,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Code: ${code.isEmpty ? '-' : code} • Class: ${classId.isEmpty ? '-' : classId}',
-              style: UiK.subtleText(),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Teacher: ${instructor.isEmpty ? '-' : instructor} • Status: ${status.isEmpty ? '-' : status}',
-              style: UiK.subtleText(),
-            ),
-            const SizedBox(height: 10),
-
-            // KPIs: Attendance + Progress (progress needs async)
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _kpiChip(icon: Icons.how_to_reg_rounded, label: 'Attendance', value: '$attPct%'),
-                FutureBuilder<Map<String, int>>(
-                  future: _progressCounts(course),
-                  builder: (_, snap) {
-                    final data = snap.data ?? {'total': 0, 'covered': 0};
-                    final t = data['total'] ?? 0;
-                    final c = data['covered'] ?? 0;
-                    final pct = t == 0 ? 0 : ((c / t) * 100).round();
-                    return _kpiChip(icon: Icons.insights_rounded, label: 'Progress', value: '$pct%');
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.visibility_rounded),
-                    label: const Text('Open'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: UiK.actionOrange,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: variantStyle.bg,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: variantStyle.border),
                     ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => LearnerCourseDetailScreen(
-                            courseKey: courseKey,
-                            courseData: course,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(variantStyle.icon, size: 14, color: variantStyle.fg),
+                        const SizedBox(width: 6),
+                        Text(
+                          variantStyle.label,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            color: variantStyle.fg,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  StreamBuilder<DatabaseEvent>(
+                    stream: _usersRef.child(_uid).child('courses').child(courseKey).child('payment_summary').onValue,
+                    builder: (context, snap) {
+                      final raw = snap.data?.snapshot.value;
+                      final sum = raw is Map
+                          ? raw.map((k, v) => MapEntry(k.toString(), v))
+                          : <String, dynamic>{};
+
+                      final attCounts = _attendanceCounts(course);
+                      final sessionsDone = attCounts['total'] ?? 0;
+
+                      final state = _paymentStateFromSummary(
+                        sessionsDone: sessionsDone,
+                        summary: sum,
+                      );
+
+                      if (state.isEmpty) return const SizedBox.shrink();
+
+                      final bool isDue = state == 'PAYMENT NEEDED';
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: (isDue ? Colors.red : UiK.actionOrange).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: (isDue ? Colors.red : UiK.actionOrange).withOpacity(0.28),
+                          ),
+                        ),
+                        child: Text(
+                          state,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                            color: isDue ? Colors.red : UiK.actionOrange,
                           ),
                         ),
                       );
                     },
                   ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Text(
+                'Code: ${code.isEmpty ? '-' : code}',
+                style: UiK.subtleText(),
+              ),
+
+              if (!isOnline) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Class: ${classId.isEmpty ? '-' : classId}',
+                  style: UiK.subtleText(),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Teacher: ${instructor.isEmpty ? '-' : instructor} • Status: ${status.isEmpty ? '-' : status}',
+                  style: UiK.subtleText(),
+                ),
+              ] else ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Status: ${status.isEmpty ? 'Online course' : status}',
+                  style: UiK.subtleText(),
                 ),
               ],
-            ),
-          ],
+
+              const SizedBox(height: 10),
+
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _kpiChip(
+                    icon: Icons.how_to_reg_rounded,
+                    label: 'Attendance',
+                    value: '$attPct%',
+                    accent: variantStyle.fg,
+                    tint: variantStyle.bg,
+                  ),
+                  FutureBuilder<Map<String, int>>(
+                    future: _progressCounts(course),
+                    builder: (_, snap) {
+                      final data = snap.data ?? {'total': 0, 'covered': 0};
+                      final t = data['total'] ?? 0;
+                      final c = data['covered'] ?? 0;
+                      final pct = t == 0 ? 0 : ((c / t) * 100).round();
+
+                      return _kpiChip(
+                        icon: Icons.insights_rounded,
+                        label: 'Progress',
+                        value: '$pct%',
+                        accent: variantStyle.fg,
+                        tint: variantStyle.bg,
+                      );
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.visibility_rounded),
+                      label: const Text('Open'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isOnline ? variantStyle.fg : UiK.actionOrange,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LearnerCourseDetailScreen(
+                              courseKey: courseKey,
+                              courseData: course,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _kpiChip({required IconData icon, required String label, required String value}) {
+  Widget _kpiChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? accent,
+    Color? tint,
+  }) {
+    final iconColor = accent ?? UiK.actionOrange;
+    final bgColor = tint ?? UiK.primaryBlue.withOpacity(0.04);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-        color: UiK.primaryBlue.withOpacity(0.04),
+        color: bgColor,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: UiK.actionOrange),
+          Icon(icon, size: 18, color: iconColor),
           const SizedBox(width: 10),
           Text(value, style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
           const SizedBox(width: 8),

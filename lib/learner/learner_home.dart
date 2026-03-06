@@ -679,6 +679,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
     final classId = (cls['class_id'] ?? '').toString().trim();
     final courseId = (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+    final variantKey = (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
 
     int? planned;
     final schedule = cls['schedule'];
@@ -703,7 +704,12 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     int totalLessons = 0;
     if (courseId.isNotEmpty) {
       try {
-        final sSnap = await _db.child('syllabi/$courseId').get();
+        DatabaseReference syllabusRef = _db.child('syllabi/$courseId');
+        if (variantKey.isNotEmpty) {
+          syllabusRef = syllabusRef.child(variantKey);
+        }
+
+        final sSnap = await syllabusRef.get();
         if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'];
@@ -735,6 +741,47 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     required Map<String, dynamic> course,
   }) async {
     final covered = <String>{};
+    final variantKey = (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+
+    final Map<int, String> sessionIdByNumber = {};
+
+    // ✅ load correct syllabus branch first so online sessionNo can map to real sessionId
+    if (courseId.isNotEmpty) {
+      try {
+        DatabaseReference syllabusRef = _db.child('syllabi/$courseId');
+        if (variantKey.isNotEmpty) {
+          syllabusRef = syllabusRef.child(variantKey);
+        }
+
+        final sSnap = await syllabusRef.get();
+        if (sSnap.exists && sSnap.value is Map) {
+          final s = Map<String, dynamic>.from(sSnap.value as Map);
+          final units = s['units'];
+
+          if (units is List) {
+            for (final u in units) {
+              if (u is! Map) continue;
+              final unit = Map<String, dynamic>.from(u);
+              final sessions = unit['sessions'];
+
+              if (sessions is List) {
+                for (final ss in sessions) {
+                  if (ss is! Map) continue;
+                  final sess = Map<String, dynamic>.from(ss);
+
+                  final sn = _toInt(sess['sessionNumber']);
+                  final sid = (sess['id'] ?? '').toString().trim();
+
+                  if (sn > 0 && sid.isNotEmpty) {
+                    sessionIdByNumber[sn] = sid;
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     final att = course['attendance'];
     if (att is Map) {
@@ -757,7 +804,18 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             if (type != 'syllabus') continue;
 
             final sid = (item['sessionId'] ?? '').toString().trim();
-            if (sid.isNotEmpty) covered.add(sid);
+            if (sid.isNotEmpty) {
+              covered.add(sid);
+              continue;
+            }
+
+            final sn = _toInt(item['sessionNumber']);
+            if (sn > 0) {
+              final mapped = sessionIdByNumber[sn];
+              if (mapped != null && mapped.isNotEmpty) {
+                covered.add(mapped);
+              }
+            }
           }
         }
 
@@ -766,7 +824,18 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           if (taught is Map) {
             final tm = Map<String, dynamic>.from(taught as Map);
             final sid = (tm['sessionId'] ?? '').toString().trim();
-            if (sid.isNotEmpty) covered.add(sid);
+            if (sid.isNotEmpty) {
+              covered.add(sid);
+              continue;
+            }
+
+            final sn = _toInt(tm['sessionNumber']);
+            if (sn > 0) {
+              final mapped = sessionIdByNumber[sn];
+              if (mapped != null && mapped.isNotEmpty) {
+                covered.add(mapped);
+              }
+            }
           }
         }
       }
@@ -801,8 +870,21 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                   continue;
                 }
 
-                final sn = (item['sessionNumber'] ?? '').toString().trim();
-                if (sn.isNotEmpty) covered.add('session_$sn');
+                final sn = _toInt(item['sessionNumber']);
+                if (sn > 0) {
+                  final mapped = sessionIdByNumber[sn];
+                  if (mapped != null && mapped.isNotEmpty) {
+                    covered.add(mapped);
+                  }
+                }
+              }
+            } else {
+              final sn = _toInt(r['sessionNo']);
+              if (sn > 0) {
+                final mapped = sessionIdByNumber[sn];
+                if (mapped != null && mapped.isNotEmpty) {
+                  covered.add(mapped);
+                }
               }
             }
           }

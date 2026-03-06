@@ -159,8 +159,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   String get _courseCode => (_course['course_code'] ?? '').toString();
   String get _classId => (_cls['class_id'] ?? '').toString();
 
-  // syllabi key (courseId)
+// syllabi key (courseId)
   String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString();
+
+// ✅ learner-assigned syllabus variant
+  String get _variantKey =>
+      (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
 
   DatabaseReference get _paymentSummaryRef =>
       _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
@@ -261,7 +265,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       // Load syllabi flat list FIRST (so we can map sessionNo -> sessionId for online)
       // --------------------
       if (_courseId.isNotEmpty) {
-        final sSnap = await _syllabiRef.child(_courseId).get();
+        DatabaseReference syllabusRef = _syllabiRef.child(_courseId);
+
+        // ✅ Prefer learner variant branch: syllabi/<courseId>/<variantKey>
+        if (_variantKey.isNotEmpty) {
+          syllabusRef = syllabusRef.child(_variantKey);
+        }
+
+        final sSnap = await syllabusRef.get();
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'];

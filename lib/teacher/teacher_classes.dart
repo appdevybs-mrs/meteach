@@ -79,6 +79,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   // Cache user names: uid -> {full}
   final Map<String, Map<String, String>> _nameCache = {};
   final Map<String, String> _sessionTitleCache = {}; // courseId|sessionNo -> title
+  final Map<String, String> _courseTitleCache = {}; // courseId -> course title
   late TabController _tab;
 
   @override
@@ -753,6 +754,40 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   // ===================== ONLINE tab =====================
 
+  Future<String> _loadCourseTitle(String courseId, List<String> learnerUids) async {
+    if (courseId.isEmpty) return '';
+    if (_courseTitleCache.containsKey(courseId)) return _courseTitleCache[courseId]!;
+
+    try {
+      for (final learnerUid in learnerUids) {
+        if (learnerUid.trim().isEmpty) continue;
+
+        final snap = await _usersRef.child(learnerUid).child('courses').get();
+        if (!snap.exists || snap.value == null || snap.value is! Map) continue;
+
+        final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+
+        for (final entry in raw.entries) {
+          final value = entry.value;
+          if (value is! Map) continue;
+
+          final courseMap = Map<String, dynamic>.from(value as Map);
+          final id = _safeStr(courseMap['id']);
+          if (id != courseId) continue;
+
+          final title = _safeStr(courseMap['title'] ?? courseMap['course_title']);
+          if (title.isNotEmpty) {
+            _courseTitleCache[courseId] = title;
+            return title;
+          }
+        }
+      }
+    } catch (_) {}
+
+    _courseTitleCache[courseId] = '';
+    return '';
+  }
+
   Future<String> _loadSessionTitle(String courseId, int sessionNo) async {
     if (courseId.isEmpty || sessionNo <= 0) return '';
     final key = '$courseId|$sessionNo';
@@ -870,12 +905,15 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             // availability meta (meetUrl + duration)
             final meta = await _loadAvailMeta(teacherId, courseId);
 
+            final courseTitle = await _loadCourseTitle(courseId, learnerUids);
+
             final bookingKey = _OnlineBooking.makeKey(courseId, dayKey, hhmm);
 
             out.add(
               _OnlineBooking(
                 bookingKey: bookingKey,
                 courseId: courseId,
+                courseTitle: courseTitle,
                 dayKey: dayKey,
                 time: hhmm,
                 startAtMillis: dt.millisecondsSinceEpoch,
@@ -1409,7 +1447,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Course: ${b.courseId}', style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+            Text(
+              'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
+              style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
             Text('When: $when', style: TextStyle(color: mainText.withOpacity(0.85), fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
@@ -1532,6 +1573,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                         MaterialPageRoute(
                           builder: (_) => OnlineAttendanceStatsScreen(
                             courseId: b.courseId,
+                            courseTitle: b.courseTitle,
                             teacherUid: _teacherUid,
                           ),
                         ),
@@ -1633,6 +1675,7 @@ class _OnlineBooking {
   final String bookingKey; // courseId|yyyy-mm-dd|HH:MM
 
   final String courseId;
+  final String courseTitle;
   final String dayKey; // yyyy-mm-dd
   final String time; // HH:MM
 
@@ -1652,6 +1695,7 @@ class _OnlineBooking {
   const _OnlineBooking({
     required this.bookingKey,
     required this.courseId,
+    required this.courseTitle,
     required this.dayKey,
     required this.time,
     required this.startAtMillis,
@@ -1889,8 +1933,10 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Course: ${b.courseId}',
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                Text(
+                  'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                ),
                 const SizedBox(height: 6),
                 Text('When: $when', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
                 const SizedBox(height: 4),
@@ -2018,8 +2064,10 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Course: ${booking.courseId}',
-                        style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    Text(
+                      'Course: ${booking.courseTitle.trim().isEmpty ? booking.courseId : booking.courseTitle}',
+                      style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                    ),
                     const SizedBox(height: 10),
                     const Text('Learners:', style: TextStyle(fontWeight: FontWeight.w900)),
                     const SizedBox(height: 8),
@@ -2086,8 +2134,15 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
 }
 
 class OnlineAttendanceStatsScreen extends StatefulWidget {
-  const OnlineAttendanceStatsScreen({super.key, required this.courseId, required this.teacherUid});
+  const OnlineAttendanceStatsScreen({
+    super.key,
+    required this.courseId,
+    required this.courseTitle,
+    required this.teacherUid,
+  });
+
   final String courseId;
+  final String courseTitle;
   final String teacherUid;
 
   @override
@@ -2180,8 +2235,10 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('CourseId: ${widget.courseId}',
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                Text(
+                  'Course: ${widget.courseTitle.trim().isEmpty ? widget.courseId : widget.courseTitle}',
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                ),
                 const SizedBox(height: 10),
                 Text('Sessions with attendance: $totalSessions', style: const TextStyle(fontWeight: FontWeight.w900)),
                 const SizedBox(height: 6),
