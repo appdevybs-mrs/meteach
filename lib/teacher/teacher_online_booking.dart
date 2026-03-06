@@ -205,17 +205,30 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
   }
 
   Future<Set<String>> _loadEnabledCourseIds() async {
-    // Original logic: courses are enabled if booking_curriculum exists
+    // NEW logic:
+    // a course is online-enabled if syllabi/<courseId>/online exists
     final enabled = <String>{};
+
     try {
-      final snap = await _curriculumRef.get();
+      final snap = await _db.child('syllabi').get();
       final v = snap.value;
 
       if (v is Map) {
-        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-        enabled.addAll(m.keys);
+        final root = v.map((k, vv) => MapEntry(k.toString(), vv));
+
+        root.forEach((courseId, courseNode) {
+          if (courseNode is! Map) return;
+
+          final courseMap = courseNode.map((k, vv) => MapEntry(k.toString(), vv));
+          final onlineNode = courseMap['online'];
+
+          if (onlineNode is Map) {
+            enabled.add(courseId);
+          }
+        });
       }
     } catch (_) {}
+
     return enabled;
   }
 
@@ -262,12 +275,13 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       if (out.isEmpty) {
         _toast('No courses assigned to you (users/$myUid/courses).');
       } else if (filtered.isEmpty) {
-        _toast('No booking-enabled courses yet. Ask admin to create booking plan first.');
+        _toast('No online syllabus found yet for your assigned courses.');
       }
     } catch (e) {
       _toast('Failed loading courses: $e');
     }
   }
+
 
   Future<void> _loadCourseRequirements(String courseId) async {
     try {
@@ -276,23 +290,47 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       int w = 4;
       String title = '';
 
-      final curSnap = await _curriculumRef.child(courseId).get();
-      if (curSnap.exists && curSnap.value is Map) {
-        final m = (curSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
-        n = _toInt(m['totalSessions'], fallback: 0);
-        title = (m['courseTitle'] ?? '').toString().trim();
+      // 1) Read ONLINE syllabus
+      final syllabusSnap = await _db.child('syllabi/$courseId/online').get();
+      if (syllabusSnap.exists && syllabusSnap.value is Map) {
+        final s = (syllabusSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
+
+        title = (s['title'] ?? '').toString().trim();
+
+        final unitsRaw = s['units'];
+        if (unitsRaw is List) {
+          for (final u in unitsRaw) {
+            if (u is! Map) continue;
+            final unit = u.map((kk, vv) => MapEntry(kk.toString(), vv));
+            final sessionsRaw = unit['sessions'];
+
+            if (sessionsRaw is List) {
+              n += sessionsRaw.length;
+            }
+          }
+        }
       }
 
+      // 2) Optional fallback: course title from /courses
+      if (title.isEmpty) {
+        final courseSnap = await _db.child('courses/$courseId').get();
+        if (courseSnap.exists && courseSnap.value is Map) {
+          final c = (courseSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
+          title = (c['title'] ?? c['name'] ?? '').toString().trim();
+        }
+      }
+
+      // 3) Keep existing booking_config coverage settings if they still exist
       final cfgSnap = await _configRef.child('courses/$courseId').get();
       if (cfgSnap.exists && cfgSnap.value is Map) {
         final m = (cfgSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
-        title = title.isNotEmpty ? title : (m['title'] ?? '').toString().trim();
 
         final ct = m['coverageTarget'];
         if (ct is Map) {
           final cm = ct.map((kk, vv) => MapEntry(kk.toString(), vv));
           w = _toInt(cm['weeks'], fallback: 4);
           k = _toInt(cm['minChoicesPerSession'], fallback: 2);
+
           if (k <= 0) k = 1;
           if (w <= 0) w = 4;
         }

@@ -912,7 +912,6 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
     if (v is! Map) return [];
 
     final raw = Map<dynamic, dynamic>.from(v);
-
     final temp = <Map<String, dynamic>>[];
 
     for (final e in raw.entries) {
@@ -923,35 +922,31 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
       final m = Map<String, dynamic>.from(val as Map);
 
       final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
-      final courseKeyForBooking = realCourseId.isNotEmpty ? realCourseId : key;
+      final courseId = realCourseId.isNotEmpty ? realCourseId : key;
+
+      final variantKey = (m['variantKey'] ?? m['variant'] ?? '').toString().trim().toLowerCase();
+      if (variantKey != 'online') continue;
 
       final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
-      int numVal(dynamic vv) => (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+
+      int numVal(dynamic vv) =>
+          (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+
       final assignedAt = numVal(m['assignedAt']);
 
+      final onlineSyllabusSnap = await _db.child('syllabi/$courseId/online').get();
+      if (!onlineSyllabusSnap.exists) continue;
+
       temp.add({
-        'courseId': courseKeyForBooking,
+        'courseId': courseId,
         'title': title,
         'assignedAt': assignedAt,
       });
     }
 
     temp.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
-
-    final allowed = <Map<String, dynamic>>[];
-    for (final c in temp) {
-      final cid = (c['courseId'] ?? '').toString().trim();
-      if (cid.isEmpty) continue;
-
-      final enabledSnap = await _db.child('booking_config/courses/$cid/enabled').get();
-      final ev = enabledSnap.value;
-      final enabled = (ev == true) || (ev?.toString() == 'true');
-      if (enabled) allowed.add(c);
-    }
-
-    return allowed;
+    return temp;
   }
-
   String _two(int n) => n < 10 ? '0$n' : '$n';
   String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
 
@@ -1409,8 +1404,8 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   }
 
   final db = FirebaseDatabase.instance.ref();
-
   List<Map<String, dynamic>> courses = [];
+
   try {
     final snap = await db.child('users/$uid/courses').get();
     final v = snap.value;
@@ -1418,40 +1413,41 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
     if (v is Map) {
       final raw = Map<dynamic, dynamic>.from(v);
 
-      courses = raw.entries.map((e) {
+      for (final e in raw.entries) {
         final key = e.key.toString();
-        final m = (e.value is Map) ? Map<String, dynamic>.from(e.value as Map) : <String, dynamic>{};
+        final val = e.value;
+        if (val is! Map) continue;
+
+        final m = Map<String, dynamic>.from(val as Map);
 
         final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
+        final courseId = realCourseId.isNotEmpty ? realCourseId : key;
+
+        final variantKey =
+        (m['variantKey'] ?? m['variant'] ?? '').toString().trim().toLowerCase();
+
+        if (variantKey != 'online') continue;
 
         final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
         final code = (m['course_code'] ?? '').toString();
 
-        int numVal(dynamic vv) => (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+        int numVal(dynamic vv) =>
+            (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+
         final assignedAt = numVal(m['assignedAt']);
 
-        return {
-          'courseKey': realCourseId.isNotEmpty ? realCourseId : key,
+        final onlineSyllabusSnap = await db.child('syllabi/$courseId/online').get();
+        if (!onlineSyllabusSnap.exists) continue;
+
+        courses.add({
+          'courseKey': courseId,
           'title': title,
           'code': code,
           'assignedAt': assignedAt,
-        };
-      }).toList();
+        });
+      }
 
       courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
-
-      final allowed = <Map<String, dynamic>>[];
-      for (final c in courses) {
-        final cid = (c['courseKey'] ?? '').toString().trim();
-        if (cid.isEmpty) continue;
-
-        final enabledSnap = await db.child('booking_config/courses/$cid/enabled').get();
-        final ev = enabledSnap.value;
-        final enabled = (ev == true) || (ev?.toString() == 'true');
-
-        if (enabled) allowed.add(c);
-      }
-      courses = allowed;
     }
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1464,7 +1460,9 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
   if (courses.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('No bookable courses. Admin has not enabled booking yet.')),
+      const SnackBar(
+        content: Text('No online courses available. Admin has not added the online syllabus yet.'),
+      ),
     );
     return;
   }
@@ -1484,7 +1482,11 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
             children: [
               const Text(
                 'Choose course to book',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: UiK.primaryBlue),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  color: UiK.primaryBlue,
+                ),
               ),
               const SizedBox(height: 12),
               ConstrainedBox(
@@ -1528,7 +1530,10 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
                               ),
-                              child: const Icon(Icons.calendar_month_rounded, color: UiK.primaryBlue),
+                              child: const Icon(
+                                Icons.calendar_month_rounded,
+                                color: UiK.primaryBlue,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -1539,7 +1544,10 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                     title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: UiK.primaryBlue,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
@@ -1611,18 +1619,7 @@ Future<void> _openHomeworkCoursePicker(
 
       courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
 
-      final allowed = <Map<String, dynamic>>[];
-      for (final c in courses) {
-        final cid = (c['courseKey'] ?? '').toString().trim();
-        if (cid.isEmpty) continue;
 
-        final curSnap = await db.child('booking_curriculum/$cid').get();
-        if (curSnap.exists && curSnap.value != null) {
-          allowed.add(c);
-        }
-      }
-
-      courses = allowed;
     }
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1635,7 +1632,7 @@ Future<void> _openHomeworkCoursePicker(
 
   if (courses.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('No bookable courses. Admin has not enabled booking yet.')),
+      const SnackBar(content: Text('All slots are full, please try again later')),
     );
     return;
   }

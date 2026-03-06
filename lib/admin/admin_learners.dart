@@ -2274,6 +2274,24 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   // for Assign Courses dialog
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
+  // ✅ Course variant selection (matches your syllabus structure)
+  static const List<String> _variantKeys = ['in_class', 'online', 'live', 'recorded'];
+
+  static String _variantLabel(String key) {
+    switch (key.trim().toLowerCase()) {
+      case 'recorded':
+        return 'Recorded';
+      case 'live':
+        return 'Live';
+      case 'online':
+        return 'Online';
+      case 'in_class':
+      default:
+        return 'In-Class';
+    }
+  }
+
+
   // ------------------------------------------------------------
   // Optional but smarter long-term design (best practice)
   //
@@ -2342,6 +2360,22 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     }
   }
 
+  Map<String, String> _currentlyAssignedVariantsByCourseId() {
+    final out = <String, String>{};
+
+    _userCourses.forEach((_, nodeRaw) {
+      final node = nodeRaw is Map ? nodeRaw : <dynamic, dynamic>{};
+
+      final courseId = (node['id'] ?? '').toString().trim();
+      if (courseId.isEmpty) return;
+
+      final v = (node['variantKey'] ?? node['variant'] ?? '').toString().trim();
+      out[courseId] = v.isEmpty ? 'in_class' : v;
+    });
+
+    return out;
+  }
+
   Set<String> _currentlyAssignedCourseIds() {
     final ids = <String>{};
     _userCourses.forEach((_, nodeRaw) {
@@ -2352,7 +2386,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     return ids;
   }
 
-  Future<void> _saveAssignedCourses(Set<String> selectedIds) async {
+  Future<void> _saveAssignedCourses(
+      Set<String> selectedIds,
+      Map<String, String> variantByCourseId,
+      ) async {
     final coursesRef = _userCoursesRef;
 
     // Build mapping existingId -> existingCourseKey (course_1, course_2, ...)
@@ -2436,6 +2473,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       updates['$key/title'] = title;
       updates['$key/category'] = category;
       updates['$key/assignedAt'] = ServerValue.timestamp;
+      final chosenVariant = (variantByCourseId[courseId] ?? 'in_class').trim();
+      updates['$key/variantKey'] =
+      _variantKeys.contains(chosenVariant) ? chosenVariant : 'in_class';
     }
 
 
@@ -2446,8 +2486,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     await _ensureAllCoursesLoaded();
 
     // ✅ pre-tick already assigned (by id)
-    final temp = Set<String>.from(_currentlyAssignedCourseIds());
 
+    final temp = Set<String>.from(_currentlyAssignedCourseIds());
+    final variantByCourseId = _currentlyAssignedVariantsByCourseId();
     // compute duplicate titles across ALL courses (so show code only when needed)
     String titleOf(String id) {
       final c = _allCourses[id] ?? {};
@@ -2485,19 +2526,57 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                 : ListView(
               shrinkWrap: true,
               children: _allCourses.keys.map((id) {
+                final checked = temp.contains(id);
+
+                if (!variantByCourseId.containsKey(id)) {
+                  variantByCourseId[id] = 'in_class';
+                }
+
                 return CheckboxListTile(
-                  value: temp.contains(id),
+                  value: checked,
                   title: Text(displayFor(id)),
                   controlAffinity: ListTileControlAffinity.leading,
                   onChanged: (v) {
                     setDialogState(() {
                       if (v == true) {
-                        temp.add(id); // ✅ Set prevents duplicates
+                        temp.add(id);
+                        variantByCourseId[id] = variantByCourseId[id] ?? 'in_class';
                       } else {
                         temp.remove(id);
+                        // optional: keep variant remembered or remove it
+                        // variantByCourseId.remove(id);
                       }
                     });
                   },
+                  subtitle: checked
+                      ? Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: DropdownButtonFormField<String>(
+                      value: variantByCourseId[id] ?? 'in_class',
+                      decoration: InputDecoration(
+                        labelText: 'Variant',
+                        filled: true,
+                        fillColor: AdminLearnersScreen.appBg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: _variantKeys
+                          .map((k) => DropdownMenuItem(
+                        value: k,
+                        child: Text(_variantLabel(k)),
+                      ))
+                          .toList(),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          variantByCourseId[id] = (val ?? 'in_class');
+                        });
+                      },
+                    ),
+                  )
+                      : null,
                 );
               }).toList(),
             ),
@@ -2509,7 +2588,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
             ),
             FilledButton(
               onPressed: () async {
-                await _saveAssignedCourses(temp);
+                await _saveAssignedCourses(temp, variantByCourseId);
                 if (mounted) setState(() {}); // refresh picker + panels
                 if (mounted) Navigator.pop(dialogContext);
               },
@@ -2602,12 +2681,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       final m = (_userCourses[courseKey] ?? {}) as Map;
       final code = (m['course_code'] ?? '').toString().trim();
       final title = (m['title'] ?? '').toString().trim();
+      final variant = (m['variantKey'] ?? 'in_class').toString().trim();
+      final vLabel = _variantLabel(variant);
 
-      if (title.isEmpty) return code.isNotEmpty ? code : courseKey;
+      if (title.isEmpty) return code.isNotEmpty ? '$code • $vLabel' : '$courseKey • $vLabel';
 
       final duplicate = (titleCount[title] ?? 0) > 1;
-      if (duplicate && code.isNotEmpty) return '$title ($code)';
-      return title;
+      if (duplicate && code.isNotEmpty) return '$title ($code) • $vLabel';
+      return '$title • $vLabel';
     }
 
     return DropdownButtonFormField<String>(

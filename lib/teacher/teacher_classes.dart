@@ -322,6 +322,44 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return 0;
   }
 
+  List<Map<String, String>> _inClassLearnersList(Map<String, dynamic> classData) {
+    final learners = classData['learners'];
+    if (learners is! Map) return [];
+
+    final Map<dynamic, dynamic> raw = Map<dynamic, dynamic>.from(learners);
+    final List<Map<String, String>> out = [];
+
+    for (final entry in raw.entries) {
+      final uid = entry.key.toString();
+      final value = entry.value;
+
+      if (value is Map) {
+        final m = Map<String, dynamic>.from(value as Map);
+        final name = _safeStr(m['name']);
+        final serial = _safeStr(m['serial']);
+
+        out.add({
+          'uid': uid,
+          'name': name,
+          'serial': serial,
+        });
+      } else {
+        out.add({
+          'uid': uid,
+          'name': '',
+          'serial': '',
+        });
+      }
+    }
+
+    out.sort((a, b) {
+      final an = _norm(a['name'] ?? '');
+      final bn = _norm(b['name'] ?? '');
+      return an.compareTo(bn);
+    });
+
+    return out;
+  }
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
     if (schedule is Map) {
@@ -434,6 +472,42 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return null;
   }
 
+  Future<Map<String, dynamic>?> _loadOnlineSyllabusSession(String courseId, int sessionNo) async {
+    if (courseId.isEmpty || sessionNo <= 0) return null;
+
+    try {
+      final snap = await _db.child('syllabi/$courseId/online').get();
+      if (!snap.exists || snap.value is! Map) return null;
+
+      final root = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+      final unitsRaw = root['units'];
+
+      if (unitsRaw is! List) return null;
+
+      for (final u in unitsRaw) {
+        if (u is! Map) continue;
+        final unit = u.map((k, v) => MapEntry(k.toString(), v));
+        final sessionsRaw = unit['sessions'];
+
+        if (sessionsRaw is! List) continue;
+
+        for (final s in sessionsRaw) {
+          if (s is! Map) continue;
+          final session = s.map((k, v) => MapEntry(k.toString(), v));
+
+          final sn = _asInt(session['sessionNumber']);
+          final order = _asInt(session['order']);
+
+          if (sn == sessionNo || order == sessionNo) {
+            return session;
+          }
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   Future<void> _openSessionDetailsSheet(String courseId, int sessionNo) async {
     final info = await _loadSessionDetails(courseId, sessionNo);
     if (!mounted) return;
@@ -518,6 +592,165 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
+  Future<void> _openOnlineSessionDetailsSheet(String courseId, int sessionNo) async {
+    final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
+    if (!mounted) return;
+
+    if (info == null) {
+      _toast('Online session details not found.');
+      return;
+    }
+
+    final titleRaw = (info['title'] ?? '').toString().trim();
+    final title = titleRaw.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $titleRaw';
+
+    final objective = (info['objective'] ?? '').toString().trim();
+    final content = (info['content'] ?? '').toString().trim();
+    final homework = (info['homework'] ?? '').toString().trim();
+    final materialsUrl = (info['materialsUrl'] ?? '').toString().trim();
+    final duration = _asInt(info['durationMinutes'] ?? 0);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        final bottomPad = MediaQuery.of(context).padding.bottom;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Course: $courseId',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (duration > 0)
+                    Text(
+                      'Duration: $duration min',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+
+                  if (objective.isNotEmpty) ...[
+                    const Text(
+                      'Objectives',
+                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      objective,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (content.isNotEmpty) ...[
+                    const Text(
+                      'Content',
+                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      content,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (homework.isNotEmpty) ...[
+                    const Text(
+                      'Homework',
+                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      homework,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (materialsUrl.isNotEmpty) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: actionOrange,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () => _openExternalUrl(materialsUrl),
+                        icon: const Icon(Icons.slideshow_rounded),
+                        label: const Text(
+                          'Open materials',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
   // ===================== ONLINE tab =====================
 
   Future<String> _loadSessionTitle(String courseId, int sessionNo) async {
@@ -526,10 +759,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     if (_sessionTitleCache.containsKey(key)) return _sessionTitleCache[key]!;
 
     try {
-      final snap = await _db.child('booking_curriculum/$courseId/sessions/$sessionNo').get();
-      if (snap.exists && snap.value is Map) {
-        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-        final title = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
+      final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
+      if (info != null) {
+        final title = (info['title'] ?? '').toString().trim();
         _sessionTitleCache[key] = title;
         return title;
       }
@@ -791,6 +1023,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final title = _safeStr(c['course_title']).isEmpty ? 'Class' : _safeStr(c['course_title']);
     final duration = _safeStr(c['course_duration']);
     final learnersCount = _learnersCount(c);
+    final learnersList = _inClassLearnersList(c);
 
     return Card(
       elevation: 0,
@@ -874,6 +1107,77 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         ),
         children: [
           const SizedBox(height: 8),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: appBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: uiBorder.withOpacity(0.85)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Learners',
+                  style: TextStyle(
+                    color: primaryBlue,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (learnersList.isEmpty)
+                  Text(
+                    'No learners found in this class.',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                else
+                  ...learnersList.map((learner) {
+                    final name = _safeStr(learner['name']);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: uiBorder.withOpacity(0.65)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.person_rounded,
+                            size: 16,
+                            color: actionOrange,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              name.isEmpty ? 'Learner' : name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: mainText,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                                height: 1.15,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           Row(
             children: [
               Expanded(
@@ -1157,7 +1461,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: () => _openSessionDetailsSheet(b.courseId, b.sessionNo),
+                onPressed: () => _openOnlineSessionDetailsSheet(b.courseId, b.sessionNo),
                 icon: const Icon(Icons.info_outline_rounded, color: actionOrange),
                 label: const Text('Details', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
               ),

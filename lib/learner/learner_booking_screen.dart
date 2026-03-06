@@ -273,49 +273,30 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   /// Tries common places where apps store learner current course/level.
   /// IMPORTANT: We DO NOT return map keys like "course_1/course_2".
   /// We only return REAL ids stored inside each course object: id / courseId.
+
   Future<String?> _inferLearnerCourseId() async {
     try {
-      final snap = await _db.child('users/$myUid').get();
+      final snap = await _db.child('users/$myUid/courses').get();
       final v = snap.value;
       if (v is! Map) return null;
 
-      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+      final courses = v.map((k, vv) => MapEntry(k.toString(), vv));
 
-      final direct = (m['courseId'] ?? '').toString().trim();
-      if (direct.isNotEmpty) return direct;
+      for (final entry in courses.entries) {
+        final raw = entry.value;
+        if (raw is! Map) continue;
 
-      final current = (m['currentCourseId'] ?? '').toString().trim();
-      if (current.isNotEmpty) return current;
+        final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
 
-      final courses = m['courses'];
+        final id = (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '').toString().trim();
+        final variantKey = (m['variantKey'] ?? m['variant'] ?? '').toString().trim().toLowerCase();
 
-      // Map pattern users/<uid>/courses/course_1/{id: REALID}
-      if (courses is Map) {
-        final cm = courses.map((k, vv) => MapEntry(k.toString(), vv));
-        for (final entry in cm.values) {
-          if (entry is Map) {
-            final em = entry.map((k, vv) => MapEntry(k.toString(), vv));
-            final id = (em['id'] ?? em['courseId'] ?? em['course_id'] ?? '').toString().trim();
-            if (id.isNotEmpty) return id;
-          } else if (entry is String) {
-            final s = entry.trim();
-            if (s.isNotEmpty && !s.startsWith('course_')) return s;
-          }
-        }
-      }
-
-      // List pattern
-      if (courses is List && courses.isNotEmpty) {
-        for (final item in courses) {
-          if (item is String && item.trim().isNotEmpty) return item.trim();
-          if (item is Map) {
-            final fm = item.map((k, vv) => MapEntry(k.toString(), vv));
-            final id = (fm['id'] ?? fm['courseId'] ?? fm['course_id'] ?? '').toString().trim();
-            if (id.isNotEmpty) return id;
-          }
+        if (id.isNotEmpty && variantKey == 'online') {
+          return id;
         }
       }
     } catch (_) {}
+
     return null;
   }
 
@@ -349,126 +330,101 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   // ================== Booking Gate ==================
-
   Future<_BookingGate> _bookingGateForCourse(String cid) async {
-    // ✅ Preferred: booking_config/courses/<courseId>
     try {
-      final snap = await _db.child('booking_config/courses/$cid').get();
+      final snap = await _db.child('syllabi/$cid/online').get();
+
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
 
-        return _BookingGate(
-          enabled: _toBool(m['enabled']),
-          totalSessions: _toInt(m['totalLessons'], fallback: 0),
-          title: (m['title'] ?? '').toString().trim(),
-          source: 'booking_config/courses',
-        );
-      }
-    } catch (_) {}
+        String title = (m['title'] ?? '').toString().trim();
+        int total = 0;
 
-    // Fallback: booking_curriculum/<courseId> (enabled if totalSessions > 0)
-    try {
-      final snap = await _db.child('booking_curriculum/$cid').get();
-      if (snap.exists && snap.value is Map) {
-        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-        final total = _toInt(m['totalSessions'], fallback: 0);
+        final units = m['units'];
+        if (units is List) {
+          for (final u in units) {
+            if (u is! Map) continue;
+            final unit = u.map((k, v) => MapEntry(k.toString(), v));
+            final sessions = unit['sessions'];
+
+            if (sessions is List) {
+              total += sessions.length;
+            }
+          }
+        }
 
         return _BookingGate(
-          enabled: total > 0,
+          enabled: true,
           totalSessions: total,
-          title: (m['courseTitle'] ?? '').toString().trim(),
-          source: 'booking_curriculum',
+          title: title,
+          source: 'syllabi/online',
         );
       }
     } catch (_) {}
 
-    return const _BookingGate(enabled: false, totalSessions: 0, title: '', source: 'none');
+    return const _BookingGate(
+      enabled: false,
+      totalSessions: 0,
+      title: '',
+      source: 'none',
+    );
   }
 
   // ================== Load Curriculum (optional titles/details) ==================
 
-  Future<void> _loadCurriculumFromSyllabusFallback(String cid) async {
-    try {
-      final snap = await _syllabiRef(cid).get();
-      if (!snap.exists || snap.value == null || snap.value is! Map) return;
 
-      final root = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-
-      // optional title
-      final t = (root['title'] ?? root['courseTitle'] ?? '').toString().trim();
-      if (courseTitle.isEmpty && t.isNotEmpty) courseTitle = t;
-
-      final units = root['units'];
-      if (units is! List) return;
-
-      final Map<String, dynamic> out = {};
-      int fallbackNo = 1;
-
-      for (final u in units) {
-        if (u is! Map) continue;
-        final unit = u.map((k, v) => MapEntry(k.toString(), v));
-        final sessions = unit['sessions'];
-        if (sessions is! List) continue;
-
-        for (final s in sessions) {
-          if (s is! Map) continue;
-          final sess = s.map((k, v) => MapEntry(k.toString(), v));
-
-          // Prefer sessionNumber if present, else compute sequentially
-          int no = _toInt(sess['sessionNumber'], fallback: 0);
-          if (no <= 0) no = fallbackNo;
-
-          out['$no'] = {
-            'sessionNo': no,
-            'sessionTitle': (sess['title'] ?? '').toString(),
-            'objective': (sess['objective'] ?? '').toString(),
-            'content': (sess['content'] ?? '').toString(),
-            'homework': (sess['homework'] ?? '').toString(),
-            'durationMinutes': _toInt(sess['durationMinutes'], fallback: 0),
-            'source': 'syllabi',
-          };
-
-          fallbackNo++;
-        }
-      }
-
-      // If totalSessions not set, derive from syllabus
-      if (totalSessions <= 0 && out.isNotEmpty) {
-        totalSessions = out.length;
-      }
-
-      curriculumSessions = out;
-    } catch (e) {
-      _toast('Failed to load syllabus details: $e');
-    }
-  }
 
   Future<void> _loadCurriculum(String cid) async {
     try {
-      final snap = await _curriculumRef(cid).get();
+      final snap = await _db.child('syllabi/$cid/online').get();
       if (!snap.exists || snap.value == null || snap.value is! Map) return;
 
-      final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+      final root = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
 
-      final t = (m['courseTitle'] ?? '').toString().trim();
-      if (courseTitle.isEmpty && t.isNotEmpty) courseTitle = t;
+      final t = (root['title'] ?? '').toString().trim();
+      if (t.isNotEmpty) courseTitle = t;
 
-      final ts = _toInt(m['totalSessions'], fallback: 0);
-      if (totalSessions <= 0 && ts > 0) totalSessions = ts;
+      final units = root['units'];
+      final Map<String, dynamic> out = {};
+      int fallbackNo = 1;
 
-      final sess = m['sessions'];
-      if (sess is Map) {
-        curriculumSessions = sess.map((k, vv) => MapEntry(k.toString(), vv));
-      } else {
-        curriculumSessions = {};
+      if (units is List) {
+        for (final u in units) {
+          if (u is! Map) continue;
+          final unit = u.map((k, vv) => MapEntry(k.toString(), vv));
+          final sessions = unit['sessions'];
+
+          if (sessions is! List) continue;
+
+          for (final s in sessions) {
+            if (s is! Map) continue;
+            final sess = s.map((k, vv) => MapEntry(k.toString(), vv));
+
+            int no = _toInt(sess['sessionNumber'], fallback: 0);
+            if (no <= 0) no = fallbackNo;
+
+            out['$no'] = {
+              'sessionNo': no,
+              'sessionTitle': (sess['title'] ?? '').toString(),
+              'objective': (sess['objective'] ?? '').toString(),
+              'content': (sess['content'] ?? '').toString(),
+              'homework': (sess['homework'] ?? '').toString(),
+              'durationMinutes': _toInt(sess['durationMinutes'], fallback: 0),
+              'source': 'syllabi/online',
+            };
+
+            fallbackNo++;
+          }
+        }
       }
 
-      // ✅ If curriculum exists but has no sessions, fallback to syllabus
-      if (curriculumSessions.isEmpty) {
-        await _loadCurriculumFromSyllabusFallback(cid);
+      curriculumSessions = out;
+
+      if (totalSessions <= 0) {
+        totalSessions = out.length;
       }
     } catch (e) {
-      _toast('Failed to load curriculum: $e');
+      _toast('Failed to load online syllabus: $e');
     }
   }
 
@@ -615,7 +571,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     try {
       final snap = await _availabilityRootRef().get();
       if (!snap.exists || snap.value == null || snap.value is! Map) {
-        await _loadCurriculumFromSyllabusFallback(cid);
         return;
       }
 
