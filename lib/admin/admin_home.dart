@@ -17,6 +17,7 @@ import 'admin_subscriptions.dart';
 import '../shared/session_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'admin_booking.dart';
+import 'admin_attendance_overview_screen.dart';
 // ✅ timetable
 import 'admin_timetable_screen.dart';
 
@@ -220,6 +221,17 @@ class AdminHome extends StatelessWidget {
                           color: primaryBlue,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+                          ),
+                        ),
+                        _DashCard(
+                          title: 'Attendance',
+                          subtitle: 'Daily / Weekly stats',
+                          icon: Icons.fact_check_rounded,
+                          color: primaryBlue,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AdminAttendanceOverviewScreen(),
+                            ),
                           ),
                         ),
                         _DashCard(

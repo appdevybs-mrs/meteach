@@ -16,6 +16,7 @@ import 'firebase_options.dart';
 // Keeping your imports (even if not used yet) so nothing breaks in your project
 import 'learner/learner_home.dart';
 import 'auth/auth_gate.dart';
+import 'package:video_player/video_player.dart';
 
 final GlobalKey<ScaffoldMessengerState> messengerKey =
 GlobalKey<ScaffoldMessengerState>();
@@ -1278,7 +1279,7 @@ class _CourseLite {
   final List<String> deliveryOptions; // delivery_options (array)
   final String deliveryOptionRaw; // delivery_option (string)
 
-  final List<String> instructors;
+  final List<_InstructorLite> instructors;
 
   final double? pricePerMonth;
   final double? pricePerLevel;
@@ -1312,6 +1313,77 @@ class _CourseLite {
     }
 
     return [];
+  }
+
+  static List<_InstructorLite> _parseInstructors(dynamic v) {
+    final out = <_InstructorLite>[];
+
+    if (v == null) return out;
+
+    void addInstructorFromMap(Map map) {
+      final mm = map.map((k, vv) => MapEntry(k.toString(), vv));
+      final uid = (mm['uid'] ?? '').toString().trim();
+      final name = (mm['name'] ?? '').toString().trim();
+
+      if (uid.isNotEmpty || name.isNotEmpty) {
+        out.add(_InstructorLite(uid: uid, name: name));
+      }
+    }
+
+    if (v is List) {
+      for (final item in v) {
+        if (item is Map) {
+          addInstructorFromMap(item);
+        } else {
+          final name = item.toString().trim();
+          if (name.isNotEmpty) {
+            out.add(_InstructorLite(uid: '', name: name));
+          }
+        }
+      }
+      return out;
+    }
+
+    if (v is Map) {
+      final vm = v.map((k, vv) => MapEntry(k.toString(), vv));
+
+      // CASE 1: a single instructor object like {uid: "...", name: "..."}
+      if (vm.containsKey('uid') || vm.containsKey('name')) {
+        addInstructorFromMap(vm);
+        return out;
+      }
+
+      // CASE 2: a Firebase map/list-like structure
+      final entries = vm.entries.toList()
+        ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
+
+      for (final e in entries) {
+        final item = e.value;
+
+        if (item is Map) {
+          addInstructorFromMap(item);
+        } else {
+          final name = item.toString().trim();
+          if (name.isNotEmpty) {
+            out.add(_InstructorLite(uid: '', name: name));
+          }
+        }
+      }
+      return out;
+    }
+
+    if (v is String) {
+      final parts = v
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
+
+      for (final name in parts) {
+        out.add(_InstructorLite(uid: '', name: name));
+      }
+    }
+
+    return out;
   }
 
   static double? _parseDouble(dynamic v) {
@@ -1367,8 +1439,9 @@ class _CourseLite {
       deliveryOptions: _parseList(m['delivery_options'] ?? m['deliveryOptions']),
       deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
 
-      instructors: _parseList(m['instructors'] ?? m['teacher'] ?? m['teachers']),
-
+      instructors: _parseInstructors(
+        m['instructors'] ?? m['teacher'] ?? m['teachers'],
+      ),
       pricePerMonth: _parseDouble(m['price_per_month'] ?? m['pricePerMonth']),
       pricePerLevel: _parseDouble(m['price_per_level'] ?? m['pricePerLevel']),
 
@@ -1403,6 +1476,15 @@ List<_CourseLite> _parseCoursesLite(dynamic data) {
   out.sort((a, b) => (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0));
 
   return out;
+}
+class _InstructorLite {
+  const _InstructorLite({
+    required this.uid,
+    required this.name,
+  });
+
+  final String uid;
+  final String name;
 }
 
 class _CoursesByCategory extends StatelessWidget {
@@ -1840,7 +1922,11 @@ class _CourseDetailsSheet extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: course.instructors
-                      .map((name) => _PrettyChip(icon: Icons.person_rounded, label: name))
+                      .map(
+                        (teacher) => _TeacherChip(
+                      teacher: teacher,
+                    ),
+                  )
                       .toList(),
                 ),
               ],
@@ -2249,6 +2335,334 @@ class UpdateRequiredScreen extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+class _TeacherChip extends StatelessWidget {
+  const _TeacherChip({
+    required this.teacher,
+  });
+
+  final _InstructorLite teacher;
+
+  @override
+  Widget build(BuildContext context) {
+    final canOpen = teacher.uid.trim().isNotEmpty;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: !canOpen
+          ? null
+          : () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          backgroundColor: Colors.white,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          builder: (_) => _TeacherMediaSheet(
+            teacherUid: teacher.uid,
+            teacherName: teacher.name,
+          ),
+        );
+      },
+      child: Opacity(
+        opacity: canOpen ? 1 : 0.75,
+        child: _PrettyChip(
+          icon: Icons.person_rounded,
+          label: teacher.name.isEmpty ? 'Teacher' : teacher.name,
+        ),
+      ),
+    );
+  }
+}
+
+class _TeacherMediaSheet extends StatefulWidget {
+  const _TeacherMediaSheet({
+    required this.teacherUid,
+    required this.teacherName,
+  });
+
+  final String teacherUid;
+  final String teacherName;
+
+  @override
+  State<_TeacherMediaSheet> createState() => _TeacherMediaSheetState();
+}
+
+class _TeacherMediaSheetState extends State<_TeacherMediaSheet> {
+  bool _loading = true;
+  String? _error;
+
+  String _teacherName = '';
+  List<String> _photos = [];
+  String? _videoUrl;
+
+  VideoPlayerController? _videoController;
+  bool _videoReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _teacherName = widget.teacherName;
+    _loadTeacher();
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadTeacher() async {
+    try {
+      final snap =
+      await FirebaseDatabase.instance.ref('users/${widget.teacherUid}').get();
+
+      if (!snap.exists || snap.value == null) {
+        throw Exception('Teacher profile not found.');
+      }
+
+      final raw = snap.value;
+      if (raw is! Map) {
+        throw Exception('Invalid teacher profile.');
+      }
+
+      final Map<String, dynamic> data = {};
+      raw.forEach((k, v) {
+        data[k.toString()] = v;
+      });
+
+      final first = (data['first_name'] ?? '').toString().trim();
+      final last = (data['last_name'] ?? '').toString().trim();
+      final dbName = ('$first $last').trim();
+
+      final photos = <String>[];
+      final rawPhotos = data['profile_photos'];
+
+      if (rawPhotos is List) {
+        for (final item in rawPhotos) {
+          final s = (item ?? '').toString().trim();
+          if (s.isNotEmpty) photos.add(s);
+        }
+      } else if (rawPhotos is Map) {
+        final entries = rawPhotos.entries.toList()
+          ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
+        for (final e in entries) {
+          final s = (e.value ?? '').toString().trim();
+          if (s.isNotEmpty) photos.add(s);
+        }
+      } else if (rawPhotos is String) {
+        final s = rawPhotos.trim();
+        if (s.isNotEmpty) photos.add(s);
+      }
+
+      final rawVideo = data['intro_video_url'];
+      String? video;
+
+      if (rawVideo is String) {
+        final s = rawVideo.trim();
+        video = s.isEmpty ? null : s;
+      } else {
+        final s = (rawVideo ?? '').toString().trim();
+        video = s.isEmpty ? null : s;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _teacherName = dbName.isNotEmpty ? dbName : widget.teacherName;
+        _photos = photos;
+        _videoUrl = video;
+      });
+
+      if (_videoUrl != null) {
+        final controller =
+        VideoPlayerController.networkUrl(Uri.parse(_videoUrl!));
+        await controller.initialize();
+        await controller.setLooping(false);
+
+        if (!mounted) {
+          await controller.dispose();
+          return;
+        }
+
+        setState(() {
+          _videoController = controller;
+          _videoReady = true;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  Widget _buildPhotos() {
+    if (_photos.isEmpty) {
+      return Container(
+        height: 180,
+        decoration: BoxDecoration(
+          color: Brand.appBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Brand.uiBorder),
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.person_rounded,
+            size: 56,
+            color: Brand.primaryBlue,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 220,
+      child: PageView.builder(
+        itemCount: _photos.length,
+        controller: PageController(viewportFraction: 0.92),
+        itemBuilder: (context, index) {
+          final url = _photos[index];
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                color: Brand.appBg,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.image_not_supported),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildVideo() {
+    if (_videoUrl == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Intro video',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w900,
+            color: Brand.primaryBlue,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            color: Colors.black,
+            child: AspectRatio(
+              aspectRatio: (_videoReady && _videoController != null)
+                  ? _videoController!.value.aspectRatio
+                  : 16 / 9,
+              child: !_videoReady || _videoController == null
+                  ? const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              )
+                  : Stack(
+                alignment: Alignment.center,
+                children: [
+                  VideoPlayer(_videoController!),
+                  IconButton(
+                    iconSize: 60,
+                    color: Colors.white,
+                    onPressed: () {
+                      final c = _videoController!;
+                      if (c.value.isPlaying) {
+                        c.pause();
+                      } else {
+                        c.play();
+                      }
+                      setState(() {});
+                    },
+                    icon: Icon(
+                      _videoController!.value.isPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _teacherName.isEmpty ? 'Teacher' : _teacherName,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 30),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.red.withOpacity(0.20)),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              else ...[
+                  _buildPhotos(),
+                  if (_videoUrl != null) ...[
+                    const SizedBox(height: 18),
+                    _buildVideo(),
+                  ],
+                ],
+            ],
           ),
         ),
       ),

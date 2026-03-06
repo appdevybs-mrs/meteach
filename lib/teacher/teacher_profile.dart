@@ -1,6 +1,14 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:video_player/video_player.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   const TeacherProfileScreen({super.key});
@@ -10,7 +18,7 @@ class TeacherProfileScreen extends StatefulWidget {
 }
 
 class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
-  // ===== Brand colors (same as AdminHome) =====
+  // ===== Brand colors =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
   static const mainText = Color(0xFF2D2D2D);
@@ -18,7 +26,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   static const uiBorder = Color(0xFFD1D9E0);
 
   final _auth = FirebaseAuth.instance;
-
   final _formKey = GlobalKey<FormState>();
 
   final _firstNameCtrl = TextEditingController();
@@ -28,6 +35,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   final _dobCtrl = TextEditingController();
 
   bool _busy = false;
+  bool _uploadingPhotos = false;
+  bool _uploadingVideo = false;
+
   String? _error;
   String? _ok;
 
@@ -36,6 +46,25 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   String _statusReadOnly = '';
 
   DatabaseReference? _userRef;
+
+  // ===== Media =====
+  static const int _maxPhotos = 6;
+
+  final List<String> _photoUrls = [];
+  String? _introVideoUrl;
+
+  VideoPlayerController? _videoController;
+  bool _videoReady = false;
+
+  // ===== PHP upload settings =====
+  // IMPORTANT:
+  // Replace this with your REAL upload.php URL
+  static const String _uploadEndpoint =
+      'https://www.yourbridgeschool.com/app/upload.php';
+
+  // This is sha1('GBVJyfCBd1yx0NOzG310uALt6Tp1Z9WZ')
+  static const String _uploadKeySha1 =
+      'a7a995d9c499128351d827eaad7285bcc891919b';
 
   // Password rule: 8+ and at least 1 special character
   static final RegExp _specialRegex =
@@ -54,11 +83,22 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     _phone1Ctrl.dispose();
     _phone2Ctrl.dispose();
     _dobCtrl.dispose();
+    _disposeVideoController();
     super.dispose();
+  }
+
+  Future<void> _disposeVideoController() async {
+    final controller = _videoController;
+    _videoController = null;
+    _videoReady = false;
+    if (controller != null) {
+      await controller.dispose();
+    }
   }
 
   Future<void> _loadProfile() async {
     if (!mounted) return;
+
     setState(() {
       _busy = true;
       _error = null;
@@ -87,15 +127,70 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       _emailReadOnly = (data['email'] ?? user.email ?? '').toString();
       _roleReadOnly = (data['role'] ?? '').toString();
       _statusReadOnly = (data['status'] ?? '').toString();
+
+      _photoUrls.clear();
+      final rawPhotos = data['profile_photos'];
+      if (rawPhotos is List) {
+        for (final item in rawPhotos) {
+          final url = item?.toString() ?? '';
+          if (url.isNotEmpty) _photoUrls.add(url);
+        }
+      } else if (rawPhotos is Map) {
+        final map = Map<String, dynamic>.from(rawPhotos);
+        final sortedKeys = map.keys.toList()..sort();
+        for (final k in sortedKeys) {
+          final url = map[k]?.toString() ?? '';
+          if (url.isNotEmpty) _photoUrls.add(url);
+        }
+      }
+
+      _introVideoUrl = (data['intro_video_url'] ?? '').toString().trim();
+      if (_introVideoUrl!.isEmpty) {
+        _introVideoUrl = null;
+      }
+
+      if (_introVideoUrl != null) {
+        await _initVideoPreview(_introVideoUrl!);
+      } else {
+        await _disposeVideoController();
+      }
     } catch (e) {
       _error = e.toString();
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _initVideoPreview(String url) async {
+    try {
+      await _disposeVideoController();
+
+      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      await controller.initialize();
+      controller.setLooping(false);
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _videoController = controller;
+        _videoReady = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _videoReady = false;
+      });
     }
   }
 
   Future<void> _pickDob() async {
     DateTime initial = DateTime(2000, 1, 1);
+
     try {
       final t = _dobCtrl.text.trim();
       if (t.isNotEmpty) {
@@ -150,15 +245,221 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         'phone1': _phone1Ctrl.text.trim(),
         'phone2': _phone2Ctrl.text.trim(),
         'dob': _dobCtrl.text.trim(),
+        'profile_photos': _photoUrls,
+        'intro_video_url': _introVideoUrl ?? '',
         'updatedAt': ServerValue.timestamp,
       });
 
-      if (mounted) setState(() => _ok = 'Saved ✅');
+      if (mounted) {
+        setState(() => _ok = 'Saved ✅');
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        setState(() => _error = e.toString());
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
+  }
+
+  // ---------------------------
+  // Upload helpers
+  // ---------------------------
+
+  String _teacherAppId(String uid) => 'teacher_$uid';
+
+  Future<String> _uploadPlatformFile(PlatformFile file) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse(_uploadEndpoint),
+    );
+
+    request.headers['X-Requested-With'] = 'XMLHttpRequest';
+    request.fields['key'] = _uploadKeySha1;
+    request.fields['app_id'] = _teacherAppId(user.uid);
+
+    if (kIsWeb) {
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw Exception('Could not read selected file bytes.');
+      }
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: file.name,
+        ),
+      );
+    } else {
+      final path = file.path;
+      if (path == null || path.isEmpty) {
+        throw Exception('Could not read selected file path.');
+      }
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          path,
+          filename: file.name,
+        ),
+      );
+    }
+
+    final streamedResponse = await request.send();
+    final responseBody = await streamedResponse.stream.bytesToString();
+
+    if (streamedResponse.statusCode != 200) {
+      throw Exception('Upload failed (${streamedResponse.statusCode}): $responseBody');
+    }
+
+    final decoded = jsonDecode(responseBody);
+    if (decoded is! Map || decoded['success'] != true) {
+      throw Exception(decoded is Map ? (decoded['message'] ?? 'Upload failed') : 'Upload failed');
+    }
+
+    final url = (decoded['url'] ?? '').toString().trim();
+    if (url.isEmpty) {
+      throw Exception('Upload succeeded but no URL returned.');
+    }
+
+    return url;
+  }
+
+  Future<void> _pickAndUploadPhotos() async {
+    if (_uploadingPhotos || _busy) return;
+
+    final remaining = _maxPhotos - _photoUrls.length;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You already reached the 6 photo limit.')),
+      );
+      return;
+    }
+
+    try {
+      setState(() {
+        _uploadingPhotos = true;
+        _error = null;
+        _ok = null;
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: kIsWeb,
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final selected = result.files.take(remaining).toList();
+
+      for (final file in selected) {
+        final url = await _uploadPlatformFile(file);
+        _photoUrls.add(url);
+      }
+
+      if (mounted) {
+        setState(() {
+          _ok = 'Photos uploaded ✅';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingPhotos = false);
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadVideo() async {
+    if (_uploadingVideo || _busy) return;
+
+    try {
+      setState(() {
+        _uploadingVideo = true;
+        _error = null;
+        _ok = null;
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: kIsWeb,
+        type: FileType.custom,
+        allowedExtensions: const ['mp4', 'mov', 'webm', '3gp', 'ogg'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      final url = await _uploadPlatformFile(file);
+
+      _introVideoUrl = url;
+      await _initVideoPreview(url);
+
+      if (mounted) {
+        setState(() {
+          _ok = 'Intro video uploaded ✅';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingVideo = false);
+      }
+    }
+  }
+
+  Future<void> _removePhoto(int index) async {
+    if (index < 0 || index >= _photoUrls.length) return;
+
+    final ok = await _confirmDialog(
+      title: 'Remove photo',
+      message: 'Do you want to remove this photo from your profile?',
+      confirmText: 'Remove',
+    );
+
+    if (!ok) return;
+
+    setState(() {
+      _photoUrls.removeAt(index);
+      _ok = 'Photo removed';
+      _error = null;
+    });
+  }
+
+  Future<void> _removeVideo() async {
+    if (_introVideoUrl == null) return;
+
+    final ok = await _confirmDialog(
+      title: 'Remove intro video',
+      message: 'Do you want to remove your intro video?',
+      confirmText: 'Remove',
+    );
+
+    if (!ok) return;
+
+    await _disposeVideoController();
+
+    if (!mounted) return;
+
+    setState(() {
+      _introVideoUrl = null;
+      _ok = 'Intro video removed';
+      _error = null;
+    });
   }
 
   // ---------------------------
@@ -485,6 +786,252 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     );
   }
 
+  Widget _buildPhotosSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Profile Photos',
+          style: TextStyle(
+            color: primaryBlue,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Upload up to 6 photos.',
+          style: TextStyle(
+            color: mainText.withOpacity(0.7),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            ...List.generate(_photoUrls.length, (index) {
+              final url = _photoUrls[index];
+              return Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.network(
+                      url,
+                      width: 110,
+                      height: 110,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 110,
+                        height: 110,
+                        color: Colors.grey.shade200,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.broken_image_outlined),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: InkWell(
+                      onTap: () => _removePhoto(index),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }),
+            if (_photoUrls.length < _maxPhotos)
+              InkWell(
+                onTap: (_uploadingPhotos || _busy) ? null : _pickAndUploadPhotos,
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  width: 110,
+                  height: 110,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: uiBorder),
+                  ),
+                  child: _uploadingPhotos
+                      ? const Center(child: CircularProgressIndicator())
+                      : const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined, color: primaryBlue),
+                      SizedBox(height: 6),
+                      Text(
+                        'Add photo',
+                        style: TextStyle(
+                          color: primaryBlue,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVideoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Intro Video',
+          style: TextStyle(
+            color: primaryBlue,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Upload 1 short video so learners can know you better.',
+          style: TextStyle(
+            color: mainText.withOpacity(0.7),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_introVideoUrl == null)
+          OutlinedButton.icon(
+            icon: _uploadingVideo
+                ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+                : const Icon(Icons.video_call_rounded),
+            label: Text(_uploadingVideo ? 'Uploading...' : 'Upload intro video'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: primaryBlue,
+              side: BorderSide(color: uiBorder.withOpacity(0.9)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            onPressed: (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: AspectRatio(
+                    aspectRatio: (_videoReady && _videoController != null)
+                        ? _videoController!.value.aspectRatio
+                        : 16 / 9,
+                    child: _videoReady && _videoController != null
+                        ? Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        VideoPlayer(_videoController!),
+                        IconButton(
+                          onPressed: () {
+                            final controller = _videoController!;
+                            if (controller.value.isPlaying) {
+                              controller.pause();
+                            } else {
+                              controller.play();
+                            }
+                            setState(() {});
+                          },
+                          iconSize: 54,
+                          color: Colors.white,
+                          icon: Icon(
+                            _videoController!.value.isPlaying
+                                ? Icons.pause_circle_filled_rounded
+                                : Icons.play_circle_fill_rounded,
+                          ),
+                        ),
+                      ],
+                    )
+                        : const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _introVideoUrl!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: mainText.withOpacity(0.7),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    icon: _uploadingVideo
+                        ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                        : const Icon(Icons.swap_horiz_rounded),
+                    label: Text(_uploadingVideo ? 'Uploading...' : 'Replace video'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryBlue,
+                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Remove video'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade700,
+                      side: BorderSide(color: Colors.red.shade200),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: (_uploadingVideo || _busy) ? null : _removeVideo,
+                  ),
+                ],
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
   // ---------------------------
   // Build
   // ---------------------------
@@ -532,8 +1079,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                 ),
               ),
             ),
-
-            // ✅ Scrollable + responsive (no overflow, works with big fonts/keyboard)
             LayoutBuilder(
               builder: (ctx, constraints) {
                 return SingleChildScrollView(
@@ -644,21 +1189,36 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                                     'Date of birth (YYYY-MM-DD)',
                                     hintText: 'e.g. 1994-01-12',
                                     suffixIcon: IconButton(
-                                      icon: const Icon(Icons.calendar_month_rounded, color: primaryBlue),
+                                      icon: const Icon(
+                                        Icons.calendar_month_rounded,
+                                        color: primaryBlue,
+                                      ),
                                       onPressed: _busy ? null : _pickDob,
                                     ),
                                   ),
                                   onTap: _busy ? null : _pickDob,
                                   validator: (v) {
                                     final value = (v ?? '').trim();
-                                    if (value.isEmpty) return null; // optional
+                                    if (value.isEmpty) return null;
                                     final ok = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
                                     if (!ok) return 'Use YYYY-MM-DD format';
                                     return null;
                                   },
                                 ),
 
-                                const SizedBox(height: 14),
+                                const SizedBox(height: 18),
+                                const Divider(),
+                                const SizedBox(height: 18),
+
+                                _buildPhotosSection(),
+
+                                const SizedBox(height: 18),
+                                const Divider(),
+                                const SizedBox(height: 18),
+
+                                _buildVideoSection(),
+
+                                const SizedBox(height: 16),
 
                                 if (_error != null) ...[
                                   Text(

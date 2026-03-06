@@ -521,13 +521,21 @@ class _LearnersListState extends State<_LearnersList>
 
   String body = '';
   switch (picked) {
-  case _QuickSmsTemplate.empty:
-  body = '';
-  break;
-  case _QuickSmsTemplate.welcome:
-  body =
-  'Welcome to Your Bridge School, please download the app and login with your email and password 12345678. Please change password.';
-  break;
+    case _QuickSmsTemplate.empty:
+      body = '';
+      break;
+
+    case _QuickSmsTemplate.welcome:
+      final email = learner.email.trim();
+
+      body = [
+        'Peace be upon You',
+        'Download the app "Your Bridge School"',
+        'Login using',
+        if (email.isNotEmpty) 'Email: $email',
+        'Password: 12345678',
+      ].join('\n');
+      break;
   }
 
   await _launchSms(phone: phone, body: body);

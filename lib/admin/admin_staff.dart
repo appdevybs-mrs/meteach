@@ -158,8 +158,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
 
     try {
       // Read their courses BEFORE moving (so we can clean instructors if teacher)
-      final userCoursesSnap =
-      await _usersRef.child(uid).child('courses').get();
+      final userCoursesSnap = await _usersRef.child(uid).child('courses').get();
       final userCoursesVal = userCoursesSnap.value;
 
       final courseIds = <String>[];
@@ -173,39 +172,59 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
         });
       }
 
-      // If this staff is teacher: remove their name from courses instructors
-      final teacherName = staff.fullName.trim();
-      if (staff.role == StaffRole.teacher && teacherName.isNotEmpty) {
+      // If this staff is teacher: remove them from courses instructors by UID
+      if (staff.role == StaffRole.teacher) {
         for (final courseId in courseIds) {
           final instrRef = _db.ref('courses/$courseId/instructors');
           final snap = await instrRef.get();
           final v = snap.value;
 
-          final list = <String>[];
+          final next = <dynamic>[];
+
           if (v is List) {
             for (final item in v) {
-              final s = (item ?? '').toString().trim();
-              if (s.isNotEmpty) list.add(s);
+              if (item is Map) {
+                final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+                final itemUid = (mm['uid'] ?? '').toString().trim();
+                if (itemUid.isNotEmpty && itemUid == uid) {
+                  continue;
+                }
+                next.add({
+                  'uid': itemUid,
+                  'name': (mm['name'] ?? '').toString().trim(),
+                });
+              } else {
+                final s = (item ?? '').toString().trim();
+                if (s.isNotEmpty) next.add(s);
+              }
             }
           } else if (v is Map) {
             v.forEach((_, item) {
-              final s = (item ?? '').toString().trim();
-              if (s.isNotEmpty) list.add(s);
+              if (item is Map) {
+                final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+                final itemUid = (mm['uid'] ?? '').toString().trim();
+                if (itemUid.isNotEmpty && itemUid == uid) {
+                  return;
+                }
+                next.add({
+                  'uid': itemUid,
+                  'name': (mm['name'] ?? '').toString().trim(),
+                });
+              } else {
+                final s = (item ?? '').toString().trim();
+                if (s.isNotEmpty) next.add(s);
+              }
             });
           }
 
-          list.removeWhere((x) =>
-          x.toLowerCase().trim() == teacherName.toLowerCase().trim());
-
-          if (list.isEmpty) {
+          if (next.isEmpty) {
             await instrRef.remove();
           } else {
-            await instrRef.set(list);
+            await instrRef.set(next);
           }
         }
       }
 
-      // Build deleted data
       final data = staff.toMap()
         ..addAll({
           'uid': uid,
@@ -213,7 +232,6 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
           'movedFrom': _usersPath,
         });
 
-      // ✅ Atomic move: set deleted + remove users in ONE update
       final updates = <String, dynamic>{
         '$_deletedPath/$uid': data,
         '$_usersPath/$uid': null,
@@ -1506,55 +1524,122 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
   }
 
   // ----------------------------
-  // Course instructors sync (add/remove teacher name)
+  // Course instructors sync (add/remove teacher as {uid, name})
+  // Supports old string format during transition
   // ----------------------------
 
-  Future<List<String>> _readInstructorsList(DatabaseReference ref) async {
+  Future<List<dynamic>> _readInstructorEntries(DatabaseReference ref) async {
     final snap = await ref.get();
     final v = snap.value;
 
-    final out = <String>[];
+    final out = <dynamic>[];
 
     if (v is List) {
       for (final item in v) {
-        final s = (item ?? '').toString().trim();
-        if (s.isNotEmpty) out.add(s);
+        if (item is Map) {
+          final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+          final uid = (mm['uid'] ?? '').toString().trim();
+          final name = (mm['name'] ?? '').toString().trim();
+
+          if (uid.isNotEmpty || name.isNotEmpty) {
+            out.add({
+              'uid': uid,
+              'name': name,
+            });
+          }
+        } else {
+          final s = (item ?? '').toString().trim();
+          if (s.isNotEmpty) out.add(s);
+        }
       }
     } else if (v is Map) {
       v.forEach((_, item) {
-        final s = (item ?? '').toString().trim();
-        if (s.isNotEmpty) out.add(s);
+        if (item is Map) {
+          final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+          final uid = (mm['uid'] ?? '').toString().trim();
+          final name = (mm['name'] ?? '').toString().trim();
+
+          if (uid.isNotEmpty || name.isNotEmpty) {
+            out.add({
+              'uid': uid,
+              'name': name,
+            });
+          }
+        } else {
+          final s = (item ?? '').toString().trim();
+          if (s.isNotEmpty) out.add(s);
+        }
       });
     }
 
     return out;
   }
 
-  Future<void> _addTeacherToCourse(String courseId, String name) async {
-    final n = name.trim();
-    if (n.isEmpty) return;
+  Future<void> _addTeacherToCourse({
+    required String courseId,
+    required String teacherUid,
+    required String teacherName,
+  }) async {
+    final uid = teacherUid.trim();
+    final name = teacherName.trim();
+    if (uid.isEmpty || name.isEmpty) return;
 
     final instrRef = _coursesRef.child(courseId).child('instructors');
-    final list = await _readInstructorsList(instrRef);
+    final list = await _readInstructorEntries(instrRef);
 
-    final exists =
-    list.any((x) => x.toLowerCase().trim() == n.toLowerCase().trim());
+    bool exists = false;
+    for (final item in list) {
+      if (item is Map) {
+        final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+        final itemUid = (mm['uid'] ?? '').toString().trim();
+        if (itemUid == uid) {
+          exists = true;
+          break;
+        }
+      }
+    }
+
     if (!exists) {
-      list.add(n);
+      list.add({
+        'uid': uid,
+        'name': name,
+      });
       await instrRef.set(list);
     }
   }
 
-  Future<void> _removeTeacherFromCourse(String courseId, String name) async {
-    final n = name.trim();
-    if (n.isEmpty) return;
+  Future<void> _removeTeacherFromCourse({
+    required String courseId,
+    required String teacherUid,
+    String? fallbackName,
+  }) async {
+    final uid = teacherUid.trim();
+    final oldName = (fallbackName ?? '').trim();
 
     final instrRef = _coursesRef.child(courseId).child('instructors');
-    final list = await _readInstructorsList(instrRef);
+    final list = await _readInstructorEntries(instrRef);
 
-    list.removeWhere((x) => x.toLowerCase().trim() == n.toLowerCase().trim());
+    list.removeWhere((item) {
+      if (item is Map) {
+        final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+        final itemUid = (mm['uid'] ?? '').toString().trim();
+        if (uid.isNotEmpty && itemUid == uid) return true;
+        return false;
+      }
 
-    // improvement: remove node if empty
+      // temporary fallback for old string-based data
+      final s = item.toString().trim();
+      if (uid.isEmpty && oldName.isNotEmpty) {
+        return s.toLowerCase() == oldName.toLowerCase();
+      }
+
+      if (oldName.isNotEmpty) {
+        return s.toLowerCase() == oldName.toLowerCase();
+      }
+
+      return false;
+    });
+
     if (list.isEmpty) {
       await instrRef.remove();
     } else {
@@ -1562,7 +1647,61 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     }
   }
 
+  Future<void> _renameTeacherInCourse({
+    required String courseId,
+    required String teacherUid,
+    required String newTeacherName,
+    String? oldTeacherName,
+  }) async {
+    final uid = teacherUid.trim();
+    final newName = newTeacherName.trim();
+    final oldName = (oldTeacherName ?? '').trim();
+    if (newName.isEmpty) return;
+
+    final instrRef = _coursesRef.child(courseId).child('instructors');
+    final list = await _readInstructorEntries(instrRef);
+
+    bool changed = false;
+
+    for (int i = 0; i < list.length; i++) {
+      final item = list[i];
+
+      if (item is Map) {
+        final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
+        final itemUid = (mm['uid'] ?? '').toString().trim();
+        if (uid.isNotEmpty && itemUid == uid) {
+          list[i] = {
+            'uid': uid,
+            'name': newName,
+          };
+          changed = true;
+          break;
+        }
+      } else {
+        final s = item.toString().trim();
+        if (oldName.isNotEmpty && s.toLowerCase() == oldName.toLowerCase()) {
+          list[i] = {
+            'uid': uid,
+            'name': newName,
+          };
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    if (!changed) {
+      list.add({
+        'uid': uid,
+        'name': newName,
+      });
+    }
+
+    await instrRef.set(list);
+  }
+
   Future<void> _syncTeacherInstructors({
+    required String teacherUid,
     required Set<String> beforeCourses,
     required Set<String> afterCourses,
     required StaffRole? beforeRole,
@@ -1573,17 +1712,19 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     final wasTeacher = (beforeRole ?? StaffRole.other) == StaffRole.teacher;
     final isTeacherNow = afterRole == StaffRole.teacher;
 
-    // 1) Remove teacher from courses that were removed OR from all if role changed away
     if (wasTeacher) {
       final removed =
       isTeacherNow ? beforeCourses.difference(afterCourses) : beforeCourses;
 
       for (final courseId in removed) {
-        await _removeTeacherFromCourse(courseId, beforeName);
+        await _removeTeacherFromCourse(
+          courseId: courseId,
+          teacherUid: teacherUid,
+          fallbackName: beforeName,
+        );
       }
     }
 
-    // 2) If still teacher but name changed: replace name in still assigned courses
     if (wasTeacher && isTeacherNow) {
       final still = beforeCourses.intersection(afterCourses);
       final oldN = beforeName.trim();
@@ -1593,19 +1734,26 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
           newN.isNotEmpty &&
           oldN.toLowerCase() != newN.toLowerCase()) {
         for (final courseId in still) {
-          await _removeTeacherFromCourse(courseId, oldN);
-          await _addTeacherToCourse(courseId, newN);
+          await _renameTeacherInCourse(
+            courseId: courseId,
+            teacherUid: teacherUid,
+            newTeacherName: newN,
+            oldTeacherName: oldN,
+          );
         }
       }
     }
 
-    // 3) Add teacher to newly added courses OR all if role changed to teacher
     if (isTeacherNow) {
       final added =
       wasTeacher ? afterCourses.difference(beforeCourses) : afterCourses;
 
       for (final courseId in added) {
-        await _addTeacherToCourse(courseId, afterName);
+        await _addTeacherToCourse(
+          courseId: courseId,
+          teacherUid: teacherUid,
+          teacherName: afterName,
+        );
       }
     }
   }
@@ -1688,6 +1836,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
       // sync instructors in /courses
       await _syncTeacherInstructors(
+        teacherUid: uid,
         beforeCourses: beforeCourses,
         afterCourses: afterCourses,
         beforeRole: beforeRole,
