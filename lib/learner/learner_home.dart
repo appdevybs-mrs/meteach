@@ -1101,7 +1101,8 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
 
           final start = _parseSlotStart(dk, hhmm);
           if (start == null) continue;
-          if (!start.isAfter(now)) continue;
+          final joinWindowEnds = start.add(const Duration(minutes: 10));
+          if (joinWindowEnds.isBefore(now)) continue;
 
           final teacherId = (sm['teacherId'] ?? '').toString().trim();
           final teacherName = (sm['teacherName'] ?? 'Teacher').toString().trim();
@@ -1166,18 +1167,29 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
 
   bool _canJoinNow(DateTime start, int durationMinutes) {
     final now = DateTime.now();
-    final openFrom = start.subtract(const Duration(minutes: 10));
-    final dur = durationMinutes <= 0 ? 60 : durationMinutes;
-    final openUntil = start.add(Duration(minutes: dur)).add(const Duration(minutes: 15));
+    final openFrom = start.subtract(const Duration(minutes: 5));
+    final openUntil = start.add(const Duration(minutes: 10));
     return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
+
   Future<void> _openExternalUrl(BuildContext context, String url) async {
-    final u = url.trim();
+    var u = url.trim();
     if (u.isEmpty) return;
 
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+
     final uri = Uri.tryParse(u);
-    if (uri == null) return;
+    if (uri == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid meeting link.')),
+        );
+      }
+      return;
+    }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
@@ -1421,10 +1433,14 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
                           onPressed: canJoin
                               ? () async {
                             final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                            if (uid.isNotEmpty) {
-                              await _autoMarkPresentAndTaught(learnerUid: uid, next: next);
-                            }
+
                             await _openExternalUrl(context, meet.meetUrl);
+
+                            if (uid.isNotEmpty) {
+                              unawaited(
+                                _autoMarkPresentAndTaught(learnerUid: uid, next: next),
+                              );
+                            }
                           }
                               : null,
                           child: Text(
@@ -1434,7 +1450,7 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Join opens 10 min before start, and stays open until ${(meet.durationMinutes <= 0 ? 60 : meet.durationMinutes) + 15} min after start.',
+                          'Join opens 5 min before start and stays available until 10 min after start.',
                           style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade600, fontSize: 12),
                         ),
                       ],

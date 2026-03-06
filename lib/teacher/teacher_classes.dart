@@ -31,7 +31,7 @@ class TeacherClassesScreen extends StatefulWidget {
 }
 
 class _TeacherClassesScreenState extends State<TeacherClassesScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // ===== UI colors (your same style) =====
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -81,17 +81,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   final Map<String, String> _sessionTitleCache = {}; // courseId|sessionNo -> title
   final Map<String, String> _courseTitleCache = {}; // courseId -> course title
   late TabController _tab;
-
+  late TabController _onlineTab;
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
+    _onlineTab = TabController(length: 3, vsync: this);
     _loadAll();
   }
 
   @override
   void dispose() {
     _tab.dispose();
+    _onlineTab.dispose();
     super.dispose();
   }
 
@@ -150,19 +152,26 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Future<void> _openExternalUrl(String url) async {
-    final u = url.trim();
+    var u = url.trim();
     if (u.isEmpty) {
       _toast('Missing meeting link.');
       return;
     }
+
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+
     final uri = Uri.tryParse(u);
     if (uri == null) {
       _toast('Invalid meeting link.');
       return;
     }
+
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok) _toast('Could not open the link.');
   }
+
 
   Future<Map<String, String>> _loadUserName(String uid) async {
     if (uid.isEmpty) return {'full': ''};
@@ -593,7 +602,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
-  Future<void> _openOnlineSessionDetailsSheet(String courseId, int sessionNo) async {
+  Future<void> _openOnlineSessionDetailsSheet(String courseId, int sessionNo, String courseTitle) async {
     final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
     if (!mounted) return;
 
@@ -604,6 +613,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     final titleRaw = (info['title'] ?? '').toString().trim();
     final title = titleRaw.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $titleRaw';
+
+    final courseLabel = courseTitle.trim().isEmpty ? courseId : courseTitle;
 
     final objective = (info['objective'] ?? '').toString().trim();
     final content = (info['content'] ?? '').toString().trim();
@@ -638,7 +649,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Course: $courseId',
+                    'Course: $courseLabel',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: Colors.grey.shade700,
@@ -1304,7 +1315,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           padding: const EdgeInsets.all(16),
           child: Text(
             _onlineError!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w800,
+            ),
             textAlign: TextAlign.center,
           ),
         ),
@@ -1324,7 +1338,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
 
     final now = DateTime.now();
-    final pastLimit = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 7));
+    final pastLimit = DateTime(now.year, now.month, now.day)
+        .subtract(const Duration(days: 7));
 
     final List<_OnlineBooking> startingOrOngoing = [];
     final List<_OnlineBooking> upcoming = [];
@@ -1344,43 +1359,125 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         continue;
       }
 
-      if (dt.isAfter(pastLimit)) past.add(b);
+      if (dt.isAfter(pastLimit)) {
+        past.add(b);
+      }
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
       children: [
-        Card(
-          elevation: 0,
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: uiBorder.withOpacity(0.8)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: _countCard(
+                  label: 'Live',
+                  value: '${startingOrOngoing.length}',
+                  icon: Icons.play_circle_fill_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _countCard(
+                  label: 'Upcoming',
+                  value: '${upcoming.length}',
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _countCard(
+                  label: 'Past',
+                  value: '${past.length}',
+                  icon: Icons.history_rounded,
+                ),
+              ),
+            ],
           ),
-
         ),
-        const SizedBox(height: 14),
 
-        _sectionTitle('Starting soon / Ongoing', badge: '${startingOrOngoing.length}'),
-        const SizedBox(height: 8),
-        if (startingOrOngoing.isEmpty)
-          _emptyHint('No ongoing sessions right now.')
-        else
-          ...startingOrOngoing.map(_bookingCard).toList(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: uiBorder.withOpacity(0.85)),
+            ),
+            child: TabBar(
+              controller: _onlineTab,
+              labelColor: primaryBlue,
+              unselectedLabelColor: Colors.grey.shade600,
+              indicatorColor: actionOrange,
+              tabs: const [
+                Tab(text: 'Live'),
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Past'),
+              ],
+            ),
+          ),
+        ),
 
-        const SizedBox(height: 14),
-        _sectionTitle('Upcoming', badge: '${upcoming.length}'),
-        const SizedBox(height: 8),
-        if (upcoming.isEmpty) _emptyHint('No upcoming sessions.') else ...upcoming.map(_bookingCard).toList(),
+        const SizedBox(height: 12),
 
-        const SizedBox(height: 14),
-        _sectionTitle('Past (last 7 days)', badge: '${past.length}'),
-        const SizedBox(height: 8),
-        if (past.isEmpty)
-          _emptyHint('No past sessions in the last 7 days.')
-        else
-          ...past.reversed.map(_bookingCard).toList(),
+        Expanded(
+          child: TabBarView(
+            controller: _onlineTab,
+            children: [
+              _onlineBookingsList(
+                items: startingOrOngoing,
+                emptyText: 'No ongoing sessions right now.',
+              ),
+              _onlineBookingsList(
+                items: upcoming,
+                emptyText: 'No upcoming sessions.',
+              ),
+              _onlineBookingsList(
+                items: past.reversed.toList(),
+                emptyText: 'No past sessions in the last 7 days.',
+              ),
+            ],
+          ),
+        ),
       ],
+    );
+  }
+  Widget _countCard({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: actionOrange, size: 20),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              color: primaryBlue,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1403,6 +1500,25 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
+
+  Widget _onlineBookingsList({
+    required List<_OnlineBooking> items,
+    required String emptyText,
+  }) {
+    if (items.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          _emptyHint(emptyText),
+        ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: items.map(_bookingCard).toList(),
+    );
+  }
   Widget _emptyHint(String text) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1502,7 +1618,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: () => _openOnlineSessionDetailsSheet(b.courseId, b.sessionNo),
+                onPressed: () => _openOnlineSessionDetailsSheet(
+                  b.courseId,
+                  b.sessionNo,
+                  b.courseTitle,
+                ),
                 icon: const Icon(Icons.info_outline_rounded, color: actionOrange),
                 label: const Text('Details', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
               ),
