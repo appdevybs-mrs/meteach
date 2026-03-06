@@ -338,7 +338,55 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     return emailPrefix.isNotEmpty ? emailPrefix : 'Teacher';
   }
+  Future<List<_UserPick>> _loadOtherTeachers() async {
+    final out = <_UserPick>[];
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
 
+    try {
+      final snap = await _db.child('users').get();
+      final v = snap.value;
+      if (v is! Map) return out;
+
+      final raw = Map<dynamic, dynamic>.from(v);
+
+      raw.forEach((uid, val) {
+        if (val is! Map) return;
+
+        final m = val.map((k, vv) => MapEntry(k.toString(), vv));
+
+        if (!_isTeacherRole(m['role'])) return;
+
+        final teacherUid = uid.toString().trim();
+        if (myUid != null && teacherUid == myUid) return;
+
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final fullName = ('$first $last').trim();
+
+        final serial = (m['serial'] ?? '').toString().trim();
+        final email = (m['email'] ?? '').toString().trim();
+
+        final name = fullName.isNotEmpty
+            ? fullName
+            : (serial.isNotEmpty
+            ? serial
+            : (email.isNotEmpty ? email.split('@').first : 'Teacher'));
+
+        out.add(
+          _UserPick(
+            uid: teacherUid,
+            name: name,
+            subtitle: 'Teacher',
+          ),
+        );
+      });
+
+      out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return out;
+    } catch (_) {
+      return out;
+    }
+  }
   Future<List<_UserPick>> _loadAdmins() async {
     final out = <_UserPick>[];
     try {
@@ -681,6 +729,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       title: 'Choose Admin',
                       loader: _loadAdmins,
                       icon: Icons.admin_panel_settings_rounded,
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                _SupportTile(
+                  icon: Icons.person_rounded,
+                  title: 'Call Teacher',
+                  subtitle: 'Choose another teacher to call',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickAndCall(
+                      title: 'Choose Teacher',
+                      loader: _loadOtherTeachers,
+                      icon: Icons.person_rounded,
                     );
                   },
                 ),

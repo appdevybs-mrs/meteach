@@ -1,37 +1,18 @@
 // ✅ FULL REPLACEMENT: lib/learner/learner_booking_screen.dart
 //
-// Keeps your booking logic + timetable UI.
-// ✅ Adds "group booking by same session level":
-//    - A slot can have multiple learners, BUT ONLY for the SAME sessionNo.
-//    - If first learner books (Session 2/18), the slot becomes a "Session 2 group slot".
-//    - Other learners on Session 2 can join it (until capacity).
-//    - Learners on other sessions see it as "Session X" (not joinable).
-//
-// ✅ Adds visual effects + filters:
-//    - "Join peers" slots (same session + already has learners) are highlighted and show a 👥 badge.
-//    - Filters:
-//       • Only joinable
-//       • Only peer groups
-//
-// ✅ FIX (Option A): show ALL teachers if multiple teachers share the same day+time
-//    - Each grid cell can contain multiple teacher cards (tap one to open details).
-//
-// ✅ Capacity:
-//    - Reads optional maxLearnersPerSlot from booking_availability/<teacherId>/<courseId>/maxLearnersPerSlot
-//    - Fallback is 6.
-//
-// Data expected (per teacher per course):
-// booking_availability/<teacherId>/<courseId>/
-//   teacherName: "Mr X" (optional)
-//   meetUrl: "https://meet.google.com/xxx-xxxx-xxx" (optional)
-//   durationMinutes: 60 (optional)
-//   maxLearnersPerSlot: 6 (optional)
-//   week/mon: ["10:00", "11:00"]
+// UI-focused replacement:
+// - Keeps your booking logic, Firebase logic, transaction logic, capacity logic, reminders, Meet logic
+// - Reduces hierarchy and visual noise
+// - Makes schedule the main focus
+// - Removes the large legend block
+// - Adds a compact header
+// - Adds multilingual "How booking works" sheet
+// - Keeps filters, but hides them behind expandable UI
+// - Keeps multiple teachers per same day/time cell
 //
 // Notes:
-// - If meetUrl missing → Join button hidden/disabled.
-// - Join is allowed only within:
-//   10 min before start  →  (duration + 15 min) after start.
+// - Logic is intentionally preserved as much as possible
+// - This file is mainly a UI/layout cleanup
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -40,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/push_client.dart';
 import '../services/notification_service.dart';
 import '../widgets/teacher_media_sheet.dart';
+
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
 
@@ -57,15 +39,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
 
-  // Group visuals
-  static const peerBg = Color(0xFFE9F4FF); // light blue
+  // Simplified status colors
+  static const peerBg = Color(0xFFE9F4FF);
   static const peerBorder = Color(0xFF9BC8FF);
-  static const otherSessionBg = Color(0xFFF1F3F5); // light grey
+  static const bookedBg = Color(0xFFEAF7EE);
+  static const bookedBorder = Color(0xFFB9E2C5);
+  static const otherSessionBg = Color(0xFFF1F3F5);
   static const otherSessionBorder = Color(0xFFCED4DA);
+  static const emptyBg = Color(0xFFFFF1E3);
+  static const emptyBorder = Color(0xFFF9C59D);
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  // ✅ (optional) classId inference (safe even if unused for now)
+  // optional classId inference
   String _classId = '';
 
   // Auth
@@ -79,27 +65,31 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   // Curriculum (optional)
   int totalSessions = 0;
-  Map<String, dynamic> curriculumSessions = {}; // "1": {...}
+  Map<String, dynamic> curriculumSessions = {};
 
   // Progress
   int currentSession = 1;
 
   // Slots window / schedule
-  int daysAhead = 14; // used for reservations scan + "has booking"
-  static const int timetableDays = 7; // UI schedule (week view)
+  int daysAhead = 14;
+  static const int timetableDays = 7;
   List<_Slot> generatedSlots = [];
 
   // My bookings map: "yyyy-mm-dd|HH:MM" -> sessionNo
   Map<String, int> myBookedSlots = {};
 
-  // Slot group summary (any learner): "yyyy-mm-dd|HH:MM" -> {_SlotSummary}
+  // Slot group summary: "yyyy-mm-dd|HH:MM" -> summary
   Map<String, _SlotSummary> slotSummary = {};
 
-  // Filters (simple, non-clutter)
-  String teacherFilter = 'all'; // teacherId or "all"
+  // Filters
+  String teacherFilter = 'all';
   String timeFilter = 'all'; // all | morning | afternoon
-  bool onlyJoinable = false; // hide slots learner cannot join
-  bool onlyPeerGroups = false; // show only slots where my session already has peers
+  bool onlyJoinable = false;
+  bool onlyPeerGroups = false;
+
+  // UI state
+  bool filtersExpanded = false;
+  String helpLang = 'en'; // en | ar | fr | tr | ur
 
   @override
   void initState() {
@@ -153,11 +143,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     return fallback;
   }
 
-  DatabaseReference _curriculumRef(String cid) => _db.child('booking_curriculum/$cid');
-  DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
+  DatabaseReference _curriculumRef(String cid) =>
+      _db.child('booking_curriculum/$cid');
+  DatabaseReference _availabilityRootRef() =>
+      _db.child('booking_availability');
   DatabaseReference _syllabiRef(String cid) => _db.child('syllabi/$cid');
-  DatabaseReference _progressRef(String cid) => _db.child('booking_progress/$myUid/$cid');
-  DatabaseReference _reservationsRootRef(String cid) => _db.child('booking_reservations/$cid');
+  DatabaseReference _progressRef(String cid) =>
+      _db.child('booking_progress/$myUid/$cid');
+  DatabaseReference _reservationsRootRef(String cid) =>
+      _db.child('booking_reservations/$cid');
   DatabaseReference _reservationsRef(String cid, String dayKey, String hhmm) =>
       _db.child('booking_reservations/$cid/$dayKey/$hhmm');
 
@@ -206,16 +200,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final now = DateTime.now();
     final openFrom = slot.start.subtract(const Duration(minutes: 10));
     final dur = slot.durationMinutes <= 0 ? 60 : slot.durationMinutes;
-    final openUntil = slot.start.add(Duration(minutes: dur)).add(const Duration(minutes: 15));
+    final openUntil = slot.start
+        .add(Duration(minutes: dur))
+        .add(const Duration(minutes: 15));
 
     return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
-  // ✅ joinable rules:
-  // - if I already booked => joinable (for meet/cancel rules)
-  // - if slot has no group yet => joinable (start my session group)
-  // - if slot group is same session as me => joinable (until full)
-  // - otherwise not joinable
   bool _isJoinable(_Slot s) {
     if (s.bookedByMe) return true;
     if (s.groupSessionNo == null) return true;
@@ -225,8 +216,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   bool _isPeerGroup(_Slot s) {
-    return (s.groupSessionNo == currentSession) && (s.bookedCount > 0) && !s.bookedByMe && !s.isFull;
+    return (s.groupSessionNo == currentSession) &&
+        (s.bookedCount > 0) &&
+        !s.bookedByMe &&
+        !s.isFull;
   }
+
   Future<String> _getMyFullName() async {
     try {
       final snap = await _db.child('users/$myUid').get();
@@ -265,7 +260,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       final learnerName = await _getMyFullName();
 
       final sessionNo = slot.groupSessionNo ?? currentSession;
-      final safeCourseTitle = courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+      final safeCourseTitle =
+      courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
 
       final adminTitle = 'New learner booking';
       final adminBody =
@@ -326,7 +322,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       await NotificationService.I.requestPermissions();
 
       final sessionNo = slot.groupSessionNo ?? currentSession;
-      final safeCourseTitle = courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+      final safeCourseTitle =
+      courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
 
       await NotificationService.I.scheduleSessionReminder(
         classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
@@ -339,6 +336,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       debugPrint('Local booking reminder failed: $e');
     }
   }
+
   Future<void> _cancelLearnerLocalReminder(_Slot slot) async {
     try {
       await NotificationService.I.init();
@@ -351,6 +349,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       debugPrint('Cancel local booking reminder failed: $e');
     }
   }
+
   // ================== Init ==================
 
   Future<void> _init() async {
@@ -369,7 +368,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       return;
     }
 
-    // ✅ Gate by booking_config/courses/<courseId>
     final gate = await _bookingGateForCourse(courseId!);
     if (!gate.enabled) {
       setState(() => loading = false);
@@ -377,29 +375,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       return;
     }
 
-    // prefer title/total from booking_config
     if (gate.title.isNotEmpty) courseTitle = gate.title;
     if (gate.totalSessions > 0) totalSessions = gate.totalSessions;
 
-    // optional curriculum (titles/details)
     await _loadCurriculum(courseId!);
-
     await _loadOrCreateProgress(courseId!);
 
-    // ✅ optional classId inference (safe)
     _classId = await _inferClassIdForCourse(courseId!);
 
-    // ✅ Load reservations summary + my bookings first, then generate slots
     await _loadReservationsSummary(courseId!);
     await _generateSlots(courseId!);
 
     if (!mounted) return;
     setState(() => loading = false);
   }
-
-  /// Tries common places where apps store learner current course/level.
-  /// IMPORTANT: We DO NOT return map keys like "course_1/course_2".
-  /// We only return REAL ids stored inside each course object: id / courseId.
 
   Future<String?> _inferLearnerCourseId() async {
     try {
@@ -415,8 +404,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
 
-        final id = (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '').toString().trim();
-        final variantKey = (m['variantKey'] ?? m['variant'] ?? '').toString().trim().toLowerCase();
+        final id =
+        (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '').toString().trim();
+        final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
         if (id.isNotEmpty && variantKey == 'online') {
           return id;
@@ -428,9 +421,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   Future<String> _inferClassIdForCourse(String cid) async {
-    // Finds the class where:
-    // - classes/<classId>/course_id == cid (or variants)
-    // - and learner is in classes/<classId>/learners/<myUid>
     try {
       final snap = await _db.child('classes').get();
       if (!snap.exists || snap.value is! Map) return '';
@@ -443,7 +433,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         if (val is! Map) continue;
 
         final c = val.map((k, v) => MapEntry(k.toString(), v));
-        final courseIdAny = (c['course_id'] ?? c['courseId'] ?? c['course'] ?? '').toString().trim();
+        final courseIdAny =
+        (c['course_id'] ?? c['courseId'] ?? c['course'] ?? '')
+            .toString()
+            .trim();
         if (courseIdAny != cid) continue;
 
         final learners = c['learners'];
@@ -457,6 +450,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   // ================== Booking Gate ==================
+
   Future<_BookingGate> _bookingGateForCourse(String cid) async {
     try {
       final snap = await _db.child('syllabi/$cid/online').get();
@@ -497,16 +491,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     );
   }
 
-  // ================== Load Curriculum (optional titles/details) ==================
-
-
+  // ================== Load Curriculum ==================
 
   Future<void> _loadCurriculum(String cid) async {
     try {
       final snap = await _db.child('syllabi/$cid/online').get();
       if (!snap.exists || snap.value == null || snap.value is! Map) return;
 
-      final root = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+      final root =
+      (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
 
       final t = (root['title'] ?? '').toString().trim();
       if (t.isNotEmpty) courseTitle = t;
@@ -582,7 +575,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     }
   }
 
-  // ================== Load Reservations Summary (group counts + my bookings) ==================
+  // ================== Load Reservations Summary ==================
 
   Future<void> _loadReservationsSummary(String cid) async {
     final now = DateTime.now();
@@ -591,7 +584,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     try {
       for (int i = 0; i < daysAhead; i++) {
-        final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day =
+        DateTime(now.year, now.month, now.day).add(Duration(days: i));
         final dk = _dateKey(day);
 
         final snap = await _reservationsRootRef(cid).child(dk).get();
@@ -609,7 +603,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           final learnersRaw = sm['learners'];
           if (learnersRaw is! Map) continue;
 
-          final learners = learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
+          final learners =
+          learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
           final count = learners.length;
           if (count <= 0) continue;
 
@@ -644,7 +639,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     try {
       for (int i = 0; i < daysAhead; i++) {
-        final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day =
+        DateTime(now.year, now.month, now.day).add(Duration(days: i));
         final dk = _dateKey(day);
 
         final snap = await _reservationsRootRef(cid).child(dk).get();
@@ -680,7 +676,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             sessionNo: sNo,
           );
 
-          if (best == null || candidate.start.isBefore(best.start)) best = candidate;
+          if (best == null || candidate.start.isBefore(best.start)) {
+            best = candidate;
+          }
         }
       }
     } catch (_) {}
@@ -689,8 +687,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   // ================== Availability -> Upcoming Slots ==================
-  //
-  // booking_availability/<teacherId>/<courseId>/week/<weekday> = ["HH:MM", ...]
+
   Future<void> _generateSlots(String cid) async {
     setState(() => generatedSlots = []);
     final now = DateTime.now();
@@ -711,28 +708,26 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final tn = teacherNode.map((k, vv) => MapEntry(k.toString(), vv));
 
-        // ✅ Teacher-level ON/OFF
         bool teacherOnlineEnabled = true;
         final settingsNode = tn['settings'];
         if (settingsNode is Map) {
           final sm = settingsNode.map((k, vv) => MapEntry(k.toString(), vv));
-          teacherOnlineEnabled = _toBool(sm['teacherOnlineEnabled'], fallback: true);
+          teacherOnlineEnabled =
+              _toBool(sm['teacherOnlineEnabled'], fallback: true);
         }
         if (!teacherOnlineEnabled) continue;
 
         final perCourse = tn[cid];
         if (perCourse is! Map) continue;
 
-        final effective = perCourse.map((k, vv) => MapEntry(k.toString(), vv));
+        final effective =
+        perCourse.map((k, vv) => MapEntry(k.toString(), vv));
 
-        // ✅ Course-level ON/OFF
-        final courseOnlineEnabled = _toBool(
-          effective['courseOnlineEnabled'],
-          fallback: true,
-        );
+        final courseOnlineEnabled =
+        _toBool(effective['courseOnlineEnabled'], fallback: true);
         if (!courseOnlineEnabled) continue;
-        final resolvedTeacherName =
-        (effective['teacherName'] ??
+
+        final resolvedTeacherName = (effective['teacherName'] ??
             effective['teacher_name'] ??
             tn['teacherName'] ??
             tn['teacher_name'] ??
@@ -740,7 +735,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             .toString()
             .trim();
 
-        // ✅ Meet + Duration (per teacher+course)
         final meetUrl = (effective['meetUrl'] ??
             effective['meet_url'] ??
             effective['googleMeetUrl'] ??
@@ -750,11 +744,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             .trim();
 
         int durationMin = _toInt(effective['durationMinutes'], fallback: 0);
-        if (durationMin <= 0) durationMin = _toInt(effective['durationMin'], fallback: 0);
+        if (durationMin <= 0) {
+          durationMin = _toInt(effective['durationMin'], fallback: 0);
+        }
         if (durationMin <= 0) durationMin = 60;
 
-        // ✅ Capacity (optional)
-        int maxLearners = _toInt(effective['maxLearnersPerSlot'], fallback: 0);
+        int maxLearners =
+        _toInt(effective['maxLearnersPerSlot'], fallback: 0);
         if (maxLearners <= 0) maxLearners = 6;
 
         final week = effective['week'];
@@ -778,7 +774,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         teachers.add(
           _TeacherAvail(
             teacherId: teacherId,
-            teacherName: resolvedTeacherName.isEmpty ? 'Teacher' : resolvedTeacherName,
+            teacherName:
+            resolvedTeacherName.isEmpty ? 'Teacher' : resolvedTeacherName,
             slotsByDay: slotsByDay,
             meetUrl: meetUrl,
             durationMinutes: durationMin,
@@ -791,7 +788,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       final List<_Slot> out = [];
       for (int i = 0; i < daysAhead; i++) {
-        final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day =
+        DateTime(now.year, now.month, now.day).add(Duration(days: i));
         final wk = _weekdayKey(day);
         final dayKey = _dateKey(day);
 
@@ -835,12 +833,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       setState(() {
         generatedSlots = out;
 
-        // keep filter valid
         final teachersInList = <String>{};
         for (final s in generatedSlots) {
           teachersInList.add(s.teacherId);
         }
-        if (teacherFilter != 'all' && !teachersInList.contains(teacherFilter)) {
+        if (teacherFilter != 'all' &&
+            !teachersInList.contains(teacherFilter)) {
           teacherFilter = 'all';
         }
       });
@@ -851,7 +849,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     }
   }
 
-  // ================== Booking (Group by session + Switch-enabled) ==================
+  // ================== Booking ==================
 
   Future<void> _bookSlot(_Slot slot) async {
     if (booking) return;
@@ -868,9 +866,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       return;
     }
 
-    // ✅ quick joinability check (prevents bad transactions)
     if (!_isJoinable(slot)) {
-      if (slot.groupSessionNo != null && slot.groupSessionNo != currentSession) {
+      if (slot.groupSessionNo != null &&
+          slot.groupSessionNo != currentSession) {
         _toast('This slot is already a Session ${slot.groupSessionNo} group.');
         return;
       }
@@ -887,22 +885,24 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     try {
       final existing = await _findMyNextBooking(cid);
 
-      // If already booked THIS slot, just tell them.
-      if (existing != null && existing.dayKey == slot.dayKey && existing.time == slot.time) {
+      if (existing != null &&
+          existing.dayKey == slot.dayKey &&
+          existing.time == slot.time) {
         _toast('You already booked this slot ✅');
         return;
       }
 
-      // If has another booking, we allow switch (only if cancellable)
       if (existing != null) {
-        final locked = !existing.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+        final locked = !existing.start
+            .isAfter(DateTime.now().add(const Duration(hours: 24)));
         if (locked) {
-          _toast('You already booked a class and it’s within 24 hours, so you can’t change it.');
+          _toast(
+              'You already booked a class and it’s within 24 hours, so you can’t change it.');
           return;
         }
 
-        // cancel old first
-        final okCancel = await _cancelBookingByKey(cid, existing.dayKey, existing.time);
+        final okCancel =
+        await _cancelBookingByKey(cid, existing.dayKey, existing.time);
         if (!okCancel) {
           _toast('Could not change booking (cancel failed).');
           return;
@@ -924,7 +924,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       final ref = _reservationsRef(cid, slot.dayKey, slot.time);
 
-      // ✅ pre-read for better messages
       final pre = await ref.get();
       int? existingGroupSession;
       int existingCount = 0;
@@ -932,7 +931,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       if (pre.exists && pre.value is Map) {
         final m = (pre.value as Map).map((k, v) => MapEntry(k.toString(), v));
         existingGroupSession = _toInt(m['sessionNo'], fallback: 0);
-        if (existingGroupSession != null && existingGroupSession <= 0) existingGroupSession = null;
+        if (existingGroupSession != null && existingGroupSession <= 0) {
+          existingGroupSession = null;
+        }
 
         final learnersRaw = m['learners'];
         if (learnersRaw is Map) {
@@ -945,43 +946,40 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         }
       }
 
-      // session mismatch
-      if (existingGroupSession != null && existingGroupSession != currentSession) {
-        _toast('This slot is a Session $existingGroupSession group. You are on Session $currentSession.');
+      if (existingGroupSession != null &&
+          existingGroupSession != currentSession) {
+        _toast(
+            'This slot is a Session $existingGroupSession group. You are on Session $currentSession.');
         return;
       }
 
-      // capacity
       final maxCap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
       if (existingCount >= maxCap) {
         _toast('This slot is full ($maxCap learners).');
         return;
       }
 
-      // ✅ transactional join (enforces same session + capacity)
       final tx = await ref.runTransaction((Object? currentData) {
-        final Map<String, dynamic> node =
-        (currentData is Map) ? currentData.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+        final Map<String, dynamic> node = (currentData is Map)
+            ? currentData.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
 
         final Map<String, dynamic> learners = <String, dynamic>{};
         final existingLearners = node['learners'];
         if (existingLearners is Map) {
-          learners.addAll(existingLearners.map((k, v) => MapEntry(k.toString(), v)));
+          learners.addAll(
+              existingLearners.map((k, v) => MapEntry(k.toString(), v)));
         }
 
-        // already joined
         if (learners.containsKey(myUid)) {
           return Transaction.abort();
         }
 
-        // capacity check
         final cap = maxCap;
         if (learners.length >= cap) {
           return Transaction.abort();
         }
 
-        // group session rule:
-        // - if slot already has sessionNo, it must match currentSession
         final groupSessionNo = _toInt(node['sessionNo'], fallback: 0);
         if (groupSessionNo > 0 && groupSessionNo != currentSession) {
           return Transaction.abort();
@@ -989,7 +987,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         learners[myUid] = true;
 
-        // set group session if first join
         node['teacherId'] = slot.teacherId;
         node['teacherName'] = slot.teacherName;
         node['sessionNo'] = currentSession;
@@ -1000,7 +997,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       });
 
       if (!tx.committed) {
-        _toast('Could not join. The slot may be full or became a different session group.');
+        _toast(
+            'Could not join. The slot may be full or became a different session group.');
         return;
       }
 
@@ -1030,8 +1028,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       final start = _parseSlotStart(dayKey, hhmm);
       if (start == null) return false;
 
-      // ✅ 24h rule enforced
-      final locked = !start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+      final locked =
+      !start.isAfter(DateTime.now().add(const Duration(hours: 24)));
       if (locked) return false;
 
       final ref = _reservationsRef(cid, dayKey, hhmm);
@@ -1049,7 +1047,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         learners.remove(myUid);
 
         if (learners.isEmpty) {
-          return Transaction.success(null); // delete slot if empty
+          return Transaction.success(null);
         }
 
         node['learners'] = learners;
@@ -1066,7 +1064,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final cid = courseId;
     if (cid == null) return;
 
-    final locked = !slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+    final locked =
+    !slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
     if (locked) {
       _toast('You can’t cancel within 24 hours of the session.');
       return;
@@ -1120,7 +1119,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   List<String> _uniqueTimes(List<_Slot> slots) {
     final set = <String>{};
-    for (final s in slots) set.add(s.time);
+    for (final s in slots) {
+      set.add(s.time);
+    }
 
     final list = set.toList();
     list.sort((a, b) {
@@ -1137,7 +1138,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   List<DateTime> _nextDays(int count) {
     final now = DateTime.now();
-    return List.generate(count, (i) => DateTime(now.year, now.month, now.day).add(Duration(days: i)));
+    return List.generate(
+      count,
+          (i) => DateTime(now.year, now.month, now.day).add(Duration(days: i)),
+    );
   }
 
   // ================== Session details ==================
@@ -1152,7 +1156,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final m = info.map((k, v) => MapEntry(k.toString(), v));
 
     final rawTitle = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
-    final title = rawTitle.isEmpty ? 'Session $currentSession' : 'Session $currentSession — $rawTitle';
+    final title =
+    rawTitle.isEmpty ? 'Session $currentSession' : 'Session $currentSession — $rawTitle';
     final objective = (m['objective'] ?? '').toString().trim();
     final content = (m['content'] ?? '').toString().trim();
     final homework = (m['homework'] ?? '').toString().trim();
@@ -1163,7 +1168,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       showDragHandle: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
       builder: (_) {
         final bottomPad = MediaQuery.of(context).padding.bottom;
         return SafeArea(
@@ -1173,27 +1180,70 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: primaryBlue)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: primaryBlue,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   _kv('Session', '$currentSession / $totalSessions'),
                   if (duration > 0) _kv('Duration', '$duration min'),
                   const SizedBox(height: 10),
                   if (objective.isNotEmpty) ...[
-                    const Text('Objectives', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const Text(
+                      'Objectives',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    Text(objective, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey)),
+                    Text(
+                      objective,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                   ],
                   if (content.isNotEmpty) ...[
-                    const Text('Content', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const Text(
+                      'Content',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    Text(content, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey)),
+                    Text(
+                      content,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                   ],
                   if (homework.isNotEmpty) ...[
-                    const Text('Homework', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    const Text(
+                      'Homework',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    Text(homework, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey)),
+                    Text(
+                      homework,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                   ],
                   SizedBox(
@@ -1202,11 +1252,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       style: FilledButton.styleFrom(
                         backgroundColor: actionOrange,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w900)),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
                   ),
                 ],
@@ -1223,11 +1278,513 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          Expanded(child: Text(k, style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700))),
-          Text(v, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+          Expanded(
+            child: Text(
+              k,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+          Text(
+            v,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  // ================== Help Sheet ==================
+
+  void _openHowBookingWorks() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        final bottomPad = MediaQuery.of(context).padding.bottom;
+        final isArabic = helpLang == 'ar';
+
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomPad),
+                child: Directionality(
+                  textDirection:
+                  isArabic ? TextDirection.rtl : TextDirection.ltr,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: isArabic
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _helpTitle(helpLang),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _langChip('English', 'en', setLocalState),
+                            _langChip('العربية', 'ar', setLocalState),
+                            _langChip('Français', 'fr', setLocalState),
+                            _langChip('Türkçe', 'tr', setLocalState),
+                            _langChip('اردو', 'ur', setLocalState),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        _helpStep('1', _helpStep1(helpLang)),
+                        _helpStep('2', _helpStep2(helpLang)),
+                        _helpStep('3', _helpStep3(helpLang)),
+                        _helpStep('4', _helpStep4(helpLang)),
+                        const SizedBox(height: 18),
+                        Text(
+                          _helpRulesTitle(helpLang),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _ruleLine(_helpRule1(helpLang)),
+                        _ruleLine(_helpRule2(helpLang)),
+                        _ruleLine(_helpRule3(helpLang)),
+                        _ruleLine(_helpRule4(helpLang)),
+                        const SizedBox(height: 18),
+                        Text(
+                          _helpStatesTitle(helpLang),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _stateExplain(
+                          bg: emptyBg,
+                          border: emptyBorder,
+                          label: _helpStateBook(helpLang),
+                        ),
+                        const SizedBox(height: 8),
+                        _stateExplain(
+                          bg: peerBg,
+                          border: peerBorder,
+                          label: _helpStateJoin(helpLang),
+                        ),
+                        const SizedBox(height: 8),
+                        _stateExplain(
+                          bg: bookedBg,
+                          border: bookedBorder,
+                          label: _helpStateBooked(helpLang),
+                        ),
+                        const SizedBox(height: 8),
+                        _stateExplain(
+                          bg: otherSessionBg,
+                          border: otherSessionBorder,
+                          label: _helpStateUnavailable(helpLang),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: actionOrange,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(48),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              _helpClose(helpLang),
+                              style:
+                              const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _langChip(
+      String label,
+      String code,
+      void Function(void Function()) setLocalState,
+      ) {
+    final selected = helpLang == code;
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () {
+        setState(() => helpLang = code);
+        setLocalState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? actionOrange.withOpacity(0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? actionOrange.withOpacity(0.40)
+                : uiBorder.withOpacity(0.95),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: selected ? actionOrange : primaryBlue,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _helpStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: actionOrange.withOpacity(0.12),
+              shape: BoxShape.circle,
+              border: Border.all(color: actionOrange.withOpacity(0.25)),
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: actionOrange,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: primaryBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ruleLine(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        '• $text',
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Colors.grey.shade800,
+        ),
+      ),
+    );
+  }
+
+  Widget _stateExplain({
+    required Color bg,
+    required Color border,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _helpTitle(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'كيفية الحجز';
+      case 'fr':
+        return 'Comment réserver';
+      case 'tr':
+        return 'Nasıl rezervasyon yapılır';
+      case 'ur':
+        return 'بکنگ کیسے کریں';
+      default:
+        return 'How booking works';
+    }
+  }
+
+  String _helpRulesTitle(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'ملاحظات مهمة';
+      case 'fr':
+        return 'Règles importantes';
+      case 'tr':
+        return 'Önemli kurallar';
+      case 'ur':
+        return 'اہم اصول';
+      default:
+        return 'Important rules';
+    }
+  }
+
+  String _helpStatesTitle(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'معاني الألوان والحالات';
+      case 'fr':
+        return 'Signification des états';
+      case 'tr':
+        return 'Durumların anlamı';
+      case 'ur':
+        return 'اسٹیٹس کا مطلب';
+      default:
+        return 'What slot labels mean';
+    }
+  }
+
+  String _helpClose(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'إغلاق';
+      case 'fr':
+        return 'Fermer';
+      case 'tr':
+        return 'Kapat';
+      case 'ur':
+        return 'بند کریں';
+      default:
+        return 'Close';
+    }
+  }
+
+  String _helpStep1(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'اختر اليوم والوقت المناسبين لك.';
+      case 'fr':
+        return 'Choisissez le jour et l’heure qui vous conviennent.';
+      case 'tr':
+        return 'Size uygun gün ve saati seçin.';
+      case 'ur':
+        return 'اپنے لیے مناسب دن اور وقت منتخب کریں۔';
+      default:
+        return 'Choose a day and time that works for you.';
+    }
+  }
+
+  String _helpStep2(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'اضغط على الحصة لمعرفة التفاصيل.';
+      case 'fr':
+        return 'Touchez le créneau pour voir les détails.';
+      case 'tr':
+        return 'Detayları görmek için saate dokunun.';
+      case 'ur':
+        return 'تفصیلات دیکھنے کے لیے سلاٹ پر ٹیپ کریں۔';
+      default:
+        return 'Tap a slot to view the details.';
+    }
+  }
+
+  String _helpStep3(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'أكد الحجز أو انضم إلى المجموعة إذا كانت من نفس حصتك.';
+      case 'fr':
+        return 'Confirmez la réservation ou rejoignez le groupe de votre même session.';
+      case 'tr':
+        return 'Rezervasyonu onaylayın veya aynı oturum grubuna katılın.';
+      case 'ur':
+        return 'بکنگ کنفرم کریں یا اپنی ہی سیشن گروپ میں شامل ہوں۔';
+      default:
+        return 'Confirm the booking or join a group from your same session.';
+    }
+  }
+
+  String _helpStep4(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'زر الانضمام يظهر قبل وقت الحصة بقليل.';
+      case 'fr':
+        return 'Le bouton rejoindre apparaît peu avant le cours.';
+      case 'tr':
+        return 'Katıl düğmesi derse yakın zamanda görünür.';
+      case 'ur':
+        return 'جوائن بٹن کلاس کے وقت کے قریب ظاہر ہوگا۔';
+      default:
+        return 'The join button appears near class time.';
+    }
+  }
+
+  String _helpRule1(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'يمكنك الحجز فقط في حصتك الحالية.';
+      case 'fr':
+        return 'Vous pouvez réserver seulement votre session actuelle.';
+      case 'tr':
+        return 'Sadece mevcut oturumunuz için rezervasyon yapabilirsiniz.';
+      case 'ur':
+        return 'آپ صرف اپنے موجودہ سیشن کے لیے بکنگ کر سکتے ہیں۔';
+      default:
+        return 'You can only book your current session.';
+    }
+  }
+
+  String _helpRule2(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'إذا كانت هناك مجموعة من نفس حصتك، يمكنك الانضمام إليها.';
+      case 'fr':
+        return 'Si un groupe de votre session existe, vous pouvez le rejoindre.';
+      case 'tr':
+        return 'Aynı oturumda bir grup varsa ona katılabilirsiniz.';
+      case 'ur':
+        return 'اگر آپ کے سیشن کا گروپ موجود ہے تو آپ اس میں شامل ہو سکتے ہیں۔';
+      default:
+        return 'If a group from your same session exists, you can join it.';
+    }
+  }
+
+  String _helpRule3(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'يمكنك تغيير أو إلغاء الحجز قبل 24 ساعة فقط.';
+      case 'fr':
+        return 'Vous pouvez changer ou annuler seulement avant 24 heures.';
+      case 'tr':
+        return 'Sadece 24 saatten önce değiştirebilir veya iptal edebilirsiniz.';
+      case 'ur':
+        return 'آپ صرف 24 گھنٹے پہلے بکنگ تبدیل یا منسوخ کر سکتے ہیں۔';
+      default:
+        return 'You can change or cancel only before 24 hours.';
+    }
+  }
+
+  String _helpRule4(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'إذا كان المكان ممتلئًا أو لحصة مختلفة، فلن يكون متاحًا.';
+      case 'fr':
+        return 'Si le créneau est plein ou pour une autre session, il sera indisponible.';
+      case 'tr':
+        return 'Saat doluysa veya başka oturum içindeyse kullanılamaz.';
+      case 'ur':
+        return 'اگر سلاٹ بھر گیا ہو یا کسی اور سیشن کا ہو تو دستیاب نہیں ہوگا۔';
+      default:
+        return 'If a slot is full or for another session, it will be unavailable.';
+    }
+  }
+
+  String _helpStateBook(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'احجز: الحصة فارغة ويمكنك بدء مجموعة جديدة.';
+      case 'fr':
+        return 'Réserver : créneau vide, vous pouvez commencer un groupe.';
+      case 'tr':
+        return 'Rezervasyon: boş saat, yeni grup başlatabilirsiniz.';
+      case 'ur':
+        return 'بک کریں: خالی سلاٹ، آپ نیا گروپ شروع کر سکتے ہیں۔';
+      default:
+        return 'Book: empty slot, you can start a new group.';
+    }
+  }
+
+  String _helpStateJoin(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'انضم للمجموعة: زملاؤك موجودون بالفعل في هذه الحصة.';
+      case 'fr':
+        return 'Rejoindre : vos pairs sont déjà dans ce créneau.';
+      case 'tr':
+        return 'Katıl: arkadaşlarınız bu grupta zaten var.';
+      case 'ur':
+        return 'گروپ جوائن کریں: آپ کے ساتھی پہلے سے اس گروپ میں ہیں۔';
+      default:
+        return 'Join group: your peers are already in this slot.';
+    }
+  }
+
+  String _helpStateBooked(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'محجوز: أنت بالفعل داخل هذه الحصة.';
+      case 'fr':
+        return 'Réservé : vous êtes déjà dans ce créneau.';
+      case 'tr':
+        return 'Rezerve edildi: bu saate zaten dahilsiniz.';
+      case 'ur':
+        return 'بک ہو چکا: آپ پہلے ہی اس سلاٹ میں شامل ہیں۔';
+      default:
+        return 'Booked: you are already in this slot.';
+    }
+  }
+
+  String _helpStateUnavailable(String lang) {
+    switch (lang) {
+      case 'ar':
+        return 'غير متاح: هذه الحصة لمستوى آخر أو ممتلئة.';
+      case 'fr':
+        return 'Indisponible : autre session ou créneau complet.';
+      case 'tr':
+        return 'Kullanılamaz: başka oturum ya da dolu.';
+      case 'ur':
+        return 'دستیاب نہیں: یہ کسی اور سیشن کا ہے یا بھر چکا ہے۔';
+      default:
+        return 'Unavailable: another session or already full.';
+    }
   }
 
   // ================== Slot tap -> details sheet ==================
@@ -1240,11 +1797,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       backgroundColor: Colors.white,
       showDragHandle: true,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
       builder: (_) {
         final bottomPad = MediaQuery.of(context).padding.bottom;
 
-        final canCancel = slot.bookedByMe && slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+        final canCancel = slot.bookedByMe &&
+            slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
         final cancelLocked = slot.bookedByMe && !canCancel;
 
         final canJoinMeet = _canOpenMeetNow(slot);
@@ -1258,7 +1818,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         String groupLine() {
           if (slot.bookedCount <= 0) {
-            return 'No one booked yet — be the first for Session $currentSession';
+            return 'No one booked yet';
           }
           final gs = slot.groupSessionNo;
           if (gs == null) {
@@ -1276,37 +1836,96 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               children: [
                 Text(
                   '${_friendlyDate(slot.start)} • ${slot.time}',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: primaryBlue),
-                ),
-                const SizedBox(height: 6),
-                Text('Teacher: ${slot.teacherName}', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
-                const SizedBox(height: 6),
-                Text(
-                  topic.isEmpty
-                      ? 'Session group: $shownSessionNo / $totalSessions'
-                      : 'Session group: $shownSessionNo / $totalSessions — $topic',
-                  style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Group: ${groupLine()}  •  Capacity: ${slot.bookedCount}/$cap',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 6),
-                if (peerGroup)
-                  Text(
-                    '👥 Your peers are here — join them!',
-                    style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange.withOpacity(0.95)),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    color: primaryBlue,
                   ),
-                const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 14),
+                _sheetInfoRow(
+                  icon: Icons.person_outline_rounded,
+                  title: 'Teacher',
+                  value: slot.teacherName,
+                  trailing: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () {
+                      Navigator.pop(context);
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        showDragHandle: true,
+                        backgroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(24)),
+                        ),
+                        builder: (_) => TeacherMediaSheet(
+                          teacherUid: slot.teacherId,
+                          teacherName: slot.teacherName,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: actionOrange.withOpacity(0.10),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: actionOrange.withOpacity(0.25),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.info_outline_rounded,
+                        size: 18,
+                        color: actionOrange,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _sheetInfoRow(
+                  icon: Icons.menu_book_rounded,
+                  title: 'Session',
+                  value: topic.isEmpty
+                      ? '$shownSessionNo / $totalSessions'
+                      : '$shownSessionNo / $totalSessions • $topic',
+                ),
+                const SizedBox(height: 10),
+                _sheetInfoRow(
+                  icon: Icons.groups_rounded,
+                  title: 'Group',
+                  value: '${groupLine()} • Capacity ${slot.bookedCount}/$cap',
+                ),
+                const SizedBox(height: 14),
+                if (peerGroup)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: peerBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: peerBorder),
+                    ),
+                    child: const Text(
+                      '👥 Your peers are already here — you can join this group.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
+                  ),
+                if (peerGroup) const SizedBox(height: 12),
 
-                // Meet button (only meaningful if bookedByMe)
                 if (slot.bookedByMe && slot.meetUrl.trim().isNotEmpty) ...[
                   FilledButton(
                     style: FilledButton.styleFrom(
                       backgroundColor: actionOrange,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       minimumSize: const Size(double.infinity, 48),
                     ),
                     onPressed: canJoinMeet
@@ -1316,7 +1935,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     }
                         : null,
                     child: Text(
-                      canJoinMeet ? 'Join Google Meet' : 'Join available near session time',
+                      canJoinMeet
+                          ? 'Join Google Meet'
+                          : 'Join available near session time',
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
@@ -1326,9 +1947,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 if (!slot.bookedByMe) ...[
                   FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor: joinable ? actionOrange : Colors.grey.shade400,
+                      backgroundColor:
+                      joinable ? actionOrange : Colors.grey.shade400,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       minimumSize: const Size(double.infinity, 48),
                     ),
                     onPressed: (booking || !joinable)
@@ -1336,39 +1960,52 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                         : () async {
                       Navigator.pop(context);
 
-                      // If learner already has a booking, offer switch
-                      final existing = await _findMyNextBooking(courseId!);
-                      final hasOther =
-                          existing != null && !(existing.dayKey == slot.dayKey && existing.time == slot.time);
+                      final existing =
+                      await _findMyNextBooking(courseId!);
+                      final hasOther = existing != null &&
+                          !(existing.dayKey == slot.dayKey &&
+                              existing.time == slot.time);
 
                       final locked = existing != null &&
-                          !existing.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+                          !existing.start.isAfter(
+                            DateTime.now()
+                                .add(const Duration(hours: 24)),
+                          );
 
-                      final label = (slot.bookedCount > 0 && slot.groupSessionNo == currentSession)
+                      final label = (slot.bookedCount > 0 &&
+                          slot.groupSessionNo == currentSession)
                           ? 'Join group'
-                          : 'Book / Start group';
+                          : 'Book this slot';
 
                       final msg = hasOther
                           ? (locked
                           ? 'You already booked a class within 24 hours.\nYou can’t change it now.'
                           : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? currentSession} (${slot.bookedCount}/$cap).')
-                          : 'Confirm?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? currentSession}\nLearners: ${slot.bookedCount}/$cap';
+                          : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? currentSession}\nLearners: ${slot.bookedCount}/$cap';
 
                       if (hasOther && locked) {
-                        _toast('You can’t change booking within 24 hours.');
+                        _toast(
+                            'You can’t change booking within 24 hours.');
                         return;
                       }
 
                       final ok = await showDialog<bool>(
                         context: context,
                         builder: (_) => AlertDialog(
-                          title: Text(hasOther ? 'Change booking' : label),
+                          title:
+                          Text(hasOther ? 'Change booking' : label),
                           content: Text(msg),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(context, false),
+                              child: const Text('No'),
+                            ),
                             FilledButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: Text(hasOther ? 'Yes, Change' : 'Yes'),
+                              onPressed: () =>
+                                  Navigator.pop(context, true),
+                              child: Text(
+                                  hasOther ? 'Yes, Change' : 'Yes'),
                             ),
                           ],
                         ),
@@ -1380,30 +2017,40 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     },
                     child: Text(
                       joinable
-                          ? ((slot.bookedCount > 0 && slot.groupSessionNo == currentSession) ? 'Join peers' : 'Book this slot')
-                          : 'Not joinable (different session / full)',
+                          ? ((slot.bookedCount > 0 &&
+                          slot.groupSessionNo == currentSession)
+                          ? 'Join group'
+                          : 'Book this slot')
+                          : 'Unavailable',
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
                 ] else ...[
                   Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEAF7EE),
+                      color: bookedBg,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: uiBorder.withOpacity(0.7)),
+                      border: Border.all(color: bookedBorder),
                     ),
                     child: Text(
-                      'You’re in this group ✅  (${slot.bookedCount}/$cap learners)',
-                      style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                      'You are booked in this slot ✅ (${slot.bookedCount}/$cap learners)',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
                   FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor: cancelLocked ? Colors.grey.shade400 : Colors.red.shade600,
+                      backgroundColor:
+                      cancelLocked ? Colors.grey.shade400 : Colors.red.shade600,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       minimumSize: const Size(double.infinity, 48),
                     ),
                     onPressed: (booking || !canCancel)
@@ -1415,10 +2062,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                         context: context,
                         builder: (_) => AlertDialog(
                           title: const Text('Cancel booking'),
-                          content: const Text('Are you sure you want to cancel this booking?'),
+                          content: const Text(
+                            'Are you sure you want to cancel this booking?',
+                          ),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
-                            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes, Cancel')),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(context, false),
+                              child: const Text('No'),
+                            ),
+                            FilledButton(
+                              onPressed: () =>
+                                  Navigator.pop(context, true),
+                              child: const Text('Yes, Cancel'),
+                            ),
                           ],
                         ),
                       );
@@ -1428,7 +2085,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       }
                     },
                     child: Text(
-                      cancelLocked ? 'Cancel disabled (within 24h)' : 'Cancel booking',
+                      cancelLocked
+                          ? 'Cancel disabled (within 24h)'
+                          : 'Cancel booking',
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
@@ -1441,163 +2100,241 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     );
   }
 
-  // ================== Timetable UI ==================
-
-  Widget _buildLegend() {
-    Widget pill(Color c, String t, {Color? border}) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: c,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: border ?? uiBorder.withOpacity(0.6)),
-        ),
-        child: Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: primaryBlue)),
-      );
-    }
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        pill(const Color(0xFFFFF1E3), 'Empty (start group)'),
-        pill(peerBg, 'Peers (join group)', border: peerBorder),
-        pill(const Color(0xFFEAF7EE), 'Your booking'),
-        pill(otherSessionBg, 'Other session', border: otherSessionBorder),
-      ],
+  Widget _sheetInfoRow({
+    required IconData icon,
+    required String title,
+    required String value,
+    Widget? trailing,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: uiBorder.withOpacity(0.85)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: primaryBlue, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 10),
+            trailing,
+          ],
+        ],
+      ),
     );
   }
-  Widget _buildFilters() {
-    // teacher list from generated slots
+
+  // ================== Filters UI ==================
+
+  Widget _buildFiltersCard() {
     final Map<String, String> teacherIdToName = {};
     for (final s in generatedSlots) {
       teacherIdToName[s.teacherId] = s.teacherName;
     }
     final teacherIds = teacherIdToName.keys.toList()
-      ..sort((a, b) => (teacherIdToName[a] ?? '').compareTo(teacherIdToName[b] ?? ''));
+      ..sort((a, b) =>
+          (teacherIdToName[a] ?? '').compareTo(teacherIdToName[b] ?? ''));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: uiBorder.withOpacity(0.9)),
-                ),
-                child: DropdownButton<String>(
-                  value: teacherFilter,
-                  isExpanded: true,
-                  underline: const SizedBox.shrink(),
-                  icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
-                  items: [
-                    const DropdownMenuItem(
-                      value: 'all',
-                      child: Text('All teachers'),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: uiBorder),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => setState(() => filtersExpanded = !filtersExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(
+                children: [
+                  const Icon(Icons.tune_rounded, color: primaryBlue, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Filters',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
                     ),
-                    ...teacherIds.map((id) {
-                      final name = teacherIdToName[id] ?? 'Teacher';
-                      return DropdownMenuItem(
-                        value: id,
-                        child: Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                  ),
+                  if (teacherFilter != 'all' ||
+                      timeFilter != 'all' ||
+                      onlyJoinable ||
+                      onlyPeerGroups)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: actionOrange.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: actionOrange.withOpacity(0.25),
                         ),
-                      );
-                    }),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => teacherFilter = v);
-                  },
-                ),
+                      ),
+                      child: const Text(
+                        'Active',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: actionOrange,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 10),
+                  Icon(
+                    filtersExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: primaryBlue,
+                  ),
+                ],
               ),
             ),
-            if (teacherFilter != 'all') ...[
-              const SizedBox(width: 8),
-              InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: () {
-                  final selectedTeacherName =
-                      teacherIdToName[teacherFilter] ?? 'Teacher';
-
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    showDragHandle: true,
-                    backgroundColor: Colors.white,
-                    shape: const RoundedRectangleBorder(
-                      borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(24)),
-                    ),
-                    builder: (_) => TeacherMediaSheet(
-                      teacherUid: teacherFilter,
-                      teacherName: selectedTeacherName,
-                    ),
-                  );
-                },
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: actionOrange.withOpacity(0.10),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: actionOrange.withOpacity(0.30),
+          ),
+          if (filtersExpanded) ...[
+            const Divider(height: 1, color: uiBorder),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Teacher',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primaryBlue,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.question_mark_rounded,
-                    color: actionOrange,
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: uiBorder.withOpacity(0.9)),
+                    ),
+                    child: DropdownButton<String>(
+                      value: teacherFilter,
+                      isExpanded: true,
+                      underline: const SizedBox.shrink(),
+                      icon: const Icon(
+                        Icons.expand_more_rounded,
+                        color: primaryBlue,
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All teachers'),
+                        ),
+                        ...teacherIds.map((id) {
+                          final name = teacherIdToName[id] ?? 'Teacher';
+                          return DropdownMenuItem(
+                            value: id,
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => teacherFilter = v);
+                      },
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Time',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _chip(
+                        'All day',
+                        timeFilter == 'all',
+                            () => setState(() => timeFilter = 'all'),
+                      ),
+                      _chip(
+                        'Morning',
+                        timeFilter == 'morning',
+                            () => setState(() => timeFilter = 'morning'),
+                      ),
+                      _chip(
+                        'Afternoon',
+                        timeFilter == 'afternoon',
+                            () => setState(() => timeFilter = 'afternoon'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _togglePill(
+                        label: 'Only joinable',
+                        value: onlyJoinable,
+                        onChanged: (v) => setState(() => onlyJoinable = v),
+                      ),
+                      _togglePill(
+                        label: 'Only peer groups',
+                        value: onlyPeerGroups,
+                        onChanged: (v) => setState(() => onlyPeerGroups = v),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Time chips + joinable toggles
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _chip(
-              'All day',
-              timeFilter == 'all',
-                  () => setState(() => timeFilter = 'all'),
-            ),
-            _chip(
-              'Morning',
-              timeFilter == 'morning',
-                  () => setState(() => timeFilter = 'morning'),
-            ),
-            _chip(
-              'Afternoon',
-              timeFilter == 'afternoon',
-                  () => setState(() => timeFilter = 'afternoon'),
-            ),
-            _togglePill(
-              label: 'Only joinable',
-              value: onlyJoinable,
-              onChanged: (v) => setState(() => onlyJoinable = v),
-            ),
-            _togglePill(
-              label: 'Only peer groups',
-              value: onlyPeerGroups,
-              onChanged: (v) => setState(() => onlyPeerGroups = v),
             ),
           ],
-        ),
-      ],
+        ],
+      ),
     );
   }
-  Widget _togglePill({required String label, required bool value, required ValueChanged<bool> onChanged}) {
+
+  Widget _togglePill({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -1608,9 +2345,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 12,
+            ),
+          ),
           const SizedBox(width: 8),
-          Switch(value: value, onChanged: onChanged, activeColor: actionOrange),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: actionOrange,
+          ),
         ],
       ),
     );
@@ -1625,20 +2373,36 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         decoration: BoxDecoration(
           color: on ? actionOrange.withOpacity(0.12) : Colors.white,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: on ? actionOrange.withOpacity(0.35) : uiBorder.withOpacity(0.9)),
+          border: Border.all(
+            color: on
+                ? actionOrange.withOpacity(0.35)
+                : uiBorder.withOpacity(0.9),
+          ),
         ),
         child: Text(
           label,
-          style: TextStyle(fontWeight: FontWeight.w900, color: on ? actionOrange : primaryBlue, fontSize: 12),
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: on ? actionOrange : primaryBlue,
+            fontSize: 12,
+          ),
         ),
       ),
     );
   }
 
-  Widget _badge(String text, {Color bg = Colors.black, Color fg = Colors.white, IconData? icon}) {
+  Widget _badge(
+      String text, {
+        required Color bg,
+        Color fg = Colors.white,
+        IconData? icon,
+      }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1646,45 +2410,192 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             Icon(icon, size: 12, color: fg),
             const SizedBox(width: 4),
           ],
-          Text(text, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10, color: fg)),
+          Text(
+            text,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 10,
+              color: fg,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ✅ mini card for each teacher INSIDE a single timetable cell
+  // ================== Compact header ==================
+
+  Widget _buildCompactHeader() {
+    final sessionInfo = curriculumSessions['$currentSession'];
+    final sessionTitle = (sessionInfo is Map)
+        ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '')
+        .toString()
+        .trim()
+        : '';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: uiBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            courseTitle.isEmpty ? 'Course' : courseTitle,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+              color: primaryBlue,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            sessionTitle.isEmpty
+                ? 'Session $currentSession / $totalSessions'
+                : 'Session $currentSession / $totalSessions • $sessionTitle',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Colors.grey.shade800,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _smallActionButton(
+                icon: Icons.help_outline_rounded,
+                label: 'How booking works',
+                onTap: _openHowBookingWorks,
+              ),
+              _smallActionButton(
+                icon: Icons.menu_book_rounded,
+                label: 'Session details',
+                onTap: _openNextSessionDetails,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _smallActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: actionOrange.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: actionOrange.withOpacity(0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: actionOrange),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: actionOrange,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickHints() {
+    Widget pill(IconData icon, String text) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: uiBorder.withOpacity(0.9)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: primaryBlue),
+            const SizedBox(width: 6),
+            Text(
+              text,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: primaryBlue,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        pill(Icons.calendar_month_rounded, 'Tap a slot to book'),
+        pill(Icons.groups_rounded, 'Join your session group'),
+        pill(Icons.lock_clock_rounded, 'Change only before 24h'),
+      ],
+    );
+  }
+
+  // ================== Timetable ==================
+
   Widget _teacherMiniTile(_Slot s) {
     final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
 
     final bookedByMe = s.bookedByMe;
     final peerGroup = _isPeerGroup(s);
-    final otherSession = (s.groupSessionNo != null && s.groupSessionNo != currentSession) && !bookedByMe;
+    final otherSession =
+        (s.groupSessionNo != null && s.groupSessionNo != currentSession) &&
+            !bookedByMe;
+    final fullButMySession =
+        !bookedByMe && s.groupSessionNo == currentSession && s.isFull;
 
     final bg = bookedByMe
-        ? const Color(0xFFEAF7EE)
+        ? bookedBg
         : peerGroup
         ? peerBg
-        : otherSession
+        : otherSession || fullButMySession
         ? otherSessionBg
-        : const Color(0xFFFFF1E3);
+        : emptyBg;
 
     final border = bookedByMe
-        ? const Color(0xFFB9E2C5)
+        ? bookedBorder
         : peerGroup
         ? peerBorder
-        : otherSession
+        : otherSession || fullButMySession
         ? otherSessionBorder
-        : const Color(0xFFF9C59D);
+        : emptyBorder;
 
     String topLabel;
     if (bookedByMe) {
-      topLabel = 'You’re in';
+      topLabel = 'Booked';
     } else if (peerGroup) {
-      topLabel = 'Join peers';
+      topLabel = 'Join group';
+    } else if (fullButMySession) {
+      topLabel = 'Full';
     } else if (otherSession) {
       topLabel = 'Session ${s.groupSessionNo}';
     } else {
-      topLabel = 'Start group';
+      topLabel = 'Book';
     }
 
     final countText = '${s.bookedCount}/$cap';
@@ -1693,7 +2604,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       borderRadius: BorderRadius.circular(12),
       onTap: () => _onSlotTap(s),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(12),
@@ -1704,20 +2615,27 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     topLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primaryBlue,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     s.teacherName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700, fontSize: 11),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade700,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
@@ -1726,8 +2644,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             if (bookedByMe)
               _badge(countText, bg: const Color(0xFF2F9E44))
             else if (peerGroup)
-              _badge(countText, bg: actionOrange, icon: Icons.groups_rounded)
-            else if (otherSession)
+              _badge(
+                countText,
+                bg: actionOrange,
+                icon: Icons.groups_rounded,
+              )
+            else if (otherSession || fullButMySession)
                 _badge(countText, bg: Colors.grey.shade600)
               else
                 _badge(countText, bg: Colors.grey.shade800),
@@ -1743,13 +2665,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final days = _nextDays(timetableDays);
     final times = _uniqueTimes(slots);
 
-    // ✅ FIX: index dayKey|time -> List<_Slot> (multiple teachers per cell)
     final Map<String, List<_Slot>> index = {};
     for (final s in slots) {
       index.putIfAbsent(s.key, () => <_Slot>[]).add(s);
     }
 
-    // stable order inside a cell (by teacher name)
     for (final k in index.keys) {
       index[k]!.sort((a, b) => a.teacherName.compareTo(b.teacherName));
     }
@@ -1759,14 +2679,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
           Row(
             children: [
-              const SizedBox(width: 86), // left time column
+              const SizedBox(width: 84),
               ...days.map((d) {
                 return Container(
-                  width: 160,
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                  width: 164,
+                  padding:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
                   margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
                     border: Border.all(color: uiBorder.withOpacity(0.8)),
@@ -1775,38 +2695,48 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   ),
                   child: Text(
                     _friendlyDate(d),
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primaryBlue,
+                      fontSize: 12,
+                    ),
                   ),
                 );
               }).toList(),
             ],
           ),
           const SizedBox(height: 8),
-
           if (times.isEmpty)
             Container(
-              width: 94.0 + (160.0 * timetableDays),
-              padding: const EdgeInsets.all(12),
+              width: 94.0 + (164.0 * timetableDays),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: uiBorder.withOpacity(0.85)),
               ),
-              child: const Text('No slots match your filters.', style: TextStyle(fontWeight: FontWeight.w900)),
+              child: const Text(
+                'No slots match your filters.',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
             ),
-
-          // Grid
           ...times.map((t) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // time label
                   Container(
-                    width: 86,
-                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-                    child: Text(t, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    width: 84,
+                    padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                    child: Text(
+                      t,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
                   ),
                   ...days.map((d) {
                     final dk = _dateKey(d);
@@ -1815,30 +2745,42 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
                     final hasSlot = list.isNotEmpty;
 
-                    // cell frame is neutral; inside we show per-teacher tiles
                     return Container(
-                      width: 160,
+                      width: 164,
                       constraints: const BoxConstraints(minHeight: 72),
                       margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: hasSlot ? Colors.white : Colors.transparent,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: hasSlot ? uiBorder.withOpacity(0.85) : uiBorder.withOpacity(0.25)),
+                        border: Border.all(
+                          color: hasSlot
+                              ? uiBorder.withOpacity(0.85)
+                              : uiBorder.withOpacity(0.25),
+                        ),
                       ),
                       child: hasSlot
                           ? Column(
                         children: [
-                          // show up to 2 teacher tiles for readability
-                          for (int i = 0; i < (list.length > 2 ? 2 : list.length); i++) ...[
+                          for (int i = 0;
+                          i < (list.length > 2 ? 2 : list.length);
+                          i++) ...[
                             _teacherMiniTile(list[i]),
-                            if (i != (list.length > 2 ? 1 : list.length - 1)) const SizedBox(height: 8),
+                            if (i !=
+                                (list.length > 2
+                                    ? 1
+                                    : list.length - 1))
+                              const SizedBox(height: 8),
                           ],
                           if (list.length > 2) ...[
                             const SizedBox(height: 6),
                             Text(
-                              '+${list.length - 2} more teachers',
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: Colors.grey.shade700),
+                              '+${list.length - 2} more',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
                             ),
                           ],
                         ],
@@ -1861,10 +2803,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   Widget build(BuildContext context) {
     final cid = courseId;
 
-    final sessionInfo = curriculumSessions['$currentSession'];
-    final sessionTitle =
-    (sessionInfo is Map) ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '').toString() : '';
-
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -1872,8 +2810,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text('Book Your Class', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        title: const Text(
+          'Book Your Class',
+          style: TextStyle(
+            color: primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         actions: [
+          IconButton(
+            tooltip: 'How booking works',
+            onPressed: _openHowBookingWorks,
+            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: (loading || booking || cid == null)
@@ -1884,7 +2833,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             },
             icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
         ],
       ),
       body: loading
@@ -1894,55 +2843,48 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           : ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          _Card(
-            title: courseTitle.isEmpty ? 'Course' : courseTitle,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          _buildCompactHeader(),
+          const SizedBox(height: 10),
+          _buildQuickHints(),
+          const SizedBox(height: 12),
+          _SectionCard(
+            title: 'Schedule',
+            subtitle: 'Tap a slot to book or join a group',
+            trailing: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () =>
+                  setState(() => filtersExpanded = !filtersExpanded),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: uiBorder.withOpacity(0.9),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Your current session: $currentSession / $totalSessions',
-                        style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-                      ),
+                    const Icon(
+                      Icons.tune_rounded,
+                      size: 16,
+                      color: primaryBlue,
                     ),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(999),
-                      onTap: _openNextSessionDetails,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: actionOrange.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: actionOrange.withOpacity(0.25)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.info_outline_rounded, size: 16, color: actionOrange),
-                            SizedBox(width: 6),
-                            Text('Details',
-                                style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange, fontSize: 12)),
-                          ],
-                        ),
+                    const SizedBox(width: 6),
+                    Text(
+                      filtersExpanded ? 'Hide filters' : 'Filters',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                        fontSize: 12,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  sessionTitle.isEmpty ? 'Session title not found (curriculum optional)' : sessionTitle,
-                  style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 10),
-                _buildLegend(),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          _Card(
-            title: 'Schedule (tap a slot)',
             child: generatedSlots.isEmpty
                 ? const Text(
               'No available slots found.\nAsk your teacher to set availability for this course.',
@@ -1951,16 +2893,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildFilters(),
-                const SizedBox(height: 12),
+                if (filtersExpanded) ...[
+                  _buildFiltersCard(),
+                  const SizedBox(height: 12),
+                ],
                 _buildTimetable(generatedSlots),
               ],
             ),
           ),
-          const SizedBox(height: 8),
           if (booking)
             const Padding(
-              padding: EdgeInsets.only(top: 10),
+              padding: EdgeInsets.only(top: 14),
               child: Center(child: CircularProgressIndicator()),
             ),
         ],
@@ -1980,7 +2923,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   String _friendlyDate(DateTime d) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     final wd = days[d.weekday - 1];
     final mo = months[d.month - 1];
     return '$wd, ${_two(d.day)} $mo';
@@ -2007,10 +2963,8 @@ class _TeacherAvail {
   final String teacherId;
   final String teacherName;
   final Map<String, List<String>> slotsByDay;
-
   final String meetUrl;
   final int durationMinutes;
-
   final int maxLearnersPerSlot;
 
   _TeacherAvail({
@@ -2037,20 +2991,17 @@ class _SlotSummary {
 
 class _Slot {
   final String courseId;
-  final String dayKey; // yyyy-mm-dd
-  final String time; // HH:MM
+  final String dayKey;
+  final String time;
   final DateTime start;
   final String teacherId;
   final String teacherName;
-
   final String meetUrl;
   final int durationMinutes;
-
   final int maxLearnersPerSlot;
-
   final bool bookedByMe;
   final int bookedCount;
-  final int? groupSessionNo; // session this slot is grouped for
+  final int? groupSessionNo;
 
   _Slot({
     required this.courseId,
@@ -2093,12 +3044,20 @@ class _MyBooking {
   });
 }
 
-// ================== Small UI helper ==================
+// ================== Small UI helpers ==================
 
-class _Card extends StatelessWidget {
-  const _Card({required this.title, required this.child});
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.child,
+    this.subtitle,
+    this.trailing,
+  });
+
   final String title;
+  final String? subtitle;
   final Widget child;
+  final Widget? trailing;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const uiBorder = Color(0xFFD1D9E0);
@@ -2115,8 +3074,37 @@ class _Card extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: primaryBlue,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 12),
           child,
         ],
       ),

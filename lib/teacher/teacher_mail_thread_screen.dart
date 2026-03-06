@@ -1850,17 +1850,83 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return client.uploadBytes(bytes: bytes, filename: name);
   }
 
+  Future<String?> _pickCourseForReport() async {
+    if (!_loadedLearnerCourses) {
+      await _loadLearnerCoursesTitles();
+    }
+
+    final entries = _learnerCourseTitles.entries.toList();
+
+    if (entries.isEmpty) {
+      return null;
+    }
+
+    if (entries.length == 1) {
+      return entries.first.key;
+    }
+
+    if (!mounted) return null;
+
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select course'),
+        content: SizedBox(
+          width: 320,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: entries.length,
+            itemBuilder: (_, i) {
+              final e = entries[i];
+              final courseKey = e.key.trim();
+              final courseTitle = e.value.trim().isNotEmpty ? e.value.trim() : courseKey;
+
+              return ListTile(
+                title: Text(courseTitle),
+                subtitle: courseTitle == courseKey ? null : Text(courseKey),
+                onTap: () => Navigator.pop(ctx, courseKey),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
   Future<void> _openReportCard() async {
     if (!_peerIsLearner) {
       _snack('Report Card is only for learners.');
       return;
     }
-    if (_threadCourseKey == null || _threadCourseKey!.trim().isEmpty) {
-      _snack('Course not found for this thread (courseKey missing).');
-      return;
+
+    String? courseKey = _threadCourseKey?.trim();
+
+    if (courseKey == null || courseKey.isEmpty) {
+      courseKey = await _pickCourseForReport();
+
+      if (courseKey == null || courseKey.trim().isEmpty) {
+        _snack('No course found for this learner.');
+        return;
+      }
+
+      try {
+        await _threadRef.update({'courseKey': courseKey});
+        if (mounted) {
+          setState(() {
+            _threadCourseKey = courseKey;
+            final pickedTitle = (_learnerCourseTitles[courseKey] ?? '').trim();
+            if (pickedTitle.isNotEmpty) _threadCourseTitle = pickedTitle;
+          });
+        }
+      } catch (_) {}
     }
 
-    final courseKey = _threadCourseKey!.trim();
+    courseKey = courseKey.trim();
 
     final behaviorItems = <Map<String, dynamic>>[
       {'label': 'Respect / attitude', 'score': 3},
@@ -2218,7 +2284,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         child: _ReportCardDiagramV2(
                           schoolTitle: 'REPORT CARD',
                           learnerName: _peerNameShown,
-                          courseKey: courseKey,
+                          courseKey: courseKey!,
                           createdAtMs: DateTime.now().millisecondsSinceEpoch,
                           teacherName: _meDisplayName,
                           behaviorItems: behaviorItems,
@@ -2402,8 +2468,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
     final subjectTrim = widget.subject.trim();
 
-    final canReport = _peerIsLearner && (_threadCourseKey != null && _threadCourseKey!.trim().isNotEmpty);
-
+    final canReport = _peerIsLearner;
     final showRecBar = _recStarting || _recRecording || _recLocked || _recUploading;
 
     return Scaffold(
@@ -2436,10 +2501,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (_loadedPeerRole && _peerIsLearner) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.assignment_turned_in_rounded, size: 18, color: _navy.withOpacity(0.9)),
-              ],
+
             ],
           ),
         ),
@@ -2461,8 +2523,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           ),
           if (_loadedPeerRole && _peerIsLearner)
             IconButton(
-              tooltip: canReport ? 'Report card (long press title too)' : 'Report card unavailable (missing courseKey)',
-              icon: Icon(Icons.analytics_rounded, color: canReport ? _navy.withOpacity(0.95) : _navy.withOpacity(0.35)),
+              tooltip: 'Report card',
+              icon: Icon(
+                Icons.analytics_rounded,
+                color: canReport ? _navy.withOpacity(0.95) : _navy.withOpacity(0.35),
+              ),
               onPressed: canReport ? _openReportCard : null,
             ),
         ],
@@ -2598,35 +2663,36 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          _fmtTime(m.createdAtMs),
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                            color: mine ? Colors.white.withOpacity(0.75) : _navy.withOpacity(0.55),
+                                        Flexible(
+                                          child: Text(
+                                            _fmtTime(m.createdAtMs),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                              color: mine ? Colors.white.withOpacity(0.75) : _navy.withOpacity(0.55),
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 6),
-                                        SizedBox(
-                                          width: 28,
-                                          height: 28,
-                                          child: PopupMenuButton<String>(
-                                            padding: EdgeInsets.zero,
-                                            tooltip: 'Message actions',
-                                            icon: Icon(
-                                              Icons.more_vert_rounded,
-                                              size: 18,
-                                              color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.65),
-                                            ),
-                                            onSelected: (v) async {
-                                              if (v == 'react') _openMessageActions(m);
-                                              if (v == 'delete_for_me') await _deleteMessageForMe(m);
-                                            },
-                                            itemBuilder: (_) => const [
-                                              PopupMenuItem(value: 'react', child: Text('React')),
-                                              PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
-                                            ],
+                                        PopupMenuButton<String>(
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                                          tooltip: 'Message actions',
+                                          icon: Icon(
+                                            Icons.more_vert_rounded,
+                                            size: 18,
+                                            color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.65),
                                           ),
+                                          onSelected: (v) async {
+                                            if (v == 'react') _openMessageActions(m);
+                                            if (v == 'delete_for_me') await _deleteMessageForMe(m);
+                                          },
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(value: 'react', child: Text('React')),
+                                            PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -3104,7 +3170,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Divider(),
-            _sectionTitle('Auto summary'),
+            _sectionTitle('Summary'),
             const SizedBox(height: 6),
             Text(
               autoSummary,
@@ -3116,7 +3182,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            _sectionTitle('Teacher comment (optional)'),
+            _sectionTitle('Comment'),
             const SizedBox(height: 6),
             Container(
               width: double.infinity,
