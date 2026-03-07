@@ -25,11 +25,8 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
   late final Stream<DatabaseEvent> _stream;
 
-  // -------------------------------------------------------
-  // CACHES (names + roles for tabs + better search)
-  // -------------------------------------------------------
-  final Map<String, String> _nameCache = {}; // uid -> display name
-  final Map<String, String> _roleCache = {}; // uid -> normalized: admin/teacher/learner
+  final Map<String, String> _nameCache = {};
+  final Map<String, String> _roleCache = {};
   final Map<String, Future<void>> _userFetchPending = {};
 
   @override
@@ -50,9 +47,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // -----------------------------------------
-  // Role normalization (case-insensitive + typos)
-  // -----------------------------------------
   String _normalizeRole(dynamic raw) {
     final s = (raw ?? '').toString().trim().toLowerCase();
 
@@ -96,6 +90,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     final fut = () async {
       try {
         final snap = await _db.ref('users/$uid').get();
+
+        String resolvedName = 'User';
+        String resolvedRole = 'learner';
+
         if (snap.exists && snap.value is Map) {
           final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
 
@@ -104,17 +102,27 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           final email = (m['email'] ?? '').toString().trim();
 
           final full = ('$fn $ln').trim();
-          final display = full.isNotEmpty ? full : (email.isNotEmpty ? email : 'User');
+          resolvedName = full.isNotEmpty ? full : (email.isNotEmpty ? email : 'User');
+          resolvedRole = _normalizeRole(m['role']);
+        }
 
-          _nameCache[uid] = display;
-          _roleCache[uid] = _normalizeRole(m['role']);
-        } else {
-          _nameCache.putIfAbsent(uid, () => 'User');
-          _roleCache.putIfAbsent(uid, () => 'learner');
+        final changed = _nameCache[uid] != resolvedName || _roleCache[uid] != resolvedRole;
+        _nameCache[uid] = resolvedName;
+        _roleCache[uid] = resolvedRole;
+
+        if (changed && mounted) {
+          setState(() {});
         }
       } catch (_) {
+        final changed = !_nameCache.containsKey(uid) || !_roleCache.containsKey(uid);
         _nameCache.putIfAbsent(uid, () => 'User');
         _roleCache.putIfAbsent(uid, () => 'learner');
+
+        if (changed && mounted) {
+          setState(() {});
+        }
+      } finally {
+        _userFetchPending.remove(uid);
       }
     }();
 
@@ -145,9 +153,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     return normalized == 'learner';
   }
 
-  // -----------------------------------------
-  // IMPORTANT: robust parser for your mail_index shapes
-  // -----------------------------------------
   bool _looksLikeThreadObject(Map<String, dynamic> m) {
     return m.containsKey('peerUid') ||
         m.containsKey('peerName') ||
@@ -260,6 +265,50 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     return clean.length > 80 ? clean.substring(0, 80) : clean;
   }
 
+  String _timeLabel(int ms) {
+    if (ms <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays == 1) return '1d';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = dt.month.toString().padLeft(2, '0');
+    return '$day/$month';
+  }
+
+  String _roleLabel(String role) {
+    if (role == 'admin') return 'Administration';
+    if (role == 'teacher') return 'Teacher';
+    return 'Learner';
+  }
+
+  IconData _roleIcon(String role) {
+    if (role == 'admin') return Icons.shield_rounded;
+    if (role == 'teacher') return Icons.school_rounded;
+    return Icons.person_rounded;
+  }
+
+  Color _avatarColor(String seed, BuildContext context) {
+    final colors = [
+      Colors.indigo,
+      Colors.blue,
+      Colors.teal,
+      Colors.green,
+      Colors.deepOrange,
+      Colors.purple,
+      Colors.cyan,
+      Colors.pink,
+    ];
+    final idx = seed.hashCode.abs() % colors.length;
+    return colors[idx];
+  }
+
   Future<String> _createThreadWithFirstMessage({
     required String subject,
     required String firstMessage,
@@ -324,7 +373,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete topic?'),
-        content: const Text('This deletes only for you.\nThe other side can still see it.'),
+        content: const Text(
+          'This deletes only for you.\nThe other side can still see it.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -518,9 +569,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
   }
 
-  // -----------------------------------------
-  // Compose
-  // -----------------------------------------
   Future<void> _composeNewTopic() async {
     try {
       final picked = await showModalBottomSheet<_ComposeResult>(
@@ -637,223 +685,692 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
   }
 
-  Widget _buildTab(_InboxTabRole tabRole) {
-    return StreamBuilder<DatabaseEvent>(
-      stream: _stream,
-      builder: (context, snap) {
-        final rows = _parse(snap.data?.snapshot.value);
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
 
-        if (rows.isEmpty) {
-          return const Center(child: Text('No mail yet.'));
-        }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: scheme.primary.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Icon(icon, size: 34, color: scheme.primary),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-        for (final r in rows) {
-          final uid = r.peerUid.trim();
-          if (uid.isNotEmpty) _ensureUserCached(uid);
-        }
+  Widget _buildSummaryHeader(List<_TopicRow> rows) {
+    final learnersCount = rows.where((r) => _matchesTab(_InboxTabRole.learners, r)).length;
+    final teachersCount = rows.where((r) => _matchesTab(_InboxTabRole.teachers, r)).length;
+    final adminCount = rows.where((r) => _matchesTab(_InboxTabRole.admin, r)).length;
+    final totalUnread = rows.fold<int>(0, (sum, r) => sum + r.unreadCount);
 
-        final roleRows = rows.where((r) => _matchesTab(tabRole, r)).toList();
-        final filtered = _applyFilter(roleRows);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _MiniStatCard(
+              icon: Icons.mark_email_unread_rounded,
+              title: 'Unread',
+              value: '$totalUnread',
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniStatCard(
+              icon: Icons.person_rounded,
+              title: 'Learners',
+              value: '$learnersCount',
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniStatCard(
+              icon: Icons.school_rounded,
+              title: 'Teachers',
+              value: '$teachersCount',
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MiniStatCard(
+              icon: Icons.shield_rounded,
+              title: 'Admin',
+              value: '$adminCount',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-        if (filtered.isEmpty) {
-          return const Center(child: Text('No results.'));
-        }
+  Widget _buildTab(_InboxTabRole tabRole, List<_TopicRow> allRows) {
+    if (allRows.isEmpty) {
+      return _buildEmptyState(
+        icon: Icons.mail_outline_rounded,
+        title: 'No mail yet',
+        subtitle: 'New conversations will appear here.',
+      );
+    }
 
-        final grouped = _groupByPeer(filtered);
-        final groupKeys = grouped.keys.toList();
+    final roleRows = allRows.where((r) => _matchesTab(tabRole, r)).toList();
+    final filtered = _applyFilter(roleRows);
 
-        groupKeys.sort((a, b) {
-          final aTop = grouped[a]!.isEmpty ? 0 : grouped[a]!.first.updatedAtMs;
-          final bTop = grouped[b]!.isEmpty ? 0 : grouped[b]!.first.updatedAtMs;
-          return bTop.compareTo(aTop);
-        });
+    if (filtered.isEmpty) {
+      return _buildEmptyState(
+        icon: Icons.search_off_rounded,
+        title: _q.isEmpty ? 'Nothing here yet' : 'No results found',
+        subtitle: _q.isEmpty
+            ? 'This tab is empty for now.'
+            : 'Try a different search term or switch tabs.',
+      );
+    }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: groupKeys.length,
-          itemBuilder: (_, gi) {
-            final k = groupKeys[gi];
-            final items = grouped[k]!;
-            final displayName = _bestName(items.first);
-            final unreadTotal = _sumUnread(items);
+    final grouped = _groupByPeer(filtered);
+    final groupKeys = grouped.keys.toList();
 
-            return Card(
-              elevation: 0,
-              color: Colors.black.withOpacity(0.03),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: ExpansionTile(
-                initiallyExpanded: false,
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        displayName,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+    groupKeys.sort((a, b) {
+      final aRows = grouped[a]!;
+      final bRows = grouped[b]!;
+      final aUnread = _sumUnread(aRows);
+      final bUnread = _sumUnread(bRows);
+      if (aUnread != bUnread) return bUnread.compareTo(aUnread);
+
+      final aTop = aRows.isEmpty ? 0 : aRows.first.updatedAtMs;
+      final bTop = bRows.isEmpty ? 0 : bRows.first.updatedAtMs;
+      return bTop.compareTo(aTop);
+    });
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
+      children: [
+        if (tabRole == _InboxTabRole.learners) _buildSummaryHeader(allRows),
+        ...groupKeys.map((k) {
+          final items = grouped[k]!;
+          final top = items.first;
+          final displayName = _bestName(top);
+          final role = _bestRole(top).isEmpty ? 'learner' : _bestRole(top);
+          final unreadTotal = _sumUnread(items);
+          final latest = items.first;
+          final latestSubject =
+          latest.subject.trim().isEmpty ? '(No topic)' : latest.subject.trim();
+          final latestPreview = latest.lastMessage.trim().isEmpty
+              ? '(No messages yet)'
+              : latest.lastMessage.trim();
+
+          return _InboxGroupCard(
+            displayName: displayName,
+            role: _roleLabel(role),
+            roleIcon: _roleIcon(role),
+            avatarColor: _avatarColor(
+              top.peerUid.isEmpty ? displayName : top.peerUid,
+              context,
+            ),
+            latestSubject: latestSubject,
+            latestPreview: latestPreview,
+            latestTime: _timeLabel(latest.updatedAtMs),
+            unreadTotal: unreadTotal,
+            totalTopics: items.length,
+            children: items.map((r) {
+              return _ThreadTile(
+                row: r,
+                timeLabel: _timeLabel(r.updatedAtMs),
+                onDelete: () => _deleteThreadForMe(r),
+                onReview: () => _tryOpenHomeworkReview(r),
+                onOpen: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
+                      builder: (_) => TeacherMailThreadScreen(
+                        threadId: r.threadId,
+                        peerUid: r.peerUid,
+                        peerName: _bestName(r),
+                        subject: r.subject,
                       ),
                     ),
-                    if (unreadTotal > 0) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          unreadTotal > 99 ? '99+' : '$unreadTotal',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                children: [
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final r = items[i];
+                  );
+                },
+              );
+            }).toList(),
+          );
+        }),
+      ],
+    );
+  }
 
-                      return ListTile(
-                        tileColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        title: Text(
-                          r.subject.isEmpty ? '(No topic)' : r.subject,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: Text(
-                          r.lastMessage,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (r.unreadCount > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  r.unreadCount > 99 ? '99+' : '${r.unreadCount}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(width: 8),
-                            PopupMenuButton<String>(
-                              onSelected: (v) async {
-                                if (v == 'delete') await _deleteThreadForMe(r);
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(value: 'delete', child: Text('Delete (for me)')),
-                              ],
-                            ),
-                          ],
-                        ),
-                        onLongPress: () async {
-                          await _tryOpenHomeworkReview(r);
-                        },
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
-                              builder: (_) => TeacherMailThreadScreen(
-                                threadId: r.threadId,
-                                peerUid: r.peerUid,
-                                peerName: _bestName(r),
-                                subject: r.subject,
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+  Widget _buildTopSearch() {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outline.withOpacity(0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchC,
+        decoration: InputDecoration(
+          hintText: 'Search subject, message or person...',
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: (_q.isEmpty)
+              ? null
+              : IconButton(
+            tooltip: 'Clear',
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () {
+              _searchDebounce?.cancel();
+              _searchC.clear();
+              setState(() => _q = '');
+            },
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        ),
+        onChanged: (v) {
+          _searchDebounce?.cancel();
+          _searchDebounce = Timer(const Duration(milliseconds: 220), () {
+            if (!mounted) return;
+            setState(() => _q = v.trim().toLowerCase());
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildTabBarShell() {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: scheme.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: TabBar(
+        dividerColor: Colors.transparent,
+        indicator: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        tabs: const [
+          Tab(text: 'Learners'),
+          Tab(text: 'Teachers'),
+          Tab(text: 'Admin'),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return DefaultTabController(
       length: 3,
       child: Scaffold(
+        backgroundColor: Color.alphaBlend(
+          scheme.primary.withOpacity(0.03),
+          Theme.of(context).scaffoldBackgroundColor,
+        ),
         appBar: AppBar(
-          title: const Text('Mail'),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(56 + 48),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  child: TextField(
-                    controller: _searchC,
-                    decoration: InputDecoration(
-                      hintText: 'Search topic / last message / person…',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: (_q.isEmpty)
-                          ? null
-                          : IconButton(
-                        tooltip: 'Clear',
-                        icon: const Icon(Icons.close),
-                        onPressed: () {
-                          _searchC.clear();
-                          setState(() => _q = '');
-                        },
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                    onChanged: (v) {
-                      _searchDebounce?.cancel();
-                      _searchDebounce = Timer(const Duration(milliseconds: 200), () {
-                        if (!mounted) return;
-                        setState(() => _q = v.trim().toLowerCase());
-                      });
-                    },
-                  ),
-                ),
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'Learners'),
-                    Tab(text: 'Teachers'),
-                    Tab(text: 'Administration'),
-                  ],
-                ),
-              ],
-            ),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          toolbarHeight: 72,
+          titleSpacing: 16,
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Mailbox',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'Organized conversations with learners, teachers and administration',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ],
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _composeNewTopic,
           icon: const Icon(Icons.edit_rounded),
-          label: const Text('New'),
+          label: const Text('New topic'),
         ),
-        body: TabBarView(
+        body: Column(
           children: [
-            _buildTab(_InboxTabRole.learners),
-            _buildTab(_InboxTabRole.teachers),
-            _buildTab(_InboxTabRole.admin),
+            _buildTopSearch(),
+            _buildTabBarShell(),
+            const SizedBox(height: 2),
+            Expanded(
+              child: StreamBuilder<DatabaseEvent>(
+                stream: _stream,
+                builder: (context, snap) {
+                  final allRows = _parse(snap.data?.snapshot.value);
+
+                  for (final r in allRows) {
+                    final uid = r.peerUid.trim();
+                    if (uid.isNotEmpty) {
+                      _ensureUserCached(uid);
+                    }
+                  }
+
+                  return TabBarView(
+                    children: [
+                      _buildTab(_InboxTabRole.learners, allRows),
+                      _buildTab(_InboxTabRole.teachers, allRows),
+                      _buildTab(_InboxTabRole.admin, allRows),
+                    ],
+                  );
+                },
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InboxGroupCard extends StatefulWidget {
+  const _InboxGroupCard({
+    required this.displayName,
+    required this.role,
+    required this.roleIcon,
+    required this.avatarColor,
+    required this.latestSubject,
+    required this.latestPreview,
+    required this.latestTime,
+    required this.unreadTotal,
+    required this.totalTopics,
+    required this.children,
+  });
+
+  final String displayName;
+  final String role;
+  final IconData roleIcon;
+  final Color avatarColor;
+  final String latestSubject;
+  final String latestPreview;
+  final String latestTime;
+  final int unreadTotal;
+  final int totalTopics;
+  final List<Widget> children;
+
+  @override
+  State<_InboxGroupCard> createState() => _InboxGroupCardState();
+}
+
+class _InboxGroupCardState extends State<_InboxGroupCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: _expanded
+              ? scheme.primary.withOpacity(0.30)
+              : scheme.outline.withOpacity(0.14),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(_expanded ? 0.07 : 0.04),
+            blurRadius: _expanded ? 22 : 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          onExpansionChanged: (v) => setState(() => _expanded = v),
+          collapsedShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          leading: CircleAvatar(
+            radius: 24,
+            backgroundColor: widget.avatarColor.withOpacity(0.14),
+            child: Text(
+              widget.displayName.isEmpty ? '?' : widget.displayName.trim().characters.first.toUpperCase(),
+              style: TextStyle(
+                color: widget.avatarColor,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                widget.latestTime,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _SoftPill(
+                      icon: widget.roleIcon,
+                      text: widget.role,
+                    ),
+                    _SoftPill(
+                      icon: Icons.forum_rounded,
+                      text: '${widget.totalTopics} topic${widget.totalTopics == 1 ? '' : 's'}',
+                    ),
+                    if (widget.unreadTotal > 0)
+                      _UnreadPill(value: widget.unreadTotal),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  widget.latestSubject,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.latestPreview,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    height: 1.25,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          children: widget.children,
+        ),
+      ),
+    );
+  }
+}
+
+class _ThreadTile extends StatelessWidget {
+  const _ThreadTile({
+    required this.row,
+    required this.timeLabel,
+    required this.onDelete,
+    required this.onReview,
+    required this.onOpen,
+  });
+
+  final _TopicRow row;
+  final String timeLabel;
+  final VoidCallback onDelete;
+  final VoidCallback onReview;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final subject = row.subject.trim().isEmpty ? '(No topic)' : row.subject.trim();
+    final preview = row.lastMessage.trim().isEmpty ? '(No messages yet)' : row.lastMessage.trim();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      decoration: BoxDecoration(
+        color: row.unreadCount > 0
+            ? scheme.primary.withOpacity(0.05)
+            : scheme.surfaceContainerHighest.withOpacity(0.45),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: row.unreadCount > 0
+              ? scheme.primary.withOpacity(0.18)
+              : scheme.outline.withOpacity(0.10),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                subject,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: row.unreadCount > 0 ? FontWeight.w900 : FontWeight.w800,
+                  fontSize: 14.5,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              timeLabel,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            preview,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.grey.shade800, height: 1.25),
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (row.unreadCount > 0) ...[
+              _UnreadPill(value: row.unreadCount),
+              const SizedBox(width: 4),
+            ],
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (v) {
+                if (v == 'delete') {
+                  onDelete();
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Delete (for me)'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        onLongPress: onReview,
+        onTap: onOpen,
+      ),
+    );
+  }
+}
+
+class _MiniStatCard extends StatelessWidget {
+  const _MiniStatCard({
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outline.withOpacity(0.14)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SoftPill extends StatelessWidget {
+  const _SoftPill({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: scheme.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: scheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: scheme.primary,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UnreadPill extends StatelessWidget {
+  const _UnreadPill({required this.value});
+
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        value > 99 ? '99+' : '$value',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
         ),
       ),
     );
@@ -1007,7 +1524,8 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 
       final all = <_RecipientRow>[...admins, ...teachers, ...learnerRecipients];
 
-      int rank(_RecipientType t) => t == _RecipientType.admin ? 0 : (t == _RecipientType.teacher ? 1 : 2);
+      int rank(_RecipientType t) =>
+          t == _RecipientType.admin ? 0 : (t == _RecipientType.teacher ? 1 : 2);
 
       all.sort((a, b) {
         final r = rank(a.type).compareTo(rank(b.type));
@@ -1080,6 +1598,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final bottom = media.viewInsets.bottom + media.padding.bottom;
+    final scheme = Theme.of(context).colorScheme;
 
     String prefixFor(_RecipientType t) {
       if (t == _RecipientType.admin) return '🛡️ ';
@@ -1096,29 +1615,43 @@ class _ComposeSheetState extends State<_ComposeSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 6),
-              const Text('New topic', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-              const SizedBox(height: 12),
+              const Text(
+                'New topic',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              ),
+              const SizedBox(height: 14),
               if (_loading)
                 const Padding(
                   padding: EdgeInsets.all(18),
                   child: Row(
                     children: [
-                      SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                       SizedBox(width: 10),
                       Text('Loading...'),
                     ],
                   ),
                 )
               else ...[
-                SegmentedButton<_ComposeMode>(
-                  segments: const [
-                    ButtonSegment(value: _ComposeMode.single, label: Text('Single')),
-                    ButtonSegment(value: _ComposeMode.classGroup, label: Text('Whole class')),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) => setState(() => _mode = s.first),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: SegmentedButton<_ComposeMode>(
+                    segments: const [
+                      ButtonSegment(value: _ComposeMode.single, label: Text('Single')),
+                      ButtonSegment(value: _ComposeMode.classGroup, label: Text('Whole class')),
+                    ],
+                    selected: {_mode},
+                    onSelectionChanged: (s) => setState(() => _mode = s.first),
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 if (_mode == _ComposeMode.single)
                   DropdownButtonFormField<_RecipientRow>(
                     value: _picked,
@@ -1129,9 +1662,11 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                       );
                     }).toList(),
                     onChanged: (v) => setState(() => _picked = v),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Send to',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   )
                 else
@@ -1144,18 +1679,22 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                       );
                     }).toList(),
                     onChanged: (v) => setState(() => _pickedClass = v),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Class',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _subjectC,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Topic / Subject',
-                    border: OutlineInputBorder(),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1164,16 +1703,21 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   minLines: 4,
                   maxLines: 8,
                   textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Mail message',
                     alignLabelWithHint: true,
-                    border: OutlineInputBorder(),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
                     onPressed: _submit,
                     icon: const Icon(Icons.send_rounded),
                     label: Text(
@@ -1226,9 +1770,6 @@ class _ComposeResult {
   final String? classId;
 }
 
-// ----------------------------
-// Topic model
-// ----------------------------
 class _TopicRow {
   _TopicRow({
     required this.threadId,
