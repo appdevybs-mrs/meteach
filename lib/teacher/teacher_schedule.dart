@@ -93,20 +93,28 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) {
-        return SafeArea(
-          child: Container(
-            decoration: const BoxDecoration(
-              color: appBg,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-            ),
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: appBg,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: _buildSettingsView(
+                    _latestUpcoming,
+                    _latestAllOcc,
+                    onSheetRefresh: () => setSheetState(() {}),
+                  ),
+                ),
               ),
-              child: _buildSettingsView(_latestUpcoming, _latestAllOcc),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -550,7 +558,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     );
   }
 
-  Widget _buildSettingsView(List<_Occ> upcoming, List<_Occ> allOcc) {
+  Widget _buildSettingsView(
+      List<_Occ> upcoming,
+      List<_Occ> allOcc, {
+        VoidCallback? onSheetRefresh,
+      }) {
     return ListView(
       padding: const EdgeInsets.all(20),
       shrinkWrap: true,
@@ -583,14 +595,20 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 secondary: const Icon(Icons.wb_sunny_rounded, color: actionOrange),
                 title: const Text("Daily Briefing (8:00 AM)"),
                 value: _dailyEnabled,
-                onChanged: (v) => _toggleDaily(v, upcoming, allOcc),
+                onChanged: (v) async {
+                  await _toggleDaily(v, upcoming, allOcc);
+                  onSheetRefresh?.call();
+                },
               ),
               const Divider(height: 1, indent: 50),
               SwitchListTile(
                 secondary: const Icon(Icons.notifications_active_rounded, color: primaryBlue),
                 title: const Text("Session Alerts (15m before)"),
                 value: _sessionEnabled,
-                onChanged: (v) => _toggleSession(v, upcoming, allOcc),
+                onChanged: (v) async {
+                  await _toggleDaily(v, upcoming, allOcc);
+                  onSheetRefresh?.call();
+                },
               ),
             ],
           ),

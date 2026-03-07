@@ -16,7 +16,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'teacher_learner_profile_screen.dart';
 // ✅ your existing in-class screens (keep)
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
@@ -1224,6 +1224,37 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                             ),
                           ),
                           const SizedBox(width: 8),
+
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.person_rounded, size: 16),
+                            label: const Text('Profile'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: primaryBlue,
+                              side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
+                            onPressed: learnerUid.isEmpty
+                                ? null
+                                : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TeacherLearnerProfileScreen(
+                                    learnerUid: learnerUid,
+                                    learnerName: learnerDisplayName,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
                           OutlinedButton.icon(
                             icon: const Icon(Icons.photo_library_rounded, size: 16),
                             label: const Text('Gallery'),
@@ -1255,6 +1286,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                               );
                             },
                           ),
+
                         ],
                       ),
                     );

@@ -15,6 +15,8 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 
 class TeacherSyllabusDetailsScreen extends StatefulWidget {
   const TeacherSyllabusDetailsScreen({super.key, required this.courseId});
@@ -276,6 +278,7 @@ class _TeacherSyllabusDetailsScreenState
           durationMinutes: _toInt(sm['durationMinutes']),
           content: _readString(sm['content']),
           homework: _readString(sm['homework']),
+          materialsUrl: _readString(sm['materialsUrl']),
         ),
       );
     }
@@ -1167,7 +1170,12 @@ class _SessionExpansion extends StatefulWidget {
 
 class _SessionExpansionState extends State<_SessionExpansion> {
   bool _expanded = false;
+  Future<void> _openMaterials(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
 
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
   List<_RecItem> _sessionRecs(_Session s) {
     final out = <_RecItem>[];
 
@@ -1311,6 +1319,29 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                         text: s.homework,
                       ),
                       const SizedBox(height: 8),
+                    ],
+                    if (s.materialsUrl.trim().isNotEmpty) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _openMaterials(s.materialsUrl),
+                          icon: const Icon(Icons.menu_book_rounded),
+                          label: const Text(
+                            'Open Materials',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: UiK.primaryBlue,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                     ],
                     const SizedBox(height: 2),
                     const Row(
@@ -1651,6 +1682,7 @@ class _Session {
     required this.durationMinutes,
     required this.content,
     required this.homework,
+    required this.materialsUrl,
   });
 
   final String id;
@@ -1661,4 +1693,5 @@ class _Session {
   final int durationMinutes;
   final String content;
   final String homework;
+  final String materialsUrl;
 }
