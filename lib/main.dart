@@ -16,6 +16,7 @@ import 'learner/learner_gallery_screen.dart';
 import 'learner/learner_gallery_screen.dart';
 import 'firebase_options.dart';
 import 'widgets/teacher_media_sheet.dart';
+import 'shared/app_theme.dart';
 // Keeping your imports (even if not used yet) so nothing breaks in your project
 import 'learner/learner_home.dart';
 import 'auth/auth_gate.dart';
@@ -31,6 +32,7 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await appThemeController.loadSavedTheme();
   // ✅ 1) Catch Flutter UI errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FirebaseCrashlytics.instance.recordFlutterFatalError(details);
@@ -66,59 +68,21 @@ class DreamEnglishAcademyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: Brand.primaryBlue,
-      brightness: Brightness.light,
-      primary: Brand.primaryBlue,
-      secondary: Brand.actionOrange,
-      tertiary: Brand.accentCyan,
-      surface: Colors.white,
-      background: Brand.appBg,
-      onPrimary: Colors.white,
-      onSecondary: Colors.white,
-      onSurface: Brand.mainText,
-      onBackground: Brand.mainText,
-      outline: Brand.uiBorder,
-      error: const Color(0xFFB00020),
-    );
-
-    return MaterialApp(
-      navigatorKey: appNavigatorKey, // ✅ ADD THIS
-      scaffoldMessengerKey: messengerKey,
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: colorScheme,
-        scaffoldBackgroundColor: Brand.appBg,
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(color: Brand.mainText),
-          bodyLarge: TextStyle(color: Brand.mainText),
-          titleLarge: TextStyle(color: Brand.mainText),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Brand.uiBorder),
+    return AnimatedBuilder(
+      animation: appThemeController,
+      builder: (context, _) {
+        return MaterialApp(
+          navigatorKey: appNavigatorKey,
+          scaffoldMessengerKey: messengerKey,
+          debugShowCheckedModeBanner: false,
+          theme: appThemeController.themeData,
+          home: ForceUpdateGate(
+            child: const AuthGate(
+              signedOutHome: HomeShell(),
+            ),
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Brand.uiBorder),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Brand.accentCyan, width: 2),
-          ),
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        ),
-      ),
-      home: ForceUpdateGate(
-        child: const AuthGate(
-          signedOutHome: HomeShell(),
-        ),
-      ),
+        );
+      },
     );
   }
 }

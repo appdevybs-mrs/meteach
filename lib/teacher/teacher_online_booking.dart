@@ -248,9 +248,9 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
           if (courseNode is! Map) return;
 
           final courseMap = courseNode.map((k, vv) => MapEntry(k.toString(), vv));
-          final onlineNode = courseMap['online'];
+          final flexibleNode = courseMap['flexible'];
 
-          if (onlineNode is Map) {
+          if (flexibleNode is Map) {
             enabled.add(courseId);
           }
         });
@@ -301,7 +301,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       if (out.isEmpty) {
         _toast('No courses assigned to you (users/$myUid/courses).');
       } else if (filtered.isEmpty) {
-        _toast('No online syllabus found yet for your assigned courses.');
+        _toast('No flexible syllabus found yet for your assigned courses.');
       }
     } catch (e) {
       _toast('Failed loading courses: $e');
@@ -315,7 +315,7 @@ class _TeacherOnlineBookingScreenState extends State<TeacherOnlineBookingScreen>
       int w = 4;
       String title = '';
 
-      final syllabusSnap = await _db.child('syllabi/$courseId/online').get();
+      final syllabusSnap = await _db.child('syllabi/$courseId/flexible').get();
       if (syllabusSnap.exists && syllabusSnap.value is Map) {
         final s = (syllabusSnap.value as Map).map((kk, vv) => MapEntry(kk.toString(), vv));
 

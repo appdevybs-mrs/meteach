@@ -1,24 +1,20 @@
 import 'dart:async';
-import 'teacher_online_booking.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'teacher_regulations_screen.dart';
-import 'teacher_profile.dart';
+import '../shared/app_theme.dart';
+import '../calls/audio_call_screen.dart';
+import '../calls/call_logs_screen.dart';
+import '../shared/session_manager.dart';
 import 'teacher_classes.dart';
 import 'teacher_mail.dart';
+import 'teacher_online_booking.dart';
+import 'teacher_profile.dart';
+import 'teacher_regulations_screen.dart';
 import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
-import '../shared/session_manager.dart';
-import 'teacher_wages_screen.dart';
 import 'teacher_syllabi_screen.dart';
-import 'teacher_online_booking.dart';
-import 'teacher_online_booking.dart';
-// ✅ Call logs
-import '../calls/call_logs_screen.dart';
-
-// ✅ Call screen
-import '../calls/audio_call_screen.dart';
+import 'teacher_wages_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -28,36 +24,24 @@ class TeacherHomeScreen extends StatefulWidget {
 }
 
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
-  // ===== Brand colors =====
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  // RTDB nodes
   static const String usersNode = "users";
   static const String classesNode = "classes";
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  // Reminders: count not-done
   Stream<DatabaseEvent>? _remindersStream;
-
-  // ✅ Mail: total unread (sum across threads)
   Stream<DatabaseEvent>? _mailIndexStream;
 
-  // Classes summary (count classes + total learners)
   Future<_ClassesSummary>? _classesSummaryFuture;
-  // Upcoming online sessions count
   Future<int>? _upcomingOnlineCountFuture;
-
-  // ✅ Display name (first + last from RTDB)
   Future<String>? _displayNameFuture;
+
 
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
     if (uid != null) {
@@ -65,10 +49,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _mailIndexStream = _db.child('mail_index/$uid').onValue.asBroadcastStream();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
-      // ✅ Load teacher name once (used in AppBar + Welcome)
       _displayNameFuture = _myDisplayName();
     }
   }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  _HomePalette get palette => _toHomePalette(appThemeController.palette);
 
   Future<void> _refreshHome() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -78,21 +69,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _displayNameFuture = _myDisplayName();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
-      // Streams already live; no need to reset them.
     });
 
-    // Give the UI a moment to show refresh feedback (optional)
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 
-  // ✅ UPDATED: Now deletes FCM token before signing out
   Future<void> _logout(BuildContext context) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
-    // ✅ stop "single device" listener (so it doesn't run after logout)
     await SessionManager.stopListening();
 
-    // ✅ remove FCM token record (your existing behavior)
     try {
       if (userId != null && userId.isNotEmpty) {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
@@ -131,7 +117,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       final classesRef = _db.child(classesNode);
 
       final userSnap = await usersRef.child(teacherUid).get();
-      if (!userSnap.exists) return const _ClassesSummary(classesCount: 0, learnersCount: 0);
+      if (!userSnap.exists) {
+        return const _ClassesSummary(classesCount: 0, learnersCount: 0);
+      }
 
       final u = (userSnap.value is Map)
           ? Map<String, dynamic>.from(userSnap.value as Map)
@@ -178,11 +166,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         final matchesUid = curUid.isNotEmpty && curUid == teacherUid;
 
         final matchesName = teacherName.isNotEmpty &&
-            _norm(legacyInstructorName.isNotEmpty ? legacyInstructorName : curName) ==
+            _norm(
+              legacyInstructorName.isNotEmpty
+                  ? legacyInstructorName
+                  : curName,
+            ) ==
                 _norm(teacherName);
 
-        final legacySerial = (c['instructorserial'] ?? c['serial'] ?? '').toString().trim();
-        final matchesSerial = teacherSerial.isNotEmpty && legacySerial == teacherSerial;
+        final legacySerial =
+        (c['instructorserial'] ?? c['serial'] ?? '').toString().trim();
+        final matchesSerial =
+            teacherSerial.isNotEmpty && legacySerial == teacherSerial;
 
         if (matchesUid || matchesName || matchesSerial) {
           classesCount += 1;
@@ -190,7 +184,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         }
       });
 
-      return _ClassesSummary(classesCount: classesCount, learnersCount: learnersTotal);
+      return _ClassesSummary(
+        classesCount: classesCount,
+        learnersCount: learnersTotal,
+      );
     } catch (_) {
       return const _ClassesSummary(classesCount: 0, learnersCount: 0);
     }
@@ -250,7 +247,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
 
             final teacherId =
-            (slot['teacherId'] ?? slot['teacherUid'] ?? slot['teacher_id'] ?? '')
+            (slot['teacherId'] ??
+                slot['teacherUid'] ??
+                slot['teacher_id'] ??
+                '')
                 .toString()
                 .trim();
 
@@ -295,7 +295,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       if (v is! Map) return;
       final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
 
-      // ignore deleted for me
       if (m['deletedAt'] != null) return;
 
       final unread = _toInt(m['unreadCount']);
@@ -311,7 +310,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
-  // ✅ Uses RTDB users/{uid}/first_name + last_name
   Future<String> _myDisplayName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final email = FirebaseAuth.instance.currentUser?.email ?? '';
@@ -338,6 +336,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     return emailPrefix.isNotEmpty ? emailPrefix : 'Teacher';
   }
+
   Future<List<_UserPick>> _loadOtherTeachers() async {
     final out = <_UserPick>[];
     final myUid = FirebaseAuth.instance.currentUser?.uid;
@@ -387,6 +386,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       return out;
     }
   }
+
   Future<List<_UserPick>> _loadAdmins() async {
     final out = <_UserPick>[];
     try {
@@ -402,9 +402,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
         final first = (m['first_name'] ?? '').toString().trim();
         final last = (m['last_name'] ?? '').toString().trim();
-        final name = ('$first $last').trim().isEmpty ? 'Admin' : ('$first $last').trim();
+        final fullName = ('$first $last').trim();
 
-        out.add(_UserPick(uid: uid.toString(), name: name, subtitle: 'Admin'));
+        out.add(
+          _UserPick(
+            uid: uid.toString(),
+            name: fullName.isEmpty ? 'Admin' : fullName,
+            subtitle: 'Admin',
+          ),
+        );
       });
 
       out.sort((a, b) => a.name.compareTo(b.name));
@@ -511,11 +517,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     required Future<List<_UserPick>> Function() loader,
     required IconData icon,
   }) async {
+    final p = palette;
     if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) {
@@ -527,149 +534,168 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               builder: (context, snap) {
                 final items = snap.data ?? const <_UserPick>[];
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: primaryBlue.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: uiBorder.withOpacity(0.9)),
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: p.primary.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: p.border.withOpacity(0.9)),
+                            ),
+                            child: Icon(icon, color: p.primary),
                           ),
-                          child: Icon(icon, color: primaryBlue),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
-                              fontSize: 16,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: p.primary,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (snap.connectionState == ConnectionState.waiting)
-                      const Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (items.isEmpty)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: uiBorder.withOpacity(0.85)),
-                        ),
-                        child: const Text(
-                          'No users found.',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      )
-                    else
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.55,
-                        ),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (context, i) {
-                            final it = items[i];
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(18),
-                              onTap: () async {
-                                Navigator.of(ctx).pop();
-                                await _startCallTo(peerUid: it.uid, peerName: it.name);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: uiBorder.withOpacity(0.85)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      backgroundColor: primaryBlue.withOpacity(0.08),
-                                      child: Text(
-                                        it.name.isNotEmpty ? it.name[0].toUpperCase() : '?',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: primaryBlue,
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (snap.connectionState == ConnectionState.waiting)
+                        const Padding(
+                          padding: EdgeInsets.all(18),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (items.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: p.border.withOpacity(0.85)),
+                          ),
+                          child: Text(
+                            'No users found.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: p.text,
+                            ),
+                          ),
+                        )
+                      else
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.of(context).size.height * 0.55,
+                          ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (context, i) {
+                              final it = items[i];
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () async {
+                                  Navigator.of(ctx).pop();
+                                  await _startCallTo(
+                                    peerUid: it.uid,
+                                    peerName: it.name,
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(color: p.border.withOpacity(0.85)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        backgroundColor: p.primary.withOpacity(0.08),
+                                        child: Text(
+                                          it.name.isNotEmpty
+                                              ? it.name[0].toUpperCase()
+                                              : '?',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: p.primary,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            it.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: primaryBlue,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              it.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.primary,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            it.subtitle,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.grey.shade600,
-                                              fontSize: 12,
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              it.subtitle,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.grey.shade600,
+                                                fontSize: 12,
+                                              ),
                                             ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: p.accent.withOpacity(0.10),
+                                          borderRadius: BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color: p.accent.withOpacity(0.22),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: actionOrange.withOpacity(0.10),
-                                        borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(color: actionOrange.withOpacity(0.22)),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.call_rounded, size: 16, color: actionOrange),
-                                          SizedBox(width: 6),
-                                          Text(
-                                            'Call',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: actionOrange,
-                                              fontSize: 12,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.call_rounded,
+                                              size: 16,
+                                              color: p.accent,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Call',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.accent,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -680,11 +706,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<void> _openSupportSheet() async {
+    final p = palette;
     if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       showDragHandle: true,
       builder: (ctx) {
         return SafeArea(
@@ -699,18 +726,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                    border: Border.all(color: p.border.withOpacity(0.85)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.support_agent_rounded, color: primaryBlue),
-                      SizedBox(width: 10),
+                      Icon(Icons.support_agent_rounded, color: p.primary),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           'Support Call',
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
-                            color: primaryBlue,
+                            color: p.primary,
                             fontSize: 16,
                           ),
                         ),
@@ -720,6 +747,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 ),
                 const SizedBox(height: 12),
                 _SupportTile(
+                  palette: p,
                   icon: Icons.admin_panel_settings_rounded,
                   title: 'Call Admin',
                   subtitle: 'Choose an admin to call',
@@ -734,6 +762,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 ),
                 const SizedBox(height: 10),
                 _SupportTile(
+                  palette: p,
                   icon: Icons.person_rounded,
                   title: 'Call Teacher',
                   subtitle: 'Choose another teacher to call',
@@ -748,6 +777,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 ),
                 const SizedBox(height: 10),
                 _SupportTile(
+                  palette: p,
                   icon: Icons.groups_rounded,
                   title: 'Call Learner',
                   subtitle: 'Learners in your classes',
@@ -768,51 +798,199 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
+  void _openThemeSheet() {
+    final p = palette;
+
+    Future<void> pickTheme(AppThemeMode mode) async {
+      await appThemeController.setTheme(mode);
+      if (!mounted) return;
+      setState(() {});
+      Navigator.of(context).pop();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: p.appBg,
+      showDragHandle: true,
+
+      builder: (ctx) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Choose Theme',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _ThemeChoiceTile(
+                      title: 'Navy Classic',
+                      subtitle: 'Clean professional blue',
+                      selected: appThemeController.mode == AppThemeMode.navy,
+                      preview1: const Color(0xFF1A2B48),
+                      preview2: const Color(0xFFF98D28),
+                      onTap: () => pickTheme(AppThemeMode.navy),
+                    ),
+                    const SizedBox(height: 10),
+                    _ThemeChoiceTile(
+                      title: 'Rose Soft',
+                      subtitle: 'Light pink girly look',
+                      selected: appThemeController.mode == AppThemeMode.rose,
+                      preview1: const Color(0xFFB83B78),
+                      preview2: const Color(0xFFFF8FB1),
+                      onTap: () => pickTheme(AppThemeMode.rose),
+                    ),
+                    const SizedBox(height: 10),
+                    _ThemeChoiceTile(
+                      title: 'Emerald Fresh',
+                      subtitle: 'Modern green style',
+                      selected: appThemeController.mode == AppThemeMode.emerald,
+                      preview1: const Color(0xFF0F766E),
+                      preview2: const Color(0xFF22C55E),
+                      onTap: () => pickTheme(AppThemeMode.emerald),
+                    ),
+                    const SizedBox(height: 10),
+                    _ThemeChoiceTile(
+                      title: 'Lavender Glow',
+                      subtitle: 'Purple soft feminine look',
+                      selected: appThemeController.mode == AppThemeMode.lavender,
+                      preview1: const Color(0xFF6D4CC9),
+                      preview2: const Color(0xFFA78BFA),
+                      onTap: () => pickTheme(AppThemeMode.lavender),
+                    ),
+                    const SizedBox(height: 10),
+                    _ThemeChoiceTile(
+                      title: 'Sunset Warm',
+                      subtitle: 'Orange warm elegant look',
+                      selected: appThemeController.mode == AppThemeMode.sunset,
+                      preview1: const Color(0xFF9A3412),
+                      preview2: const Color(0xFFF97316),
+                      onTap: () => pickTheme(AppThemeMode.sunset),
+                    ),
+                    const SizedBox(height: 10),
+                    _ThemeChoiceTile(
+                      title: 'Charcoal Cool',
+                      subtitle: 'Dark grey with cyan accent',
+                      selected: appThemeController.mode == AppThemeMode.charcoal,
+                      preview1: const Color(0xFF1F2937),
+                      preview2: const Color(0xFF06B6D4),
+                      onTap: () => pickTheme(AppThemeMode.charcoal),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+  void _pushScreen(Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
+    final p = palette;
+
     return Scaffold(
-      backgroundColor: appBg,
+      key: _scaffoldKey,
+      backgroundColor: p.appBg,
+      drawer: _TeacherDrawer(
+        palette: p,
+        onOpenProfile: () => _pushScreen(const TeacherProfileScreen()),
+        onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
+        onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
+        onOpenOnlineBooking: () => _pushScreen(const TeacherOnlineBookingScreen()),
+        onOpenMail: () => _pushScreen(const TeacherMailScreen()),
+        onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
+        onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
+        onOpenRegulations: () => _pushScreen(const TeacherRegulationsScreen()),
+        onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
+        onOpenCallLogs: () => _pushScreen(const CallLogsScreen()),
+        onOpenThemeSettings: _openThemeSheet,
+        onLogout: () => _logout(context),
+      ),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        centerTitle: false,
         surfaceTintColor: Colors.white,
-        centerTitle: true,
-
         leading: IconButton(
-          tooltip: 'Call Logs',
-          icon: const Icon(Icons.history_rounded, color: primaryBlue),
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-            );
-          },
+          icon: Icon(Icons.menu_rounded, color: p.primary),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-
         title: FutureBuilder<String>(
           future: _displayNameFuture,
           builder: (context, snap) {
             final name = (snap.data ?? '').trim();
-            return Text(
-              name.isNotEmpty ? name : 'Teacher',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-              ),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Teacher Dashboard',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  name.isNotEmpty ? name : 'Teacher',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.72),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             );
           },
         ),
-
         actions: [
           IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout, color: actionOrange),
-            onPressed: () => _logout(context),
-          )
+            tooltip: 'Theme',
+            icon: Icon(Icons.palette_rounded, color: p.accent),
+            onPressed: _openThemeSheet,
+          ),
+          IconButton(
+            tooltip: 'Call Logs',
+            icon: Icon(Icons.history_rounded, color: p.primary),
+            onPressed: () => _pushScreen(const CallLogsScreen()),
+          ),
         ],
       ),
-
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: p.accent,
+        foregroundColor: Colors.white,
+        icon: const Text('🎧', style: TextStyle(fontSize: 18)),
+        label: const Text(
+          'Support',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        onPressed: _openSupportSheet,
+      ),
       body: Stack(
         children: [
           Positioned.fill(
@@ -829,35 +1007,42 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          RefreshIndicator(
+            onRefresh: _refreshHome,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
               children: [
-                const SizedBox(height: 24),
+                FutureBuilder<String>(
+                  future: _displayNameFuture,
+                  builder: (context, snap) {
+                    final name = (snap.data ?? 'Teacher').trim();
+                    return _HeroSummaryCard(
+                      palette: p,
+                      teacherName: name.isEmpty ? 'Teacher' : name,
+                      onOpenProfile: () => _pushScreen(const TeacherProfileScreen()),
+                      onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
+                    );
+                  },
+                ),
                 const SizedBox(height: 14),
-
-
-
-                // ✅ Live quick stats (no extra assumptions: uses your existing streams)
                 Row(
                   children: [
                     Expanded(
                       child: StreamBuilder<DatabaseEvent>(
                         stream: _mailIndexStream,
                         builder: (context, snap) {
-                          final unread = _countUnreadMail(snap.data?.snapshot.value);
+                          final unread = _countUnreadMail(
+                            snap.data?.snapshot.value,
+                          );
                           return _MiniStatCard(
+                            palette: p,
                             label: 'Inbox',
-                            value: unread == 0 ? 'Clear ✅' : '$unread unread',
+                            value: unread == 0 ? 'Clear' : '$unread unread',
                             icon: Icons.email_rounded,
                             badgeCount: unread,
                             badgeColor: Colors.red,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const TeacherMailScreen()),
-                              );
-                            },
+                            onTap: () => _pushScreen(const TeacherMailScreen()),
                           );
                         },
                       ),
@@ -867,116 +1052,108 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       child: StreamBuilder<DatabaseEvent>(
                         stream: _remindersStream,
                         builder: (context, snap) {
-                          final pending = _countNotDoneReminders(snap.data?.snapshot.value);
+                          final pending = _countNotDoneReminders(
+                            snap.data?.snapshot.value,
+                          );
                           return _MiniStatCard(
+                            palette: p,
                             label: 'Reminders',
-                            value: pending == 0 ? 'None 🎉' : '$pending pending',
+                            value: pending == 0 ? 'None' : '$pending pending',
                             icon: Icons.alarm_rounded,
                             badgeCount: pending,
-                            badgeColor: actionOrange, // task vibe instead of danger
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => const TeacherReminderScreen()),
-                              );
-                            },
+                            badgeColor: p.accent,
+                            onTap: () => _pushScreen(const TeacherReminderScreen()),
                           );
                         },
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+                FutureBuilder<_ClassesSummary>(
+                  future: _classesSummaryFuture,
+                  builder: (context, classSnap) {
+                    final s = classSnap.data ??
+                        const _ClassesSummary(classesCount: 0, learnersCount: 0);
 
+                    return FutureBuilder<int>(
+                      future: _upcomingOnlineCountFuture,
+                      builder: (context, onlineSnap) {
+                        final upcoming = onlineSnap.data ?? 0;
 
-                const SizedBox(height: 18),
-
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _refreshHome,
-                    child: GridView.count(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 1.1,
-                      children: [
-                        _buildQuickCard(
-                          context,
-                          'Schedule',
-                          Icons.calendar_today_rounded,
-                          const TeacherSchedule(),
-                        ),
-                        _buildQuickCard(
-                          context,
-                          'Online Availability',
-                          Icons.event_available_rounded,
-                          const TeacherOnlineBookingScreen(),
-                        ),
-                        FutureBuilder<_ClassesSummary>(
-                          future: _classesSummaryFuture,
-                          builder: (context, snap) {
-                            final s = snap.data;
-                            final subtitle = (s == null)
-                                ? ''
-                                : '${s.classesCount} classes • ${s.learnersCount} learners';
-
-                            return FutureBuilder<int>(
-                              future: _upcomingOnlineCountFuture,
-                              builder: (context, onlineSnap) {
-                                final upcomingCount = onlineSnap.data ?? 0;
-
-                                return _buildQuickCard(
-                                  context,
-                                  'My Classes',
-                                  Icons.school_rounded,
-                                  const TeacherClassesScreen(),
-                                  subtitle: subtitle,
-                                  badgeCount: upcomingCount,
-                                );
-                              },
-                            );
-                          },
-                        ),
-                        _buildQuickCard(
-                          context,
-                          'Profile',
-                          Icons.person_rounded,
-                          const TeacherProfileScreen(),
-                        ),
-
-
-                        _buildQuickCard(
-                          context,
-                          'Wages',
-                          Icons.wallet_rounded,
-                          const TeacherWagesScreen(),
-                        ),
-                        _buildQuickCard(
-                          context,
-                          'Regulations',
-                          Icons.policy_rounded,
-                          const TeacherRegulationsScreen(),
-                        ),
-                        _buildQuickCard(
-                          context,
-                          'Syllabi',
-                          Icons.menu_book_rounded,
-                          TeacherSyllabiScreen(),
-                        ),
-
-                      ],
-                    ),
+                        return _OverviewPanel(
+                          palette: p,
+                          classesCount: s.classesCount,
+                          learnersCount: s.learnersCount,
+                          upcomingOnlineCount: upcoming,
+                          onOpenClasses: () =>
+                              _pushScreen(const TeacherClassesScreen()),
+                          onOpenOnline: () => _pushScreen(
+                            const TeacherOnlineBookingScreen(),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Quick Actions',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
                   ),
                 ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  palette: p,
+                  icon: Icons.calendar_today_rounded,
+                  title: 'Schedule',
+                  subtitle: 'Check your teaching calendar',
+                  onTap: () => _pushScreen(const TeacherSchedule()),
+                ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  palette: p,
+                  icon: Icons.school_rounded,
+                  title: 'My Classes',
+                  subtitle: 'Open your classes and learners',
+                  onTap: () => _pushScreen(const TeacherClassesScreen()),
+                ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  palette: p,
+                  icon: Icons.event_available_rounded,
+                  title: 'Online Availability',
+                  subtitle: 'Manage booking slots and sessions',
+                  onTap: () =>
+                      _pushScreen(const TeacherOnlineBookingScreen()),
+                ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  palette: p,
+                  icon: Icons.wallet_rounded,
+                  title: 'Wages',
+                  subtitle: 'Check salary and payment details',
+                  onTap: () => _pushScreen(const TeacherWagesScreen()),
+                ),
+                const SizedBox(height: 10),
+                _QuickActionTile(
+                  palette: p,
+                  icon: Icons.menu_book_rounded,
+                  title: 'Syllabi',
+                  subtitle: 'Open teaching content quickly',
+                  onTap: () => _pushScreen(TeacherSyllabiScreen()),
+                ),
+                const SizedBox(height: 18),
                 Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Text(
-                      'Your Bridge School',
-                      style: TextStyle(
-                        color: mainText.withOpacity(0.4),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
+                  child: Text(
+                    'Your Bridge School',
+                    style: TextStyle(
+                      color: p.text.withOpacity(0.4),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
                     ),
                   ),
                 ),
@@ -985,132 +1162,796 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: actionOrange,
-        foregroundColor: Colors.white,
-        icon: const Text('🎧', style: TextStyle(fontSize: 18)),
-        label: const Text(
-          'Support',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        onPressed: _openSupportSheet,
-      ),
     );
   }
 
-  Widget _buildQuickCard(
-      BuildContext context,
-      String title,
-      IconData icon,
-      Widget destination, {
-        int badgeCount = 0,
-        String subtitle = '',
-      }) {
-    return InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => destination),
-      ),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: uiBorder.withOpacity(0.6)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            )
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: const BoxDecoration(
-                    color: appBg,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, size: 32, color: primaryBlue),
-                ),
-                if (badgeCount > 0)
-                  Positioned(
-                    right: -6,
-                    top: -6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: Text(
-                        badgeCount > 99 ? '99+' : badgeCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: mainText,
-                fontSize: 15,
-              ),
-            ),
-            if (subtitle.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: mainText.withOpacity(0.55),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+  _HomePalette _toHomePalette(AppPalette p) {
+    return _HomePalette(
+      primary: p.primary,
+      accent: p.accent,
+      text: p.text,
+      appBg: p.appBg,
+      cardBg: p.cardBg,
+      border: p.border,
+      soft: p.soft,
     );
   }
+
+}
+
+
+
+class _HomePalette {
+  const _HomePalette({
+    required this.primary,
+    required this.accent,
+    required this.text,
+    required this.appBg,
+    required this.cardBg,
+    required this.border,
+    required this.soft,
+  });
+
+  final Color primary;
+  final Color accent;
+  final Color text;
+  final Color appBg;
+  final Color cardBg;
+  final Color border;
+  final Color soft;
 }
 
 class _ClassesSummary {
-  const _ClassesSummary({required this.classesCount, required this.learnersCount});
+  const _ClassesSummary({
+    required this.classesCount,
+    required this.learnersCount,
+  });
+
   final int classesCount;
   final int learnersCount;
 }
 
 class _UserPick {
-  const _UserPick({required this.uid, required this.name, required this.subtitle});
+  const _UserPick({
+    required this.uid,
+    required this.name,
+    required this.subtitle,
+  });
+
   final String uid;
   final String name;
   final String subtitle;
 }
 
-class _SupportTile extends StatelessWidget {
-  const _SupportTile({
+class _TeacherDrawer extends StatelessWidget {
+  const _TeacherDrawer({
+    required this.palette,
+    required this.onOpenProfile,
+    required this.onOpenSchedule,
+    required this.onOpenClasses,
+    required this.onOpenOnlineBooking,
+    required this.onOpenMail,
+    required this.onOpenReminders,
+    required this.onOpenWages,
+    required this.onOpenRegulations,
+    required this.onOpenSyllabi,
+    required this.onOpenCallLogs,
+    required this.onOpenThemeSettings,
+    required this.onLogout,
+  });
+
+  final _HomePalette palette;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onOpenSchedule;
+  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenOnlineBooking;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenReminders;
+  final VoidCallback onOpenWages;
+  final VoidCallback onOpenRegulations;
+  final VoidCallback onOpenSyllabi;
+  final VoidCallback onOpenCallLogs;
+  final VoidCallback onOpenThemeSettings;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: palette.appBg,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: palette.primary,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Colors.white24,
+                    child: Icon(Icons.school_rounded, color: Colors.white, size: 28),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Teacher Menu',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Compact dashboard navigation',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                children: [
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.person_rounded,
+                    title: 'Profile',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenProfile();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.calendar_today_rounded,
+                    title: 'Schedule',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenSchedule();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.school_rounded,
+                    title: 'My Classes',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenClasses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.event_available_rounded,
+                    title: 'Online Availability',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenOnlineBooking();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.email_rounded,
+                    title: 'Mail',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenMail();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.alarm_rounded,
+                    title: 'Reminders',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenReminders();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.wallet_rounded,
+                    title: 'Wages',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenWages();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.policy_rounded,
+                    title: 'Regulations',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenRegulations();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.menu_book_rounded,
+                    title: 'Syllabi',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenSyllabi();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.history_rounded,
+                    title: 'Call Logs',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenCallLogs();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.palette_rounded,
+                    title: 'Theme Settings',
+                    subtitle: 'Manly / girly looks',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenThemeSettings();
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onLogout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: palette.accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text(
+                    'Logout',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerTile extends StatelessWidget {
+  const _DrawerTile({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.subtitle = '',
+  });
+
+  final _HomePalette palette;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: palette.border.withOpacity(0.85)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: palette.soft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: palette.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: palette.primary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (subtitle.trim().isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: palette.text.withOpacity(0.55),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: palette.text.withOpacity(0.45),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroSummaryCard extends StatelessWidget {
+  const _HeroSummaryCard({
+    required this.palette,
+    required this.teacherName,
+    required this.onOpenProfile,
+    required this.onOpenSchedule,
+  });
+
+  final _HomePalette palette;
+  final String teacherName;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onOpenSchedule;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            palette.primary,
+            palette.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: palette.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Welcome back',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.80),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            teacherName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 24,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Everything important is now on one compact screen.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.86),
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroActionButton(
+                  label: 'Profile',
+                  icon: Icons.person_rounded,
+                  fillColor: Colors.white,
+                  textColor: palette.primary,
+                  onTap: onOpenProfile,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _HeroActionButton(
+                  label: 'Schedule',
+                  icon: Icons.calendar_today_rounded,
+                  fillColor: Colors.white12,
+                  textColor: Colors.white,
+                  onTap: onOpenSchedule,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroActionButton extends StatelessWidget {
+  const _HeroActionButton({
+    required this.label,
+    required this.icon,
+    required this.fillColor,
+    required this.textColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color fillColor;
+  final Color textColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: fillColor,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: textColor),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewPanel extends StatelessWidget {
+  const _OverviewPanel({
+    required this.palette,
+    required this.classesCount,
+    required this.learnersCount,
+    required this.upcomingOnlineCount,
+    required this.onOpenClasses,
+    required this.onOpenOnline,
+  });
+
+  final _HomePalette palette;
+  final int classesCount;
+  final int learnersCount;
+  final int upcomingOnlineCount;
+  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenOnline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: palette.border.withOpacity(0.75)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Overview',
+            style: TextStyle(
+              color: palette.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 58) / 3,
+                child: _OverviewStatBox(
+                  palette: palette,
+                  label: 'Classes',
+                  value: '$classesCount',
+                  icon: Icons.school_rounded,
+                ),
+              ),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 58) / 3,
+                child: _OverviewStatBox(
+                  palette: palette,
+                  label: 'Learners',
+                  value: '$learnersCount',
+                  icon: Icons.groups_rounded,
+                ),
+              ),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 58) / 3,
+                child: _OverviewStatBox(
+                  palette: palette,
+                  label: 'Online',
+                  value: '$upcomingOnlineCount',
+                  icon: Icons.videocam_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _SoftActionButton(
+                  palette: palette,
+                  icon: Icons.school_rounded,
+                  title: 'Open Classes',
+                  onTap: onOpenClasses,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SoftActionButton(
+                  palette: palette,
+                  icon: Icons.event_available_rounded,
+                  title: 'Open Online',
+                  onTap: onOpenOnline,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OverviewStatBox extends StatelessWidget {
+  const _OverviewStatBox({
+    required this.palette,
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final _HomePalette palette;
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: palette.soft.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: palette.primary, size: 22),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: palette.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: palette.text.withOpacity(0.65),
+              fontWeight: FontWeight.w800,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _SoftActionButton extends StatelessWidget {
+  const _SoftActionButton({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  final _HomePalette palette;
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: palette.soft,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: palette.primary),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.primary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({
+    required this.palette,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
   });
 
+  final _HomePalette palette;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: palette.cardBg,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: palette.border.withOpacity(0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: palette.soft,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: palette.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: palette.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: palette.text.withOpacity(0.60),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: palette.text.withOpacity(0.45),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SupportTile extends StatelessWidget {
+  const _SupportTile({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final _HomePalette palette;
   final IconData icon;
   final String title;
   final String subtitle;
@@ -1126,7 +1967,7 @@ class _SupportTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFD1D9E0).withOpacity(0.85)),
+          border: Border.all(color: palette.border.withOpacity(0.85)),
         ),
         child: Row(
           children: [
@@ -1134,10 +1975,10 @@ class _SupportTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A2B48).withOpacity(0.08),
+                color: palette.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: const Color(0xFF1A2B48)),
+              child: Icon(icon, color: palette.primary),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1146,9 +1987,9 @@ class _SupportTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF1A2B48),
+                      color: palette.primary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -1171,9 +2012,9 @@ class _SupportTile extends StatelessWidget {
   }
 }
 
-// ✅ Small reusable stat card (pure UI, no DB assumptions)
 class _MiniStatCard extends StatelessWidget {
   const _MiniStatCard({
+    required this.palette,
     required this.label,
     required this.value,
     required this.icon,
@@ -1182,32 +2023,28 @@ class _MiniStatCard extends StatelessWidget {
     this.badgeColor,
   });
 
+  final _HomePalette palette;
   final String label;
   final String value;
   final IconData icon;
-
   final VoidCallback? onTap;
   final int badgeCount;
   final Color? badgeColor;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
 
   @override
   Widget build(BuildContext context) {
     final content = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.65)),
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: palette.border.withOpacity(0.65)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
             blurRadius: 10,
             offset: const Offset(0, 6),
-          )
+          ),
         ],
       ),
       child: Row(
@@ -1216,17 +2053,23 @@ class _MiniStatCard extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(color: appBg, shape: BoxShape.circle),
-                child: Icon(icon, color: primaryBlue),
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: palette.soft,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: palette.primary),
               ),
               if (badgeCount > 0)
                 Positioned(
                   right: -8,
                   top: -8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: badgeColor ?? Colors.red,
                       borderRadius: BorderRadius.circular(999),
@@ -1254,7 +2097,7 @@ class _MiniStatCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: primaryBlue.withOpacity(0.7),
+                    color: palette.primary.withOpacity(0.7),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                   ),
@@ -1264,8 +2107,8 @@ class _MiniStatCard extends StatelessWidget {
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: primaryBlue,
+                  style: TextStyle(
+                    color: palette.primary,
                     fontWeight: FontWeight.w900,
                     fontSize: 13,
                   ),
@@ -1283,9 +2126,91 @@ class _MiniStatCard extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       child: content,
     );
   }
 }
+
+class _ThemeChoiceTile extends StatelessWidget {
+  const _ThemeChoiceTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.preview1,
+    required this.preview2,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final Color preview1;
+  final Color preview2;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? preview1 : const Color(0xFFD1D9E0),
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(backgroundColor: preview1, radius: 12),
+              const SizedBox(width: 8),
+              CircleAvatar(backgroundColor: preview2, radius: 12),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF222222),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.circle_outlined,
+                color: selected ? preview1 : Colors.grey,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+
 
