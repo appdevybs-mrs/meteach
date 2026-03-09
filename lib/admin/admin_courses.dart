@@ -393,10 +393,25 @@ class _CoursesTabState extends State<_CoursesTab> {
               }
 
               // If search/filter changes, rebuild local ordering list from filtered
-              _localFiltered ??= List<_CourseRow>.from(filtered);
-              if (_localFiltered!.length != filtered.length ||
+              // Keep local list in sync with latest Firebase data.
+              // If IDs/order are the same, refresh the course payloads only.
+              if (_localFiltered == null) {
+                _localFiltered = List<_CourseRow>.from(filtered);
+              } else if (_localFiltered!.length != filtered.length ||
                   !_sameIds(_localFiltered!, filtered)) {
                 _localFiltered = List<_CourseRow>.from(filtered);
+              } else {
+                _localFiltered = filtered
+                    .map((fresh) {
+                  final existingIndex = _localFiltered!
+                      .indexWhere((e) => e.id == fresh.id);
+                  if (existingIndex == -1) return fresh;
+                  return _CourseRow(
+                    id: _localFiltered![existingIndex].id,
+                    course: fresh.course,
+                  );
+                })
+                    .toList();
               }
 
               return Stack(
@@ -1105,12 +1120,12 @@ Color _statusFg(CourseStatus s) {
 
 Color _deliveryBg(String d) {
   switch (d.toLowerCase().trim()) {
+    case 'online':
+      return const Color(0xFFF3E8FF); // soft purple
     case 'recorded':
       return const Color(0xFFEAF2FF); // soft blue
     case 'live':
       return const Color(0xFFE8FFFB); // soft cyan
-    case 'hybrid':
-      return const Color(0xFFF3E8FF); // soft purple
     case 'in-class':
     case 'in class':
       return const Color(0xFFFFE8EA); // soft pink
@@ -1121,12 +1136,12 @@ Color _deliveryBg(String d) {
 
 Color _deliveryFg(String d) {
   switch (d.toLowerCase().trim()) {
+    case 'online':
+      return const Color(0xFF6A1B9A);
     case 'recorded':
       return const Color(0xFF1A4FA3);
     case 'live':
       return const Color(0xFF007A7A);
-    case 'hybrid':
-      return const Color(0xFF6A1B9A);
     case 'in-class':
     case 'in class':
       return const Color(0xFFB00020);
@@ -1261,12 +1276,16 @@ class CourseEditorScreen extends StatefulWidget {
 class _CourseEditorScreenState extends State<CourseEditorScreen> {
   final _formKey = GlobalKey<FormState>();
   static const List<String> _deliveryOptions = [
-    'Recorded',
+    'Online',
     'Live',
-    'Hybrid',
-    'In-Class'
+    'Recorded',
+    'In-Class',
   ];
   Set<String> _deliverySelected = {};
+  late final Map<String, bool> _deliveryEnabled;
+  late final Map<String, TextEditingController> _deliveryFeeControllers;
+  late final Map<String, String> _deliveryAccessModes;
+  late final Map<String, TextEditingController> _deliveryDurationControllers;
 
   File? _localThumbFile;
 
@@ -1283,9 +1302,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   late final TextEditingController levelC;
   late final TextEditingController languageC;
   late final TextEditingController deliveryC;
-  late final TextEditingController priceMonthC;
-  late final TextEditingController priceLevelC;
-  late final TextEditingController accessTypeC;
+
   late final TextEditingController requirementsC;
   late final TextEditingController tagsC;
 
@@ -1442,13 +1459,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     levelC = TextEditingController(text: initial?.level ?? '');
     languageC = TextEditingController(text: initial?.language ?? '');
     deliveryC = TextEditingController(text: initial?.deliveryOption ?? '');
-    priceMonthC = TextEditingController(
-      text: (initial?.pricePerMonth?.toString() ?? ''),
-    );
-    priceLevelC = TextEditingController(
-      text: (initial?.pricePerLevel?.toString() ?? ''),
-    );
-    accessTypeC = TextEditingController(text: initial?.accessType ?? '');
+
     requirementsC = TextEditingController(text: initial?.requirementsText ?? '');
     tagsC = TextEditingController(text: initial?.tags.join(', ') ?? '');
 
@@ -1457,11 +1468,53 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     // Load delivery checkboxes from DB if exists
     _deliverySelected = initial?.deliveryOptions.toSet() ?? {};
 
-    // Keep old string field updated (for display)
-    deliveryC.text = _deliverySelected.join(', ');
-    if (deliveryC.text.trim().isEmpty) {
-      deliveryC.text = (initial?.deliveryOption ?? '').trim();
-    }
+    final existingConfigs = initial?.deliveryConfigs ?? {};
+
+    _deliveryEnabled = {
+      'online': _deliverySelected.contains('Online') || (existingConfigs['online']?.enabled == true),
+      'live': _deliverySelected.contains('Live') || (existingConfigs['live']?.enabled == true),
+      'recorded': _deliverySelected.contains('Recorded') || (existingConfigs['recorded']?.enabled == true),
+      'inclass': _deliverySelected.contains('In-Class') || (existingConfigs['inclass']?.enabled == true),
+    };
+
+    _deliveryFeeControllers = {
+      'online': TextEditingController(
+        text: existingConfigs['online']?.fee?.toString() ?? '',
+      ),
+      'live': TextEditingController(
+        text: existingConfigs['live']?.fee?.toString() ?? '',
+      ),
+      'recorded': TextEditingController(
+        text: existingConfigs['recorded']?.fee?.toString() ?? '',
+      ),
+      'inclass': TextEditingController(
+        text: existingConfigs['inclass']?.fee?.toString() ?? '',
+      ),
+    };
+
+    _deliveryAccessModes = {
+      'online': existingConfigs['online']?.accessMode ?? 'lifetime',
+      'live': existingConfigs['live']?.accessMode ?? 'lifetime',
+      'recorded': existingConfigs['recorded']?.accessMode ?? 'lifetime',
+      'inclass': existingConfigs['inclass']?.accessMode ?? 'lifetime',
+    };
+
+    _deliveryDurationControllers = {
+      'online': TextEditingController(
+        text: existingConfigs['online']?.accessDurationMonths?.toString() ?? '',
+      ),
+      'live': TextEditingController(
+        text: existingConfigs['live']?.accessDurationMonths?.toString() ?? '',
+      ),
+      'recorded': TextEditingController(
+        text: existingConfigs['recorded']?.accessDurationMonths?.toString() ?? '',
+      ),
+      'inclass': TextEditingController(
+        text: existingConfigs['inclass']?.accessDurationMonths?.toString() ?? '',
+      ),
+    };
+
+    _syncOldDeliveryFields();
 
     _loadCategorySuggestions();
 
@@ -1470,6 +1523,19 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
     _loadTeachers();
 
+  }
+
+
+  void _syncOldDeliveryFields() {
+    final selected = <String>[];
+
+    if (_deliveryEnabled['online'] == true) selected.add('Online');
+    if (_deliveryEnabled['live'] == true) selected.add('Live');
+    if (_deliveryEnabled['recorded'] == true) selected.add('Recorded');
+    if (_deliveryEnabled['inclass'] == true) selected.add('In-Class');
+
+    _deliverySelected = selected.toSet();
+    deliveryC.text = selected.join(', ');
   }
 
   @override
@@ -1486,9 +1552,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     levelC.dispose();
     languageC.dispose();
     deliveryC.dispose();
-    priceMonthC.dispose();
-    priceLevelC.dispose();
-    accessTypeC.dispose();
+
+
+    for (final c in _deliveryFeeControllers.values) {
+      c.dispose();
+    }
+    for (final c in _deliveryDurationControllers.values) {
+      c.dispose();
+    }
     requirementsC.dispose();
     tagsC.dispose();
     super.dispose();
@@ -1644,12 +1715,15 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       hint: 'English / Arabic / French…',
                     ),
                     const SizedBox(height: 12),
-                    _DeliveryCheckboxes(
-                      options: _deliveryOptions,
-                      selected: _deliverySelected,
-                      onChanged: (newSet) {
-                        setState(() => _deliverySelected = newSet);
-                        deliveryC.text = _deliverySelected.join(', ');
+                    _DeliveryConfigsEditor(
+                      enabledMap: _deliveryEnabled,
+                      feeControllers: _deliveryFeeControllers,
+                      accessModes: _deliveryAccessModes,
+                      durationControllers: _deliveryDurationControllers,
+                      onChanged: () {
+                        setState(() {
+                          _syncOldDeliveryFields();
+                        });
                       },
                     ),
                   ],
@@ -1657,47 +1731,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               ),
               const SizedBox(height: 12),
               _SectionCard(
-                title: 'Access & pricing',
+                title: 'Status',
                 child: Column(
                   children: [
-                    Column(
-                      children: [
-                        _TextField(
-                          controller: priceMonthC,
-                          label: 'Price (per month)',
-                          hint: 'Example: 19.99',
-                          keyboardType: TextInputType.number,
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) return null;
-                            final n = double.tryParse(v.trim());
-                            if (n == null) return 'Must be a number';
-                            if (n < 0) return 'Must be >= 0';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        _TextField(
-                          controller: priceLevelC,
-                          label: 'Price (per level)',
-                          hint: 'Example: 49.99',
-                          keyboardType: TextInputType.number,
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) return null;
-                            final n = double.tryParse(v.trim());
-                            if (n == null) return 'Must be a number';
-                            if (n < 0) return 'Must be >= 0';
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: accessTypeC,
-                      label: 'Access type',
-                      hint: 'Lifetime / Limited / Fixed dates…',
-                    ),
-                    const SizedBox(height: 12),
                     _StatusPicker(
                       value: _status,
                       onChanged: (v) => setState(() => _status = v),
@@ -1778,6 +1814,56 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           ? generateCourseCode(titleC.text)
           : (existing.isNotEmpty ? existing : generateCourseCode(titleC.text));
 
+
+
+      final onlineAccessMode = _deliveryAccessModes['online'] ?? 'lifetime';
+      final liveAccessMode = _deliveryAccessModes['live'] ?? 'lifetime';
+      final recordedAccessMode = _deliveryAccessModes['recorded'] ?? 'lifetime';
+      final inclassAccessMode = _deliveryAccessModes['inclass'] ?? 'lifetime';
+
+      final deliveryConfigs = <String, CourseDeliveryConfig>{
+        'online': CourseDeliveryConfig(
+          enabled: _deliveryEnabled['online'] == true,
+          fee: _deliveryEnabled['online'] == true
+              ? _parseDoubleOrNull(_deliveryFeeControllers['online']!.text)
+              : null,
+          accessMode: onlineAccessMode,
+          accessDurationMonths: (_deliveryEnabled['online'] == true && onlineAccessMode == 'duration')
+              ? _parseIntOrNull(_deliveryDurationControllers['online']!.text)
+              : null,
+        ),
+        'live': CourseDeliveryConfig(
+          enabled: _deliveryEnabled['live'] == true,
+          fee: _deliveryEnabled['live'] == true
+              ? _parseDoubleOrNull(_deliveryFeeControllers['live']!.text)
+              : null,
+          accessMode: liveAccessMode,
+          accessDurationMonths: (_deliveryEnabled['live'] == true && liveAccessMode == 'duration')
+              ? _parseIntOrNull(_deliveryDurationControllers['live']!.text)
+              : null,
+        ),
+        'recorded': CourseDeliveryConfig(
+          enabled: _deliveryEnabled['recorded'] == true,
+          fee: _deliveryEnabled['recorded'] == true
+              ? _parseDoubleOrNull(_deliveryFeeControllers['recorded']!.text)
+              : null,
+          accessMode: recordedAccessMode,
+          accessDurationMonths: (_deliveryEnabled['recorded'] == true && recordedAccessMode == 'duration')
+              ? _parseIntOrNull(_deliveryDurationControllers['recorded']!.text)
+              : null,
+        ),
+        'inclass': CourseDeliveryConfig(
+          enabled: _deliveryEnabled['inclass'] == true,
+          fee: _deliveryEnabled['inclass'] == true
+              ? _parseDoubleOrNull(_deliveryFeeControllers['inclass']!.text)
+              : null,
+          accessMode: inclassAccessMode,
+          accessDurationMonths: (_deliveryEnabled['inclass'] == true && inclassAccessMode == 'duration')
+              ? _parseIntOrNull(_deliveryDurationControllers['inclass']!.text)
+              : null,
+        ),
+      };
+
       final course = Course(
         title: titleC.text.trim(),
         category: categoryC.text.trim(),
@@ -1792,9 +1878,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         language: languageC.text.trim(),
         deliveryOption: deliveryC.text.trim(),
         deliveryOptions: _deliverySelected.toList(),
-        pricePerMonth: _parseDoubleOrNull(priceMonthC.text),
-        pricePerLevel: _parseDoubleOrNull(priceLevelC.text),
-        accessType: accessTypeC.text.trim(),
+        deliveryConfigs: deliveryConfigs,
         status: _status,
         requirementsText: requirementsC.text.trim(),
         tags: _splitCsv(tagsC.text),
@@ -1835,7 +1919,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
         await _coursesRef.child(id).update({
           ...updateMap,
-          'instructors_map': _pickedInstructorMap, // ✅ NEW
+          'instructors_map': _pickedInstructorMap,
+          'price_per_month': null,
+          'price_per_level': null,
+          'access_type': null,
           'updatedAt': nowTs,
         });
 
@@ -1866,6 +1953,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final t = input.trim();
     if (t.isEmpty) return null;
     return double.tryParse(t);
+  }
+  static int? _parseIntOrNull(String input) {
+    final t = input.trim();
+    if (t.isEmpty) return null;
+    return int.tryParse(t);
   }
 }
 
@@ -2219,6 +2311,69 @@ class UploadClient {
 /// Data model
 /// ----------------------------
 
+
+class CourseDeliveryConfig {
+  CourseDeliveryConfig({
+    required this.enabled,
+    required this.fee,
+    required this.accessMode,
+    required this.accessDurationMonths,
+  });
+
+  final bool enabled;
+  final double? fee;
+
+  /// "lifetime" or "duration"
+  final String accessMode;
+
+  /// used only when accessMode == "duration"
+  final int? accessDurationMonths;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'enabled': enabled,
+      'fee': fee,
+      'access_mode': accessMode,
+      'access_duration_months': accessDurationMonths,
+    };
+  }
+
+  factory CourseDeliveryConfig.fromMap(dynamic raw) {
+    if (raw is! Map) {
+      return CourseDeliveryConfig(
+        enabled: false,
+        fee: null,
+        accessMode: 'lifetime',
+        accessDurationMonths: null,
+      );
+    }
+
+    final m = Map<String, dynamic>.from(raw);
+
+    double? parseFee(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString().trim());
+    }
+
+    int? parseInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString().trim());
+    }
+
+    final accessMode = (m['access_mode'] ?? 'lifetime').toString().trim().toLowerCase();
+
+    return CourseDeliveryConfig(
+      enabled: m['enabled'] == true,
+      fee: parseFee(m['fee']),
+      accessMode: accessMode.isEmpty ? 'lifetime' : accessMode,
+      accessDurationMonths: parseInt(m['access_duration_months']),
+    );
+  }
+}
+
 enum CourseStatus {
   draft,
   published,
@@ -2281,9 +2436,7 @@ class Course {
     required this.language,
     required this.deliveryOption,
     required this.deliveryOptions,
-    required this.pricePerMonth,
-    required this.pricePerLevel,
-    required this.accessType,
+    required this.deliveryConfigs,
     required this.status,
     required this.requirementsText,
     required this.tags,
@@ -2308,10 +2461,8 @@ class Course {
   final String deliveryOption;
   final List<String> deliveryOptions;
 
-  final double? pricePerMonth;
-  final double? pricePerLevel;
+  final Map<String, CourseDeliveryConfig> deliveryConfigs;
 
-  final String accessType;
   final CourseStatus status;
   final String requirementsText;
   final List<String> tags;
@@ -2337,9 +2488,9 @@ class Course {
       'language': language,
       'delivery_option': deliveryOption,
       'delivery_options': deliveryOptions,
-      'price_per_month': pricePerMonth,
-      'price_per_level': pricePerLevel,
-      'access_type': accessType,
+      'delivery_configs': deliveryConfigs.map(
+            (key, value) => MapEntry(key, value.toMap()),
+      ),
       'status': status.value,
       'requirement': requirementsText,
       'tags': tags,
@@ -2376,6 +2527,19 @@ class Course {
       return int.tryParse(v.toString());
     }
 
+    Map<String, CourseDeliveryConfig> parseDeliveryConfigs(dynamic v) {
+      if (v is! Map) return {};
+
+      final out = <String, CourseDeliveryConfig>{};
+
+      v.forEach((key, value) {
+        final k = key.toString().trim().toLowerCase();
+        if (k.isEmpty) return;
+        out[k] = CourseDeliveryConfig.fromMap(value);
+      });
+
+      return out;
+    }
     return Course(
       title: (m['title'] ?? '').toString(),
       category: (m['category'] ?? '').toString(),
@@ -2388,11 +2552,10 @@ class Course {
       instructors: parseList(m['instructors']),
       level: (m['level'] ?? '').toString(),
       language: (m['language'] ?? '').toString(),
+
       deliveryOption: (m['delivery_option'] ?? '').toString(),
       deliveryOptions: parseList(m['delivery_options']),
-      pricePerMonth: parsePrice(m['price_per_month']),
-      pricePerLevel: parsePrice(m['price_per_level']),
-      accessType: (m['access_type'] ?? '').toString(),
+      deliveryConfigs: parseDeliveryConfigs(m['delivery_configs']),
       status: CourseStatus.fromValue(m['status']?.toString()),
       requirementsText: (m['requirement'] ?? '').toString(),
       tags: parseList(m['tags']),
@@ -2435,8 +2598,168 @@ List<_CourseRow> _parseCoursesMap(dynamic data, {required String? orderField}) {
 /// ----------------------------
 /// Delivery helpers
 /// ----------------------------
+class _DeliveryConfigsEditor extends StatelessWidget {
+  const _DeliveryConfigsEditor({
+    required this.enabledMap,
+    required this.feeControllers,
+    required this.accessModes,
+    required this.durationControllers,
+    required this.onChanged,
+  });
 
+  final Map<String, bool> enabledMap;
+  final Map<String, TextEditingController> feeControllers;
+  final Map<String, String> accessModes;
+  final Map<String, TextEditingController> durationControllers;
+  final VoidCallback onChanged;
+
+  static const List<Map<String, String>> _items = [
+    {'key': 'online', 'label': 'Online'},
+    {'key': 'live', 'label': 'Live'},
+    {'key': 'recorded', 'label': 'Recorded'},
+    {'key': 'inclass', 'label': 'In-Class'},
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AdminCoursesScreen.appBg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Delivery options',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          ..._items.map((item) {
+            final key = item['key']!;
+            final label = item['label']!;
+            final enabled = enabledMap[key] == true;
+            final accessMode = accessModes[key] ?? 'lifetime';
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AdminCoursesScreen.uiBorders),
+              ),
+              child: Column(
+                children: [
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: enabled,
+                    title: Text(
+                      label,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (v) {
+                      enabledMap[key] = v == true;
+                      onChanged();
+                    },
+                  ),
+                  if (enabled) ...[
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: feeControllers[key],
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: '$label fee',
+                        hintText: 'Example: 49.99',
+                        filled: true,
+                        fillColor: AdminCoursesScreen.appBg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onChanged: (_) => onChanged(),
+                      validator: (v) {
+                        if (!enabled) return null;
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Fee required';
+                        }
+                        final n = double.tryParse(v.trim());
+                        if (n == null) return 'Must be a number';
+                        if (n < 0) return 'Must be >= 0';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: accessMode,
+                      decoration: InputDecoration(
+                        labelText: '$label access',
+                        filled: true,
+                        fillColor: AdminCoursesScreen.appBg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'lifetime',
+                          child: Text('Lifetime'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'duration',
+                          child: Text('Expires after X months'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        accessModes[key] = (v ?? 'lifetime');
+                        onChanged();
+                      },
+                    ),
+                    if (accessMode == 'duration') ...[
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: durationControllers[key],
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: '$label duration (months)',
+                          hintText: 'Example: 4',
+                          filled: true,
+                          fillColor: AdminCoursesScreen.appBg,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        onChanged: (_) => onChanged(),
+                        validator: (v) {
+                          if (!enabled) return null;
+                          if ((accessModes[key] ?? 'lifetime') != 'duration') return null;
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Months required';
+                          }
+                          final n = int.tryParse(v.trim());
+                          if (n == null) return 'Must be a whole number';
+                          if (n <= 0) return 'Must be greater than 0';
+                          return null;
+                        },
+                      ),
+                    ],
+                  ],
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
 class _DeliveryCheckboxes extends StatelessWidget {
+
   const _DeliveryCheckboxes({
     required this.options,
     required this.selected,
