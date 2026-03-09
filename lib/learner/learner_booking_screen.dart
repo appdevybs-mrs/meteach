@@ -390,6 +390,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     setState(() => loading = false);
   }
 
+
   Future<String?> _inferLearnerCourseId() async {
     try {
       final snap = await _db.child('users/$myUid/courses').get();
@@ -406,12 +407,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final id =
         (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '').toString().trim();
-        final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
+
+        final deliveryKey = (m['deliveryKey'] ?? '')
             .toString()
             .trim()
             .toLowerCase();
 
-        if (id.isNotEmpty && variantKey == 'online') {
+        final studyMode = (m['studyMode'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+        final isBookingCourse = deliveryKey == 'flexible';
+
+        if (id.isNotEmpty && isBookingCourse) {
           return id;
         }
       }
@@ -453,7 +462,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   Future<_BookingGate> _bookingGateForCourse(String cid) async {
     try {
-      final snap = await _db.child('syllabi/$cid/online').get();
+      final snap = await _db.child('syllabi/$cid/flexible').get();
 
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
@@ -478,7 +487,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           enabled: true,
           totalSessions: total,
           title: title,
-          source: 'syllabi/online',
+          source: 'syllabi/flexible',
         );
       }
     } catch (_) {}
@@ -495,7 +504,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   Future<void> _loadCurriculum(String cid) async {
     try {
-      final snap = await _db.child('syllabi/$cid/online').get();
+      final snap = await _db.child('syllabi/$cid/flexible').get();
       if (!snap.exists || snap.value == null || snap.value is! Map) return;
 
       final root =
@@ -530,7 +539,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               'content': (sess['content'] ?? '').toString(),
               'homework': (sess['homework'] ?? '').toString(),
               'durationMinutes': _toInt(sess['durationMinutes'], fallback: 0),
-              'source': 'syllabi/online',
+              'source': 'syllabi/flexible',
             };
 
             fallbackNo++;
@@ -544,7 +553,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         totalSessions = out.length;
       }
     } catch (e) {
-      _toast('Failed to load online syllabus: $e');
+      _toast('Failed to load booking syllabus: $e');
     }
   }
 
