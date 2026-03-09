@@ -1,38 +1,25 @@
-// learner_home.dart
-// ✅ FULL DROP-IN REPLACEMENT (SAFE)
-//
-// Keeps your working logic intact (Support calls, Mail/Homework/Reminders/CallLogs, Booking, Logout, etc).
-//
-// ✅ CHANGE YOU REQUESTED:
-// - Removed the "second progress" section (the progress list under the home cards).
-//   Home tab now shows ONLY the cards grid (Booking + next booked class + Mail/Homework/Reminders/CallLogs...).
-//
-// NOTE: Progress logic helpers are kept (safe) but the UI section is removed.
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'learner_gallery_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
-import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 
+import 'learner_study_coach_screen.dart';
 import 'learner_regulations_screen.dart';
 import 'learner_mail_screen.dart';
 import 'learner_homework_screen.dart' as hw;
 import 'learner_courses_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
-
-import '../calls/call_logs_screen.dart';
-import '../calls/audio_call_screen.dart';
-
 import 'learner_booking_screen.dart';
+
+import '../calls/audio_call_screen.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -42,41 +29,71 @@ class LearnerHome extends StatefulWidget {
 }
 
 class _LearnerHomeState extends State<LearnerHome> {
-  int _index = 0;
-
-  static const _pages = <Widget>[
-    LearnerCoursesScreen(),
-    _LearnerDashboardLite(),
-    LearnerProfileScreen(),
-  ];
-
-  static const _titles = <String>[
-    'My Courses',
-    'Learner Dashboard',
-    'Profile',
-  ];
-
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  Future<String>? _displayNameFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    appThemeController.addListener(_onThemeChanged);
+    _displayNameFuture = _myDisplayName();
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  _HomePalette get palette => _toHomePalette(appThemeController.palette);
+
+  _HomePalette _toHomePalette(AppPalette p) {
+    return _HomePalette(
+      primary: p.primary,
+      accent: p.accent,
+      text: p.text,
+      appBg: p.appBg,
+      cardBg: p.cardBg,
+      border: p.border,
+      soft: p.soft,
+    );
+  }
+
+  void _pushScreen(Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
+
+  Future<void> _refreshShell() async {
+    setState(() {
+      _displayNameFuture = _myDisplayName();
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
 
   Future<void> _logout(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    // ✅ stop "single device" listener (so it doesn't run after logout)
     await SessionManager.stopListening();
 
-    // (optional but recommended) remove session in RTDB
     if (uid != null && uid.isNotEmpty) {
       try {
         // intentionally empty (your original)
       } catch (_) {}
     }
 
-    // ✅ 1) stop pushes on device
     try {
-      await FirebaseMessaging.instance.deleteToken(); // VERY IMPORTANT
+      await FirebaseMessaging.instance.deleteToken();
     } catch (_) {}
 
-    // ✅ 2) remove token from RTDB so admin can't target it
     if (uid != null && uid.isNotEmpty) {
       try {
         await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
@@ -87,10 +104,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
-
-  // -----------------------
-  // Support FAB helpers
-  // -----------------------
 
   String _norm(String s) => s.trim().toLowerCase();
 
@@ -111,7 +124,12 @@ class _LearnerHomeState extends State<LearnerHome> {
 
   Future<String> _myDisplayName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return 'Learner';
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    final emailPrefix = email.isNotEmpty ? email.split('@').first : '';
+
+    if (uid == null) {
+      return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
+    }
 
     try {
       final snap = await _db.child('users/$uid').get();
@@ -122,11 +140,13 @@ class _LearnerHomeState extends State<LearnerHome> {
         final last = (m['last_name'] ?? '').toString().trim();
         final full = ('$first $last').trim();
         if (full.isNotEmpty) return full;
-        final email = (m['email'] ?? '').toString().trim();
-        if (email.isNotEmpty) return email.split('@').first;
+
+        final dbEmail = (m['email'] ?? '').toString().trim();
+        if (dbEmail.isNotEmpty) return dbEmail.split('@').first;
       }
     } catch (_) {}
-    return 'Learner';
+
+    return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
   }
 
   Future<List<_UserPick>> _loadAdmins() async {
@@ -160,18 +180,26 @@ class _LearnerHomeState extends State<LearnerHome> {
   Future<_ClassesAndPeers> _loadMyClassesAndPeers() async {
     final me = FirebaseAuth.instance.currentUser?.uid;
     if (me == null) {
-      return const _ClassesAndPeers(classIds: [], teacherUids: {}, classmateUids: {});
+      return const _ClassesAndPeers(
+        classIds: [],
+        teacherUids: {},
+        classmateUids: {},
+      );
     }
 
     final classIds = <String>[];
-    final teacherUids = <String, String>{}; // uid -> name
-    final classmateUids = <String, String>{}; // uid -> name
+    final teacherUids = <String, String>{};
+    final classmateUids = <String, String>{};
 
     try {
       final snap = await _db.child('classes').get();
       final v = snap.value;
       if (v is! Map) {
-        return _ClassesAndPeers(classIds: classIds, teacherUids: teacherUids, classmateUids: classmateUids);
+        return _ClassesAndPeers(
+          classIds: classIds,
+          teacherUids: teacherUids,
+          classmateUids: classmateUids,
+        );
       }
 
       final raw = Map<dynamic, dynamic>.from(v);
@@ -180,7 +208,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         if (classVal is! Map) return;
         final c = classVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-        // learners map
         final learners = c['learners'];
         bool imInThisClass = false;
 
@@ -190,12 +217,11 @@ class _LearnerHomeState extends State<LearnerHome> {
             imInThisClass = true;
           }
 
-          // classmates
           lm.forEach((uid, lv) {
             final u = uid.toString();
             if (u == me) return;
-            String name = 'Learner';
 
+            String name = 'Learner';
             if (lv is Map) {
               final mm = lv.map((kk, vv) => MapEntry(kk.toString(), vv));
               final n = (mm['name'] ?? '').toString().trim();
@@ -203,7 +229,6 @@ class _LearnerHomeState extends State<LearnerHome> {
               name = n.isNotEmpty ? n : (serial.isNotEmpty ? serial : 'Learner');
             }
 
-            // only add classmates if I'm in this class
             if (imInThisClass) {
               classmateUids.putIfAbsent(u, () => name);
             }
@@ -214,21 +239,31 @@ class _LearnerHomeState extends State<LearnerHome> {
 
         classIds.add(classId.toString());
 
-        // teacher (preferred)
         final cur = c['instructor_current'];
         if (cur is Map) {
           final cm = cur.map((kk, vv) => MapEntry(kk.toString(), vv));
           final tuid = (cm['uid'] ?? '').toString().trim();
           final tname = (cm['name'] ?? '').toString().trim();
           if (tuid.isNotEmpty) {
-            teacherUids.putIfAbsent(tuid, () => tname.isNotEmpty ? tname : 'Teacher');
+            teacherUids.putIfAbsent(
+              tuid,
+                  () => tname.isNotEmpty ? tname : 'Teacher',
+            );
           }
         }
       });
 
-      return _ClassesAndPeers(classIds: classIds, teacherUids: teacherUids, classmateUids: classmateUids);
+      return _ClassesAndPeers(
+        classIds: classIds,
+        teacherUids: teacherUids,
+        classmateUids: classmateUids,
+      );
     } catch (_) {
-      return _ClassesAndPeers(classIds: classIds, teacherUids: teacherUids, classmateUids: classmateUids);
+      return _ClassesAndPeers(
+        classIds: classIds,
+        teacherUids: teacherUids,
+        classmateUids: classmateUids,
+      );
     }
   }
 
@@ -236,7 +271,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     final peers = await _loadMyClassesAndPeers();
     if (peers.teacherUids.isEmpty) return [];
 
-    // enrich from users node (get cleaner names if possible)
     final out = <_UserPick>[];
     final ids = peers.teacherUids.keys.toList();
 
@@ -271,7 +305,6 @@ class _LearnerHomeState extends State<LearnerHome> {
 
     final out = <_UserPick>[];
 
-    // optionally enrich from users
     for (final entry in peers.classmateUids.entries) {
       final uid = entry.key;
       String name = entry.value;
@@ -323,11 +356,12 @@ class _LearnerHomeState extends State<LearnerHome> {
     required Future<List<_UserPick>> Function() loader,
     required IconData icon,
   }) async {
+    final p = palette;
     if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: UiK.appBg,
+      backgroundColor: p.appBg,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) {
@@ -339,150 +373,180 @@ class _LearnerHomeState extends State<LearnerHome> {
               builder: (context, snap) {
                 final items = snap.data ?? const <_UserPick>[];
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: UiK.primaryBlue.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: UiK.uiBorder.withOpacity(0.9)),
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: p.primary.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: p.border.withOpacity(0.9),
+                              ),
+                            ),
+                            child: Icon(icon, color: p.primary),
                           ),
-                          child: Icon(icon, color: UiK.primaryBlue),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: UiK.primaryBlue,
-                              fontSize: 16,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: p.primary,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (snap.connectionState == ConnectionState.waiting)
-                      const Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (items.isEmpty)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                        ),
-                        child: const Text(
-                          'No users found.',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      )
-                    else
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.55,
-                        ),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: items.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (context, i) {
-                            final it = items[i];
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (snap.connectionState == ConnectionState.waiting)
+                        const Padding(
+                          padding: EdgeInsets.all(18),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (items.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: p.cardBg,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
+                          ),
+                          child: Text(
+                            'No users found.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: p.text,
+                            ),
+                          ),
+                        )
+                      else
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight:
+                            MediaQuery.of(context).size.height * 0.55,
+                          ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) =>
+                            const SizedBox(height: 10),
+                            itemBuilder: (context, i) {
+                              final it = items[i];
 
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(18),
-                              onTap: () async {
-                                Navigator.of(ctx).pop();
-                                await _startCallTo(peerUid: it.uid, peerName: it.name);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      backgroundColor: UiK.primaryBlue.withOpacity(0.08),
-                                      child: Text(
-                                        it.name.isNotEmpty ? it.name[0].toUpperCase() : '?',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: UiK.primaryBlue,
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () async {
+                                  Navigator.of(ctx).pop();
+                                  await _startCallTo(
+                                    peerUid: it.uid,
+                                    peerName: it.name,
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: p.cardBg,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: p.border.withOpacity(0.85),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        backgroundColor:
+                                        p.primary.withOpacity(0.08),
+                                        child: Text(
+                                          it.name.isNotEmpty
+                                              ? it.name[0].toUpperCase()
+                                              : '?',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: p.primary,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            it.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: UiK.primaryBlue,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              it.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.primary,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            it.subtitle,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.grey.shade600,
-                                              fontSize: 12,
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              it.subtitle,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: p.text.withOpacity(0.62),
+                                                fontSize: 12,
+                                              ),
                                             ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: p.accent.withOpacity(0.10),
+                                          borderRadius:
+                                          BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color: p.accent.withOpacity(0.22),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: UiK.actionOrange.withOpacity(0.10),
-                                        borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(color: UiK.actionOrange.withOpacity(0.22)),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.call_rounded, size: 16, color: UiK.actionOrange),
-                                          SizedBox(width: 6),
-                                          Text(
-                                            'Call',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: UiK.actionOrange,
-                                              fontSize: 12,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.call_rounded,
+                                              size: 16,
+                                              color: p.accent,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Call',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.accent,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -493,11 +557,12 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   Future<void> _openSupportSheet() async {
+    final p = palette;
     if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: UiK.appBg,
+      backgroundColor: p.appBg,
       showDragHandle: true,
       builder: (ctx) {
         return SafeArea(
@@ -510,20 +575,20 @@ class _LearnerHomeState extends State<LearnerHome> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: p.cardBg,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                    border: Border.all(color: p.border.withOpacity(0.85)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.support_agent_rounded, color: UiK.primaryBlue),
-                      SizedBox(width: 10),
+                      Icon(Icons.support_agent_rounded, color: p.primary),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           'Support Call',
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
-                            color: UiK.primaryBlue,
+                            color: p.primary,
                             fontSize: 16,
                           ),
                         ),
@@ -533,6 +598,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                 ),
                 const SizedBox(height: 12),
                 _SupportTile(
+                  palette: p,
                   icon: Icons.admin_panel_settings_rounded,
                   title: 'Call Admin',
                   subtitle: 'Choose an admin to call',
@@ -547,6 +613,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                 ),
                 const SizedBox(height: 10),
                 _SupportTile(
+                  palette: p,
                   icon: Icons.school_rounded,
                   title: 'Call Teacher',
                   subtitle: 'Teachers for your classes',
@@ -561,6 +628,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                 ),
                 const SizedBox(height: 10),
                 _SupportTile(
+                  palette: p,
                   icon: Icons.groups_rounded,
                   title: 'Call Classmate',
                   subtitle: 'Learners in your class(es)',
@@ -581,53 +649,130 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
+  void _openThemeSheet() {
+    final p = palette;
+
+    Future<void> pickTheme(AppThemeMode mode) async {
+      await appThemeController.setTheme(mode);
+      if (!mounted) return;
+      setState(() {});
+      Navigator.of(context).pop();
+    }
+
+    final allModes = AppThemeMode.values;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: p.appBg,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.80,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: allModes.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) {
+                  final mode = allModes[i];
+                  final preview = appThemeController.paletteForMode(mode);
+
+                  return _ThemeChoiceTile(
+                    palette: p,
+                    title: appThemeController.themeTitle(mode),
+                    subtitle: appThemeController.themeSubtitle(mode),
+                    selected: appThemeController.mode == mode,
+                    preview1: preview.primary,
+                    preview2: preview.accent,
+                    onTap: () => pickTheme(mode),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final safeIndex = _index.clamp(0, _pages.length - 1);
+    final p = palette;
 
     return Scaffold(
-      backgroundColor: UiK.appBg,
+      key: _scaffoldKey,
+      backgroundColor: p.appBg,
+      drawer: _LearnerDrawer(
+        palette: p,
+        onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
+        onOpenMail: () => _pushScreen(LearnerMailScreen()),
+        onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
+        onOpenRegulations: () =>
+            _pushScreen(const LearnerRegulationsScreen()),
+        onOpenThemeSettings: _openThemeSheet,
+        onLogout: () => _logout(context),
+      ),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        centerTitle: true,
+        centerTitle: false,
+        surfaceTintColor: p.cardBg,
         leading: IconButton(
-          tooltip: 'Regulations',
-          icon: const Icon(Icons.policy_rounded, color: UiK.primaryBlue),
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LearnerRegulationsScreen()),
+          tooltip: 'Menu',
+          icon: Icon(Icons.menu_rounded, color: p.primary),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        title: FutureBuilder<String>(
+          future: _displayNameFuture,
+          builder: (context, snap) {
+            final name = (snap.data ?? '').trim();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome back',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  name.isNotEmpty ? name : 'Learner',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.72),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             );
           },
         ),
-        title: Text(
-          _titles[safeIndex],
-          style: const TextStyle(
-            color: UiK.primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
         actions: [
           IconButton(
-            tooltip: 'Call Logs',
-            icon: const Icon(Icons.history, color: UiK.primaryBlue),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout, color: UiK.actionOrange),
-            onPressed: () => _logout(context),
+            tooltip: 'Theme',
+            icon: Icon(Icons.palette_rounded, color: p.accent),
+            onPressed: _openThemeSheet,
           ),
         ],
       ),
-      body: WatermarkBackground(child: _pages[safeIndex]),
+      body: RefreshIndicator(
+        onRefresh: _refreshShell,
+        child: WatermarkBackground(
+          child: _LearnerDashboardLite(),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: UiK.actionOrange,
+        backgroundColor: p.accent,
         foregroundColor: Colors.white,
         icon: const Text('🎧', style: TextStyle(fontSize: 18)),
         label: const Text(
@@ -636,22 +781,10 @@ class _LearnerHomeState extends State<LearnerHome> {
         ),
         onPressed: _openSupportSheet,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: safeIndex,
-        selectedItemColor: UiK.actionOrange,
-        unselectedItemColor: UiK.primaryBlue.withOpacity(0.65),
-        onTap: (i) => setState(() => _index = i),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.school_rounded), label: 'Courses'),
-          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
-        ],
-      ),
     );
   }
 }
 
-/// Home dashboard (cards only) ✅ progress section removed as requested
 class _LearnerDashboardLite extends StatefulWidget {
   const _LearnerDashboardLite();
 
@@ -662,8 +795,19 @@ class _LearnerDashboardLite extends StatefulWidget {
 class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  // (kept for safety; unused now because progress UI removed)
-  final Map<String, Future<_CourseMeta>> _metaFutures = {};
+  _HomePalette get palette => _toHomePalette(appThemeController.palette);
+
+  _HomePalette _toHomePalette(AppPalette p) {
+    return _HomePalette(
+      primary: p.primary,
+      accent: p.accent,
+      text: p.text,
+      appBg: p.appBg,
+      cardBg: p.cardBg,
+      border: p.border,
+      soft: p.soft,
+    );
+  }
 
   static int _toInt(dynamic v) {
     if (v is int) return v;
@@ -671,31 +815,101 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
-  // (kept for safety; unused now because progress UI removed)
+  String _courseTypeLabel(Map<String, dynamic> course) {
+    final variant = (course['variantKey'] ?? course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    if (variant == 'online') return 'Online class';
+    if (variant == 'offline') return 'Offline class';
+    if (variant.isNotEmpty) {
+      return '${variant[0].toUpperCase()}${variant.substring(1)} class';
+    }
+
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+
+    final classType = (cls['type'] ?? cls['class_type'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    if (classType.isNotEmpty) {
+      return '${classType[0].toUpperCase()}${classType.substring(1)} class';
+    }
+
+    return 'Course details';
+  }
+
+  String _courseDetailsLine(Map<String, dynamic> course) {
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+
+    final teacherName = (cls['teacher_name'] ??
+        cls['instructor_name'] ??
+        cls['teacher'] ??
+        cls['instructor'] ??
+        '')
+        .toString()
+        .trim();
+
+    final classId = (cls['class_id'] ?? '').toString().trim();
+    final code = (course['course_code'] ?? '').toString().trim();
+
+    final parts = <String>[];
+
+    if (teacherName.isNotEmpty) parts.add(teacherName);
+    if (classId.isNotEmpty) parts.add('Class $classId');
+    if (code.isNotEmpty) parts.add('Code $code');
+
+    if (parts.isEmpty) return 'Tap to open course details';
+    return parts.join(' • ');
+  }
+
   Future<_CourseMeta> _loadCourseMeta({
     required String courseKey,
     required Map<String, dynamic> course,
   }) async {
-    final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+
     final classId = (cls['class_id'] ?? '').toString().trim();
-    final courseId = (cls['course_id'] ?? course['id'] ?? '').toString().trim();
-    final variantKey = (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+    final courseId =
+    (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+    final variantKey = (course['variantKey'] ?? course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
 
     int? planned;
     final schedule = cls['schedule'];
     if (schedule is Map) {
-      planned = _toInt((schedule as Map)['meetingsCount'] ?? (schedule as Map)['totalMeetings'] ?? (schedule as Map)['sessionsCount']);
-      if (planned != null && planned <= 0) planned = null;
+      planned = _toInt(
+        schedule['meetingsCount'] ??
+            schedule['totalMeetings'] ??
+            schedule['sessionsCount'],
+      );
+      if (planned <= 0) planned = 0;
     }
-    planned ??= _toInt(cls['meetingsCount'] ?? cls['totalMeetings'] ?? cls['sessionsCount']);
-    if (planned != null && planned <= 0) planned = null;
 
-    if ((planned == null || planned <= 0) && classId.isNotEmpty) {
+    if ((planned == null || planned <= 0)) {
+      planned = _toInt(
+        cls['meetingsCount'] ?? cls['totalMeetings'] ?? cls['sessionsCount'],
+      );
+    }
+
+    if ((planned <= 0) && classId.isNotEmpty) {
       try {
         final snap = await _db.child('classes/$classId/schedule').get();
         if (snap.exists && snap.value is Map) {
           final m = Map<String, dynamic>.from(snap.value as Map);
-          final n = _toInt(m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount']);
+          final n = _toInt(
+            m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount'],
+          );
           if (n > 0) planned = n;
         }
       } catch (_) {}
@@ -734,18 +948,19 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     );
   }
 
-  // (kept for safety; unused now because progress UI removed)
   Future<Set<String>> _coveredSessionIdsFromAttendance({
     required String learnerUid,
     required String courseId,
     required Map<String, dynamic> course,
   }) async {
     final covered = <String>{};
-    final variantKey = (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+    final variantKey = (course['variantKey'] ?? course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
 
     final Map<int, String> sessionIdByNumber = {};
 
-    // ✅ load correct syllabus branch first so online sessionNo can map to real sessionId
     if (courseId.isNotEmpty) {
       try {
         DatabaseReference syllabusRef = _db.child('syllabi/$courseId');
@@ -785,7 +1000,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
     final att = course['attendance'];
     if (att is Map) {
-      final attMap = Map<String, dynamic>.from(att as Map);
+      final attMap = Map<String, dynamic>.from(att);
 
       for (final entry in attMap.entries) {
         final rec = entry.value;
@@ -800,7 +1015,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           for (final it in taughtItems) {
             if (it is! Map) continue;
             final item = Map<String, dynamic>.from(it);
-            final type = (item['type'] ?? '').toString().trim().toLowerCase();
+            final type =
+            (item['type'] ?? '').toString().trim().toLowerCase();
             if (type != 'syllabus') continue;
 
             final sid = (item['sessionId'] ?? '').toString().trim();
@@ -822,7 +1038,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         if (!usedNew) {
           final taught = m['taught'];
           if (taught is Map) {
-            final tm = Map<String, dynamic>.from(taught as Map);
+            final tm = Map<String, dynamic>.from(taught);
             final sid = (tm['sessionId'] ?? '').toString().trim();
             if (sid.isNotEmpty) {
               covered.add(sid);
@@ -841,10 +1057,14 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       }
     }
 
-    // online (teacher-confirmed) read
     if (learnerUid.isNotEmpty && courseId.isNotEmpty) {
       try {
-        final snap = await _db.child('booking_progress/$learnerUid/$courseId/online_attendance').get();
+        final snap = await _db
+            .child(
+          'booking_progress/$learnerUid/$courseId/online_attendance',
+        )
+            .get();
+
         if (snap.exists && snap.value is Map) {
           final m = Map<dynamic, dynamic>.from(snap.value as Map);
 
@@ -861,7 +1081,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 if (it is! Map) continue;
                 final item = Map<String, dynamic>.from(it);
 
-                final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                final type =
+                (item['type'] ?? '').toString().trim().toLowerCase();
                 if (type != 'syllabus') continue;
 
                 final sid = (item['sessionId'] ?? '').toString().trim();
@@ -895,21 +1116,193 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     return covered;
   }
 
+  Future<List<_CourseProgressItem>> _loadProgressItems() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return [];
+
+    try {
+      final snap = await _db.child('users/$uid/courses').get();
+      final v = snap.value;
+      if (v is! Map) return [];
+
+      final raw = Map<dynamic, dynamic>.from(v);
+      final out = <_CourseProgressItem>[];
+
+      for (final e in raw.entries) {
+        final key = e.key.toString();
+        if (e.value is! Map) continue;
+
+        final course = Map<String, dynamic>.from(e.value as Map);
+        final title = (course['title'] ?? course['course_title'] ?? 'Course')
+            .toString()
+            .trim();
+        final code = (course['course_code'] ?? '').toString().trim();
+
+        final meta = await _loadCourseMeta(courseKey: key, course: course);
+        final covered = await _coveredSessionIdsFromAttendance(
+          learnerUid: uid,
+          courseId: meta.courseId,
+          course: course,
+        );
+
+        final total = meta.totalLessons > 0
+            ? meta.totalLessons
+            : ((meta.plannedMeetings ?? 0) > 0 ? (meta.plannedMeetings ?? 0) : 0);
+
+        final completed = total > 0
+            ? covered.length.clamp(0, total)
+            : covered.length;
+
+        final double progress =
+        total > 0 ? (completed / total).clamp(0.0, 1.0) : 0.0;
+
+        out.add(
+          _CourseProgressItem(
+            courseKey: key,
+            title: title.isEmpty ? 'Course' : title,
+            code: code,
+            classType: _courseTypeLabel(course),
+            detailsLine: _courseDetailsLine(course),
+            completed: completed,
+            total: total,
+            progress: progress,
+          ),
+        );
+      }
+
+      out.sort((a, b) => b.progress.compareTo(a.progress));
+      return out;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _openCoursesScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LearnerCoursesScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+    final p = palette;
 
     if (uid.isEmpty) {
-      return const Center(child: Text('Not logged in.'));
+      return Center(
+        child: Text(
+          'Not logged in.',
+          style: TextStyle(
+            color: p.text,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
     }
 
-    // ✅ Home tab now only shows the cards grid (no progress list)
     return SafeArea(
       child: ListView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
-        children: const [
-          _HomeCardsGrid(),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + (bottomPad > 0 ? bottomPad : 12),
+        ),
+        children: [
+          FutureBuilder<String>(
+            future: _db
+                .child('users/$uid')
+                .get()
+                .then((snap) {
+              final v = snap.value;
+              if (v is Map) {
+                final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+                final first = (m['first_name'] ?? '').toString().trim();
+                final last = (m['last_name'] ?? '').toString().trim();
+                final full = ('$first $last').trim();
+                if (full.isNotEmpty) return full;
+              }
+              return 'Learner';
+            })
+                .catchError((_) => 'Learner'),
+            builder: (context, snap) {
+              final name = (snap.data ?? 'Learner').trim();
+              return _LearnerHeroCard(
+                palette: p,
+                learnerName: name.isEmpty ? 'Learner' : name,
+                onOpenCourses: _openCoursesScreen,
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          _SectionTitle(
+            palette: p,
+            title: 'Course Progress',
+            actionLabel: 'My Courses',
+            onActionTap: _openCoursesScreen,
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<List<_CourseProgressItem>>(
+            future: _loadProgressItems(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return _LoadingCard(
+                  palette: p,
+                  text: 'Loading your progress...',
+                );
+              }
+
+              final items = snap.data ?? const <_CourseProgressItem>[];
+              if (items.isEmpty) {
+                return _EmptyCard(
+                  palette: p,
+                  text: 'No course progress found yet.',
+                );
+              }
+
+              return Column(
+                children: [
+                  for (int i = 0; i < items.length; i++) ...[
+                    _ProgressCard(
+                      palette: p,
+                      item: items[i],
+                      onTap: _openCoursesScreen,
+                    ),
+                    if (i != items.length - 1) const SizedBox(height: 10),
+                  ],
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          _SectionTitle(
+            palette: p,
+            title: 'Booking',
+          ),
+          const SizedBox(height: 10),
+          _BookingTopCard(),
+          const SizedBox(height: 16),
+          _SectionTitle(
+            palette: p,
+            title: 'Homework & Reminders',
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _LearnerHomeworkHomeCard()),
+              const SizedBox(width: 12),
+              Expanded(child: _RemindersHomeCard()),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _SectionTitle(
+            palette: p,
+            title: 'Study Coach',
+          ),
+          const SizedBox(height: 10),
+          _StudyCoachHomeCard(),
         ],
       ),
     );
@@ -932,58 +1325,475 @@ class _CourseMeta {
   });
 }
 
-class _HomeCardsGrid extends StatelessWidget {
-  const _HomeCardsGrid();
+class _CourseProgressItem {
+  final String courseKey;
+  final String title;
+  final String code;
+  final String classType;
+  final String detailsLine;
+  final int completed;
+  final int total;
+  final double progress;
+
+  const _CourseProgressItem({
+    required this.courseKey,
+    required this.title,
+    required this.code,
+    required this.classType,
+    required this.detailsLine,
+    required this.completed,
+    required this.total,
+    required this.progress,
+  });
+}
+
+class _LearnerHeroCard extends StatelessWidget {
+  const _LearnerHeroCard({
+    required this.palette,
+    required this.learnerName,
+    required this.onOpenCourses,
+  });
+
+  final _HomePalette palette;
+  final String learnerName;
+  final VoidCallback onOpenCourses;
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Booking top, full width; rest is grid under it.
-    return Column(
-      children: [
-        const _BookingTopOrangeCard(),
-        const SizedBox(height: 12),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.25,
-          children: const [
-            _MailHomeCard(),
-            _LearnerHomeworkHomeCard(),
-            _RemindersHomeCard(),
-            _CallLogsHomeCard(),
-            _HomeCard(
-              icon: Icons.photo_library_rounded,
-              title: 'Gallery',
-              subtitle: 'Photos & videos',
-              routeType: _HomeCardRoute.gallery,
-            ),
-            _HomeCard(
-              icon: Icons.info_outline_rounded,
-              title: 'Info',
-              subtitle: 'Coming soon',
-              routeType: _HomeCardRoute.friends,
-            ),
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            palette.primary,
+            palette.primary.withOpacity(0.88),
           ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: palette.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
+            ),
+            child: const Icon(
+              Icons.school_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome back',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.80),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  learnerName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 24,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _HeroMiniButton(
+                      label: 'My Courses',
+                      icon: Icons.menu_book_rounded,
+                      onTap: onOpenCourses,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroMiniButton extends StatelessWidget {
+  const _HeroMiniButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 17),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({
+    required this.palette,
+    required this.title,
+    this.actionLabel = '',
+    this.onActionTap,
+  });
+
+  final _HomePalette palette;
+  final String title;
+  final String actionLabel;
+  final VoidCallback? onActionTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              color: palette.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+            ),
+          ),
+        ),
+        if (actionLabel.trim().isNotEmpty && onActionTap != null)
+          TextButton(
+            onPressed: onActionTap,
+            child: Text(
+              actionLabel,
+              style: TextStyle(
+                color: palette.accent,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
-/// ✅ Full width orange booking card on top
-/// ✅ Shows "Next booked class" + Join Meet (external) when allowed time window.
-class _BookingTopOrangeCard extends StatefulWidget {
-  const _BookingTopOrangeCard();
+class _LoadingCard extends StatelessWidget {
+  const _LoadingCard({
+    required this.palette,
+    required this.text,
+  });
+
+  final _HomePalette palette;
+  final String text;
 
   @override
-  State<_BookingTopOrangeCard> createState() => _BookingTopOrangeCardState();
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.border.withOpacity(0.85)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: palette.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: palette.text,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
+class _EmptyCard extends StatelessWidget {
+  const _EmptyCard({
+    required this.palette,
+    required this.text,
+  });
+
+  final _HomePalette palette;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.border.withOpacity(0.85)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: palette.text,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({
+    required this.palette,
+    required this.item,
+    required this.onTap,
+  });
+
+  final _HomePalette palette;
+  final _CourseProgressItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final percentText = (item.progress * 100).round();
+
+    return Material(
+      color: palette.cardBg,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: palette.cardBg,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: palette.border.withOpacity(0.85)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: palette.soft,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Icon(Icons.menu_book_rounded, color: palette.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          item.code.isEmpty
+                              ? item.classType
+                              : '${item.classType} • Code: ${item.code}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.text.withOpacity(0.60),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.soft,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$percentText%',
+                      style: TextStyle(
+                        color: palette.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                item.detailsLine,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.text.withOpacity(0.70),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 10,
+                  value: item.total > 0 ? item.progress : 0,
+                  backgroundColor: palette.soft.withOpacity(0.8),
+                  valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.total > 0
+                          ? '${item.completed} of ${item.total} completed'
+                          : '${item.completed} completed',
+                      style: TextStyle(
+                        color: palette.text.withOpacity(0.68),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.accent.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: palette.accent.withOpacity(0.25),
+                      ),
+                    ),
+                    child: Text(
+                      'Open Course',
+                      style: TextStyle(
+                        color: palette.accent,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BookingTopCard extends StatefulWidget {
+  const _BookingTopCard();
+
+  @override
+  State<_BookingTopCard> createState() => _BookingTopCardState();
+}
+
+class _BookingTopCardState extends State<_BookingTopCard> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  _HomePalette get palette => _toHomePalette(appThemeController.palette);
+
+  _HomePalette _toHomePalette(AppPalette p) {
+    return _HomePalette(
+      primary: p.primary,
+      accent: p.accent,
+      text: p.text,
+      appBg: p.appBg,
+      cardBg: p.cardBg,
+      border: p.border,
+      soft: p.soft,
+    );
+  }
 
   Future<List<Map<String, dynamic>>> _loadBookableCourses() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -1001,12 +1811,15 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
       final val = e.value;
       if (val is! Map) continue;
 
-      final m = Map<String, dynamic>.from(val as Map);
+      final m = Map<String, dynamic>.from(val);
 
       final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
       final courseId = realCourseId.isNotEmpty ? realCourseId : key;
 
-      final variantKey = (m['variantKey'] ?? m['variant'] ?? '').toString().trim().toLowerCase();
+      final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       if (variantKey != 'online') continue;
 
       final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
@@ -1016,7 +1829,8 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
 
       final assignedAt = numVal(m['assignedAt']);
 
-      final onlineSyllabusSnap = await _db.child('syllabi/$courseId/online').get();
+      final onlineSyllabusSnap =
+      await _db.child('syllabi/$courseId/online').get();
       if (!onlineSyllabusSnap.exists) continue;
 
       temp.add({
@@ -1029,6 +1843,7 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
     temp.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
     return temp;
   }
+
   String _two(int n) => n < 10 ? '0$n' : '$n';
   String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
 
@@ -1055,7 +1870,20 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
 
   String _friendlyDate(DateTime d) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     final wd = days[d.weekday - 1];
     final mo = months[d.month - 1];
     return '$wd, ${_two(d.day)} $mo';
@@ -1139,11 +1967,12 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
     if (teacherId.isEmpty || courseId.isEmpty) return null;
 
     try {
-      final snap = await _db.child('booking_availability/$teacherId/$courseId').get();
+      final snap =
+      await _db.child('booking_availability/$teacherId/$courseId').get();
       final v = snap.value;
       if (v is! Map) return null;
 
-      final m = Map<String, dynamic>.from(v as Map);
+      final m = Map<String, dynamic>.from(v);
 
       final meetUrl = (m['meetUrl'] ??
           m['meet_url'] ??
@@ -1172,7 +2001,6 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
     return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
-
   Future<void> _openExternalUrl(BuildContext context, String url) async {
     var u = url.trim();
     if (u.isEmpty) return;
@@ -1199,7 +2027,8 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
     }
   }
 
-  String _bookingKey(String courseId, String dayKey, String hhmm) => '$courseId|$dayKey|$hhmm';
+  String _bookingKey(String courseId, String dayKey, String hhmm) =>
+      '$courseId|$dayKey|$hhmm';
 
   Future<void> _autoMarkPresentAndTaught({
     required String learnerUid,
@@ -1208,14 +2037,20 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
     if (learnerUid.isEmpty) return;
 
     try {
-      final slotSnap = await _db.child('booking_reservations/${next.courseId}/${next.dayKey}/${next.time}').get();
+      final slotSnap = await _db
+          .child(
+        'booking_reservations/${next.courseId}/${next.dayKey}/${next.time}',
+      )
+          .get();
       if (!slotSnap.exists || slotSnap.value is! Map) return;
       final slot = Map<String, dynamic>.from(slotSnap.value as Map);
 
       final int sessionNo = _toInt(slot['sessionNo']);
       final String bKey = _bookingKey(next.courseId, next.dayKey, next.time);
 
-      final ref = _db.child('booking_progress/$learnerUid/${next.courseId}/online_attendance/$bKey');
+      final ref = _db.child(
+        'booking_progress/$learnerUid/${next.courseId}/online_attendance/$bKey',
+      );
 
       final existing = await ref.get();
       if (existing.exists && existing.value != null) return;
@@ -1241,217 +2076,262 @@ class _BookingTopOrangeCardState extends State<_BookingTopOrangeCard> {
         'autoMarkedByLearnerJoin': true,
         'updatedAt': ServerValue.timestamp,
       });
-    } catch (_) {
-      // keep silent (never block join)
-    }
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget bookingCard() {
-      return InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () async {
-          await _openBookingCoursePicker(context);
-        },
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: UiK.actionOrange,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
-            boxShadow: [
-              BoxShadow(
-                color: UiK.actionOrange.withOpacity(0.22),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.25)),
-                ),
-                child: const Icon(Icons.calendar_month_rounded, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Booking',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Book your next class',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Open',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: UiK.primaryBlue,
-                        fontSize: 12,
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue, size: 18),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    final p = palette;
 
     return Column(
       children: [
-        bookingCard(),
+        InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () async {
+            await _openBookingCoursePicker(context);
+          },
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  p.accent,
+                  p.accent.withOpacity(0.88),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: p.accent.withOpacity(0.22),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.25)),
+                  ),
+                  child: const Icon(
+                    Icons.calendar_month_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Booking',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Book your next class',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: p.cardBg,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Open',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: p.primary,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
-
         FutureBuilder<_NextBooking?>(
           future: _findMyNextBookingAcrossCourses(),
           builder: (context, snap) {
             final next = snap.data;
             if (snap.connectionState == ConnectionState.waiting) {
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                ),
-                child: const Row(
-                  children: [
-                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 10),
-                    Text('Checking your next class...', style: TextStyle(fontWeight: FontWeight.w800)),
-                  ],
-                ),
+              return _LoadingCard(
+                palette: p,
+                text: 'Checking your next class...',
               );
             }
 
             if (next == null) {
-              return const SizedBox.shrink();
+              return _EmptyCard(
+                palette: p,
+                text: 'No upcoming reserved class found right now.',
+              );
             }
 
             return FutureBuilder<_MeetInfo?>(
-              future: _loadMeetInfo(teacherId: next.teacherId, courseId: next.courseId),
+              future: _loadMeetInfo(
+                teacherId: next.teacherId,
+                courseId: next.courseId,
+              ),
               builder: (context, ms) {
                 final meet = ms.data;
-                final canJoin = (meet != null) && _canJoinNow(next.start, meet.durationMinutes);
+                final canJoin =
+                    (meet != null) &&
+                        _canJoinNow(next.start, meet.durationMinutes);
 
                 final timeStr = '${_friendlyDate(next.start)} • ${next.time}';
                 final teacherStr = next.teacherName;
 
                 return Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                    color: p.cardBg,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: p.border.withOpacity(0.85)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 14,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.upcoming_rounded, size: 18, color: UiK.actionOrange),
-                          SizedBox(width: 8),
+                          Icon(
+                            Icons.upcoming_rounded,
+                            size: 18,
+                            color: p.accent,
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            'Next booked class',
-                            style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+                            'Next reserved class',
+                            style: TextStyle(
+                              color: p.text,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Text(timeStr, style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue)),
+                      Text(
+                        timeStr,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         'Teacher: $teacherStr',
-                        style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: p.text.withOpacity(0.70),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       if (meet == null) ...[
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: UiK.primaryBlue.withOpacity(0.04),
+                            color: p.soft.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
                           ),
-                          child: const Text(
+                          child: Text(
                             'Meet link not set for this course yet.',
-                            style: TextStyle(fontWeight: FontWeight.w800),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: p.text,
+                            ),
                           ),
                         ),
                       ] else ...[
                         FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor: UiK.actionOrange,
+                            backgroundColor: p.accent,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                             minimumSize: const Size(double.infinity, 48),
                           ),
                           onPressed: canJoin
                               ? () async {
-                            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                            final uid =
+                                FirebaseAuth.instance.currentUser?.uid ?? '';
 
                             await _openExternalUrl(context, meet.meetUrl);
 
                             if (uid.isNotEmpty) {
                               unawaited(
-                                _autoMarkPresentAndTaught(learnerUid: uid, next: next),
+                                _autoMarkPresentAndTaught(
+                                  learnerUid: uid,
+                                  next: next,
+                                ),
                               );
                             }
                           }
                               : null,
                           child: Text(
-                            canJoin ? 'Join Google Meet' : 'Join available near session time',
+                            canJoin
+                                ? 'Join Google Meet'
+                                : 'Join available near session time',
                             style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Join opens 5 min before start and stays available until 10 min after start.',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade600, fontSize: 12),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withOpacity(0.60),
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ],
@@ -1502,6 +2382,8 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   }
 
   final db = FirebaseDatabase.instance.ref();
+  final p = _paletteFromTheme();
+
   List<Map<String, dynamic>> courses = [];
 
   try {
@@ -1516,13 +2398,15 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
         final val = e.value;
         if (val is! Map) continue;
 
-        final m = Map<String, dynamic>.from(val as Map);
+        final m = Map<String, dynamic>.from(val);
 
         final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
         final courseId = realCourseId.isNotEmpty ? realCourseId : key;
 
-        final variantKey =
-        (m['variantKey'] ?? m['variant'] ?? '').toString().trim().toLowerCase();
+        final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
         if (variantKey != 'online') continue;
 
@@ -1534,7 +2418,8 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
         final assignedAt = numVal(m['assignedAt']);
 
-        final onlineSyllabusSnap = await db.child('syllabi/$courseId/online').get();
+        final onlineSyllabusSnap =
+        await db.child('syllabi/$courseId/online').get();
         if (!onlineSyllabusSnap.exists) continue;
 
         courses.add({
@@ -1567,7 +2452,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
   showModalBottomSheet(
     context: context,
-    backgroundColor: UiK.appBg,
+    backgroundColor: p.appBg,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (ctx) {
@@ -1578,12 +2463,12 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Choose course to book',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
-                  color: UiK.primaryBlue,
+                  color: p.primary,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1607,16 +2492,17 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                         Navigator.of(ctx).pop();
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => LearnerBookingScreen(courseId: courseKey),
+                            builder: (_) =>
+                                LearnerBookingScreen(courseId: courseKey),
                           ),
                         );
                       },
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                          border: Border.all(color: p.border.withOpacity(0.85)),
                         ),
                         child: Row(
                           children: [
@@ -1624,13 +2510,15 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: UiK.primaryBlue.withOpacity(0.06),
+                                color: p.soft,
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                                border: Border.all(
+                                  color: p.border.withOpacity(0.85),
+                                ),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.calendar_month_rounded,
-                                color: UiK.primaryBlue,
+                                color: p.primary,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1642,9 +2530,9 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                     title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w900,
-                                      color: UiK.primaryBlue,
+                                      color: p.primary,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -1652,14 +2540,17 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                     code.isEmpty ? '—' : 'Code: $code',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: Colors.grey.shade600,
+                                      color: p.text.withOpacity(0.62),
                                       fontSize: 12,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: p.primary,
+                            ),
                           ],
                         ),
                       ),
@@ -1689,6 +2580,7 @@ Future<void> _openHomeworkCoursePicker(
   }
 
   final db = FirebaseDatabase.instance.ref();
+  final p = _paletteFromTheme();
 
   List<Map<String, dynamic>> courses = [];
   try {
@@ -1700,11 +2592,14 @@ Future<void> _openHomeworkCoursePicker(
 
       courses = raw.entries.map((e) {
         final key = e.key.toString();
-        final m = (e.value is Map) ? Map<String, dynamic>.from(e.value as Map) : <String, dynamic>{};
+        final m = (e.value is Map)
+            ? Map<String, dynamic>.from(e.value as Map)
+            : <String, dynamic>{};
         final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
         final code = (m['course_code'] ?? '').toString();
 
-        int numVal(dynamic vv) => (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
+        int numVal(dynamic vv) =>
+            (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
         final assignedAt = numVal(m['assignedAt']);
 
         return {
@@ -1716,8 +2611,6 @@ Future<void> _openHomeworkCoursePicker(
       }).toList();
 
       courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
-
-
     }
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1737,7 +2630,7 @@ Future<void> _openHomeworkCoursePicker(
 
   showModalBottomSheet(
     context: context,
-    backgroundColor: UiK.appBg,
+    backgroundColor: p.appBg,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (ctx) {
@@ -1748,9 +2641,13 @@ Future<void> _openHomeworkCoursePicker(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Choose course',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: UiK.primaryBlue),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  color: p.primary,
+                ),
               ),
               const SizedBox(height: 12),
               ConstrainedBox(
@@ -1783,9 +2680,11 @@ Future<void> _openHomeworkCoursePicker(
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                          border: Border.all(
+                            color: p.border.withOpacity(0.85),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -1793,11 +2692,16 @@ Future<void> _openHomeworkCoursePicker(
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: UiK.primaryBlue.withOpacity(0.06),
+                                color: p.soft,
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                                border: Border.all(
+                                  color: p.border.withOpacity(0.85),
+                                ),
                               ),
-                              child: const Icon(Icons.school_rounded, color: UiK.primaryBlue),
+                              child: Icon(
+                                Icons.school_rounded,
+                                color: p.primary,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -1808,14 +2712,17 @@ Future<void> _openHomeworkCoursePicker(
                                     title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.primaryBlue),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: p.primary,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     code.isEmpty ? '—' : 'Code: $code',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: Colors.grey.shade600,
+                                      color: p.text.withOpacity(0.62),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -1827,11 +2734,16 @@ Future<void> _openHomeworkCoursePicker(
                               children: [
                                 if (courseKeysWithUndone.contains(courseKey))
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.red.withOpacity(0.10),
                                       borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(color: Colors.red.withOpacity(0.25)),
+                                      border: Border.all(
+                                        color: Colors.red.withOpacity(0.25),
+                                      ),
                                     ),
                                     child: const Text(
                                       'HW',
@@ -1843,7 +2755,10 @@ Future<void> _openHomeworkCoursePicker(
                                     ),
                                   ),
                                 const SizedBox(width: 8),
-                                const Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: p.primary,
+                                ),
                               ],
                             ),
                           ],
@@ -1861,178 +2776,16 @@ Future<void> _openHomeworkCoursePicker(
   );
 }
 
-/// ✅ Special card: Mail + unread badge sum
-class _MailHomeCard extends StatelessWidget {
-  const _MailHomeCard();
-
-  static int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v?.toString() ?? '') ?? 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final me = FirebaseAuth.instance.currentUser;
-    final meUid = me?.uid ?? '';
-    final ref = FirebaseDatabase.instance.ref('mail_index/$meUid');
-
-    return StreamBuilder<DatabaseEvent>(
-      stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
-      builder: (context, snap) {
-        int unreadTotal = 0;
-
-        final v = snap.data?.snapshot.value;
-        if (v is Map) {
-          v.forEach((_, vv) {
-            if (vv is! Map) return;
-            final m = vv.map((k, v) => MapEntry(k.toString(), v));
-
-            final deletedAt = m['deletedAt'];
-            if (deletedAt != null) return;
-
-            final unread = _toInt(m['unreadCount']);
-            unreadTotal += unread;
-          });
-        }
-
-        return _HomeCard(
-          icon: Icons.mail_rounded,
-          title: 'Mail',
-          subtitle: 'Read & reply',
-          routeType: _HomeCardRoute.mail,
-          badgeCount: unreadTotal,
-        );
-      },
-    );
-  }
-}
-
-
-enum _HomeCardRoute { mail, homework, reminders, callLogs, gallery, friends }
-class _HomeCard extends StatelessWidget {
-  const _HomeCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.routeType,
-    this.badgeCount = 0,
-    this.disableTap = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final _HomeCardRoute routeType;
-  final int badgeCount;
-  final bool disableTap;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget iconBox() {
-      return Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: UiK.primaryBlue.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-            ),
-            child: Icon(icon, color: UiK.primaryBlue),
-          ),
-          if (badgeCount > 0)
-            Positioned(
-              right: -8,
-              top: -8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  badgeCount > 99 ? '99+' : '$badgeCount',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
-    final cardBody = Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          iconBox(),
-          const Spacer(),
-          Text(title, style: UiK.titleText(size: 16)),
-          const SizedBox(height: 4),
-          Text(subtitle, style: UiK.subtleText()),
-        ],
-      ),
-    );
-
-    if (disableTap) return cardBody;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () async {
-        if (routeType == _HomeCardRoute.mail) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => LearnerMailScreen()),
-          );
-          return;
-        }
-
-        if (routeType == _HomeCardRoute.callLogs) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-          );
-          return;
-        }
-
-        if (routeType == _HomeCardRoute.gallery) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()),
-          );
-          return;
-        }
-
-        if (routeType == _HomeCardRoute.homework) {
-          return;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$title is not ready yet.')),
-        );
-      },
-      child: cardBody,
-    );
-  }
-}
-
 class _SupportTile extends StatelessWidget {
   const _SupportTile({
+    required this.palette,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
   });
 
+  final _HomePalette palette;
   final IconData icon;
   final String title;
   final String subtitle;
@@ -2041,14 +2794,14 @@ class _SupportTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: palette.cardBg,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          border: Border.all(color: palette.border.withOpacity(0.85)),
         ),
         child: Row(
           children: [
@@ -2056,11 +2809,10 @@ class _SupportTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: UiK.primaryBlue.withOpacity(0.06),
+                color: palette.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
               ),
-              child: Icon(icon, color: UiK.primaryBlue),
+              child: Icon(icon, color: palette.primary),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2069,26 +2821,27 @@ class _SupportTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: UiK.primaryBlue,
-                      fontSize: 15,
+                      color: palette.primary,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: Colors.grey.shade600,
+                      color: palette.text.withOpacity(0.62),
                       fontSize: 12,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            const Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: palette.text.withOpacity(0.45),
+            ),
           ],
         ),
       ),
@@ -2097,7 +2850,12 @@ class _SupportTile extends StatelessWidget {
 }
 
 class _UserPick {
-  const _UserPick({required this.uid, required this.name, required this.subtitle});
+  const _UserPick({
+    required this.uid,
+    required this.name,
+    required this.subtitle,
+  });
+
   final String uid;
   final String name;
   final String subtitle;
@@ -2115,7 +2873,6 @@ class _ClassesAndPeers {
   final Map<String, String> classmateUids;
 }
 
-/// ✅ Homework card with undone badge
 class _LearnerHomeworkHomeCard extends StatelessWidget {
   const _LearnerHomeworkHomeCard();
 
@@ -2124,6 +2881,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
     final me = FirebaseAuth.instance.currentUser;
     final meUid = me?.uid ?? '';
     final ref = FirebaseDatabase.instance.ref('users/$meUid/courses');
+    final p = _paletteFromTheme();
 
     return StreamBuilder<DatabaseEvent>(
       stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
@@ -2177,23 +2935,95 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
         }
 
         final coursesCount = courseKeysWithUndone.length;
-        final subtitle = coursesCount == 0 ? 'All done ✅' : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending';
+        final subtitle = coursesCount == 0
+            ? 'All done ✅'
+            : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending';
 
         return InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           onTap: () async {
             await _openHomeworkCoursePicker(
               context,
               courseKeysWithUndone: courseKeysWithUndone,
             );
           },
-          child: _HomeCard(
-            disableTap: true,
-            icon: Icons.assignment_rounded,
-            title: 'Homework',
-            subtitle: subtitle,
-            routeType: _HomeCardRoute.homework,
-            badgeCount: undoneTotal,
+          child: Container(
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withOpacity(0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: p.soft,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: p.border.withOpacity(0.85)),
+                      ),
+                      child: Icon(Icons.assignment_rounded, color: p.primary),
+                    ),
+                    if (undoneTotal > 0)
+                      Positioned(
+                        right: -8,
+                        top: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: Text(
+                            undoneTotal > 99 ? '99+' : '$undoneTotal',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Homework',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.62),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -2201,7 +3031,6 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
   }
 }
 
-/// ✅ Reminders card with unread badge
 class _RemindersHomeCard extends StatelessWidget {
   const _RemindersHomeCard();
 
@@ -2210,6 +3039,7 @@ class _RemindersHomeCard extends StatelessWidget {
     final me = FirebaseAuth.instance.currentUser;
     final uid = me?.uid ?? '';
     final ref = FirebaseDatabase.instance.ref('reminders/$uid');
+    final p = _paletteFromTheme();
 
     return StreamBuilder<DatabaseEvent>(
       stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
@@ -2229,19 +3059,94 @@ class _RemindersHomeCard extends StatelessWidget {
         final subtitle = unread == 0 ? 'All caught up ✅' : '$unread unread';
 
         return InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           onTap: () {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LearnerRemindersListScreen()),
+              MaterialPageRoute(
+                builder: (_) => const LearnerRemindersListScreen(),
+              ),
             );
           },
-          child: _HomeCard(
-            disableTap: true,
-            icon: Icons.notifications_active_rounded,
-            title: 'Reminders',
-            subtitle: subtitle,
-            routeType: _HomeCardRoute.reminders,
-            badgeCount: unread,
+          child: Container(
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withOpacity(0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: p.soft,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: p.border.withOpacity(0.85)),
+                      ),
+                      child: Icon(
+                        Icons.notifications_active_rounded,
+                        color: p.primary,
+                      ),
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: -8,
+                        top: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: Text(
+                            unread > 99 ? '99+' : '$unread',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Reminders',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.62),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -2249,67 +3154,430 @@ class _RemindersHomeCard extends StatelessWidget {
   }
 }
 
-/// ✅ Call logs card with “attention needed” badge
-class _CallLogsHomeCard extends StatelessWidget {
-  const _CallLogsHomeCard();
-
-  int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v?.toString() ?? '') ?? 0;
-  }
-
-  bool _needsAttention(Map<String, dynamic> m) {
-    final status = (m['status'] ?? '').toString().trim().toLowerCase();
-    final dur = m.containsKey('durationSec') ? _toInt(m['durationSec']) : 0;
-
-    if (status == 'missed') return true;
-    if (status == 'ringing') return true;
-    if (status == 'ended' && dur <= 0) return true;
-
-    return false;
-  }
+class _StudyCoachHomeCard extends StatelessWidget {
+  const _StudyCoachHomeCard();
 
   @override
   Widget build(BuildContext context) {
-    final me = FirebaseAuth.instance.currentUser;
-    final uid = me?.uid ?? '';
-    final ref = FirebaseDatabase.instance.ref('call_logs/$uid');
+    final p = _paletteFromTheme();
 
-    return StreamBuilder<DatabaseEvent>(
-      stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
-      builder: (context, snap) {
-        int attention = 0;
-
-        final v = snap.data?.snapshot.value;
-        if (v is Map) {
-          v.forEach((_, vv) {
-            if (vv is! Map) return;
-            final m = vv.map((k, v) => MapEntry(k.toString(), v));
-            final mm = m.map((k, v) => MapEntry(k.toString(), v));
-            if (_needsAttention(mm)) attention += 1;
-          });
-        }
-
-        final subtitle = attention == 0 ? 'All good ✅' : '$attention need attention';
-
-        return InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-            );
-          },
-          child: _HomeCard(
-            disableTap: true,
-            icon: Icons.history_rounded,
-            title: 'Call Logs',
-            subtitle: subtitle,
-            routeType: _HomeCardRoute.callLogs,
-            badgeCount: attention,
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const LearnerStudyCoachScreen(),
           ),
         );
       },
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: p.cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: p.border.withOpacity(0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 7),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: p.soft,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: p.border.withOpacity(0.85)),
+              ),
+              child: Icon(
+                Icons.psychology_alt_rounded,
+                color: p.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Study Coach',
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Set goals, reminders, and track progress',
+                    style: TextStyle(
+                      color: p.text.withOpacity(0.62),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: p.soft,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Icon(
+                Icons.chevron_right_rounded,
+                color: p.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
+
+class _LearnerDrawer extends StatelessWidget {
+  const _LearnerDrawer({
+    required this.palette,
+    required this.onOpenProfile,
+    required this.onOpenMail,
+    required this.onOpenCourses,
+    required this.onOpenRegulations,
+    required this.onOpenThemeSettings,
+    required this.onLogout,
+  });
+
+  final _HomePalette palette;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenCourses;
+  final VoidCallback onOpenRegulations;
+  final VoidCallback onOpenThemeSettings;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: palette.appBg,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: palette.primary,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Colors.white24,
+                    child: Icon(
+                      Icons.school_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    'Learner Menu',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                children: [
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.menu_book_rounded,
+                    title: 'My Courses',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenCourses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.person_rounded,
+                    title: 'Profile',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenProfile();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.mail_rounded,
+                    title: 'Mail',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenMail();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.policy_rounded,
+                    title: 'Regulations',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenRegulations();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.palette_rounded,
+                    title: 'Theme Settings',
+                    subtitle: 'Choose your app look',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenThemeSettings();
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onLogout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: palette.accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text(
+                    'Logout',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerTile extends StatelessWidget {
+  const _DrawerTile({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.subtitle = '',
+  });
+
+  final _HomePalette palette;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: palette.border.withOpacity(0.85)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: palette.soft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: palette.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: palette.primary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (subtitle.trim().isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: palette.text.withOpacity(0.55),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: palette.text.withOpacity(0.45),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeChoiceTile extends StatelessWidget {
+  const _ThemeChoiceTile({
+    required this.palette,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.preview1,
+    required this.preview2,
+    required this.onTap,
+  });
+
+  final _HomePalette palette;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final Color preview1;
+  final Color preview2;
+  final VoidCallback onTap;
+
+  final Color _fallbackBorder = const Color(0xFFD1D9E0);
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: palette.cardBg,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? preview1 : palette.border.withOpacity(0.9),
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(backgroundColor: preview1, radius: 12),
+              const SizedBox(width: 8),
+              CircleAvatar(backgroundColor: preview2, radius: 12),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: palette.text,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: palette.text.withOpacity(0.62),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.circle_outlined,
+                color: selected ? preview1 : _fallbackBorder,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomePalette {
+  const _HomePalette({
+    required this.primary,
+    required this.accent,
+    required this.text,
+    required this.appBg,
+    required this.cardBg,
+    required this.border,
+    required this.soft,
+  });
+
+  final Color primary;
+  final Color accent;
+  final Color text;
+  final Color appBg;
+  final Color cardBg;
+  final Color border;
+  final Color soft;
+}
+
+_HomePalette _paletteFromTheme() {
+  final p = appThemeController.palette;
+  return _HomePalette(
+    primary: p.primary,
+    accent: p.accent,
+    text: p.text,
+    appBg: p.appBg,
+    cardBg: p.cardBg,
+    border: p.border,
+    soft: p.soft,
+  );
 }

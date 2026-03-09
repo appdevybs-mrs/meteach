@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -7,7 +6,6 @@ import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
-import '../services/notification_service.dart';
 
 class LearnerStudyCoachScreen extends StatefulWidget {
   const LearnerStudyCoachScreen({super.key});
@@ -20,44 +18,27 @@ class LearnerStudyCoachScreen extends StatefulWidget {
 class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  String? _selectedSkillKey;
-  String? _selectedMilestoneId;
-  TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
-
-  bool _saving = false;
   bool _normalizing = false;
+  bool _updatingTask = false;
+
+  _CoachLang _lang = _CoachLang.en;
+  String? _expandedDayKey;
 
   _CoachPalette get palette => _CoachPalette.fromApp(appThemeController.palette);
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  DatabaseReference get _goalsRef =>
-      _db.child('users/$_uid/study_coach/goals');
+  DatabaseReference get _planRef =>
+      _db.child('users/$_uid/study_plan/current_week');
 
-  List<_CoachSkill> get _skills => _coachSkills;
-
-  _CoachSkill? get _selectedSkill {
-    for (final s in _skills) {
-      if (s.key == _selectedSkillKey) return s;
-    }
-    return null;
-  }
-
-  _CoachMilestone? get _selectedMilestone {
-    final skill = _selectedSkill;
-    if (skill == null) return null;
-
-    for (final m in skill.milestones) {
-      if (m.id == _selectedMilestoneId) return m;
-    }
-    return null;
-  }
+  bool get _isArabic => _lang == _CoachLang.ar;
 
   @override
   void initState() {
     super.initState();
     appThemeController.addListener(_themeRefresh);
-    unawaited(_normalizeAllGoalCycles());
+    _expandedDayKey = _todayDay.key;
+    unawaited(_normalizeCurrentWeekPlan());
   }
 
   @override
@@ -71,20 +52,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     setState(() {});
   }
 
-  Future<void> _pickReminderTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-      helpText: 'Choose study reminder time',
-    );
-
-    if (picked == null) return;
-    if (!mounted) return;
-
-    setState(() {
-      _selectedTime = picked;
-    });
-  }
+  String _tr(String en, String ar) => _isArabic ? ar : en;
 
   String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -92,60 +60,79 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     return '${d.year}-${_two(d.month)}-${_two(d.day)}';
   }
 
-  String _currentCycleStartKey(String cycleType) {
-    final now = DateTime.now();
-
-    if (cycleType == 'weekly') {
-      final start = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: now.weekday - 1));
-      return _dateKey(start);
-    }
-
-    if (cycleType == 'monthly') {
-      return '${now.year}-${_two(now.month)}-01';
-    }
-
-    return _dateKey(now);
+  String _weekStartKey(DateTime now) {
+    final day = DateTime(now.year, now.month, now.day);
+    final mondayStart = day.subtract(Duration(days: day.weekday - 1));
+    return _dateKey(mondayStart);
   }
 
-  bool _needsCycleReset(Map<String, dynamic> goal) {
-    final cycleType = (goal['cycleType'] ?? '').toString().trim();
-    final stored = (goal['cycleStartKey'] ?? '').toString().trim();
-
-    if (cycleType.isEmpty) return false;
-    if (stored.isEmpty) return true;
-
-    return stored != _currentCycleStartKey(cycleType);
+  String _currentWeekKey() {
+    return _weekStartKey(DateTime.now());
   }
 
-  Future<void> _normalizeAllGoalCycles() async {
+  Map<String, bool> _emptyCheckedMap() {
+    return {
+      for (final task in _allTasks) task.id: false,
+    };
+  }
+
+  int _quoteIndexForWeek(String weekKey) {
+    final hash = weekKey.codeUnits.fold<int>(0, (a, b) => a + b);
+    return hash % _quotes.length;
+  }
+
+  Future<void> _normalizeCurrentWeekPlan() async {
     if (_uid.isEmpty || _normalizing) return;
 
     _normalizing = true;
     try {
-      final snap = await _goalsRef.get();
+      final snap = await _planRef.get();
       final raw = snap.value;
-      if (raw is! Map) return;
+      final currentWeekKey = _currentWeekKey();
 
-      final goals = Map<dynamic, dynamic>.from(raw);
-
-      for (final entry in goals.entries) {
-        final goalId = entry.key.toString();
-        final val = entry.value;
-        if (val is! Map) continue;
-
-        final goal = Map<String, dynamic>.from(val as Map);
-        if (!_needsCycleReset(goal)) continue;
-
-        final cycleType = (goal['cycleType'] ?? '').toString().trim();
-
-        await _goalsRef.child(goalId).update({
-          'progressCurrent': 0,
-          'lastCompletedDateKey': '',
-          'cycleStartKey': _currentCycleStartKey(cycleType),
+      if (raw == null || raw is! Map) {
+        await _planRef.set({
+          'weekStartKey': currentWeekKey,
+          'quoteIndex': _quoteIndexForWeek(currentWeekKey),
+          'checked': _emptyCheckedMap(),
           'updatedAt': ServerValue.timestamp,
         });
+        return;
       }
+
+      final map = Map<dynamic, dynamic>.from(raw);
+      final storedWeekKey = (map['weekStartKey'] ?? '').toString().trim();
+
+      if (storedWeekKey != currentWeekKey) {
+        await _planRef.set({
+          'weekStartKey': currentWeekKey,
+          'quoteIndex': _quoteIndexForWeek(currentWeekKey),
+          'checked': _emptyCheckedMap(),
+          'updatedAt': ServerValue.timestamp,
+        });
+        return;
+      }
+
+      final rawChecked = map['checked'];
+      final checked = <String, bool>{};
+
+      if (rawChecked is Map) {
+        final checkedMap = Map<dynamic, dynamic>.from(rawChecked);
+        for (final task in _allTasks) {
+          checked[task.id] = checkedMap[task.id] == true;
+        }
+      } else {
+        for (final task in _allTasks) {
+          checked[task.id] = false;
+        }
+      }
+
+      await _planRef.update({
+        'weekStartKey': currentWeekKey,
+        'quoteIndex': _quoteIndexForWeek(currentWeekKey),
+        'checked': checked,
+        'updatedAt': ServerValue.timestamp,
+      });
     } catch (_) {
       //
     } finally {
@@ -153,187 +140,56 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     }
   }
 
-  Future<void> _saveGoal() async {
-    if (_uid.isEmpty) return;
+  Future<void> _toggleTask(String taskId, bool currentValue) async {
+    if (_uid.isEmpty || _updatingTask) return;
 
-    final skill = _selectedSkill;
-    final milestone = _selectedMilestone;
-
-    if (skill == null) {
-      _showSnack('Please choose a skill.');
-      return;
-    }
-
-    if (milestone == null) {
-      _showSnack('Please choose a goal.');
-      return;
-    }
-
-    setState(() => _saving = true);
-
+    setState(() => _updatingTask = true);
     try {
-      await NotificationService.I.init();
-      await NotificationService.I.requestPermissions();
-
-      final goalId = _goalsRef.push().key;
-      if (goalId == null || goalId.isEmpty) {
-        throw Exception('Could not create goal id.');
-      }
-
-      await _goalsRef.child(goalId).set({
-        'goalId': goalId,
-        'skillKey': skill.key,
-        'skillTitle': skill.title,
-        'skillEmoji': skill.emoji,
-        'milestoneId': milestone.id,
-        'milestoneTitle': milestone.title,
-        'milestoneSubtitle': milestone.subtitle,
-        'progressTarget': milestone.targetValue,
-        'progressCurrent': 0,
-        'unit': milestone.unit,
-        'stepValue': milestone.stepValue,
-        'cycleType': milestone.cycleType,
-        'cycleStartKey': _currentCycleStartKey(milestone.cycleType),
-        'reminderHour': _selectedTime.hour,
-        'reminderMinute': _selectedTime.minute,
-        'remindersEnabled': true,
-        'lastCompletedDateKey': '',
-        'createdAt': ServerValue.timestamp,
+      await _planRef.child('checked/$taskId').set(!currentValue);
+      await _planRef.update({
+        'weekStartKey': _currentWeekKey(),
+        'quoteIndex': _quoteIndexForWeek(_currentWeekKey()),
         'updatedAt': ServerValue.timestamp,
       });
-
-      await NotificationService.I.scheduleCoachReminder(
-        goalId: goalId,
-        title: '${skill.emoji} ${skill.title} time',
-        body: 'Today: ${milestone.buttonLabel}',
-        hour: _selectedTime.hour,
-        minute: _selectedTime.minute,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _selectedMilestoneId = null;
-      });
-
-      _showSnack('Study goal added.');
     } catch (e) {
-      _showSnack('Could not save goal: $e');
+      _showSnack(
+        _tr(
+          'Could not update task: $e',
+          'تعذر تحديث المهمة: $e',
+        ),
+      );
     } finally {
       if (mounted) {
-        setState(() => _saving = false);
+        setState(() => _updatingTask = false);
       }
     }
   }
 
-  Future<void> _toggleReminder({
-    required String goalId,
-    required Map<String, dynamic> goal,
-    required bool enabled,
-  }) async {
-    final hour = _toInt(goal['reminderHour']);
-    final minute = _toInt(goal['reminderMinute']);
-    final skillTitle = (goal['skillTitle'] ?? 'Study').toString().trim();
-    final emoji = (goal['skillEmoji'] ?? '📘').toString().trim();
-    final buttonLabel = (goal['milestoneSubtitle'] ?? 'Study session')
-        .toString()
-        .trim();
-
-    try {
-      await _goalsRef.child(goalId).update({
-        'remindersEnabled': enabled,
-        'updatedAt': ServerValue.timestamp,
-      });
-
-      if (enabled) {
-        await NotificationService.I.scheduleCoachReminder(
-          goalId: goalId,
-          title: '$emoji $skillTitle time',
-          body: buttonLabel,
-          hour: hour,
-          minute: minute,
-        );
-      } else {
-        await NotificationService.I.cancelCoachReminder(goalId: goalId);
-      }
-
-      _showSnack(enabled ? 'Reminder turned on.' : 'Reminder turned off.');
-    } catch (e) {
-      _showSnack('Could not update reminder: $e');
-    }
-  }
-
-  Future<void> _markTodayDone({
-    required String goalId,
-    required Map<String, dynamic> goal,
-  }) async {
-    final todayKey = _dateKey(DateTime.now());
-
-    if (_needsCycleReset(goal)) {
-      final cycleType = (goal['cycleType'] ?? '').toString().trim();
-
-      await _goalsRef.child(goalId).update({
-        'progressCurrent': 0,
-        'lastCompletedDateKey': '',
-        'cycleStartKey': _currentCycleStartKey(cycleType),
-        'updatedAt': ServerValue.timestamp,
-      });
-
-      goal['progressCurrent'] = 0;
-      goal['lastCompletedDateKey'] = '';
-      goal['cycleStartKey'] = _currentCycleStartKey(cycleType);
-    }
-
-    final lastDone = (goal['lastCompletedDateKey'] ?? '').toString().trim();
-    if (lastDone == todayKey) {
-      _showSnack('Today is already completed for this goal.');
-      return;
-    }
-
-    final current = _toInt(goal['progressCurrent']);
-    final target = _toInt(goal['progressTarget']);
-    final step = _toInt(goal['stepValue']);
-
-    final updated = math.min(target, current + step);
-
-    try {
-      await _goalsRef.child(goalId).update({
-        'progressCurrent': updated,
-        'lastCompletedDateKey': todayKey,
-        'updatedAt': ServerValue.timestamp,
-      });
-
-      if (updated >= target) {
-        _showSnack('Great job — target reached.');
-      } else {
-        _showSnack('Nice work — progress updated.');
-      }
-    } catch (e) {
-      _showSnack('Could not update goal: $e');
-    }
-  }
-
-  Future<void> _deleteGoal({
-    required String goalId,
-  }) async {
+  Future<void> _resetWeek() async {
     final yes = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete goal?'),
-          content: const Text(
-            'This will remove the goal and cancel its reminder.',
+        return Directionality(
+          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+          child: AlertDialog(
+            title: Text(_tr('Reset this week?', 'إعادة تعيين هذا الأسبوع؟')),
+            content: Text(
+              _tr(
+                'This will clear all completed tasks for the current week.',
+                'سيؤدي هذا إلى مسح كل المهام المكتملة لهذا الأسبوع الحالي.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(_tr('Cancel', 'إلغاء')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(_tr('Reset', 'إعادة تعيين')),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
         );
       },
     );
@@ -341,50 +197,112 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     if (yes != true) return;
 
     try {
-      await NotificationService.I.cancelCoachReminder(goalId: goalId);
-      await _goalsRef.child(goalId).remove();
-      _showSnack('Goal deleted.');
+      await _planRef.set({
+        'weekStartKey': _currentWeekKey(),
+        'quoteIndex': _quoteIndexForWeek(_currentWeekKey()),
+        'checked': _emptyCheckedMap(),
+        'updatedAt': ServerValue.timestamp,
+      });
+
+      _showSnack(
+        _tr(
+          'This week was reset.',
+          'تمت إعادة تعيين هذا الأسبوع.',
+        ),
+      );
     } catch (e) {
-      _showSnack('Could not delete goal: $e');
+      _showSnack(
+        _tr(
+          'Could not reset week: $e',
+          'تعذر إعادة تعيين الأسبوع: $e',
+        ),
+      );
     }
   }
 
-  int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v?.toString() ?? '') ?? 0;
-  }
-
-  String _coachMessage(Map<String, dynamic> goal) {
-    final current = _toInt(goal['progressCurrent']);
-    final target = _toInt(goal['progressTarget']);
-    final step = _toInt(goal['stepValue']);
-    final unit = (goal['unit'] ?? 'items').toString().trim();
-    final cycleType = (goal['cycleType'] ?? 'weekly').toString().trim();
-
-    final remaining = math.max(0, target - current);
-
-    if (current >= target) {
-      return 'Target reached. Excellent work.';
-    }
-
-    if (remaining <= step) {
-      return 'One more study session will likely finish this goal.';
-    }
-
-    return '$remaining $unit left this $cycleType.';
-  }
-
-  String _cycleChip(Map<String, dynamic> goal) {
-    final cycleType = (goal['cycleType'] ?? 'weekly').toString().trim();
-    if (cycleType == 'monthly') return 'Monthly';
-    if (cycleType == 'daily') return 'Daily';
-    return 'Weekly';
-  }
-
-  String _timeLabel(int hour, int minute) {
-    final t = TimeOfDay(hour: hour, minute: minute);
-    return t.format(context);
+  void _showHowToUse() {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return Directionality(
+          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+          child: AlertDialog(
+            title: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6C63FF).withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    '!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF6C63FF),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _tr('How to use Study Coach', 'طريقة استخدام مدرب الدراسة'),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Text(
+                _tr(
+                  '1) This screen is a weekly guided study plan.\n\n'
+                      '2) Each day has one small English task set.\n\n'
+                      '3) Tap any day card to open its tasks.\n\n'
+                      '4) Tap a task to mark it complete.\n\n'
+                      '5) Your weekly progress bar updates automatically.\n\n'
+                      '6) The plan resets automatically when a new week starts.\n\n'
+                      '7) Use the language switch at the top to change between English and Arabic.\n\n'
+                      '8) You do not need to do everything at once. Only open one day, follow the steps, and finish that day.\n\n'
+                      'Best way to use it:\n'
+                      '• Open today’s card\n'
+                      '• Read the task steps\n'
+                      '• Do them in order\n'
+                      '• Mark each task complete\n'
+                      '• Come back tomorrow for the next day\n\n'
+                      'This screen is designed to be clear, guided, and simple — not a goal tracker and not a complex dashboard.',
+                  '1) هذه الشاشة هي خطة دراسة أسبوعية موجهة.\n\n'
+                      '2) كل يوم يحتوي على مجموعة صغيرة وواضحة من مهام تعلم الإنجليزية.\n\n'
+                      '3) اضغط على بطاقة أي يوم لفتح مهامه.\n\n'
+                      '4) اضغط على المهمة عند الانتهاء منها لوضع علامة الإكمال.\n\n'
+                      '5) شريط التقدم الأسبوعي يتحدث تلقائياً.\n\n'
+                      '6) يتم إعادة تعيين الخطة تلقائياً عند بداية أسبوع جديد.\n\n'
+                      '7) استخدم زر اللغة في الأعلى للتبديل بين العربية والإنجليزية.\n\n'
+                      '8) لا تحتاج إلى تنفيذ كل شيء دفعة واحدة. افتح يوماً واحداً فقط، اتبع الخطوات، وأنهِ ذلك اليوم.\n\n'
+                      'أفضل طريقة للاستخدام:\n'
+                      '• افتح بطاقة اليوم الحالي\n'
+                      '• اقرأ خطوات المهام\n'
+                      '• نفذها بالترتيب\n'
+                      '• علّم كل مهمة بعد إكمالها\n'
+                      '• ارجع غداً لليوم التالي\n\n'
+                      'هذه الشاشة مصممة لتكون واضحة وموجهة وبسيطة — وليست متتبّع أهداف معقداً ولا لوحة مزدحمة.',
+                ),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  height: 1.55,
+                ),
+              ),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(_tr('Got it', 'فهمت')),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showSnack(String text) {
@@ -394,571 +312,1041 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
     );
   }
 
+  Map<String, bool> _extractCheckedMap(dynamic raw) {
+    final checked = _emptyCheckedMap();
+
+    if (raw is! Map) return checked;
+
+    final map = Map<dynamic, dynamic>.from(raw);
+    final rawChecked = map['checked'];
+
+    if (rawChecked is! Map) return checked;
+
+    final checkedMap = Map<dynamic, dynamic>.from(rawChecked);
+    for (final task in _allTasks) {
+      checked[task.id] = checkedMap[task.id] == true;
+    }
+
+    return checked;
+  }
+
+  int _extractQuoteIndex(dynamic raw) {
+    if (raw is Map) {
+      final map = Map<dynamic, dynamic>.from(raw);
+      final v = map['quoteIndex'];
+      final parsed = int.tryParse(v?.toString() ?? '');
+      if (parsed != null && parsed >= 0 && parsed < _quotes.length) {
+        return parsed;
+      }
+    }
+    return _quoteIndexForWeek(_currentWeekKey());
+  }
+
+  _PlanDay get _todayDay {
+    final weekday = DateTime.now().weekday;
+    return _weekPlanDays[weekday - 1];
+  }
+
+  int _doneCountForDay(_PlanDay day, Map<String, bool> checked) {
+    return day.tasks.where((t) => checked[t.id] == true).length;
+  }
+
+  int _daysStartedCount(Map<String, bool> checked) {
+    return _weekPlanDays.where((day) {
+      return day.tasks.any((t) => checked[t.id] == true);
+    }).length;
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = palette;
 
-    return Scaffold(
-      backgroundColor: p.appBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        title: Text(
-          'Study Coach',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        iconTheme: IconThemeData(color: p.primary),
-      ),
-      body: WatermarkBackground(
-        child: RefreshIndicator(
-          onRefresh: _normalizeAllGoalCycles,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            children: [
-              _CoachHeroCard(palette: p),
-              const SizedBox(height: 14),
-              _buildSetupCard(),
-              const SizedBox(height: 16),
-              Text(
-                'My active goals',
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 17,
-                ),
-              ),
-              const SizedBox(height: 10),
-              _buildGoalsList(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSetupCard() {
-    final p = palette;
-    final skill = _selectedSkill;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: p.border.withOpacity(0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Create a study goal',
+    return Directionality(
+      textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: p.appBg,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.white,
+          title: Text(
+            _tr('Study Coach', 'مدرب الدراسة'),
             style: TextStyle(
               color: p.primary,
               fontWeight: FontWeight.w900,
-              fontSize: 16,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Choose a skill, choose a milestone, then set the daily study reminder.',
-            style: TextStyle(
-              color: p.text.withOpacity(0.70),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            value: _selectedSkillKey,
-            decoration: const InputDecoration(
-              labelText: 'Skill',
-              border: OutlineInputBorder(),
-            ),
-            items: _skills.map((skill) {
-              return DropdownMenuItem<String>(
-                value: skill.key,
-                child: Text('${skill.emoji} ${skill.title}'),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedSkillKey = value;
-                _selectedMilestoneId = null;
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _selectedMilestoneId,
-            decoration: const InputDecoration(
-              labelText: 'Goal',
-              border: OutlineInputBorder(),
-            ),
-            items: (skill?.milestones ?? const <_CoachMilestone>[])
-                .map((m) => DropdownMenuItem<String>(
-              value: m.id,
-              child: Text(m.title),
-            ))
-                .toList(),
-            onChanged: skill == null
-                ? null
-                : (value) {
-              setState(() {
-                _selectedMilestoneId = value;
-              });
-            },
-          ),
-          const SizedBox(height: 12),
-          InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: _pickReminderTime,
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: p.soft,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: p.border.withOpacity(0.85)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.schedule_rounded, color: p.primary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Reminder time: ${_selectedTime.format(context)}',
-                      style: TextStyle(
-                        color: p.primary,
-                        fontWeight: FontWeight.w800,
-                      ),
+          iconTheme: IconThemeData(color: p.primary),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                onPressed: _showHowToUse,
+                tooltip: _tr('How to use', 'طريقة الاستخدام'),
+                icon: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6C63FF).withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    '!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF6C63FF),
+                      fontSize: 16,
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: p.primary),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _saving ? null : _saveGoal,
-              icon: _saving
-                  ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-                  : const Icon(Icons.add_task_rounded),
-              label: const Text(
-                'Add study goal',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: p.accent,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
             ),
+          ],
+        ),
+        body: WatermarkBackground(
+          child: RefreshIndicator(
+            onRefresh: _normalizeCurrentWeekPlan,
+            child: StreamBuilder<DatabaseEvent>(
+              stream: _planRef.onValue,
+              builder: (context, snap) {
+                final raw = snap.data?.snapshot.value;
+                final checked = _extractCheckedMap(raw);
+
+                final total = _allTasks.length;
+                final done = checked.values.where((v) => v).length;
+                final progress = total == 0 ? 0.0 : done / total;
+                final percent = (progress * 100).round();
+                final daysStarted = _daysStartedCount(checked);
+
+                final quote = _quotes[_extractQuoteIndex(raw)].text(_lang);
+                final today = _todayDay;
+                final todayDone = _doneCountForDay(today, checked);
+
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                  children: [
+                    _HeroCard(
+                      lang: _lang,
+                      onChangeLang: (lang) {
+                        setState(() {
+                          _lang = lang;
+                        });
+                      },
+                      progress: progress,
+                      done: done,
+                      total: total,
+                      title: _tr('My English Learning Plan', 'خطة تعلم الإنجليزية'),
+                      subtitle: _tr(
+                        'One clear weekly plan · one tracking method · simple daily steps',
+                        'خطة أسبوعية واضحة · طريقة تتبع واحدة · خطوات يومية بسيطة',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _QuoteBanner(
+                      quote: quote,
+                    ),
+                    const SizedBox(height: 16),
+                    _TodayFocusCard(
+                      day: today,
+                      lang: _lang,
+                      doneCount: todayDone,
+                      totalCount: today.tasks.length,
+                      onOpen: () {
+                        setState(() {
+                          _expandedDayKey = today.key;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _StatsRow(
+                      lang: _lang,
+                      done: done,
+                      daysStarted: daysStarted,
+                      percent: percent,
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      _tr('Weekly study days', 'أيام الدراسة الأسبوعية'),
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _tr(
+                        'Tap one day only, follow its steps, then mark tasks done.',
+                        'افتح يوماً واحداً فقط، اتبع خطواته، ثم علّم المهام كمكتملة.',
+                      ),
+                      style: TextStyle(
+                        color: p.text.withOpacity(0.70),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    ..._weekPlanDays.map((day) {
+                      final doneCount = _doneCountForDay(day, checked);
+                      final expanded = _expandedDayKey == day.key;
+
+                      return _DayCard(
+                        day: day,
+                        lang: _lang,
+                        checked: checked,
+                        doneCount: doneCount,
+                        expanded: expanded,
+                        isToday: day.key == today.key,
+                        onHeaderTap: () {
+                          setState(() {
+                            _expandedDayKey =
+                            expanded ? null : day.key;
+                          });
+                        },
+                        onToggleTask: (taskId, currentValue) {
+                          _toggleTask(taskId, currentValue);
+                        },
+                      );
+                    }),
+                    const SizedBox(height: 16),
+                    _ResetCard(
+                      lang: _lang,
+                      done: done,
+                      total: total,
+                      onReset: _resetWeek,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroCard extends StatelessWidget {
+  const _HeroCard({
+    required this.lang,
+    required this.onChangeLang,
+    required this.progress,
+    required this.done,
+    required this.total,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final _CoachLang lang;
+  final ValueChanged<_CoachLang> onChangeLang;
+  final double progress;
+  final int done;
+  final int total;
+  final String title;
+  final String subtitle;
+
+  bool get _isArabic => lang == _CoachLang.ar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF6C63FF),
+            Color(0xFF5B8DEF),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6C63FF).withOpacity(0.28),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -28,
+            right: _isArabic ? null : -20,
+            left: _isArabic ? -20 : null,
+            child: Container(
+              width: 130,
+              height: 130,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -34,
+            left: _isArabic ? null : -16,
+            right: _isArabic ? -16 : null,
+            child: Container(
+              width: 110,
+              height: 110,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.06),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    '🎓',
+                    style: TextStyle(fontSize: 34),
+                  ),
+                  const Spacer(),
+                  _LangSwitch(
+                    selected: lang,
+                    onChanged: onChangeLang,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 26,
+                  height: 1.1,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.92),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Container(
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.16),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: progress.clamp(0, 1),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFFFFD700),
+                              Color(0xFFFF9F43),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _isArabic
+                    ? '$done من $total مهام مكتملة — ${((progress * 100).round())}%'
+                    : '$done / $total tasks completed — ${((progress * 100).round())}%',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.96),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildGoalsList() {
-    final p = palette;
+class _LangSwitch extends StatelessWidget {
+  const _LangSwitch({
+    required this.selected,
+    required this.onChanged,
+  });
 
-    if (_uid.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: p.cardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withOpacity(0.85)),
-        ),
-        child: Text(
-          'Not logged in.',
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w800,
+  final _CoachLang selected;
+  final ValueChanged<_CoachLang> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip({
+      required String label,
+      required bool active,
+      required VoidCallback onTap,
+    }) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: active ? Colors.white : Colors.white.withOpacity(0.16),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: Colors.white.withOpacity(active ? 0 : 0.25),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? const Color(0xFF5B57F4) : Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
           ),
         ),
       );
     }
 
-    return StreamBuilder<DatabaseEvent>(
-      stream: _goalsRef.onValue,
-      builder: (context, snap) {
-        final raw = snap.data?.snapshot.value;
-        if (raw == null) {
-          return _emptyGoalsCard();
-        }
+    return Row(
+      children: [
+        chip(
+          label: 'EN',
+          active: selected == _CoachLang.en,
+          onTap: () => onChanged(_CoachLang.en),
+        ),
+        const SizedBox(width: 8),
+        chip(
+          label: 'AR',
+          active: selected == _CoachLang.ar,
+          onTap: () => onChanged(_CoachLang.ar),
+        ),
+      ],
+    );
+  }
+}
 
-        if (raw is! Map) {
-          return _emptyGoalsCard();
-        }
+class _QuoteBanner extends StatelessWidget {
+  const _QuoteBanner({required this.quote});
 
-        final map = Map<dynamic, dynamic>.from(raw);
-        if (map.isEmpty) {
-          return _emptyGoalsCard();
-        }
+  final String quote;
 
-        final items = map.entries.map((e) {
-          final id = e.key.toString();
-          final val = e.value is Map
-              ? Map<String, dynamic>.from(e.value as Map)
-              : <String, dynamic>{};
-          return MapEntry(id, val);
-        }).toList();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: const Border(
+          left: BorderSide(
+            color: Color(0xFF6C63FF),
+            width: 5,
+          ),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Text(
+        quote,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF6C63FF),
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+          height: 1.4,
+        ),
+      ),
+    );
+  }
+}
 
-        items.sort((a, b) {
-          final aa = _toInt(a.value['updatedAt']);
-          final bb = _toInt(b.value['updatedAt']);
-          return bb.compareTo(aa);
-        });
+class _TodayFocusCard extends StatelessWidget {
+  const _TodayFocusCard({
+    required this.day,
+    required this.lang,
+    required this.doneCount,
+    required this.totalCount,
+    required this.onOpen,
+  });
 
-        return Column(
-          children: items.map((entry) {
-            final goalId = entry.key;
-            final goal = entry.value;
+  final _PlanDay day;
+  final _CoachLang lang;
+  final int doneCount;
+  final int totalCount;
+  final VoidCallback onOpen;
 
-            final target = math.max(1, _toInt(goal['progressTarget']));
-            final current = _toInt(goal['progressCurrent']);
-            final progress = current / target;
-            final remindersEnabled = goal['remindersEnabled'] == true;
-            final hour = _toInt(goal['reminderHour']);
-            final minute = _toInt(goal['reminderMinute']);
-            final todayKey = _dateKey(DateTime.now());
-            final alreadyDoneToday =
-                (goal['lastCompletedDateKey'] ?? '').toString() == todayKey;
+  bool get _isArabic => lang == _CoachLang.ar;
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
+  String _tr(String en, String ar) => _isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: day.lightColor,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              day.emoji,
+              style: const TextStyle(fontSize: 28),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _tr('Today focus', 'تركيز اليوم'),
+                  style: const TextStyle(
+                    color: Color(0xFF6C63FF),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${day.dayName(lang)} · ${day.title(lang)}',
+                  style: const TextStyle(
+                    color: Color(0xFF2F3152),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _isArabic
+                      ? '$doneCount من $totalCount مهام مكتملة'
+                      : '$doneCount / $totalCount tasks completed',
+                  style: TextStyle(
+                    color: const Color(0xFF2F3152).withOpacity(0.70),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: onOpen,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF6C63FF),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(_tr('Open', 'افتح')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatsRow extends StatelessWidget {
+  const _StatsRow({
+    required this.lang,
+    required this.done,
+    required this.daysStarted,
+    required this.percent,
+  });
+
+  final _CoachLang lang;
+  final int done;
+  final int daysStarted;
+  final int percent;
+
+  bool get _isArabic => lang == _CoachLang.ar;
+
+  String _tr(String en, String ar) => _isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget card({
+      required String number,
+      required String label,
+      required Color color,
+    }) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Text(
+                number,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 26,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF888AAA),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        card(
+          number: '$done',
+          label: _tr('Tasks Done', 'المهام المكتملة'),
+          color: const Color(0xFF6C63FF),
+        ),
+        const SizedBox(width: 10),
+        card(
+          number: '$daysStarted',
+          label: _tr('Days Started', 'الأيام التي بدأت'),
+          color: const Color(0xFFFF9F43),
+        ),
+        const SizedBox(width: 10),
+        card(
+          number: '$percent%',
+          label: _tr('This Week', 'هذا الأسبوع'),
+          color: const Color(0xFF43B89C),
+        ),
+      ],
+    );
+  }
+}
+
+class _DayCard extends StatelessWidget {
+  const _DayCard({
+    required this.day,
+    required this.lang,
+    required this.checked,
+    required this.doneCount,
+    required this.expanded,
+    required this.isToday,
+    required this.onHeaderTap,
+    required this.onToggleTask,
+  });
+
+  final _PlanDay day;
+  final _CoachLang lang;
+  final Map<String, bool> checked;
+  final int doneCount;
+  final bool expanded;
+  final bool isToday;
+  final VoidCallback onHeaderTap;
+  final void Function(String taskId, bool currentValue) onToggleTask;
+
+  bool get _isArabic => lang == _CoachLang.ar;
+
+  String _tr(String en, String ar) => _isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    final allDone = doneCount == day.tasks.length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isToday
+              ? day.color.withOpacity(0.28)
+              : const Color(0xFFF0F1F8),
+          width: isToday ? 1.4 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: onHeaderTap,
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               decoration: BoxDecoration(
-                color: p.cardBg,
+                color: day.lightColor,
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: p.border.withOpacity(0.85)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 14,
-                    offset: const Offset(0, 8),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: day.color.withOpacity(0.13),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      day.emoji,
+                      style: const TextStyle(fontSize: 27),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              day.dayName(lang),
+                              style: TextStyle(
+                                color: day.color,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18,
+                              ),
+                            ),
+                            if (isToday)
+                              _MiniTag(
+                                text: _tr('Today', 'اليوم'),
+                                background: day.color.withOpacity(0.16),
+                                color: day.color,
+                              ),
+                            if (allDone)
+                              _MiniTag(
+                                text: _tr('Done', 'مكتمل'),
+                                background: const Color(0xFF43B89C).withOpacity(0.16),
+                                color: const Color(0xFF43B89C),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          day.title(lang),
+                          style: TextStyle(
+                            color: const Color(0xFF555777).withOpacity(0.80),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _MiniTag(
+                              text: day.skill(lang),
+                              background: day.color.withOpacity(0.14),
+                              color: day.color,
+                            ),
+                            _MiniTag(
+                              text: day.duration(lang),
+                              background: const Color(0xFFF1F2FA),
+                              color: const Color(0xFF888AAA),
+                            ),
+                            _MiniTag(
+                              text: '$doneCount/${day.tasks.length}',
+                              background: const Color(0xFFF1F2FA),
+                              color: const Color(0xFF888AAA),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: day.color,
+                    size: 28,
                   ),
                 ],
               ),
+            ),
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: p.soft,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: p.border.withOpacity(0.85),
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            (goal['skillEmoji'] ?? '📘').toString(),
-                            style: const TextStyle(fontSize: 24),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
+                  ...day.tasks.map((task) {
+                    final done = checked[task.id] == true;
+
+                    return InkWell(
+                      onTap: () => onToggleTask(task.id, done),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 7),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              (goal['skillTitle'] ?? 'Skill').toString(),
-                              style: TextStyle(
-                                color: p.primary,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
+                            Container(
+                              width: 24,
+                              height: 24,
+                              margin: const EdgeInsets.only(top: 1),
+                              decoration: BoxDecoration(
+                                color: done ? day.color : Colors.white,
+                                borderRadius: BorderRadius.circular(7),
+                                border: Border.all(
+                                  color: done
+                                      ? day.color
+                                      : const Color(0xFFD2D5E8),
+                                  width: 2.3,
+                                ),
                               ),
+                              child: done
+                                  ? const Center(
+                                child: Icon(
+                                  Icons.check,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              )
+                                  : null,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              (goal['milestoneTitle'] ?? 'Goal').toString(),
-                              style: TextStyle(
-                                color: p.text.withOpacity(0.70),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: Color(0xFFF0F0F8),
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  task.text(lang),
+                                  style: TextStyle(
+                                    color: const Color(0xFF35375A)
+                                        .withOpacity(done ? 0.45 : 1),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    height: 1.45,
+                                    decoration: done
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      PopupMenuButton<String>(
-                        onSelected: (value) async {
-                          if (value == 'delete') {
-                            await _deleteGoal(goalId: goalId);
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem<String>(
-                            value: 'delete',
-                            child: Text('Delete goal'),
-                          ),
-                        ],
+                    );
+                  }),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: day.lightColor,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      day.tip(lang),
+                      style: TextStyle(
+                        color: day.color,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        height: 1.45,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _GoalChip(
-                        label:
-                        '$current / $target ${(goal['unit'] ?? '').toString()}',
-                      ),
-                      _GoalChip(label: _cycleChip(goal)),
-                      _GoalChip(label: _timeLabel(hour, minute)),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: progress.clamp(0, 1),
-                      minHeight: 10,
-                      backgroundColor: p.soft,
-                      valueColor: AlwaysStoppedAnimation<Color>(p.accent),
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Text(
-                    _coachMessage(goal),
-                    style: TextStyle(
-                      color: p.text.withOpacity(0.82),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
                   Row(
                     children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: alreadyDoneToday
-                              ? null
-                              : () => _markTodayDone(
-                            goalId: goalId,
-                            goal: goal,
-                          ),
-                          icon: Icon(
-                            alreadyDoneToday
-                                ? Icons.check_circle_rounded
-                                : Icons.task_alt_rounded,
-                          ),
-                          label: Text(
-                            alreadyDoneToday
-                                ? 'Completed today'
-                                : 'Mark today done',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: p.accent,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(0, 46),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
+                      const Text(
+                        '🔗',
+                        style: TextStyle(fontSize: 14),
                       ),
-                      const SizedBox(width: 10),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: p.soft,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: p.border.withOpacity(0.85),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          day.resource(lang),
+                          style: const TextStyle(
+                            color: Color(0xFF888AAA),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            height: 1.35,
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 10),
-                            Text(
-                              'Reminder',
-                              style: TextStyle(
-                                color: p.primary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            Switch(
-                              value: remindersEnabled,
-                              onChanged: (value) {
-                                _toggleReminder(
-                                  goalId: goalId,
-                                  goal: goal,
-                                  enabled: value,
-                                );
-                              },
-                            ),
-                          ],
                         ),
                       ),
                     ],
                   ),
                 ],
               ),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _emptyGoalsCard() {
-    final p = palette;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.85)),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.psychology_alt_rounded,
-            size: 34,
-            color: p.primary,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'No study goals yet',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Create your first coach goal above. Example: Vocabulary → 100 words weekly.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: p.text.withOpacity(0.70),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _CoachHeroCard extends StatelessWidget {
-  const _CoachHeroCard({required this.palette});
+class _MiniTag extends StatelessWidget {
+  const _MiniTag({
+    required this.text,
+    required this.background,
+    required this.color,
+  });
 
-  final _CoachPalette palette;
+  final String text;
+  final Color background;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withOpacity(0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Your English coach',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Pick a skill, set a milestone, study at your time, and build visible progress.',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 21,
-              height: 1.18,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Vocabulary, grammar, speaking, listening, reading, and writing — each with simple coach-style targets.',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.86),
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalChip extends StatelessWidget {
-  const _GoalChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = _CoachPalette.fromApp(appThemeController.palette);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: p.soft,
+        color: background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: p.border.withOpacity(0.85)),
       ),
       child: Text(
-        label,
+        text,
         style: TextStyle(
-          color: p.primary,
+          color: color,
           fontWeight: FontWeight.w800,
-          fontSize: 12,
+          fontSize: 11,
         ),
+      ),
+    );
+  }
+}
+
+class _ResetCard extends StatelessWidget {
+  const _ResetCard({
+    required this.lang,
+    required this.done,
+    required this.total,
+    required this.onReset,
+  });
+
+  final _CoachLang lang;
+  final int done;
+  final int total;
+  final VoidCallback onReset;
+
+  bool get _isArabic => lang == _CoachLang.ar;
+
+  String _tr(String en, String ar) => _isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            _isArabic
+                ? 'التقدم الأسبوعي: $done من $total'
+                : 'Weekly progress: $done / $total',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF6C63FF),
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: onReset,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF6C63FF),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              child: Text(
+                _tr('Reset This Week', 'إعادة تعيين هذا الأسبوع'),
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -996,203 +1384,384 @@ class _CoachPalette {
   }
 }
 
-class _CoachSkill {
-  const _CoachSkill({
-    required this.key,
-    required this.title,
-    required this.emoji,
-    required this.milestones,
-  });
-
-  final String key;
-  final String title;
-  final String emoji;
-  final List<_CoachMilestone> milestones;
+enum _CoachLang {
+  en,
+  ar,
 }
 
-class _CoachMilestone {
-  const _CoachMilestone({
+class _LocalizedText {
+  const _LocalizedText({
+    required this.en,
+    required this.ar,
+  });
+
+  final String en;
+  final String ar;
+
+  String text(_CoachLang lang) {
+    return lang == _CoachLang.ar ? ar : en;
+  }
+}
+
+class _PlanTask {
+  const _PlanTask({
     required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.targetValue,
-    required this.stepValue,
-    required this.unit,
-    required this.cycleType,
-    required this.buttonLabel,
+    required this.textData,
   });
 
   final String id;
-  final String title;
-  final String subtitle;
-  final int targetValue;
-  final int stepValue;
-  final String unit;
-  final String cycleType;
-  final String buttonLabel;
+  final _LocalizedText textData;
+
+  String text(_CoachLang lang) => textData.text(lang);
 }
 
-const List<_CoachSkill> _coachSkills = [
-  _CoachSkill(
-    key: 'vocabulary',
-    title: 'Vocabulary',
-    emoji: '📚',
-    milestones: [
-      _CoachMilestone(
-        id: 'vocab_50_week',
-        title: '50 words per week',
-        subtitle: 'Steady vocabulary building',
-        targetValue: 50,
-        stepValue: 10,
-        unit: 'words',
-        cycleType: 'weekly',
-        buttonLabel: 'Learn 10 new words',
+class _PlanDay {
+  const _PlanDay({
+    required this.key,
+    required this.nameData,
+    required this.titleData,
+    required this.skillData,
+    required this.durationData,
+    required this.tipData,
+    required this.resourceData,
+    required this.emoji,
+    required this.color,
+    required this.lightColor,
+    required this.tasks,
+  });
+
+  final String key;
+  final _LocalizedText nameData;
+  final _LocalizedText titleData;
+  final _LocalizedText skillData;
+  final _LocalizedText durationData;
+  final _LocalizedText tipData;
+  final _LocalizedText resourceData;
+  final String emoji;
+  final Color color;
+  final Color lightColor;
+  final List<_PlanTask> tasks;
+
+  String dayName(_CoachLang lang) => nameData.text(lang);
+  String title(_CoachLang lang) => titleData.text(lang);
+  String skill(_CoachLang lang) => skillData.text(lang);
+  String duration(_CoachLang lang) => durationData.text(lang);
+  String tip(_CoachLang lang) => tipData.text(lang);
+  String resource(_CoachLang lang) => resourceData.text(lang);
+}
+
+const List<_LocalizedText> _quotes = [
+  _LocalizedText(
+    en: 'Every expert was once a beginner. Keep going! 🌟',
+    ar: 'كل خبير كان في يوم من الأيام مبتدئاً. استمر! 🌟',
+  ),
+  _LocalizedText(
+    en: 'Small steps every day create big progress. 🚀',
+    ar: 'الخطوات الصغيرة كل يوم تصنع تقدماً كبيراً. 🚀',
+  ),
+  _LocalizedText(
+    en: 'Consistency is stronger than motivation. ✨',
+    ar: 'الاستمرارية أقوى من الحماس المؤقت. ✨',
+  ),
+  _LocalizedText(
+    en: 'Learning English opens real-life opportunities. 🚪',
+    ar: 'تعلم الإنجليزية يفتح فرصاً حقيقية في الحياة. 🚪',
+  ),
+  _LocalizedText(
+    en: 'You do not need perfection. You only need progress. 💪',
+    ar: 'أنت لا تحتاج إلى الكمال، أنت تحتاج فقط إلى التقدم. 💪',
+  ),
+];
+
+const List<_PlanDay> _weekPlanDays = [
+  _PlanDay(
+    key: 'monday',
+    nameData: _LocalizedText(en: 'Monday', ar: 'الاثنين'),
+    titleData: _LocalizedText(en: 'Grammar Focus', ar: 'تركيز القواعد'),
+    skillData: _LocalizedText(en: 'Grammar', ar: 'القواعد'),
+    durationData: _LocalizedText(en: '25 min', ar: '25 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 Keep it simple. Learn one rule well before moving to another one.',
+      ar: '💡 اجعل الأمر بسيطاً. تعلّم قاعدة واحدة جيداً قبل الانتقال إلى قاعدة أخرى.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use a grammar book, teacher notes, or a trusted grammar app.',
+      ar: 'استخدم كتاب قواعد أو ملاحظات المعلم أو تطبيق قواعد موثوق.',
+    ),
+    emoji: '📘',
+    color: Color(0xFF6C63FF),
+    lightColor: Color(0xFFEEF0FF),
+    tasks: [
+      _PlanTask(
+        id: 'mon1',
+        textData: _LocalizedText(
+          en: 'Study one grammar rule only.',
+          ar: 'ادرس قاعدة نحوية واحدة فقط.',
+        ),
       ),
-      _CoachMilestone(
-        id: 'vocab_100_week',
-        title: '100 words per week',
-        subtitle: 'Faster vocabulary growth',
-        targetValue: 100,
-        stepValue: 15,
-        unit: 'words',
-        cycleType: 'weekly',
-        buttonLabel: 'Learn 15 new words',
+      _PlanTask(
+        id: 'mon2',
+        textData: _LocalizedText(
+          en: 'Read 3 example sentences carefully.',
+          ar: 'اقرأ 3 جمل مثال بعناية.',
+        ),
+      ),
+      _PlanTask(
+        id: 'mon3',
+        textData: _LocalizedText(
+          en: 'Write 5 simple sentences using that rule.',
+          ar: 'اكتب 5 جمل بسيطة باستخدام هذه القاعدة.',
+        ),
       ),
     ],
   ),
-  _CoachSkill(
-    key: 'grammar',
-    title: 'Grammar',
-    emoji: '🧩',
-    milestones: [
-      _CoachMilestone(
-        id: 'grammar_level1_month',
-        title: 'Level 1 in one month',
-        subtitle: '8 grammar lessons this month',
-        targetValue: 8,
-        stepValue: 1,
-        unit: 'lessons',
-        cycleType: 'monthly',
-        buttonLabel: 'Complete 1 grammar lesson',
-      ),
-      _CoachMilestone(
-        id: 'grammar_level2_month',
-        title: 'Level 2 in one month',
-        subtitle: '12 grammar lessons this month',
-        targetValue: 12,
-        stepValue: 1,
-        unit: 'lessons',
-        cycleType: 'monthly',
-        buttonLabel: 'Complete 1 grammar lesson',
-      ),
-    ],
-  ),
-  _CoachSkill(
-    key: 'speaking',
-    title: 'Speaking',
+  _PlanDay(
+    key: 'tuesday',
+    nameData: _LocalizedText(en: 'Tuesday', ar: 'الثلاثاء'),
+    titleData: _LocalizedText(en: 'Speaking Practice', ar: 'تدريب التحدث'),
+    skillData: _LocalizedText(en: 'Speaking', ar: 'التحدث'),
+    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 Speak slowly. Clear speech is better than fast speech.',
+      ar: '💡 تحدث ببطء. الكلام الواضح أفضل من الكلام السريع.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use your phone voice recorder.',
+      ar: 'استخدم مسجل الصوت في هاتفك.',
+    ),
     emoji: '🗣️',
-    milestones: [
-      _CoachMilestone(
-        id: 'speaking_3_week',
-        title: '3 speaking sessions per week',
-        subtitle: 'Short but regular speaking practice',
-        targetValue: 3,
-        stepValue: 1,
-        unit: 'sessions',
-        cycleType: 'weekly',
-        buttonLabel: 'Record 1 speaking session',
+    color: Color(0xFF43B89C),
+    lightColor: Color(0xFFEDFAF5),
+    tasks: [
+      _PlanTask(
+        id: 'tue1',
+        textData: _LocalizedText(
+          en: 'Choose one topic: My day, my work, or my family.',
+          ar: 'اختر موضوعاً واحداً: يومي أو عملي أو عائلتي.',
+        ),
       ),
-      _CoachMilestone(
-        id: 'speaking_5_week',
-        title: '5 speaking sessions per week',
-        subtitle: 'Strong speaking consistency',
-        targetValue: 5,
-        stepValue: 1,
-        unit: 'sessions',
-        cycleType: 'weekly',
-        buttonLabel: 'Record 1 speaking session',
+      _PlanTask(
+        id: 'tue2',
+        textData: _LocalizedText(
+          en: 'Speak for 1 to 2 minutes and record yourself.',
+          ar: 'تحدث لمدة دقيقة إلى دقيقتين وسجل صوتك.',
+        ),
+      ),
+      _PlanTask(
+        id: 'tue3',
+        textData: _LocalizedText(
+          en: 'Listen once and repeat better one more time.',
+          ar: 'استمع مرة واحدة ثم أعد التحدث بشكل أفضل مرة أخرى.',
+        ),
       ),
     ],
   ),
-  _CoachSkill(
-    key: 'listening',
-    title: 'Listening',
+  _PlanDay(
+    key: 'wednesday',
+    nameData: _LocalizedText(en: 'Wednesday', ar: 'الأربعاء'),
+    titleData: _LocalizedText(en: 'Listening Day', ar: 'يوم الاستماع'),
+    skillData: _LocalizedText(en: 'Listening', ar: 'الاستماع'),
+    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 If you miss words, listen again. Repetition is part of learning.',
+      ar: '💡 إذا فاتتك كلمات، استمع مرة أخرى. التكرار جزء من التعلم.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use BBC Learning English or any short clear English audio.',
+      ar: 'استخدم BBC Learning English أو أي مقطع إنجليزي قصير وواضح.',
+    ),
     emoji: '🎧',
-    milestones: [
-      _CoachMilestone(
-        id: 'listening_60_week',
-        title: '60 listening minutes per week',
-        subtitle: '10 minutes daily style',
-        targetValue: 60,
-        stepValue: 10,
-        unit: 'minutes',
-        cycleType: 'weekly',
-        buttonLabel: 'Listen for 10 minutes',
+    color: Color(0xFFFF9F43),
+    lightColor: Color(0xFFFFF4E9),
+    tasks: [
+      _PlanTask(
+        id: 'wed1',
+        textData: _LocalizedText(
+          en: 'Listen to one short English audio or video.',
+          ar: 'استمع إلى مقطع صوتي أو فيديو إنجليزي قصير.',
+        ),
       ),
-      _CoachMilestone(
-        id: 'listening_120_week',
-        title: '120 listening minutes per week',
-        subtitle: 'Stronger listening routine',
-        targetValue: 120,
-        stepValue: 20,
-        unit: 'minutes',
-        cycleType: 'weekly',
-        buttonLabel: 'Listen for 20 minutes',
+      _PlanTask(
+        id: 'wed2',
+        textData: _LocalizedText(
+          en: 'Write 3 words or phrases you heard.',
+          ar: 'اكتب 3 كلمات أو عبارات سمعتها.',
+        ),
       ),
-    ],
-  ),
-  _CoachSkill(
-    key: 'reading',
-    title: 'Reading',
-    emoji: '📖',
-    milestones: [
-      _CoachMilestone(
-        id: 'reading_3_week',
-        title: '3 reading texts per week',
-        subtitle: 'Short texts and articles',
-        targetValue: 3,
-        stepValue: 1,
-        unit: 'texts',
-        cycleType: 'weekly',
-        buttonLabel: 'Read 1 text',
-      ),
-      _CoachMilestone(
-        id: 'reading_5_week',
-        title: '5 reading texts per week',
-        subtitle: 'Daily reading habit',
-        targetValue: 5,
-        stepValue: 1,
-        unit: 'texts',
-        cycleType: 'weekly',
-        buttonLabel: 'Read 1 text',
+      _PlanTask(
+        id: 'wed3',
+        textData: _LocalizedText(
+          en: 'Listen one more time to confirm them.',
+          ar: 'استمع مرة أخرى للتأكد منها.',
+        ),
       ),
     ],
   ),
-  _CoachSkill(
-    key: 'writing',
-    title: 'Writing',
+  _PlanDay(
+    key: 'thursday',
+    nameData: _LocalizedText(en: 'Thursday', ar: 'الخميس'),
+    titleData: _LocalizedText(en: 'Writing Day', ar: 'يوم الكتابة'),
+    skillData: _LocalizedText(en: 'Writing', ar: 'الكتابة'),
+    durationData: _LocalizedText(en: '25 min', ar: '25 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 Simple correct sentences are excellent practice.',
+      ar: '💡 الجمل البسيطة والصحيحة تعتبر تدريباً ممتازاً.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use a notebook, notes app, or document file.',
+      ar: 'استخدم دفتراً أو تطبيق ملاحظات أو ملفاً كتابياً.',
+    ),
     emoji: '✍️',
-    milestones: [
-      _CoachMilestone(
-        id: 'writing_3_week',
-        title: '3 writing tasks per week',
-        subtitle: 'Simple writing consistency',
-        targetValue: 3,
-        stepValue: 1,
-        unit: 'tasks',
-        cycleType: 'weekly',
-        buttonLabel: 'Write 1 short task',
+    color: Color(0xFF5B8DEF),
+    lightColor: Color(0xFFEEF4FF),
+    tasks: [
+      _PlanTask(
+        id: 'thu1',
+        textData: _LocalizedText(
+          en: 'Write 5 to 6 sentences about your day.',
+          ar: 'اكتب من 5 إلى 6 جمل عن يومك.',
+        ),
       ),
-      _CoachMilestone(
-        id: 'writing_5_week',
-        title: '5 writing tasks per week',
-        subtitle: 'Daily writing habit',
-        targetValue: 5,
-        stepValue: 1,
-        unit: 'tasks',
-        cycleType: 'weekly',
-        buttonLabel: 'Write 1 short task',
+      _PlanTask(
+        id: 'thu2',
+        textData: _LocalizedText(
+          en: 'Use 2 new words from this week.',
+          ar: 'استخدم كلمتين جديدتين من هذا الأسبوع.',
+        ),
+      ),
+      _PlanTask(
+        id: 'thu3',
+        textData: _LocalizedText(
+          en: 'Read your writing again and fix obvious mistakes.',
+          ar: 'اقرأ كتابتك مرة أخرى وصحح الأخطاء الواضحة.',
+        ),
+      ),
+    ],
+  ),
+  _PlanDay(
+    key: 'friday',
+    nameData: _LocalizedText(en: 'Friday', ar: 'الجمعة'),
+    titleData: _LocalizedText(en: 'Vocabulary Day', ar: 'يوم المفردات'),
+    skillData: _LocalizedText(en: 'Vocabulary', ar: 'المفردات'),
+    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 Learn useful words from your real life, not random words.',
+      ar: '💡 تعلّم كلمات مفيدة من حياتك الحقيقية وليس كلمات عشوائية.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use Quizlet, a dictionary, or your own vocabulary notebook.',
+      ar: 'استخدم Quizlet أو قاموساً أو دفتر مفرداتك الخاص.',
+    ),
+    emoji: '📚',
+    color: Color(0xFFC753D0),
+    lightColor: Color(0xFFFAF0FB),
+    tasks: [
+      _PlanTask(
+        id: 'fri1',
+        textData: _LocalizedText(
+          en: 'Learn 5 new useful English words.',
+          ar: 'تعلّم 5 كلمات إنجليزية جديدة ومفيدة.',
+        ),
+      ),
+      _PlanTask(
+        id: 'fri2',
+        textData: _LocalizedText(
+          en: 'Write one short sentence for each word.',
+          ar: 'اكتب جملة قصيرة واحدة لكل كلمة.',
+        ),
+      ),
+      _PlanTask(
+        id: 'fri3',
+        textData: _LocalizedText(
+          en: 'Say the 5 words out loud.',
+          ar: 'انطق الكلمات الخمس بصوت عالٍ.',
+        ),
+      ),
+    ],
+  ),
+  _PlanDay(
+    key: 'saturday',
+    nameData: _LocalizedText(en: 'Saturday', ar: 'السبت'),
+    titleData: _LocalizedText(en: 'Weekly Review', ar: 'مراجعة أسبوعية'),
+    skillData: _LocalizedText(en: 'Review', ar: 'مراجعة'),
+    durationData: _LocalizedText(en: '15 min', ar: '15 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 Review makes learning stay longer in your memory.',
+      ar: '💡 المراجعة تجعل التعلم يبقى لفترة أطول في الذاكرة.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use your notes from the whole week.',
+      ar: 'استخدم ملاحظاتك من كامل الأسبوع.',
+    ),
+    emoji: '🏆',
+    color: Color(0xFFF7A440),
+    lightColor: Color(0xFFFFF7EE),
+    tasks: [
+      _PlanTask(
+        id: 'sat1',
+        textData: _LocalizedText(
+          en: 'Review this week’s new words.',
+          ar: 'راجع كلمات هذا الأسبوع الجديدة.',
+        ),
+      ),
+      _PlanTask(
+        id: 'sat2',
+        textData: _LocalizedText(
+          en: 'Read your best writing or speaking notes again.',
+          ar: 'اقرأ أفضل ملاحظاتك في الكتابة أو التحدث مرة أخرى.',
+        ),
+      ),
+      _PlanTask(
+        id: 'sat3',
+        textData: _LocalizedText(
+          en: 'Write one small goal for next week.',
+          ar: 'اكتب هدفاً صغيراً واحداً للأسبوع القادم.',
+        ),
+      ),
+    ],
+  ),
+  _PlanDay(
+    key: 'sunday',
+    nameData: _LocalizedText(en: 'Sunday', ar: 'الأحد'),
+    titleData: _LocalizedText(en: 'Reading Day', ar: 'يوم القراءة'),
+    skillData: _LocalizedText(en: 'Reading', ar: 'القراءة'),
+    durationData: _LocalizedText(en: '20 min', ar: '20 دقيقة'),
+    tipData: _LocalizedText(
+      en: '💡 Read for meaning first. Do not stop at every unknown word.',
+      ar: '💡 اقرأ للفهم أولاً. لا تتوقف عند كل كلمة غير معروفة.',
+    ),
+    resourceData: _LocalizedText(
+      en: 'Use a short article, simple story, or learning website.',
+      ar: 'استخدم مقالاً قصيراً أو قصة بسيطة أو موقع تعلم.',
+    ),
+    emoji: '📖',
+    color: Color(0xFFFF6584),
+    lightColor: Color(0xFFFFF0F3),
+    tasks: [
+      _PlanTask(
+        id: 'sun1',
+        textData: _LocalizedText(
+          en: 'Read one short English text.',
+          ar: 'اقرأ نصاً إنجليزياً قصيراً واحداً.',
+        ),
+      ),
+      _PlanTask(
+        id: 'sun2',
+        textData: _LocalizedText(
+          en: 'Underline 3 new words or phrases.',
+          ar: 'حدد 3 كلمات أو عبارات جديدة.',
+        ),
+      ),
+      _PlanTask(
+        id: 'sun3',
+        textData: _LocalizedText(
+          en: 'Write one or two sentences about what you understood.',
+          ar: 'اكتب جملة أو جملتين عما فهمته.',
+        ),
       ),
     ],
   ),
 ];
+
+final List<_PlanTask> _allTasks =
+_weekPlanDays.expand((day) => day.tasks).toList(growable: false);
