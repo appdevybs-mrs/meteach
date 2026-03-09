@@ -37,7 +37,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Future<int>? _upcomingOnlineCountFuture;
   Future<String>? _displayNameFuture;
 
-
   @override
   void initState() {
     super.initState();
@@ -812,7 +811,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       context: context,
       backgroundColor: p.appBg,
       showDragHandle: true,
-
       builder: (ctx) {
         return SafeArea(
           child: ConstrainedBox(
@@ -834,59 +832,21 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    _ThemeChoiceTile(
-                      title: 'Navy Classic',
-                      subtitle: 'Clean professional blue',
-                      selected: appThemeController.mode == AppThemeMode.navy,
-                      preview1: const Color(0xFF1A2B48),
-                      preview2: const Color(0xFFF98D28),
-                      onTap: () => pickTheme(AppThemeMode.navy),
-                    ),
-                    const SizedBox(height: 10),
-                    _ThemeChoiceTile(
-                      title: 'Rose Soft',
-                      subtitle: 'Light pink girly look',
-                      selected: appThemeController.mode == AppThemeMode.rose,
-                      preview1: const Color(0xFFB83B78),
-                      preview2: const Color(0xFFFF8FB1),
-                      onTap: () => pickTheme(AppThemeMode.rose),
-                    ),
-                    const SizedBox(height: 10),
-                    _ThemeChoiceTile(
-                      title: 'Emerald Fresh',
-                      subtitle: 'Modern green style',
-                      selected: appThemeController.mode == AppThemeMode.emerald,
-                      preview1: const Color(0xFF0F766E),
-                      preview2: const Color(0xFF22C55E),
-                      onTap: () => pickTheme(AppThemeMode.emerald),
-                    ),
-                    const SizedBox(height: 10),
-                    _ThemeChoiceTile(
-                      title: 'Lavender Glow',
-                      subtitle: 'Purple soft feminine look',
-                      selected: appThemeController.mode == AppThemeMode.lavender,
-                      preview1: const Color(0xFF6D4CC9),
-                      preview2: const Color(0xFFA78BFA),
-                      onTap: () => pickTheme(AppThemeMode.lavender),
-                    ),
-                    const SizedBox(height: 10),
-                    _ThemeChoiceTile(
-                      title: 'Sunset Warm',
-                      subtitle: 'Orange warm elegant look',
-                      selected: appThemeController.mode == AppThemeMode.sunset,
-                      preview1: const Color(0xFF9A3412),
-                      preview2: const Color(0xFFF97316),
-                      onTap: () => pickTheme(AppThemeMode.sunset),
-                    ),
-                    const SizedBox(height: 10),
-                    _ThemeChoiceTile(
-                      title: 'Charcoal Cool',
-                      subtitle: 'Dark grey with cyan accent',
-                      selected: appThemeController.mode == AppThemeMode.charcoal,
-                      preview1: const Color(0xFF1F2937),
-                      preview2: const Color(0xFF06B6D4),
-                      onTap: () => pickTheme(AppThemeMode.charcoal),
-                    ),
+                    ...AppThemeMode.values.map((mode) {
+                      final previewPalette = appThemeController.paletteForMode(mode);
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _ThemeChoiceTile(
+                          title: appThemeController.themeTitle(mode),
+                          subtitle: appThemeController.themeSubtitle(mode),
+                          selected: appThemeController.mode == mode,
+                          preview1: previewPalette.primary,
+                          preview2: previewPalette.accent,
+                          onTap: () => pickTheme(mode),
+                        ),
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -896,6 +856,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       },
     );
   }
+
   void _pushScreen(Widget screen) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => screen),
@@ -1086,65 +1047,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           classesCount: s.classesCount,
                           learnersCount: s.learnersCount,
                           upcomingOnlineCount: upcoming,
-                          onOpenClasses: () =>
-                              _pushScreen(const TeacherClassesScreen()),
-                          onOpenOnline: () => _pushScreen(
-                            const TeacherOnlineBookingScreen(),
-                          ),
                         );
                       },
                     );
                   },
                 ),
                 const SizedBox(height: 14),
-                Text(
-                  'Quick Actions',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _QuickActionTile(
+                _DashboardActionGrid(
                   palette: p,
-                  icon: Icons.calendar_today_rounded,
-                  title: 'Schedule',
-                  subtitle: 'Check your teaching calendar',
-                  onTap: () => _pushScreen(const TeacherSchedule()),
-                ),
-                const SizedBox(height: 10),
-                _QuickActionTile(
-                  palette: p,
-                  icon: Icons.school_rounded,
-                  title: 'My Classes',
-                  subtitle: 'Open your classes and learners',
-                  onTap: () => _pushScreen(const TeacherClassesScreen()),
-                ),
-                const SizedBox(height: 10),
-                _QuickActionTile(
-                  palette: p,
-                  icon: Icons.event_available_rounded,
-                  title: 'Online Availability',
-                  subtitle: 'Manage booking slots and sessions',
-                  onTap: () =>
-                      _pushScreen(const TeacherOnlineBookingScreen()),
-                ),
-                const SizedBox(height: 10),
-                _QuickActionTile(
-                  palette: p,
-                  icon: Icons.wallet_rounded,
-                  title: 'Wages',
-                  subtitle: 'Check salary and payment details',
-                  onTap: () => _pushScreen(const TeacherWagesScreen()),
-                ),
-                const SizedBox(height: 10),
-                _QuickActionTile(
-                  palette: p,
-                  icon: Icons.menu_book_rounded,
-                  title: 'Syllabi',
-                  subtitle: 'Open teaching content quickly',
-                  onTap: () => _pushScreen(TeacherSyllabiScreen()),
+                  onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
+                  onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
+                  onOpenMail: () => _pushScreen(const TeacherMailScreen()),
+                  onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
                 ),
                 const SizedBox(height: 18),
                 Center(
@@ -1176,10 +1090,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       soft: p.soft,
     );
   }
-
 }
-
-
 
 class _HomePalette {
   const _HomePalette({
@@ -1664,21 +1575,17 @@ class _OverviewPanel extends StatelessWidget {
     required this.classesCount,
     required this.learnersCount,
     required this.upcomingOnlineCount,
-    required this.onOpenClasses,
-    required this.onOpenOnline,
   });
 
   final _HomePalette palette;
   final int classesCount;
   final int learnersCount;
   final int upcomingOnlineCount;
-  final VoidCallback onOpenClasses;
-  final VoidCallback onOpenOnline;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(24),
@@ -1703,12 +1610,9 @@ class _OverviewPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          Row(
             children: [
-              SizedBox(
-                width: (MediaQuery.of(context).size.width - 58) / 3,
+              Expanded(
                 child: _OverviewStatBox(
                   palette: palette,
                   label: 'Classes',
@@ -1716,8 +1620,8 @@ class _OverviewPanel extends StatelessWidget {
                   icon: Icons.school_rounded,
                 ),
               ),
-              SizedBox(
-                width: (MediaQuery.of(context).size.width - 58) / 3,
+              const SizedBox(width: 8),
+              Expanded(
                 child: _OverviewStatBox(
                   palette: palette,
                   label: 'Learners',
@@ -1725,35 +1629,13 @@ class _OverviewPanel extends StatelessWidget {
                   icon: Icons.groups_rounded,
                 ),
               ),
-              SizedBox(
-                width: (MediaQuery.of(context).size.width - 58) / 3,
+              const SizedBox(width: 8),
+              Expanded(
                 child: _OverviewStatBox(
                   palette: palette,
                   label: 'Online',
                   value: '$upcomingOnlineCount',
                   icon: Icons.videocam_rounded,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _SoftActionButton(
-                  palette: palette,
-                  icon: Icons.school_rounded,
-                  title: 'Open Classes',
-                  onTap: onOpenClasses,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SoftActionButton(
-                  palette: palette,
-                  icon: Icons.event_available_rounded,
-                  title: 'Open Online',
-                  onTap: onOpenOnline,
                 ),
               ),
             ],
@@ -1780,26 +1662,30 @@ class _OverviewStatBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
         color: palette.soft.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
-          Icon(icon, color: palette.primary, size: 22),
-          const SizedBox(height: 8),
+          Icon(icon, color: palette.primary, size: 20),
+          const SizedBox(height: 7),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: palette.primary,
               fontWeight: FontWeight.w900,
-              fontSize: 16,
+              fontSize: 15,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: palette.text.withOpacity(0.65),
               fontWeight: FontWeight.w800,
@@ -1812,54 +1698,76 @@ class _OverviewStatBox extends StatelessWidget {
   }
 }
 
-
-class _SoftActionButton extends StatelessWidget {
-  const _SoftActionButton({
+class _DashboardActionGrid extends StatelessWidget {
+  const _DashboardActionGrid({
     required this.palette,
-    required this.icon,
-    required this.title,
-    required this.onTap,
+    required this.onOpenSchedule,
+    required this.onOpenClasses,
+    required this.onOpenMail,
+    required this.onOpenReminders,
   });
 
   final _HomePalette palette;
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
+  final VoidCallback onOpenSchedule;
+  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenReminders;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: palette.soft,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 18, color: palette.primary),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
+    final cardWidth = (MediaQuery.of(context).size.width - 44) / 2;
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        SizedBox(
+          width: cardWidth,
+          child: _DashboardActionCard(
+            palette: palette,
+            icon: Icons.calendar_today_rounded,
+            title: 'Schedule',
+            subtitle: 'Check calendar',
+            onTap: onOpenSchedule,
           ),
         ),
-      ),
+        SizedBox(
+          width: cardWidth,
+          child: _DashboardActionCard(
+            palette: palette,
+            icon: Icons.school_rounded,
+            title: 'My Classes',
+            subtitle: 'Open classes',
+            onTap: onOpenClasses,
+          ),
+        ),
+        SizedBox(
+          width: cardWidth,
+          child: _DashboardActionCard(
+            palette: palette,
+            icon: Icons.email_rounded,
+            title: 'Mail',
+            subtitle: 'Open inbox',
+            onTap: onOpenMail,
+          ),
+        ),
+        SizedBox(
+          width: cardWidth,
+          child: _DashboardActionCard(
+            palette: palette,
+            icon: Icons.alarm_rounded,
+            title: 'Reminders',
+            subtitle: 'Check tasks',
+            onTap: onOpenReminders,
+          ),
+        ),
+      ],
     );
   }
 }
-class _QuickActionTile extends StatelessWidget {
-  const _QuickActionTile({
+
+class _DashboardActionCard extends StatelessWidget {
+  const _DashboardActionCard({
     required this.palette,
     required this.icon,
     required this.title,
@@ -1894,45 +1802,39 @@ class _QuickActionTile extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
                   color: palette.soft,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, color: palette.primary),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: palette.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: palette.text.withOpacity(0.60),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 12),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: palette.text.withOpacity(0.45),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.text.withOpacity(0.60),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -2208,9 +2110,3 @@ class _ThemeChoiceTile extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-

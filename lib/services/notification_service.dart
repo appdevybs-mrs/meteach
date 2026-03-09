@@ -21,7 +21,8 @@ class NotificationService {
   NotificationService._();
   static final NotificationService I = NotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+  FlutterLocalNotificationsPlugin();
   bool _inited = false;
 
   static const int dailyReminderId = 900001;
@@ -43,7 +44,9 @@ class NotificationService {
 
     // flutter_timezone versions differ: sometimes returns String, sometimes object w/ identifier.
     dynamic tzInfo = await FlutterTimezone.getLocalTimezone();
-    final String tzName = (tzInfo is String) ? tzInfo : (tzInfo?.identifier?.toString() ?? 'UTC');
+    final String tzName = (tzInfo is String)
+        ? tzInfo
+        : (tzInfo?.identifier?.toString() ?? 'UTC');
 
     try {
       tz.setLocalLocation(tz.getLocation(tzName));
@@ -172,6 +175,51 @@ class NotificationService {
     await _plugin.cancel(id: dailyReminderId);
   }
 
+  /// Coach reminder: unique daily reminder per goal.
+  Future<void> scheduleCoachReminder({
+    required String goalId,
+    required String title,
+    required String body,
+    required int hour,
+    required int minute,
+  }) async {
+    await init();
+
+    final now = tz.TZDateTime.now(tz.local);
+    var next = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+
+    if (next.isBefore(now)) {
+      next = next.add(const Duration(days: 1));
+    }
+
+    await _plugin.zonedSchedule(
+      id: _makeCoachNotifId(goalId),
+      title: title,
+      body: body,
+      scheduledDate: next,
+      notificationDetails: _detailsDaily(),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.time,
+      payload: jsonEncode({
+        'type': 'coach',
+        'goalId': goalId,
+      }),
+    );
+  }
+
+  Future<void> cancelCoachReminder({
+    required String goalId,
+  }) async {
+    await _plugin.cancel(id: _makeCoachNotifId(goalId));
+  }
+
   Future<void> scheduleDailyReminder({
     required int hour,
     required int minute,
@@ -179,7 +227,14 @@ class NotificationService {
     required String body,
   }) async {
     final now = tz.TZDateTime.now(tz.local);
-    var next = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+    var next = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
     if (next.isBefore(now)) next = next.add(const Duration(days: 1));
 
     await _plugin.zonedSchedule(
@@ -280,7 +335,8 @@ class NotificationService {
     final diff = sessionStart.difference(scheduledAt).inMinutes;
 
     // If original body is empty, create one. If not, append helpful info.
-    final base = originalBody.trim().isEmpty ? 'Starts at $startTime' : originalBody.trim();
+    final base =
+    originalBody.trim().isEmpty ? 'Starts at $startTime' : originalBody.trim();
 
     if (diff <= 0) {
       return '$base • Starts at $startTime';
@@ -391,6 +447,11 @@ class NotificationService {
 
   int _makeSnoozeNotifId(String classId, DateTime sessionStart, int mins) {
     final raw = 'SNOOZE|$classId|${sessionStart.toIso8601String()}|$mins';
+    return raw.hashCode.abs() % 2147483647;
+  }
+
+  int _makeCoachNotifId(String goalId) {
+    final raw = 'COACH|$goalId';
     return raw.hashCode.abs() % 2147483647;
   }
 }
