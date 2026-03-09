@@ -13,9 +13,7 @@ class Brand {
   static const uiBorder = Color(0xFFD1D9E0); // #D1D9E0
 }
 
-/// ===== App-only enrollment cooldown (Option A) =====
-/// Blocks submitting another enrollment from the SAME device for 1 hour.
-/// Note: users can bypass by clearing app data/reinstalling.
+/// ===== Enrollment cooldown (kept exactly) =====
 class EnrollLimiter {
   static const Duration cooldown = Duration(hours: 1);
 
@@ -51,21 +49,98 @@ class EnrollLimiter {
   }
 }
 
+/// ===== New learner delivery model =====
+class EnrollDeliveryOption {
+  const EnrollDeliveryOption({
+    required this.key,
+    required this.label,
+    required this.shortLabelEn,
+    required this.shortLabelAr,
+    required this.fee,
+    required this.accessMode,
+    required this.accessDurationMonths,
+    required this.enabled,
+  });
+
+  final String key; // online, live, recorded, inclass
+  final String label; // Online, Live, Recorded, In-Class
+  final String shortLabelEn;
+  final String shortLabelAr;
+  final double? fee;
+  final String accessMode; // lifetime / duration
+  final int? accessDurationMonths;
+  final bool enabled;
+
+  bool get isSelectable => enabled && (fee ?? 0) > 0;
+
+  String feeLabel() {
+    final f = fee;
+    if (f == null || f <= 0) return 'Price not specified';
+    return '${f.toStringAsFixed(0)} DA';
+  }
+
+  String accessLabelEn() {
+    if (accessMode == 'duration') {
+      final m = accessDurationMonths;
+      if (m != null && m > 0) {
+        return '$m month${m == 1 ? '' : 's'} access';
+      }
+    }
+    return 'Lifetime access';
+  }
+
+  String accessLabelAr() {
+    if (accessMode == 'duration') {
+      final m = accessDurationMonths;
+      if (m != null && m > 0) {
+        return 'صلاحية لمدة $m ${m == 1 ? 'شهر' : 'أشهر'}';
+      }
+    }
+    return 'وصول مدى الحياة';
+  }
+
+  String explanationEn() {
+    switch (key) {
+      case 'inclass':
+        return 'Physical lessons at one of our branches or accredited institutions.';
+      case 'live':
+        return 'A pre-fixed schedule with our teachers. These are one-to-one sessions booked specifically for the learner.';
+      case 'recorded':
+        return 'Pre-set courses with explanations, videos, and learning materials for self-study.';
+      case 'online':
+        return 'Live sessions with teachers, but not on a fixed schedule. You choose a suitable day and time and book your place. These are group classes, up to 6 learners.';
+      default:
+        return '';
+    }
+  }
+
+  String explanationAr() {
+    switch (key) {
+      case 'inclass':
+        return 'دروس حضورية في أحد فروعنا أو في مؤسسة معتمدة.';
+      case 'live':
+        return 'برنامج ثابت ومحدد مسبقاً مع أساتذتنا. هذه حصص فردية مخصصة للمتعلم فقط.';
+      case 'recorded':
+        return 'دورات جاهزة مسبقاً تحتوي على شروحات وفيديوهات ومواد تعليمية للدراسة الذاتية.';
+      case 'online':
+        return 'حصص مباشرة مع الأساتذة ولكن بدون جدول ثابت. تختار اليوم والوقت المناسبين وتحجز. هذه حصص جماعية حتى 6 متعلمين وليست فردية.';
+      default:
+        return '';
+    }
+  }
+}
+
 class EnrollScreen extends StatefulWidget {
   const EnrollScreen({
     super.key,
     required this.courseId,
     required this.courseTitle,
-    required this.pricePerMonth,
-    required this.pricePerLevel,
     required this.deliveryOptions,
   });
 
   final String courseId;
   final String courseTitle;
-  final double? pricePerMonth;
-  final double? pricePerLevel;
-  final List<String> deliveryOptions;
+  final List<EnrollDeliveryOption> deliveryOptions;
 
   @override
   State<EnrollScreen> createState() => _EnrollScreenState();
@@ -79,28 +154,23 @@ class _EnrollScreenState extends State<EnrollScreen> {
   final extraInfoC = TextEditingController();
 
   bool saving = false;
-
-  late final List<String> paymentOptions;
-  late String paymentSelected;
-
-  late final List<String> deliveryOptions;
-  late String deliverySelected;
+  late final List<EnrollDeliveryOption> deliveryOptions;
+  String? selectedDeliveryKey;
 
   @override
   void initState() {
     super.initState();
 
-    // Payment options
-    paymentOptions = [];
-    if ((widget.pricePerMonth ?? 0) > 0) paymentOptions.add('Per month');
-    if ((widget.pricePerLevel ?? 0) > 0) paymentOptions.add('Per level');
-    if (paymentOptions.isEmpty) paymentOptions.add('Not specified');
-    paymentSelected = paymentOptions.first;
+    final valid = widget.deliveryOptions.where((e) => e.enabled).toList();
+    deliveryOptions = valid;
 
-    // Delivery options
-    deliveryOptions =
-    widget.deliveryOptions.isNotEmpty ? widget.deliveryOptions : ['Not specified'];
-    deliverySelected = deliveryOptions.first;
+    if (deliveryOptions.isNotEmpty) {
+      final firstSelectable = deliveryOptions.cast<EnrollDeliveryOption?>().firstWhere(
+            (e) => e?.isSelectable == true,
+        orElse: () => deliveryOptions.first,
+      );
+      selectedDeliveryKey = firstSelectable?.key;
+    }
   }
 
   @override
@@ -111,14 +181,12 @@ class _EnrollScreenState extends State<EnrollScreen> {
     super.dispose();
   }
 
-  List<String> _priceLines() {
-    final out = <String>[];
-    final pm = widget.pricePerMonth;
-    final pl = widget.pricePerLevel;
-
-    if (pm != null && pm > 0) out.add('${pm.toStringAsFixed(0)} DA / month');
-    if (pl != null && pl > 0) out.add('${pl.toStringAsFixed(0)} DA / level');
-    return out;
+  EnrollDeliveryOption? get _selectedOption {
+    if (selectedDeliveryKey == null) return null;
+    for (final o in deliveryOptions) {
+      if (o.key == selectedDeliveryKey) return o;
+    }
+    return null;
   }
 
   String _formatDuration(Duration d) {
@@ -129,13 +197,74 @@ class _EnrollScreenState extends State<EnrollScreen> {
     return '${hours}h ${minutes}m';
   }
 
+  String _accessSummary(EnrollDeliveryOption option) {
+    if (option.accessMode == 'duration') {
+      final m = option.accessDurationMonths;
+      if (m != null && m > 0) {
+        return 'Access expires $m month${m == 1 ? '' : 's'} after enrollment.';
+      }
+    }
+    return 'Lifetime access.';
+  }
+
+  Future<void> _showOptionInfo(EnrollDeliveryOption option) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(option.label),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'English',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(option.explanationEn()),
+              const SizedBox(height: 16),
+              Text(
+                'العربية',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                option.explanationAr(),
+                textDirection: TextDirection.rtl,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
 
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (saving) return;
 
-    // ✅ App-only cooldown (per course)
+    final selected = _selectedOption;
+    if (selected == null || !selected.enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please choose a study type.')),
+      );
+      return;
+    }
+
     final can = await EnrollLimiter.canEnrollNow(widget.courseId);
     if (!can) {
       final rem = await EnrollLimiter.remaining(widget.courseId);
@@ -160,13 +289,23 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'courseTitle': widget.courseTitle,
         'fullName': fullNameC.text.trim(),
         'phone': phoneC.text.trim(),
-        'paymentPlan': paymentSelected,
-        'delivery': deliverySelected,
+
+        // ✅ keep old-friendly fields too
+        'delivery': selected.label,
+        'paymentPlan': 'By delivery option',
+
+        // ✅ new learner selection fields
+        'deliveryKey': selected.key,
+        'deliveryLabel': selected.label,
+        'selectedFee': selected.fee,
+        'accessMode': selected.accessMode,
+        'accessDurationMonths': selected.accessDurationMonths,
+        'accessLabel': _accessSummary(selected),
+
         'additionalInfo': extraInfoC.text.trim(),
         'createdAt': ServerValue.timestamp,
       });
 
-      // ✅ mark cooldown only after successful write
       await EnrollLimiter.markEnrolledNow(widget.courseId);
 
       if (!mounted) return;
@@ -185,10 +324,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
     }
   }
 
-  // Scales padding/radius a bit, but remains stable across font settings.
   EdgeInsets _screenPadding(BuildContext context) {
     final w = MediaQuery.sizeOf(context).width;
-    // clamps: small phones -> 16, tablets -> 24
     final h = w < 400 ? 16.0 : (w < 900 ? 18.0 : 24.0);
     return EdgeInsets.fromLTRB(h, 10, h, 120);
   }
@@ -203,7 +340,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
     return (w < 420 ? 16.0 : 18.0);
   }
 
-  // More modern: subtle borders, better error spacing, consistent density.
   InputDecoration _inputDeco({
     required String label,
     required IconData icon,
@@ -245,7 +381,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prices = _priceLines();
+    final selected = _selectedOption;
 
     return Scaffold(
       backgroundColor: Brand.appBg,
@@ -262,7 +398,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Modern, subtle layered background
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -278,8 +413,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
                 ),
               ),
             ),
-
-            // A couple soft blobs for depth (no extra packages)
             Positioned(
               top: -120,
               left: -120,
@@ -290,18 +423,50 @@ class _EnrollScreenState extends State<EnrollScreen> {
               right: -140,
               child: _SoftBlob(color: Brand.actionOrange.withOpacity(0.10), size: 300),
             ),
-
-            // Content
             SingleChildScrollView(
               padding: _screenPadding(context),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _MascotHeader(courseTitle: widget.courseTitle),
+                  const SizedBox(height: 14),
 
-                  if (prices.isNotEmpty) ...[
+                  _GlassCard(
+                    radius: _cardRadius(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _SectionTitle(
+                          icon: Icons.menu_book_rounded,
+                          title: 'Choose how you want to study',
+                        ),
+                        const SizedBox(height: 12),
+
+                        if (deliveryOptions.isEmpty)
+                          const _InfoBanner(
+                            text: 'No study options are available for this course right now.',
+                          )
+                        else
+                          ...deliveryOptions.map(
+                                (option) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _DeliveryOptionCard(
+                                option: option,
+                                selected: selectedDeliveryKey == option.key,
+                                onTap: saving || !option.isSelectable
+                                    ? null
+                                    : () => setState(() => selectedDeliveryKey = option.key),
+                                onInfoTap: () => _showOptionInfo(option),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  if (selected != null) ...[
                     const SizedBox(height: 14),
-                    _PriceCard(lines: prices),
+                    _SelectedOptionSummary(option: selected),
                   ],
 
                   const SizedBox(height: 14),
@@ -352,79 +517,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
                               return null;
                             },
                           ),
-                          const SizedBox(height: 14),
-
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final twoColumns = constraints.maxWidth >= 560;
-
-                              final paymentField = DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: paymentSelected,
-                                items: paymentOptions
-                                    .map(
-                                      (p) => DropdownMenuItem(
-                                    value: p,
-                                    child: Text(
-                                      p,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                )
-                                    .toList(),
-                                onChanged: saving
-                                    ? null
-                                    : (v) => setState(() => paymentSelected = v ?? paymentSelected),
-                                decoration: _inputDeco(
-                                  label: 'Payment',
-                                  icon: Icons.payments_rounded,
-                                ),
-                              );
-
-                              final deliveryField = DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                value: deliverySelected,
-                                items: deliveryOptions
-                                    .map(
-                                      (d) => DropdownMenuItem(
-                                    value: d,
-                                    child: Text(
-                                      d,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                )
-                                    .toList(),
-                                onChanged: saving
-                                    ? null
-                                    : (v) =>
-                                    setState(() => deliverySelected = v ?? deliverySelected),
-                                decoration: _inputDeco(
-                                  label: 'Delivery',
-                                  icon: Icons.videocam_rounded,
-                                ),
-                              );
-
-                              if (!twoColumns) {
-                                return Column(
-                                  children: [
-                                    paymentField,
-                                    const SizedBox(height: 12),
-                                    deliveryField,
-                                  ],
-                                );
-                              }
-
-                              return Row(
-                                children: [
-                                  Expanded(child: paymentField),
-                                  const SizedBox(width: 12),
-                                  Expanded(child: deliveryField),
-                                ],
-                              );
-                            },
-                          ),
-
                           const SizedBox(height: 12),
 
                           TextFormField(
@@ -440,7 +532,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
                           const SizedBox(height: 14),
 
-                          _InfoBanner(
+                          const _InfoBanner(
                             text: 'We will contact you soon to confirm your subscription.',
                           ),
                         ],
@@ -450,8 +542,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
                 ],
               ),
             ),
-
-            // Sticky bottom button (now with blur/glass, safe for all sizes)
             Positioned(
               left: 0,
               right: 0,
@@ -468,7 +558,242 @@ class _EnrollScreenState extends State<EnrollScreen> {
   }
 }
 
-/// ===== UI components (modern + responsive) =====
+/// ===== UI =====
+
+class _DeliveryOptionCard extends StatelessWidget {
+  const _DeliveryOptionCard({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+    required this.onInfoTap,
+  });
+
+  final EnrollDeliveryOption option;
+  final bool selected;
+  final VoidCallback? onTap;
+  final VoidCallback onInfoTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = selected ? Brand.accentCyan : Brand.uiBorder;
+    final bg = selected
+        ? Brand.accentCyan.withOpacity(0.10)
+        : Colors.white.withOpacity(0.92);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor, width: selected ? 2 : 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected ? Brand.primaryBlue : Colors.white,
+                border: Border.all(
+                  color: selected ? Brand.primaryBlue : Brand.uiBorder,
+                ),
+              ),
+              child: selected
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          option.label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Brand.primaryBlue,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'About this option',
+                        onPressed: onInfoTap,
+                        icon: const Icon(
+                          Icons.help_outline_rounded,
+                          color: Brand.primaryBlue,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    option.shortLabelEn,
+                    style: TextStyle(
+                      color: Brand.mainText.withOpacity(0.78),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _MiniTag(
+                        icon: Icons.payments_rounded,
+                        label: option.feeLabel(),
+                      ),
+                      _MiniTag(
+                        icon: Icons.lock_open_rounded,
+                        label: option.accessLabelEn(),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedOptionSummary extends StatelessWidget {
+  const _SelectedOptionSummary({required this.option});
+
+  final EnrollDeliveryOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    final accessText = option.accessMode == 'duration'
+        ? 'Access expires ${option.accessDurationMonths ?? 0} month${(option.accessDurationMonths ?? 0) == 1 ? '' : 's'} after enrollment.'
+        : 'Lifetime access.';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Brand.actionOrange.withOpacity(0.16),
+            Brand.actionOrange.withOpacity(0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: Brand.actionOrange.withOpacity(0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Brand.actionOrange.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Brand.actionOrange.withOpacity(0.25)),
+            ),
+            child: const Icon(Icons.menu_book_rounded, color: Brand.actionOrange),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  option.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Brand.primaryBlue,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  option.feeLabel(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Brand.actionOrange,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  accessText,
+                  style: TextStyle(
+                    color: Brand.mainText.withOpacity(0.82),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniTag extends StatelessWidget {
+  const _MiniTag({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: Brand.primaryBlue),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Brand.primaryBlue,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SoftBlob extends StatelessWidget {
   const _SoftBlob({required this.color, required this.size});
@@ -597,80 +922,6 @@ class _MascotHeader extends StatelessWidget {
   }
 }
 
-class _PriceCard extends StatelessWidget {
-  const _PriceCard({required this.lines});
-  final List<String> lines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Brand.actionOrange.withOpacity(0.16),
-            Brand.actionOrange.withOpacity(0.08),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
-        boxShadow: [
-          BoxShadow(
-            color: Brand.actionOrange.withOpacity(0.10),
-            blurRadius: 18,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: Brand.actionOrange.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.actionOrange.withOpacity(0.25)),
-            ),
-            child: const Icon(Icons.payments_rounded, color: Brand.actionOrange),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: DefaultTextStyle.merge(
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Brand.primaryBlue,
-                fontWeight: FontWeight.w900,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Price',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: Brand.actionOrange,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  ...lines.map(
-                        (t) => Text(
-                      t,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.icon, required this.title});
   final IconData icon;
@@ -761,7 +1012,6 @@ class _BottomActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
 
-    // Edge-to-edge, with safe area padding, blur background.
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
@@ -770,7 +1020,7 @@ class _BottomActionBar extends StatelessWidget {
             16,
             12,
             16,
-            12 + mq.padding.bottom, // ✅ safe for gesture nav / iPhones
+            12 + mq.padding.bottom,
           ),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.78),

@@ -1661,11 +1661,10 @@ class _CourseLite {
     required this.duration,
     required this.level,
     required this.language,
+
     required this.deliveryOptions,
     required this.deliveryOptionRaw,
-    required this.pricePerMonth,
-    required this.pricePerLevel,
-    required this.accessType,
+    required this.deliveryConfigs,
     required this.requirements,
     required this.tags,
     required this.status,
@@ -1691,12 +1690,9 @@ class _CourseLite {
   final List<String> deliveryOptions; // delivery_options (array)
   final String deliveryOptionRaw; // delivery_option (string)
 
+  final Map<String, _DeliveryConfigLite> deliveryConfigs;
+
   final List<_InstructorLite> instructors;
-
-  final double? pricePerMonth;
-  final double? pricePerLevel;
-
-  final String accessType;
   final String requirements;
   final List<String> tags;
 
@@ -1819,10 +1815,120 @@ class _CourseLite {
 
     return out;
   }
-  static double? _parseDouble(dynamic v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
+  static Map<String, _DeliveryConfigLite> _parseDeliveryConfigs(dynamic v) {
+    if (v is! Map) return {};
+
+    final out = <String, _DeliveryConfigLite>{};
+
+    v.forEach((key, value) {
+      final k = key.toString().trim().toLowerCase();
+      if (k.isEmpty || value is! Map) return;
+
+      final m = value.map((kk, vv) => MapEntry(kk.toString(), vv));
+
+      bool enabled = m['enabled'] == true;
+
+      double? fee;
+      final rawFee = m['fee'];
+      if (rawFee is num) {
+        fee = rawFee.toDouble();
+      } else if (rawFee != null) {
+        fee = double.tryParse(rawFee.toString());
+      }
+
+      final accessMode = (m['access_mode'] ?? 'lifetime').toString().trim().toLowerCase();
+
+      int? durationMonths;
+      final rawDuration = m['access_duration_months'];
+      if (rawDuration is int) {
+        durationMonths = rawDuration;
+      } else if (rawDuration is num) {
+        durationMonths = rawDuration.toInt();
+      } else if (rawDuration != null) {
+        durationMonths = int.tryParse(rawDuration.toString());
+      }
+
+      out[k] = _DeliveryConfigLite(
+        key: k,
+        enabled: enabled,
+        fee: fee,
+        accessMode: accessMode,
+        accessDurationMonths: durationMonths,
+      );
+    });
+
+    return out;
+  }
+
+  List<EnrollDeliveryOption> toEnrollOptions() {
+    final orderedKeys = ['inclass', 'live', 'recorded', 'online'];
+    final out = <EnrollDeliveryOption>[];
+
+    for (final key in orderedKeys) {
+      final cfg = deliveryConfigs[key];
+      if (cfg == null || !cfg.enabled) continue;
+
+      switch (key) {
+        case 'inclass':
+          out.add(
+            EnrollDeliveryOption(
+              key: 'inclass',
+              label: 'In-Class',
+              shortLabelEn: 'Physical lessons at our branch',
+              shortLabelAr: 'دروس حضورية',
+              fee: cfg.fee,
+              accessMode: cfg.accessMode,
+              accessDurationMonths: cfg.accessDurationMonths,
+              enabled: cfg.enabled,
+            ),
+          );
+          break;
+        case 'live':
+          out.add(
+            EnrollDeliveryOption(
+              key: 'live',
+              label: 'Live',
+              shortLabelEn: 'One-to-one fixed schedule',
+              shortLabelAr: 'حصص فردية بجدول ثابت',
+              fee: cfg.fee,
+              accessMode: cfg.accessMode,
+              accessDurationMonths: cfg.accessDurationMonths,
+              enabled: cfg.enabled,
+            ),
+          );
+          break;
+        case 'recorded':
+          out.add(
+            EnrollDeliveryOption(
+              key: 'recorded',
+              label: 'Recorded',
+              shortLabelEn: 'Self-study videos and materials',
+              shortLabelAr: 'دراسة ذاتية بفيديوهات ومواد',
+              fee: cfg.fee,
+              accessMode: cfg.accessMode,
+              accessDurationMonths: cfg.accessDurationMonths,
+              enabled: cfg.enabled,
+            ),
+          );
+          break;
+        case 'online':
+          out.add(
+            EnrollDeliveryOption(
+              key: 'online',
+              label: 'Online',
+              shortLabelEn: 'Group live classes, flexible booking',
+              shortLabelAr: 'حصص جماعية مباشرة بمرونة في الحجز',
+              fee: cfg.fee,
+              accessMode: cfg.accessMode,
+              accessDurationMonths: cfg.accessDurationMonths,
+              enabled: cfg.enabled,
+            ),
+          );
+          break;
+      }
+    }
+
+    return out;
   }
 
   static int? _parseInt(dynamic v) {
@@ -1869,8 +1975,10 @@ class _CourseLite {
       level: pickString(['level']),
       language: pickString(['language']),
 
+
       deliveryOptions: _parseList(m['delivery_options'] ?? m['deliveryOptions']),
       deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
+      deliveryConfigs: _parseDeliveryConfigs(m['delivery_configs']),
 
       instructors: _parseInstructors(
         m['instructors_map'] ??
@@ -1878,10 +1986,6 @@ class _CourseLite {
             m['teacher'] ??
             m['teachers'],
       ),
-      pricePerMonth: _parseDouble(m['price_per_month'] ?? m['pricePerMonth']),
-      pricePerLevel: _parseDouble(m['price_per_level'] ?? m['pricePerLevel']),
-
-      accessType: pickString(['access_type', 'accessType']),
       requirements: pickString(['requirement', 'requirements']),
 
       tags: _parseList(m['tags']),
@@ -1912,6 +2016,22 @@ List<_CourseLite> _parseCoursesLite(dynamic data) {
   out.sort((a, b) => (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0));
 
   return out;
+}
+
+class _DeliveryConfigLite {
+  const _DeliveryConfigLite({
+    required this.key,
+    required this.enabled,
+    required this.fee,
+    required this.accessMode,
+    required this.accessDurationMonths,
+  });
+
+  final String key;
+  final bool enabled;
+  final double? fee;
+  final String accessMode;
+  final int? accessDurationMonths;
 }
 class _InstructorLite {
   const _InstructorLite({
@@ -2242,15 +2362,7 @@ class _CourseDetailsSheet extends StatelessWidget {
   const _CourseDetailsSheet({required this.course});
   final _CourseLite course;
 
-  List<String> _priceLines() {
-    final pm = course.pricePerMonth;
-    final pl = course.pricePerLevel;
 
-    final out = <String>[];
-    if (pm != null && pm > 0) out.add('${pm.toStringAsFixed(0)} DA / month');
-    if (pl != null && pl > 0) out.add('${pl.toStringAsFixed(0)} DA / level');
-    return out;
-  }
 
   Widget _hero() {
     if (course.thumb.trim().isEmpty) {
@@ -2289,7 +2401,6 @@ class _CourseDetailsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final prices = _priceLines();
     final deliveryText = course.deliveryOptions.isNotEmpty
         ? course.deliveryOptions.join(', ')
         : course.deliveryOptionRaw.trim();
@@ -2338,8 +2449,6 @@ class _CourseDetailsSheet extends StatelessWidget {
                 children: [
                   if (course.category.trim().isNotEmpty)
                     _InfoTile(icon: Icons.category_rounded, text: course.category),
-                  if (course.accessType.trim().isNotEmpty)
-                    _InfoTile(icon: Icons.lock_open_rounded, text: course.accessType),
                 ],
               ),
 
@@ -2384,45 +2493,7 @@ class _CourseDetailsSheet extends StatelessWidget {
 
               const SizedBox(height: 18),
 
-              if (prices.isNotEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Brand.actionOrange.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.payments_rounded, color: Brand.actionOrange),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: prices
-                              .map(
-                                (p) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Text(
-                                p,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: Brand.actionOrange,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                          )
-                              .toList(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
 
-              if (prices.isNotEmpty) const SizedBox(height: 18),
 
               if (course.longDesc.trim().isNotEmpty)
                 _Section(
@@ -2483,34 +2554,16 @@ class _CourseDetailsSheet extends StatelessWidget {
                     ),
                   ),
                   onPressed: () async {
-                    // Build delivery options exactly like before
-                    List<String> deliveryOptions = [];
-                    if (course.deliveryOptions.isNotEmpty) {
-                      deliveryOptions = List<String>.from(course.deliveryOptions);
-                    } else {
-                      final raw = course.deliveryOptionRaw.trim();
-                      if (raw.isNotEmpty) {
-                        deliveryOptions = raw
-                            .split(',')
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList();
-                      }
-                    }
-                    if (deliveryOptions.isEmpty) deliveryOptions = ['Not specified'];
+                    final enrollOptions = course.toEnrollOptions();
 
-                    // ✅ Close the bottom sheet first (recommended)
                     Navigator.of(context).pop();
 
-                    // ✅ Open the full enroll screen
                     await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => EnrollScreen(
                           courseId: course.id,
                           courseTitle: course.title,
-                          pricePerMonth: course.pricePerMonth,
-                          pricePerLevel: course.pricePerLevel,
-                          deliveryOptions: deliveryOptions,
+                          deliveryOptions: enrollOptions,
                         ),
                       ),
                     );

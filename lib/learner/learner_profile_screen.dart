@@ -11,6 +11,16 @@ import 'package:http/http.dart' as http;
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 
+class _BioChoice {
+  final String ar;
+  final String en;
+
+  const _BioChoice({
+    required this.ar,
+    required this.en,
+  });
+}
+
 class LearnerProfileScreen extends StatefulWidget {
   const LearnerProfileScreen({super.key});
 
@@ -50,6 +60,59 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final List<String> _photoUrls = [];
 
   static const int _maxExtraPhotos = 6;
+
+  final Set<String> _selectedHobbiesAr = <String>{};
+  final Set<String> _selectedLearningAr = <String>{};
+  final Set<String> _selectedTraitsAr = <String>{};
+  String? _selectedGoalAr;
+
+  static const List<_BioChoice> _hobbyChoices = [
+    _BioChoice(ar: 'كرة القدم', en: 'football'),
+    _BioChoice(ar: 'الرسم', en: 'drawing'),
+    _BioChoice(ar: 'الألعاب', en: 'games'),
+    _BioChoice(ar: 'القراءة', en: 'reading'),
+    _BioChoice(ar: 'الموسيقى', en: 'music'),
+    _BioChoice(ar: 'الغناء', en: 'singing'),
+    _BioChoice(ar: 'الرقص', en: 'dancing'),
+    _BioChoice(ar: 'العلوم', en: 'science'),
+    _BioChoice(ar: 'الرياضيات', en: 'math'),
+    _BioChoice(ar: 'الفنون', en: 'art'),
+    _BioChoice(ar: 'البرمجة', en: 'coding'),
+    _BioChoice(ar: 'الحيوانات', en: 'animals'),
+    _BioChoice(ar: 'الطبخ', en: 'cooking'),
+    _BioChoice(ar: 'اللغات', en: 'languages'),
+  ];
+
+  static const List<_BioChoice> _learningChoices = [
+    _BioChoice(ar: 'الأنشطة التفاعلية', en: 'interactive activities'),
+    _BioChoice(ar: 'الألعاب التعليمية', en: 'learning games'),
+    _BioChoice(ar: 'الشرح خطوة بخطوة', en: 'step-by-step explanations'),
+    _BioChoice(ar: 'الصور والوسائل البصرية', en: 'visual materials'),
+    _BioChoice(ar: 'المحادثة', en: 'speaking activities'),
+    _BioChoice(ar: 'العمل الجماعي', en: 'group work'),
+    _BioChoice(ar: 'التكرار والمراجعة', en: 'review and repetition'),
+    _BioChoice(ar: 'الأنشطة الإبداعية', en: 'creative activities'),
+  ];
+
+  static const List<_BioChoice> _traitChoices = [
+    _BioChoice(ar: 'خجول قليلاً', en: 'a little shy at first'),
+    _BioChoice(ar: 'فضولي', en: 'curious'),
+    _BioChoice(ar: 'أحب المشاركة', en: 'enjoy participating'),
+    _BioChoice(ar: 'مجتهد', en: 'hardworking'),
+    _BioChoice(ar: 'مبدع', en: 'creative'),
+    _BioChoice(ar: 'هادئ', en: 'calm and focused'),
+    _BioChoice(ar: 'نشيط', en: 'energetic'),
+    _BioChoice(ar: 'أحتاج تشجيعاً', en: 'respond well to encouragement'),
+  ];
+
+  static const List<_BioChoice> _goalChoices = [
+    _BioChoice(ar: 'تحسين لغتي الإنجليزية', en: 'improve my English'),
+    _BioChoice(ar: 'التحدث بثقة أكبر', en: 'speak more confidently'),
+    _BioChoice(ar: 'الحصول على درجات أفضل', en: 'get better grades'),
+    _BioChoice(ar: 'تعلم مهارات جديدة', en: 'learn new skills'),
+    _BioChoice(ar: 'فهم الدروس بشكل أفضل', en: 'understand lessons better'),
+    _BioChoice(ar: 'الاستمتاع بالتعلم', en: 'enjoy learning more'),
+  ];
 
   // Small profile statistics only
   int _statCourses = 0;
@@ -597,6 +660,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       _statAttendancePct = 0;
       _statLessonsCovered = 0;
       _statHomeworkPending = 0;
+
+      _selectedHobbiesAr.clear();
+      _selectedLearningAr.clear();
+      _selectedTraitsAr.clear();
+      _selectedGoalAr = null;
     });
 
     try {
@@ -957,6 +1025,157 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 
   // ---------------------------
+  // Bio helpers
+  // ---------------------------
+
+  bool get _hasBioSelections =>
+      _selectedHobbiesAr.isNotEmpty ||
+          _selectedLearningAr.isNotEmpty ||
+          _selectedTraitsAr.isNotEmpty ||
+          (_selectedGoalAr != null && _selectedGoalAr!.trim().isNotEmpty);
+
+  _BioChoice? _findChoice(List<_BioChoice> list, String ar) {
+    for (final item in list) {
+      if (item.ar == ar) return item;
+    }
+    return null;
+  }
+
+  List<String> _mapArabicSetToEnglish(Set<String> selected, List<_BioChoice> source) {
+    return selected
+        .map((ar) => _findChoice(source, ar)?.en ?? '')
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+  }
+
+  String _joinEnglish(List<String> items) {
+    final clean = items.where((e) => e.trim().isNotEmpty).toList();
+    if (clean.isEmpty) return '';
+    if (clean.length == 1) return clean.first;
+    if (clean.length == 2) return '${clean[0]} and ${clean[1]}';
+    return '${clean.sublist(0, clean.length - 1).join(', ')}, and ${clean.last}';
+  }
+
+  String _joinArabic(List<String> items) {
+    final clean = items.where((e) => e.trim().isNotEmpty).toList();
+    if (clean.isEmpty) return '';
+    if (clean.length == 1) return clean.first;
+    if (clean.length == 2) return '${clean[0]} و${clean[1]}';
+    return '${clean.sublist(0, clean.length - 1).join('، ')}، و${clean.last}';
+  }
+
+  String _generatedEnglishBio() {
+    final firstName = _fn.text.trim();
+    final hobbiesEn = _mapArabicSetToEnglish(_selectedHobbiesAr, _hobbyChoices);
+    final learningEn = _mapArabicSetToEnglish(_selectedLearningAr, _learningChoices);
+    final traitsEn = _mapArabicSetToEnglish(_selectedTraitsAr, _traitChoices);
+    final goalEn = _selectedGoalAr == null
+        ? ''
+        : (_findChoice(_goalChoices, _selectedGoalAr!)?.en ?? '');
+
+    final parts = <String>[];
+
+    if (firstName.isNotEmpty) {
+      parts.add('Hi, my name is $firstName.');
+    } else {
+      parts.add('Hi.');
+    }
+
+    if (hobbiesEn.isNotEmpty) {
+      parts.add('I enjoy ${_joinEnglish(hobbiesEn)}.');
+    }
+
+    if (learningEn.isNotEmpty) {
+      parts.add('I learn best through ${_joinEnglish(learningEn)}.');
+    }
+
+    if (traitsEn.isNotEmpty) {
+      parts.add('I am ${_joinEnglish(traitsEn)}.');
+    }
+
+    if (goalEn.isNotEmpty) {
+      parts.add('My goal is to $goalEn.');
+    }
+
+    return parts.join(' ');
+  }
+
+  String _generatedArabicBio() {
+    final firstName = _fn.text.trim();
+    final hobbiesAr = _selectedHobbiesAr.toList();
+    final learningAr = _selectedLearningAr.toList();
+    final traitsAr = _selectedTraitsAr.toList();
+    final goalAr = (_selectedGoalAr ?? '').trim();
+
+    final parts = <String>[];
+
+    if (firstName.isNotEmpty) {
+      parts.add('اسمي $firstName.');
+    } else {
+      parts.add('هذه نبذتي.');
+    }
+
+    if (hobbiesAr.isNotEmpty) {
+      parts.add('أحب ${_joinArabic(hobbiesAr)}.');
+    }
+
+    if (learningAr.isNotEmpty) {
+      parts.add('أفضل التعلم من خلال ${_joinArabic(learningAr)}.');
+    }
+
+    if (traitsAr.isNotEmpty) {
+      parts.add('أنا ${_joinArabic(traitsAr)}.');
+    }
+
+    if (goalAr.isNotEmpty) {
+      parts.add('هدفي هو $goalAr.');
+    }
+
+    return parts.join(' ');
+  }
+
+  void _syncGeneratedBioToController() {
+    if (!_hasBioSelections) return;
+
+    final generated = _generatedEnglishBio().trim();
+    _aboutMe.text = generated;
+    _aboutMe.selection = TextSelection.fromPosition(
+      TextPosition(offset: _aboutMe.text.length),
+    );
+  }
+
+  void _toggleMultiChoice(Set<String> target, String value) {
+    setState(() {
+      if (target.contains(value)) {
+        target.remove(value);
+      } else {
+        target.add(value);
+      }
+      _syncGeneratedBioToController();
+    });
+  }
+
+  void _selectSingleChoice(String value) {
+    setState(() {
+      if (_selectedGoalAr == value) {
+        _selectedGoalAr = null;
+      } else {
+        _selectedGoalAr = value;
+      }
+      _syncGeneratedBioToController();
+    });
+  }
+
+  void _clearBioSelections() {
+    setState(() {
+      _selectedHobbiesAr.clear();
+      _selectedLearningAr.clear();
+      _selectedTraitsAr.clear();
+      _selectedGoalAr = null;
+    });
+  }
+
+  // ---------------------------
   // UI helpers
   // ---------------------------
 
@@ -1034,6 +1253,217 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildChoiceChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return FilterChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: selected ? Colors.white : UiK.mainText,
+        ),
+      ),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: UiK.actionOrange,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? UiK.actionOrange : UiK.uiBorder.withOpacity(0.9),
+      ),
+      checkmarkColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+      ),
+      showCheckmark: false,
+    );
+  }
+
+  Widget _buildChoiceSection({
+    required String title,
+    required String subtitle,
+    required List<_BioChoice> choices,
+    required Set<String> selectedValues,
+    required ValueChanged<String> onTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: UiK.titleText(size: 15)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: UiK.subtleText()),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: choices.map((item) {
+            return _buildChoiceChip(
+              label: item.ar,
+              selected: selectedValues.contains(item.ar),
+              onTap: () => onTap(item.ar),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSingleChoiceSection({
+    required String title,
+    required String subtitle,
+    required List<_BioChoice> choices,
+    required String? selectedValue,
+    required ValueChanged<String> onTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: UiK.titleText(size: 15)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: UiK.subtleText()),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: choices.map((item) {
+            return _buildChoiceChip(
+              label: item.ar,
+              selected: selectedValue == item.ar,
+              onTap: () => onTap(item.ar),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _previewBox({
+    required String title,
+    required String text,
+    required IconData icon,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: UiK.primaryBlue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: UiK.uiBorder.withOpacity(0.9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: UiK.actionOrange),
+              const SizedBox(width: 8),
+              Text(title, style: UiK.titleText(size: 14)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            text.trim().isEmpty ? '-' : text.trim(),
+            style: const TextStyle(
+              color: UiK.mainText,
+              fontWeight: FontWeight.w700,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutMeCard() {
+    final arabicPreview = _hasBioSelections ? _generatedArabicBio() : '';
+    final englishPreview = _hasBioSelections ? _generatedEnglishBio() : _aboutMe.text.trim();
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: UiK.cardShape(),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Build My Bio', style: UiK.titleText()),
+            const SizedBox(height: 8),
+            Text(
+              'Pick in Arabic, and we will generate an English profile for the teacher.',
+              style: UiK.subtleText(),
+            ),
+            const SizedBox(height: 14),
+            _previewBox(
+              title: 'Arabic Preview',
+              text: arabicPreview,
+              icon: Icons.translate_rounded,
+            ),
+            const SizedBox(height: 10),
+            _previewBox(
+              title: 'English Teacher Bio',
+              text: englishPreview,
+              icon: Icons.auto_awesome_rounded,
+            ),
+            const SizedBox(height: 14),
+            _buildChoiceSection(
+              title: 'أنا أحب',
+              subtitle: 'اختر الهوايات أو الأشياء التي يحبها المتعلم',
+              choices: _hobbyChoices,
+              selectedValues: _selectedHobbiesAr,
+              onTap: (value) => _toggleMultiChoice(_selectedHobbiesAr, value),
+            ),
+            const SizedBox(height: 16),
+            _buildChoiceSection(
+              title: 'أفضل التعلم من خلال',
+              subtitle: 'ما نوع الدروس أو الأنشطة التي تناسبه أكثر؟',
+              choices: _learningChoices,
+              selectedValues: _selectedLearningAr,
+              onTap: (value) => _toggleMultiChoice(_selectedLearningAr, value),
+            ),
+            const SizedBox(height: 16),
+            _buildChoiceSection(
+              title: 'أنا عادة',
+              subtitle: 'اختر الصفات التي تساعد المعلم على فهم المتعلم',
+              choices: _traitChoices,
+              selectedValues: _selectedTraitsAr,
+              onTap: (value) => _toggleMultiChoice(_selectedTraitsAr, value),
+            ),
+            const SizedBox(height: 16),
+            _buildSingleChoiceSection(
+              title: 'هدفي هو',
+              subtitle: 'اختر هدفاً رئيسياً واحداً',
+              choices: _goalChoices,
+              selectedValue: _selectedGoalAr,
+              onTap: _selectSingleChoice,
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: const Text('Clear selections'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: UiK.primaryBlue,
+                    side: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: _clearBioSelections,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1387,29 +1817,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                         const SizedBox(height: 14),
                         _buildSummaryCard(),
                         const SizedBox(height: 14),
-                        Card(
-                          elevation: 0,
-                          color: Colors.white,
-                          shape: UiK.cardShape(),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('About Me', style: UiK.titleText()),
-                                const SizedBox(height: 10),
-                                _field(
-                                  'Write something about yourself',
-                                  _aboutMe,
-                                  maxLines: 5,
-                                  maxLength: 400,
-                                  hintText:
-                                  'Your interests, goals, hobbies, or anything you want teachers to know.',
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        _buildAboutMeCard(),
                         const SizedBox(height: 14),
                         Card(
                           elevation: 0,
