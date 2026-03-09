@@ -162,9 +162,54 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 // syllabi key (courseId)
   String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString();
 
-// ✅ learner-assigned syllabus variant
-  String get _variantKey =>
+  String get _deliveryKey =>
+      (_course['deliveryKey'] ?? '').toString().trim().toLowerCase();
+
+  String get _studyMode =>
+      (_course['studyMode'] ?? '').toString().trim().toLowerCase();
+
+  String get _legacyVariantKey =>
       (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
+
+  String get _syllabusVariantKey {
+    final delivery = _deliveryKey;
+    final studyMode = _studyMode;
+    final legacy = _legacyVariantKey;
+
+    if (delivery == 'recorded') return 'recorded';
+    if (delivery == 'inclass') return 'in_class';
+    if (delivery == 'flexible') return 'online';
+    if (delivery == 'private') {
+      if (studyMode == 'online') return 'online';
+      if (studyMode == 'inclass') return 'in_class';
+    }
+
+    if (legacy == 'in_class' ||
+        legacy == 'online' ||
+        legacy == 'live' ||
+        legacy == 'recorded') {
+      return legacy == 'live' ? 'online' : legacy;
+    }
+
+    return '';
+  }
+
+  String get _studyTypeLabel {
+    final delivery = _deliveryKey;
+    final studyMode = _studyMode;
+
+    if (delivery == 'private') {
+      if (studyMode == 'online') return 'VIP Online';
+      if (studyMode == 'inclass') return 'VIP In-Class';
+      return 'VIP';
+    }
+
+    if (delivery == 'inclass') return 'In-Class';
+    if (delivery == 'flexible') return 'Flexible';
+    if (delivery == 'recorded') return 'Recorded';
+
+    return '';
+  }
 
   DatabaseReference get _paymentSummaryRef =>
       _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
@@ -268,8 +313,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         DatabaseReference syllabusRef = _syllabiRef.child(_courseId);
 
         // ✅ Prefer learner variant branch: syllabi/<courseId>/<variantKey>
-        if (_variantKey.isNotEmpty) {
-          syllabusRef = syllabusRef.child(_variantKey);
+        if (_syllabusVariantKey.isNotEmpty) {
+          syllabusRef = syllabusRef.child(_syllabusVariantKey);
         }
 
         final sSnap = await syllabusRef.get();
@@ -829,7 +874,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 Text('Course', style: UiK.titleText()),
                 const SizedBox(height: 8),
                 Text(
-                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',
                   style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
@@ -1036,8 +1081,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 Text('Course Summary', style: UiK.titleText()),
                 const SizedBox(height: 8),
                 Text(
-                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
-                  style: UiK.subtleText(),
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',                  style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
@@ -1242,8 +1286,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 Text('Progress', style: UiK.titleText()),
                 const SizedBox(height: 8),
                 Text(
-                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}',
-                  style: UiK.subtleText(),
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',                  style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
 

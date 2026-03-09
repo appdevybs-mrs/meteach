@@ -123,7 +123,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
   }
 
   Map<String, dynamic>? _firstVariantMeta(Map<String, dynamic> courseMap) {
-    for (final key in const ['in_class', 'online', 'live', 'recorded']) {
+    for (final key in const ['inclass', 'flexible', 'private', 'recorded']) {
       final variant = _asStringKeyMap(courseMap[key]);
       if (variant != null) return variant;
     }
@@ -133,7 +133,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
   List<String> _extractAvailableVariants(Map<String, dynamic> courseMap) {
     final out = <String>[];
 
-    for (final key in const ['in_class', 'online', 'live', 'recorded']) {
+    for (final key in const ['inclass', 'flexible', 'private', 'recorded']) {
       final variant = _asStringKeyMap(courseMap[key]);
       if (variant == null) continue;
 
@@ -191,12 +191,12 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
 
   String _variantLabel(String key) {
     switch (key) {
-      case 'in_class':
+      case 'inclass':
         return 'In-Class';
-      case 'online':
-        return 'Online';
-      case 'live':
-        return 'Live';
+      case 'flexible':
+        return 'Flexible';
+      case 'private':
+        return 'Private';
       case 'recorded':
         return 'Recorded';
       default:

@@ -178,7 +178,93 @@
       if (t.isEmpty) return "CLS";
       return t.split(RegExp(r'\s+')).first;
     }
-  
+    String _normalizeVariantKey(String value) {
+      final v = value.trim().toLowerCase();
+
+      switch (v) {
+        case 'inclass':
+        case 'in-class':
+        case 'in class':
+        case 'in_class':
+          return 'inclass';
+
+        case 'online':
+        case 'flexible':
+          return 'flexible';
+
+        case 'live':
+        case 'private':
+          return 'private';
+
+        case 'recorded':
+          return 'recorded';
+
+        default:
+          return v;
+      }
+    }
+
+    String _normalizeStudyMode(String value) {
+      final v = value.trim().toLowerCase();
+
+      switch (v) {
+        case 'inclass':
+        case 'in-class':
+        case 'in class':
+        case 'in_class':
+          return 'inclass';
+
+        case 'online':
+          return 'online';
+
+        default:
+          return v;
+      }
+    }
+
+    String _variantLabel(String variantKey) {
+      switch (_normalizeVariantKey(variantKey)) {
+        case 'inclass':
+          return 'In-Class';
+        case 'flexible':
+          return 'Flexible';
+        case 'private':
+          return 'Private';
+        case 'recorded':
+          return 'Recorded';
+        default:
+          return variantKey;
+      }
+    }
+
+    String _studyModeLabel(String studyMode) {
+      switch (_normalizeStudyMode(studyMode)) {
+        case 'online':
+          return 'Online';
+        case 'inclass':
+          return 'In-Class';
+        default:
+          return studyMode;
+      }
+    }
+
+    String _classTypeLabel({
+      required String variantKey,
+      required String studyMode,
+    }) {
+      final v = _normalizeVariantKey(variantKey);
+      final s = _normalizeStudyMode(studyMode);
+
+      if (v == 'private') {
+        final modeLabel = _studyModeLabel(s);
+        if (modeLabel.trim().isNotEmpty) {
+          return 'Private • $modeLabel';
+        }
+        return 'Private';
+      }
+
+      return _variantLabel(v);
+    }
     // Short Class ID: exactly 5 chars (human-friendly)
     String _makeShortClassId() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid 0/O/1/I
@@ -441,7 +527,62 @@
       }
       return set;
     }
-  
+
+    Set<String> _uidsWhoMatchCourseVariant({
+      required String courseId,
+      required String variantKey,
+      required String studyMode,
+    }) {
+      final wantedVariant = _normalizeVariantKey(variantKey);
+      final wantedStudyMode = _normalizeStudyMode(studyMode);
+
+      final set = <String>{};
+
+      for (final l in _allLearners) {
+        final courses = (l["courses"] is Map)
+            ? Map<String, dynamic>.from(l["courses"] as Map)
+            : <String, dynamic>{};
+
+        bool hasMatch = false;
+
+        for (final e in courses.entries) {
+          final m = (e.value is Map)
+              ? Map<String, dynamic>.from(e.value)
+              : <String, dynamic>{};
+
+          final enrolledCourseId = (m["id"] ?? "").toString().trim();
+          if (enrolledCourseId != courseId) continue;
+
+          final enrolledVariant = _normalizeVariantKey(
+            (m["variantKey"] ?? m["deliveryKey"] ?? "").toString(),
+          );
+
+          final enrolledStudyMode = _normalizeStudyMode(
+            (m["studyMode"] ?? "").toString(),
+          );
+
+          if (wantedVariant != enrolledVariant) {
+            continue;
+          }
+
+          if (wantedVariant == 'private') {
+            if (wantedStudyMode != enrolledStudyMode) {
+              continue;
+            }
+          }
+
+          hasMatch = true;
+          break;
+        }
+
+        if (hasMatch) {
+          set.add(l["uid"].toString());
+        }
+      }
+
+      return set;
+    }
+
     Future<void> _syncLearnersClassDataStrict({
       required String courseId,
       required Map<String, dynamic> classPayload,
@@ -496,12 +637,16 @@
           }
         }
         if (courseKey == null) continue;
-  
+
         final clsMini = {
           "class_id": classId,
           "course_id": courseId,
           "course_code": (classPayload["course_code"] ?? "").toString(),
           "course_title": (classPayload["course_title"] ?? "").toString(),
+          "variantKey": (classPayload["variantKey"] ?? "").toString(),
+          "variantLabel": (classPayload["variantLabel"] ?? "").toString(),
+          "studyMode": (classPayload["studyMode"] ?? "").toString(),
+          "studyModeLabel": (classPayload["studyModeLabel"] ?? "").toString(),
           "instructor": (classPayload["instructor"] ?? "").toString(),
           "status": status,
           "updatedAt": ServerValue.timestamp,
@@ -683,9 +828,11 @@
     Color _openColor(bool isOpen) => isOpen ? Colors.blue : Colors.grey;
   
     // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
-  
+
     Future<void> _openLearnersPickerStrict({
       required String selectedCourseId,
+      required String selectedVariantKey,
+      required String selectedStudyMode,
       required Map<String, dynamic> selectedLearnersByUid,
       required StateSetter setModalState,
     }) async {
@@ -693,8 +840,12 @@
         _notify("Learners are still loading...");
         return;
       }
-  
-      final enrolledUids = _uidsWhoHaveCourse(selectedCourseId);
+
+      final enrolledUids = _uidsWhoMatchCourseVariant(
+        courseId: selectedCourseId,
+        variantKey: selectedVariantKey,
+        studyMode: selectedStudyMode,
+      );
       final TextEditingController searchCtrl = TextEditingController();
       String q = "";
   
@@ -852,6 +1003,17 @@
         final courseId = (existingClass!["course_id"] ?? "").toString();
         final found = _courses.where((c) => c["id"] == courseId).toList();
         if (found.isNotEmpty) selectedCourse = found.first;
+      }
+      String selectedVariantKey = isEdit
+          ? _normalizeVariantKey((existingClass!["variantKey"] ?? "").toString())
+          : "inclass";
+
+      String selectedStudyMode = isEdit
+          ? _normalizeStudyMode((existingClass!["studyMode"] ?? "").toString())
+          : "";
+
+      if (selectedVariantKey.isEmpty) {
+        selectedVariantKey = "inclass";
       }
   
       bool isOpen = isEdit ? ((existingClass?["is_open"] ?? true) == true) : true;
@@ -1112,7 +1274,59 @@
                       ),
   
                       const SizedBox(height: 12),
-  
+                      DropdownButtonFormField<String>(
+                        value: selectedVariantKey,
+                        decoration: const InputDecoration(
+                          labelText: "Class type",
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'inclass', child: Text('In-Class')),
+                          DropdownMenuItem(value: 'flexible', child: Text('Flexible')),
+                          DropdownMenuItem(value: 'private', child: Text('Private')),
+                          DropdownMenuItem(value: 'recorded', child: Text('Recorded')),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (v) {
+                          if (v == null) return;
+                          setModalState(() {
+                            selectedVariantKey = _normalizeVariantKey(v);
+
+                            if (selectedVariantKey != 'private') {
+                              selectedStudyMode = '';
+                            } else if (selectedStudyMode.isEmpty) {
+                              selectedStudyMode = 'online';
+                            }
+
+                            selectedLearnersByUid.clear();
+                          });
+                        },
+                      ),
+
+                      if (selectedVariantKey == 'private') ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: selectedStudyMode.isEmpty ? 'online' : selectedStudyMode,
+                          decoration: const InputDecoration(
+                            labelText: "Private mode",
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'online', child: Text('Online')),
+                            DropdownMenuItem(value: 'inclass', child: Text('In-Class')),
+                          ],
+                          onChanged: saving
+                              ? null
+                              : (v) {
+                            if (v == null) return;
+                            setModalState(() {
+                              selectedStudyMode = _normalizeStudyMode(v);
+                              selectedLearnersByUid.clear();
+                            });
+                          },
+                        ),
+                      ],
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
@@ -1169,6 +1383,8 @@
                             ? null
                             : () => _openLearnersPickerStrict(
                           selectedCourseId: courseId,
+                          selectedVariantKey: selectedVariantKey,
+                          selectedStudyMode: selectedStudyMode,
                           selectedLearnersByUid: selectedLearnersByUid,
                           setModalState: setModalState,
                         )),
@@ -1315,7 +1531,11 @@
   
                             // ✅ FIX (so you NEVER get stuck):
                             // Auto-remove selected learners who are no longer enrolled.
-                            final enrolledUids = _uidsWhoHaveCourse(courseId);
+                            final enrolledUids = _uidsWhoMatchCourseVariant(
+                              courseId: courseId,
+                              variantKey: selectedVariantKey,
+                              studyMode: selectedStudyMode,
+                            );
                             final removedAuto = <String>[];
                             final selectedUids = selectedLearnersByUid.keys.toList();
                             for (final uid in selectedUids) {
@@ -1356,13 +1576,19 @@
                               "class_id": classId,
                               "status": status,
                               "is_open": isOpen,
-  
+
                               "course_id": courseId,
-                              "course_code": courseCode, // kept in DB (logic unchanged)
+                              "course_code": courseCode,
                               "course_title": courseTitle,
                               "course_duration": courseDuration,
                               "course_level": courseLevel,
                               "category": courseCategory,
+                              "variantKey": selectedVariantKey,
+                              "variantLabel": _variantLabel(selectedVariantKey),
+                              "studyMode": selectedVariantKey == 'private' ? selectedStudyMode : "",
+                              "studyModeLabel": selectedVariantKey == 'private'
+                                  ? _studyModeLabel(selectedStudyMode)
+                                  : "",
   
                               "instructor": pickedName,
                               "instructor_current": newCurrent,
@@ -1633,10 +1859,16 @@
                           final id = (cls["class_id"] ?? "").toString();
                           final status = (cls["status"] ?? "active").toString();
                           final bool isOpen = (cls["is_open"] ?? true) == true;
-  
+
                           final courseTitle = (cls["course_title"] ?? "").toString();
                           final courseLevel = (cls["course_level"] ?? "").toString();
                           final courseId = (cls["course_id"] ?? "").toString();
+                          final variantKey = (cls["variantKey"] ?? "").toString();
+                          final studyMode = (cls["studyMode"] ?? "").toString();
+                          final classTypeLabel = _classTypeLabel(
+                            variantKey: variantKey,
+                            studyMode: studyMode,
+                          );
   
                           final instructor = (cls["instructor"] ?? "").toString();
   
@@ -1693,7 +1925,16 @@
                                   ),
   
                                   const SizedBox(height: 6),*/
-  
+                                  if (classTypeLabel.trim().isNotEmpty) ...[
+                                    Text(
+                                      classTypeLabel,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                  ],
                                   // 3) rest
                                   Text(
                                     instructor.isEmpty ? "Instructor: -" : "Instructor: $instructor",

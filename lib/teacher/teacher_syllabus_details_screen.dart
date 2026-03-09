@@ -33,9 +33,9 @@ class _TeacherSyllabusDetailsScreenState
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   static const List<String> _variantKeys = [
-    'in_class',
-    'online',
-    'live',
+    'inclass',
+    'flexible',
+    'private',
     'recorded',
   ];
 
@@ -161,9 +161,9 @@ class _TeacherSyllabusDetailsScreenState
         _loading = false;
         _course = _SyllabusCourse(
           id: widget.courseId,
-          title: _firstNonEmpty([topTitle, variants['in_class']?.title ?? '', 'Syllabus']),
-          code: _firstNonEmpty([topCode, variants['in_class']?.code ?? '', '']),
-          duration: _firstNonEmpty([topDuration, variants['in_class']?.duration ?? '', '']),
+          title: _firstNonEmpty([topTitle, variants['inclass']?.title ?? '', 'Syllabus']),
+          code: _firstNonEmpty([topCode, variants['inclass']?.code ?? '', '']),
+          duration: _firstNonEmpty([topDuration, variants['inclass']?.duration ?? '', '']),
           updatedAt: _maxInt([
             topUpdatedAt,
             ...variants.values.map((e) => e.updatedAt),
@@ -301,12 +301,12 @@ class _TeacherSyllabusDetailsScreenState
 
   String _variantLabel(String key) {
     switch (key) {
-      case 'in_class':
+      case 'inclass':
         return 'In-Class';
-      case 'online':
-        return 'Online';
-      case 'live':
-        return 'Live';
+      case 'flexible':
+        return 'Flexible';
+      case 'private':
+        return 'Private';
       case 'recorded':
         return 'Recorded';
       default:

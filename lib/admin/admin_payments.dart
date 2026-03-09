@@ -559,7 +559,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     String? pickedCourseKey;
 
     String method = _methods.first;
-
+    String pickedVariantKey = '';
+    String pickedStudyMode = '';
+    String pickedStudyModeLabel = '';
     int sessionsPaid = 8;
     int remindBeforeSession = 0;
 
@@ -608,13 +610,17 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               .where((k) => k.startsWith('course_'))
                               .toList()
                             ..sort();
+
                           if (keys.isNotEmpty) {
                             pickedCourseKey = keys.first;
                             final firstNode = coursesVal[pickedCourseKey];
                             if (firstNode is Map) {
-                              final node =
-                              firstNode.map((k, v) => MapEntry(k.toString(), v));
+                              final node = firstNode.map((k, v) => MapEntry(k.toString(), v));
                               pickedCourseId = (node['id'] ?? '').toString();
+
+                              pickedVariantKey = (node['variantKey'] ?? '').toString().trim();
+                              pickedStudyMode = (node['studyMode'] ?? '').toString().trim();
+                              pickedStudyModeLabel = (node['studyModeLabel'] ?? '').toString().trim();
                             }
                           }
                         }
@@ -721,9 +727,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 DropdownMenuItem(value: k, child: Text(labelByKey[k] ?? k)))
                                 .toList(),
                             onChanged: (v) async {
-                              pickedCourseKey = v;
-                              pickedCourseId = (v == null) ? null : idByKey[v];
+                              pickedCourseKey = null;
+                              pickedCourseId = null;
                               pickedCourse = {};
+                              pickedVariantKey = '';
+                              pickedStudyMode = '';
+                              pickedStudyModeLabel = '';
+                              pickedVariantKey = '';
+                              pickedStudyMode = '';
+                              pickedStudyModeLabel = '';
 
                               if (pickedCourseId != null && pickedCourseId!.trim().isNotEmpty) {
                                 final cSnap =
@@ -731,6 +743,21 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 final cVal = cSnap.value;
                                 if (cVal is Map) {
                                   pickedCourse = cVal.map((k, v) => MapEntry(k.toString(), v));
+                                }
+                              }
+                              if (pickedUid != null && pickedCourseKey != null) {
+                                final learnerCourseSnap = await _usersRef
+                                    .child(pickedUid!)
+                                    .child('courses')
+                                    .child(pickedCourseKey!)
+                                    .get();
+
+                                final learnerCourseVal = learnerCourseSnap.value;
+                                if (learnerCourseVal is Map) {
+                                  final node = learnerCourseVal.map((k, v) => MapEntry(k.toString(), v));
+                                  pickedVariantKey = (node['variantKey'] ?? '').toString().trim();
+                                  pickedStudyMode = (node['studyMode'] ?? '').toString().trim();
+                                  pickedStudyModeLabel = (node['studyModeLabel'] ?? '').toString().trim();
                                 }
                               }
 
@@ -886,6 +913,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       'course_id': pickedCourseId ?? '',
                       'course_code': courseCode,
                       'course_title': courseTitle,
+
+                      'variantKey': pickedVariantKey,
+                      'studyMode': pickedStudyMode,
+                      'studyModeLabel': pickedStudyModeLabel,
+
                       'sessionsPaid': sessionsPaid,
                       'remindBeforeSession': remind,
                       'amount': fee,

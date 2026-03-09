@@ -91,7 +91,9 @@ class PaymentDialogShared {
     required int totalSessions,
   }) {
     if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
-    if (totalSessions > 0 && sessionsPaid == totalSessions && pricePerLevel > 0) return pricePerLevel;
+    if (totalSessions > 0 && sessionsPaid == totalSessions && pricePerLevel > 0) {
+      return pricePerLevel;
+    }
     if (totalSessions > 0 && pricePerLevel > 0) {
       return ((pricePerLevel * sessionsPaid) / totalSessions).round();
     }
@@ -139,12 +141,183 @@ class PaymentDialogShared {
     return teachers;
   }
 
-  // ---------- Learner summary update (same logic as your payments screen) ----------
+  // ---------- Variant / Study mode helpers ----------
 
-  // ======================================================================
-  // ✅ REBUILD summary from ALL payments (used for Edit + Delete)
-  // This avoids breaking logic and fixes mismatches forever.
-  // ======================================================================
+  static String _readFirstNonEmpty(Map<String, dynamic> m, List<String> keys) {
+    for (final k in keys) {
+      final v = m[k];
+      if (v == null) continue;
+      final s = v.toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return '';
+  }
+
+  static String _normalizeDeliveryKey(String raw) {
+    final v = raw.trim().toLowerCase();
+
+    switch (v) {
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return 'inclass';
+
+      case 'flexible':
+      case 'online':
+        return 'flexible';
+
+      case 'private':
+      case 'vip':
+      case 'live':
+        return 'private';
+
+      case 'recorded':
+        return 'recorded';
+
+      default:
+        return v;
+    }
+  }
+
+  static String _normalizeStudyMode(String raw) {
+    final v = raw.trim().toLowerCase();
+
+    switch (v) {
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return 'inclass';
+
+      case 'online':
+        return 'online';
+
+      default:
+        return v;
+    }
+  }
+
+  static String _deliveryLabelFromKey(String key) {
+    switch (_normalizeDeliveryKey(key)) {
+      case 'inclass':
+        return 'In-Class';
+      case 'flexible':
+        return 'Flexible';
+      case 'private':
+        return 'VIP';
+      case 'recorded':
+        return 'Recorded';
+      default:
+        return key.trim();
+    }
+  }
+
+  static String _studyModeLabel(String mode) {
+    switch (_normalizeStudyMode(mode)) {
+      case 'online':
+        return 'Online';
+      case 'inclass':
+        return 'In-Class';
+      default:
+        return mode.trim();
+    }
+  }
+
+  static String _variantLabel({
+    required String deliveryKey,
+    required String studyMode,
+  }) {
+    final dk = _normalizeDeliveryKey(deliveryKey);
+    final sm = _normalizeStudyMode(studyMode);
+
+    if (dk == 'private') {
+      if (sm == 'online') return 'VIP Online';
+      if (sm == 'inclass') return 'VIP In-Class';
+      return 'VIP';
+    }
+
+    if (dk == 'inclass') return 'In-Class';
+    if (dk == 'flexible') return 'Flexible';
+    if (dk == 'recorded') return 'Recorded';
+
+    return _deliveryLabelFromKey(dk);
+  }
+
+  static Map<String, String> _extractStudyFieldsFromLearnerCourseNode(
+      Map<String, dynamic> node,
+      ) {
+    final rawDeliveryKey = _readFirstNonEmpty(node, [
+      'deliveryKey',
+      'delivery_key',
+      'variantKey',
+      'variant_key',
+      'variant',
+    ]);
+
+    final rawDeliveryLabel = _readFirstNonEmpty(node, [
+      'deliveryLabel',
+      'delivery_label',
+      'variantLabel',
+      'variant_label',
+      'delivery',
+    ]);
+
+    final rawStudyMode = _readFirstNonEmpty(node, [
+      'studyMode',
+      'study_mode',
+      'privateStudyMode',
+      'private_study_mode',
+    ]);
+
+    final deliveryKey = _normalizeDeliveryKey(rawDeliveryKey);
+    final studyMode = _normalizeStudyMode(rawStudyMode);
+
+    final deliveryLabel = rawDeliveryLabel.isNotEmpty
+        ? rawDeliveryLabel
+        : _deliveryLabelFromKey(deliveryKey);
+
+    final studyModeLabel = studyMode.isEmpty ? '' : _studyModeLabel(studyMode);
+
+    final variantLabel = _variantLabel(
+      deliveryKey: deliveryKey,
+      studyMode: studyMode,
+    );
+
+    return {
+      'deliveryKey': deliveryKey,
+      'deliveryLabel': deliveryLabel,
+      'studyMode': studyMode,
+      'studyModeLabel': studyModeLabel,
+      'variantKey': deliveryKey,
+      'variantLabel': variantLabel,
+    };
+  }
+
+  static Future<Map<String, String>> _loadStudyFieldsForLearnerCourse({
+    required DatabaseReference usersRef,
+    required String uid,
+    required String courseKey,
+  }) async {
+    final snap = await usersRef.child(uid).child('courses').child(courseKey).get();
+    final raw = snap.value;
+    if (raw is! Map) {
+      return {
+        'deliveryKey': '',
+        'deliveryLabel': '',
+        'studyMode': '',
+        'studyModeLabel': '',
+        'variantKey': '',
+        'variantLabel': '',
+      };
+    }
+
+    final node = raw.map((k, v) => MapEntry(k.toString(), v)).cast<String, dynamic>();
+    return _extractStudyFieldsFromLearnerCourseNode(node);
+  }
+
+  // ---------- Learner summary update ----------
+
   static Future<void> _rebuildLearnerSummaryFromPayments({
     required FirebaseDatabase db,
     required String uid,
@@ -153,7 +326,6 @@ class PaymentDialogShared {
     final paymentsRef = db.ref('payments');
     final usersRef = db.ref('users');
 
-    // 1) Read existing summary so we keep fields like "title" if you stored it.
     final sumRef = usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
     final sumSnap = await sumRef.get();
     final sumRaw = sumSnap.value;
@@ -161,14 +333,12 @@ class PaymentDialogShared {
         ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
         : <String, dynamic>{};
 
-    // 2) Load all payments for this uid, then filter by courseKey
     final allForUidSnap = await paymentsRef.orderByChild('uid').equalTo(uid).get();
     final allForUidRaw = allForUidSnap.value;
 
     int totalPaid = 0;
     int sessionsPaidTotal = 0;
 
-    // latest payment tracking
     int latestPaidAt = 0;
     String latestPaymentId = '';
     String latestMethod = '';
@@ -200,12 +370,8 @@ class PaymentDialogShared {
       });
     }
 
-    // 3) Decide reminder value
-    // If latest payment had remindBeforeSession, use it.
-    // Otherwise keep old summary reminder if it exists.
     int remind = latestRemind > 0 ? latestRemind : _asInt(oldSum['remindBeforeSession']);
 
-    // clamp reminder to sessionsPaidTotal (never bigger)
     if (sessionsPaidTotal <= 0) {
       remind = 0;
     } else {
@@ -213,26 +379,18 @@ class PaymentDialogShared {
       if (remind > sessionsPaidTotal) remind = sessionsPaidTotal;
     }
 
-    // 4) Write rebuilt summary
     await sumRef.update({
-      ...oldSum, // keep existing fields (like title) unless overwritten below
+      ...oldSum,
       'totalPaid': totalPaid,
       'sessionsPaidTotal': sessionsPaidTotal,
       'remindBeforeSession': remind,
-
-      // last payment fields
       'lastPaymentId': latestPaymentId,
       'lastMethod': latestMethod,
       'lastAmount': latestAmount,
-
-      // use the real paidAt of the latest payment
       'lastPaymentAt': latestPaidAt,
-
-      // keep updatedAt as server timestamp
       'updatedAt': ServerValue.timestamp,
     });
   }
-
 
   static Future<void> _updateLearnerSummary({
     required DatabaseReference usersRef,
@@ -248,7 +406,9 @@ class PaymentDialogShared {
     final sumRef = usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
 
     await sumRef.runTransaction((current) {
-      final cur = current is Map ? current.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+      final cur = current is Map
+          ? current.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
 
       final oldTotalPaid = _asInt(cur['totalPaid']);
       final oldSessionsPaid = _asInt(cur['sessionsPaidTotal']);
@@ -258,7 +418,9 @@ class PaymentDialogShared {
 
       final remind = remindBeforeSession <= 0
           ? newSessionsPaidTotal
-          : (remindBeforeSession > newSessionsPaidTotal ? newSessionsPaidTotal : remindBeforeSession);
+          : (remindBeforeSession > newSessionsPaidTotal
+          ? newSessionsPaidTotal
+          : remindBeforeSession);
 
       return Transaction.success({
         ...cur,
@@ -275,10 +437,9 @@ class PaymentDialogShared {
   }
 
   // ======================================================================
-  // ✅ PUBLIC API (use these from both screens)
+  // PUBLIC API
   // ======================================================================
 
-  /// Used by Learner Payment Tab (uid/courseKey/courseId are known)
   static Future<void> showAddFromLearnerTab({
     required BuildContext context,
     required FirebaseDatabase db,
@@ -291,11 +452,15 @@ class PaymentDialogShared {
 
     final learnerSnap = await usersRef.child(uid).get();
     final learnerVal = learnerSnap.value;
-    final learner = learnerVal is Map ? learnerVal.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+    final learner = learnerVal is Map
+        ? learnerVal.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
 
     final courseSnap = await coursesRef.child(courseId).get();
     final courseVal = courseSnap.value;
-    final course = courseVal is Map ? courseVal.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+    final course = courseVal is Map
+        ? courseVal.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
 
     await _showAddDialogCore(
       context: context,
@@ -303,13 +468,12 @@ class PaymentDialogShared {
       usersRef: usersRef,
       courseId: courseId,
       courseKey: courseKey,
-      fixedUid: uid, // fixed learner
+      fixedUid: uid,
       fixedLearner: learner,
       fixedCourse: course,
     );
   }
 
-  /// Optional: Use by Admin Payments Screen (learner selection + courseKey selection)
   static Future<void> showAddFromAdminPayments({
     required BuildContext context,
     required FirebaseDatabase db,
@@ -330,7 +494,7 @@ class PaymentDialogShared {
   static Future<void> showDelete({
     required BuildContext context,
     required FirebaseDatabase db,
-    required Map<String, dynamic> payment, // must contain paymentId, uid, courseKey
+    required Map<String, dynamic> payment,
   }) async {
     final paymentsRef = db.ref('payments');
 
@@ -377,12 +541,10 @@ class PaymentDialogShared {
     }
   }
 
-
-  /// Edit payment (works for both screens)
   static Future<void> showEdit({
     required BuildContext context,
     required FirebaseDatabase db,
-    required Map<String, dynamic> payment, // must contain paymentId
+    required Map<String, dynamic> payment,
   }) async {
     final paymentsRef = db.ref('payments');
     final usersRef = db.ref('users');
@@ -390,13 +552,13 @@ class PaymentDialogShared {
     final paymentId = (payment['paymentId'] ?? '').toString();
     if (paymentId.isEmpty) return;
 
-    // load teachers
     final teachers = await _loadTeachers(usersRef);
 
-    // existing values
     int sessionsPaid = _asInt(payment['sessionsPaid']);
     int remindBeforeSession = _asInt(payment['remindBeforeSession']);
-    if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
+    if (remindBeforeSession <= 0) {
+      remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
+    }
 
     String method = (payment['method'] ?? _methods.first).toString();
     final amountC = TextEditingController(text: _asInt(payment['amount']).toString());
@@ -462,7 +624,6 @@ class PaymentDialogShared {
                       ],
                     ),
                     const SizedBox(height: 12),
-
                     _prettyDropdown<String>(
                       label: 'Teacher',
                       value: teacherUid,
@@ -476,7 +637,6 @@ class PaymentDialogShared {
                       }),
                     ),
                     const SizedBox(height: 12),
-
                     _NumberPickerRow(
                       label: 'Sessions paid',
                       value: sessionsPaid,
@@ -484,20 +644,21 @@ class PaymentDialogShared {
                       max: 60,
                       onChanged: (v) {
                         sessionsPaid = v;
-                        if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
+                        if (remindBeforeSession > sessionsPaid) {
+                          remindBeforeSession = sessionsPaid;
+                        }
                         setD(() {});
                       },
                     ),
                     const SizedBox(height: 10),
                     _NumberPickerRow(
-                      label: 'Reminder (how many sessiosn left)',
+                      label: 'Reminder (how many sessions left)',
                       value: remindBeforeSession,
                       min: 1,
                       max: sessionsPaid > 0 ? sessionsPaid : 1,
                       onChanged: (v) => setD(() => remindBeforeSession = v),
                     ),
                     const SizedBox(height: 12),
-
                     _prettyDropdown<String>(
                       label: 'Method',
                       value: method,
@@ -505,14 +666,12 @@ class PaymentDialogShared {
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
                     const SizedBox(height: 12),
-
                     _prettyField(
                       controller: amountC,
                       label: 'Fee (editable)',
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
-
                     _prettyField(
                       controller: notesC,
                       label: 'Notes (optional)',
@@ -531,6 +690,7 @@ class PaymentDialogShared {
                     _snack(context, 'Fee must be > 0');
                     return;
                   }
+
                   final paidAtMs = _ymdToMs(paidDateYmd);
                   if (paidAtMs <= 0) {
                     _snack(context, 'Invalid paid date.');
@@ -549,6 +709,7 @@ class PaymentDialogShared {
                       'notes': notesC.text.trim(),
                       'paidAt': paidAtMs,
                       'dayKey': paidDateYmd,
+                      'monthKey': paidDateYmd.substring(0, 7),
                       'updatedAt': ServerValue.timestamp,
                     });
 
@@ -574,7 +735,7 @@ class PaymentDialogShared {
   }
 
   // ======================================================================
-  // INTERNAL: One pretty Add dialog that can work in both contexts
+  // INTERNAL: One add dialog for both contexts
   // ======================================================================
 
   static Future<void> _showAddDialogCore({
@@ -590,10 +751,8 @@ class PaymentDialogShared {
     final paymentsRef = db.ref('payments');
     final coursesRef = db.ref('courses');
 
-    // Teachers
     final teachers = await _loadTeachers(usersRef);
 
-    // learner/course selection if not fixed
     String? pickedUid = fixedUid;
     Map<String, dynamic> pickedLearner = fixedLearner ?? {};
 
@@ -601,7 +760,15 @@ class PaymentDialogShared {
     String? pickedCourseKey = courseKey;
     Map<String, dynamic> pickedCourse = fixedCourse ?? {};
 
-    // defaults
+    Map<String, String> pickedStudyFields = {
+      'deliveryKey': '',
+      'deliveryLabel': '',
+      'studyMode': '',
+      'studyModeLabel': '',
+      'variantKey': '',
+      'variantLabel': '',
+    };
+
     String method = _methods.first;
     int sessionsPaid = 8;
     int remindBeforeSession = 0;
@@ -620,7 +787,29 @@ class PaymentDialogShared {
 
       final cSnap = await coursesRef.child(pickedCourseId!).get();
       final cVal = cSnap.value;
-      pickedCourse = cVal is Map ? cVal.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+      pickedCourse = cVal is Map
+          ? cVal.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+
+      if (pickedUid != null &&
+          pickedUid!.trim().isNotEmpty &&
+          pickedCourseKey != null &&
+          pickedCourseKey!.trim().isNotEmpty) {
+        pickedStudyFields = await _loadStudyFieldsForLearnerCourse(
+          usersRef: usersRef,
+          uid: pickedUid!,
+          courseKey: pickedCourseKey!,
+        );
+      } else {
+        pickedStudyFields = {
+          'deliveryKey': '',
+          'deliveryLabel': '',
+          'studyMode': '',
+          'studyModeLabel': '',
+          'variantKey': '',
+          'variantLabel': '',
+        };
+      }
 
       final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
       sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
@@ -639,17 +828,30 @@ class PaymentDialogShared {
     }
 
     if (pickedCourse.isNotEmpty && pickedCourseId != null) {
-      // already loaded
+      if (pickedUid != null &&
+          pickedUid!.trim().isNotEmpty &&
+          pickedCourseKey != null &&
+          pickedCourseKey!.trim().isNotEmpty) {
+        pickedStudyFields = await _loadStudyFieldsForLearnerCourse(
+          usersRef: usersRef,
+          uid: pickedUid!,
+          courseKey: pickedCourseKey!,
+        );
+      }
+
       final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
       sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
+
       final pricePerMonth = _asInt(pickedCourse['price_per_month']);
       final pricePerLevel = _asInt(pickedCourse['price_per_level']);
+
       amountC.text = _defaultAmount(
         pricePerMonth: pricePerMonth,
         pricePerLevel: pricePerLevel,
         sessionsPaid: sessionsPaid,
         totalSessions: totalSessions,
       ).toString();
+
       remindBeforeSession = sessionsPaid;
     } else {
       await loadCourseAndDefaults();
@@ -662,6 +864,19 @@ class PaymentDialogShared {
           final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
           final maxSessions = totalSessions > 0 ? totalSessions : 24;
 
+          final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
+          final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '').trim();
+          final studyModeLabel = (pickedStudyFields['studyModeLabel'] ?? '').trim();
+
+          String studyInfoText = '';
+          if (variantLabel.isNotEmpty) {
+            studyInfoText = variantLabel;
+          } else if (deliveryLabel.isNotEmpty && studyModeLabel.isNotEmpty) {
+            studyInfoText = '$deliveryLabel • $studyModeLabel';
+          } else if (deliveryLabel.isNotEmpty) {
+            studyInfoText = deliveryLabel;
+          }
+
           return AlertDialog(
             title: const Text('Add payment'),
             content: SizedBox(
@@ -669,7 +884,6 @@ class PaymentDialogShared {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    // If not fixed learner, allow picking learner + its courses
                     if (pickedUid == null) ...[
                       _LearnerAutocomplete(
                         usersRef: usersRef,
@@ -677,13 +891,20 @@ class PaymentDialogShared {
                           pickedUid = uid;
                           pickedLearner = learnerMap;
 
-                          // load learner courses
                           final coursesSnap = await usersRef.child(uid).child('courses').get();
                           final coursesVal = coursesSnap.value;
 
                           pickedCourseKey = null;
                           pickedCourseId = null;
                           pickedCourse = {};
+                          pickedStudyFields = {
+                            'deliveryKey': '',
+                            'deliveryLabel': '',
+                            'studyMode': '',
+                            'studyModeLabel': '',
+                            'variantKey': '',
+                            'variantLabel': '',
+                          };
 
                           if (coursesVal is Map) {
                             final keys = coursesVal.keys
@@ -691,12 +912,17 @@ class PaymentDialogShared {
                                 .where((k) => k.startsWith('course_'))
                                 .toList()
                               ..sort();
+
                             if (keys.isNotEmpty) {
                               pickedCourseKey = keys.first;
                               final firstNode = coursesVal[pickedCourseKey];
                               if (firstNode is Map) {
                                 final node = firstNode.map((k, v) => MapEntry(k.toString(), v));
                                 pickedCourseId = (node['id'] ?? '').toString();
+                                pickedStudyFields =
+                                    _extractStudyFieldsFromLearnerCourseNode(
+                                      node.cast<String, dynamic>(),
+                                    );
                               }
                             }
                           }
@@ -706,7 +932,6 @@ class PaymentDialogShared {
                         },
                       ),
                       const SizedBox(height: 12),
-
                       if (pickedUid == null)
                         const _MiniHint('Pick learner first.')
                       else
@@ -717,6 +942,7 @@ class PaymentDialogShared {
                             final keys = <String>[];
                             final labelByKey = <String, String>{};
                             final idByKey = <String, String>{};
+                            final studyByKey = <String, Map<String, String>>{};
 
                             if (v is Map) {
                               v.forEach((k, val) {
@@ -726,29 +952,68 @@ class PaymentDialogShared {
                                   final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
                                   final code = (m['course_code'] ?? '').toString().trim();
                                   final title = (m['title'] ?? '').toString().trim();
-                                  final label = [if (code.isNotEmpty) code, if (title.isNotEmpty) title].join(' — ');
+                                  final variant = _extractStudyFieldsFromLearnerCourseNode(
+                                    m.cast<String, dynamic>(),
+                                  );
+                                  final variantLabel =
+                                  (variant['variantLabel'] ?? '').trim();
+
+                                  final pieces = <String>[
+                                    if (code.isNotEmpty) code,
+                                    if (title.isNotEmpty) title,
+                                    if (variantLabel.isNotEmpty) variantLabel,
+                                  ];
+
                                   keys.add(key);
-                                  labelByKey[key] = label.isNotEmpty ? label : key;
+                                  labelByKey[key] =
+                                  pieces.isEmpty ? key : pieces.join(' — ');
                                   idByKey[key] = (m['id'] ?? '').toString();
+                                  studyByKey[key] = variant;
                                 }
                               });
                             }
+
                             keys.sort();
+                            pickedCourseKey ??= keys.isNotEmpty ? keys.first : null;
 
-                            if (keys.isEmpty) return const _MiniHint('Learner has no courses.');
-
-                            pickedCourseKey ??= keys.first;
+                            if (keys.isEmpty) {
+                              return const _MiniHint('Learner has no courses.');
+                            }
 
                             return DropdownButtonFormField<String>(
                               value: pickedCourseKey,
                               decoration: const InputDecoration(labelText: 'Course'),
                               items: keys
-                                  .map((k) => DropdownMenuItem(value: k, child: Text(labelByKey[k] ?? k)))
+                                  .map(
+                                    (k) => DropdownMenuItem(
+                                  value: k,
+                                  child: Text(labelByKey[k] ?? k),
+                                ),
+                              )
                                   .toList(),
                               onChanged: (v) async {
                                 pickedCourseKey = v;
                                 pickedCourseId = (v == null) ? null : idByKey[v];
                                 pickedCourse = {};
+                                pickedStudyFields = v == null
+                                    ? {
+                                  'deliveryKey': '',
+                                  'deliveryLabel': '',
+                                  'studyMode': '',
+                                  'studyModeLabel': '',
+                                  'variantKey': '',
+                                  'variantLabel': '',
+                                }
+                                    : (studyByKey[v] ??
+                                    {
+                                      'deliveryKey': '',
+                                      'deliveryLabel': '',
+                                      'studyMode': '',
+                                      'studyModeLabel': '',
+                                      'variantKey': '',
+                                      'variantLabel': '',
+                                    });
+
                                 await loadCourseAndDefaults();
                                 setD(() {});
                               },
@@ -758,7 +1023,31 @@ class PaymentDialogShared {
                       const SizedBox(height: 12),
                     ],
 
-                    // Dates row
+                    if (studyInfoText.isNotEmpty) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF4F7F9),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.black.withOpacity(0.06)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.school_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Study type: $studyInfoText',
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     Row(
                       children: [
                         Expanded(
@@ -831,7 +1120,9 @@ class PaymentDialogShared {
                         ).toString();
 
                         if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
-                        if (remindBeforeSession > sessionsPaid) remindBeforeSession = sessionsPaid;
+                        if (remindBeforeSession > sessionsPaid) {
+                          remindBeforeSession = sessionsPaid;
+                        }
 
                         setD(() {});
                       },
@@ -902,13 +1193,22 @@ class PaymentDialogShared {
                   }
 
                   final learnerName =
-                  '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'.trim();
+                  '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
+                      .trim();
                   final learnerSerial = (pickedLearner['serial'] ?? '').toString();
 
                   final courseCode = (pickedCourse['course_code'] ?? '').toString();
                   final courseTitle = (pickedCourse['title'] ?? '').toString();
 
-                  final remind = (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
+                  final remind =
+                  (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
+
+                  final deliveryKey = (pickedStudyFields['deliveryKey'] ?? '').trim();
+                  final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '').trim();
+                  final studyMode = (pickedStudyFields['studyMode'] ?? '').trim();
+                  final studyModeLabel = (pickedStudyFields['studyModeLabel'] ?? '').trim();
+                  final variantKey = (pickedStudyFields['variantKey'] ?? '').trim();
+                  final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
 
                   try {
                     final newRef = paymentsRef.push();
@@ -927,14 +1227,12 @@ class PaymentDialogShared {
                       'amount': fee,
                       'method': method,
 
-                      // ✅ correct keys
                       'teacherId': selectedTeacherUid ?? '',
                       'teacherName': selectedTeacherName,
 
                       'startDate': startDateYmd,
                       'notes': notesC.text.trim(),
 
-                      // ✅ store as int ms (same as payments screen)
                       'paidAt': paidAtMs,
                       'createdAt': ServerValue.timestamp,
 
@@ -942,9 +1240,17 @@ class PaymentDialogShared {
                       'learner_serial': learnerSerial,
 
                       'dayKey': paidDateYmd,
+                      'monthKey': paidDateYmd.substring(0, 7),
+
+                      // ✅ new study / variant fields
+                      'deliveryKey': deliveryKey,
+                      'deliveryLabel': deliveryLabel,
+                      'studyMode': studyMode,
+                      'studyModeLabel': studyModeLabel,
+                      'variantKey': variantKey,
+                      'variantLabel': variantLabel,
                     });
 
-                    // summary update (same as payments screen)
                     await _updateLearnerSummary(
                       usersRef: usersRef,
                       uid: pickedUid!,
@@ -1024,7 +1330,7 @@ class PaymentDialogShared {
 }
 
 // ======================================================================
-// Reusable widgets (same file, no extra imports needed)
+// Reusable widgets
 // ======================================================================
 
 class _MiniHint extends StatelessWidget {
@@ -1037,7 +1343,10 @@ class _MiniHint extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Text(
         text,
-        style: TextStyle(color: Colors.black.withOpacity(0.6), fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: Colors.black.withOpacity(0.6),
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1108,7 +1417,9 @@ class _NumberPickerRow extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900))),
+        Expanded(
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+        ),
         IconButton(
           tooltip: 'Minus',
           onPressed: () => onChanged(clamp(value - 1)),
@@ -1116,7 +1427,11 @@ class _NumberPickerRow extends StatelessWidget {
         ),
         SizedBox(
           width: 56,
-          child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900)),
+          child: Text(
+            '$value',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
         ),
         IconButton(
           tooltip: 'Plus',
@@ -1128,7 +1443,6 @@ class _NumberPickerRow extends StatelessWidget {
   }
 }
 
-// Minimal learner autocomplete (admin add mode)
 class _LearnerAutocomplete extends StatefulWidget {
   const _LearnerAutocomplete({
     required this.usersRef,
@@ -1177,7 +1491,8 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
           final role = (m['role'] ?? '').toString().toLowerCase().trim();
           if (role != 'learner') return;
 
-          final name = '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'.trim().toLowerCase();
+          final name =
+          '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'.trim().toLowerCase();
           final email = (m['email'] ?? '').toString().toLowerCase();
           final serial = (m['serial'] ?? '').toString().toLowerCase();
 
@@ -1188,7 +1503,11 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
       });
     }
 
-    out.sort((a, b) => ('${a['first_name']} ${a['last_name']}').compareTo('${b['first_name']} ${b['last_name']}'));
+    out.sort(
+          (a, b) => ('${a['first_name']} ${a['last_name']}')
+          .compareTo('${b['first_name']} ${b['last_name']}'),
+    );
+
     setState(() => _results = out.take(8).toList());
   }
 
@@ -1202,8 +1521,14 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
             labelText: 'Learner (type name / email / serial)',
             filled: true,
             fillColor: const Color(0xFFF4F7F9),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-            suffixIcon: IconButton(icon: const Icon(Icons.search), onPressed: _searchNow),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: _searchNow,
+            ),
           ),
           onChanged: (_) => _searchNow(),
         ),
@@ -1219,15 +1544,23 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
-              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.black.withOpacity(0.06)),
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Colors.black.withOpacity(0.06)),
               itemBuilder: (context, i) {
                 final r = _results[i];
                 final name = '${(r['first_name'] ?? '')} ${(r['last_name'] ?? '')}'.trim();
                 final serial = (r['serial'] ?? '').toString();
+
                 return ListTile(
                   dense: true,
-                  title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                  subtitle: Text(serial, style: TextStyle(color: Colors.black.withOpacity(0.6))),
+                  title: Text(
+                    name,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: Text(
+                    serial,
+                    style: TextStyle(color: Colors.black.withOpacity(0.6)),
+                  ),
                   onTap: () async {
                     _c.text = name;
                     setState(() => _results = []);

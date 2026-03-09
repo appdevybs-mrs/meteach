@@ -87,24 +87,48 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   }
 
   String _variantKeyOf(Map<String, dynamic> course) {
-    return (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+    final raw = (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+
+    switch (raw) {
+      case 'in_class':
+      case 'inclass':
+      case 'in-class':
+      case 'in class':
+        return 'inclass';
+
+      case 'online':
+      case 'flexible':
+        return 'flexible';
+
+      case 'live':
+      case 'private':
+        return 'private';
+
+      case 'recorded':
+        return 'recorded';
+
+      default:
+        return raw;
+    }
   }
 
   bool _isOnlineCourse(Map<String, dynamic> course) {
-    return _variantKeyOf(course) == 'online';
+    final key = _variantKeyOf(course);
+    return key == 'flexible' || key == 'private' || key == 'recorded';
   }
 
   ({Color bg, Color border, Color fg, IconData icon, String label}) _variantStyle(String variantKey) {
     switch (variantKey) {
-      case 'online':
+      case 'flexible':
         return (
         bg: const Color(0xFFEAF4FF),
         border: const Color(0xFFB8D6FF),
         fg: const Color(0xFF2563EB),
-        icon: Icons.wifi_tethering_rounded,
-        label: 'ONLINE',
+        icon: Icons.swap_horiz_rounded,
+        label: 'FLEXIBLE',
         );
-      case 'in_class':
+
+      case 'inclass':
         return (
         bg: const Color(0xFFEAF7EE),
         border: const Color(0xFFBFE3C8),
@@ -112,14 +136,16 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         icon: Icons.groups_rounded,
         label: 'IN-CLASS',
         );
-      case 'live':
+
+      case 'private':
         return (
         bg: const Color(0xFFFFF4E8),
         border: const Color(0xFFF7D3A8),
         fg: const Color(0xFFF98D28),
-        icon: Icons.live_tv_rounded,
-        label: 'LIVE',
+        icon: Icons.person_rounded,
+        label: 'PRIVATE',
         );
+
       case 'recorded':
         return (
         bg: const Color(0xFFF3EEFF),
@@ -128,6 +154,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         icon: Icons.play_circle_rounded,
         label: 'RECORDED',
         );
+
       default:
         return (
         bg: UiK.primaryBlue.withOpacity(0.06),
@@ -138,7 +165,6 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         );
     }
   }
-
   Map<String, int> _attendanceCounts(Map<String, dynamic> course) {
     final att = course['attendance'];
     if (att is! Map) return {'total': 0, 'present': 0};
@@ -478,24 +504,16 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                 style: UiK.subtleText(),
               ),
 
-              if (!isOnline) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Class: ${classId.isEmpty ? '-' : classId}',
-                  style: UiK.subtleText(),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Teacher: ${instructor.isEmpty ? '-' : instructor} • Status: ${status.isEmpty ? '-' : status}',
-                  style: UiK.subtleText(),
-                ),
-              ] else ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Status: ${status.isEmpty ? 'Online course' : status}',
-                  style: UiK.subtleText(),
-                ),
-              ],
+              const SizedBox(height: 4),
+              Text(
+                'Class: ${classId.isEmpty ? '-' : classId}',
+                style: UiK.subtleText(),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Teacher: ${instructor.isEmpty ? '-' : instructor} • Status: ${status.isEmpty ? '-' : status}',
+                style: UiK.subtleText(),
+              ),
 
               const SizedBox(height: 10),
 

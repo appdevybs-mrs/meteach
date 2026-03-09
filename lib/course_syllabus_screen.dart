@@ -47,7 +47,7 @@ class CourseSyllabusScreen extends StatefulWidget {
   final String courseId;
   final String courseTitle;
 
-  /// One of: recorded, live, in_class, online
+  /// One of: inclass, flexible, private, recorded
   final String variantKey;
 
   @override
@@ -75,7 +75,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _loadSyllabus() async {
     setState(() => _loading = true);
     try {
-      // 1) Try new per-variant location first
+// 1) Read the normalized per-variant syllabus location first
       final snap = await _syllabusRef.get();
       dynamic v = snap.value;
 
@@ -168,7 +168,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'units': _units
             .map((u) => u.toMap(
           includeRecordedExtras: widget.variantKey == 'recorded',
-          includeOnlineExtras: widget.variantKey == 'online',
+          includeOnlineExtras: widget.variantKey != 'recorded',
         ))
             .toList(),
       };
@@ -558,12 +558,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     switch (key.trim().toLowerCase()) {
       case 'recorded':
         return 'Recorded';
-      case 'live':
-        return 'Live';
-      case 'in_class':
+      case 'private':
+        return 'Private';
+      case 'inclass':
         return 'In-Class';
-      case 'online':
-        return 'Online';
+      case 'flexible':
+        return 'Flexible';
       default:
         return key;
     }
@@ -684,9 +684,13 @@ class _UnitCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseTitle = unit.title.trim().isNotEmpty
+        ? unit.title.trim()
+        : unit.description.trim();
+
     final title = unit.otherTitle.trim().isEmpty
-        ? unit.title
-        : '${unit.title} (${unit.otherTitle})';
+        ? baseTitle
+        : '${baseTitle.isEmpty ? 'Unit' : baseTitle} (${unit.otherTitle})';
 
     return Card(
       key: key,

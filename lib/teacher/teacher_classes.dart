@@ -399,7 +399,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     int totalLessons = 0;
 
     if (courseId.isNotEmpty) {
-      final sSnap = await _syllabiRef.child(courseId).get();
+      final sSnap = await _syllabiRef.child(courseId).child('inclass').get();
       if (sSnap.exists && sSnap.value is Map) {
         final s = Map<String, dynamic>.from(sSnap.value as Map);
         final units = s['units'];
@@ -488,30 +488,32 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     if (courseId.isEmpty || sessionNo <= 0) return null;
 
     try {
-      final snap = await _db.child('syllabi/$courseId/online').get();
-      if (!snap.exists || snap.value is! Map) return null;
+      for (final variantKey in const ['flexible', 'private']) {
+        final snap = await _db.child('syllabi/$courseId/$variantKey').get();
+        if (!snap.exists || snap.value is! Map) continue;
 
-      final root = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-      final unitsRaw = root['units'];
+        final root = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final unitsRaw = root['units'];
 
-      if (unitsRaw is! List) return null;
+        if (unitsRaw is! List) continue;
 
-      for (final u in unitsRaw) {
-        if (u is! Map) continue;
-        final unit = u.map((k, v) => MapEntry(k.toString(), v));
-        final sessionsRaw = unit['sessions'];
+        for (final u in unitsRaw) {
+          if (u is! Map) continue;
+          final unit = u.map((k, v) => MapEntry(k.toString(), v));
+          final sessionsRaw = unit['sessions'];
 
-        if (sessionsRaw is! List) continue;
+          if (sessionsRaw is! List) continue;
 
-        for (final s in sessionsRaw) {
-          if (s is! Map) continue;
-          final session = s.map((k, v) => MapEntry(k.toString(), v));
+          for (final s in sessionsRaw) {
+            if (s is! Map) continue;
+            final session = s.map((k, v) => MapEntry(k.toString(), v));
 
-          final sn = _asInt(session['sessionNumber']);
-          final order = _asInt(session['order']);
+            final sn = _asInt(session['sessionNumber']);
+            final order = _asInt(session['order']);
 
-          if (sn == sessionNo || order == sessionNo) {
-            return session;
+            if (sn == sessionNo || order == sessionNo) {
+              return session;
+            }
           }
         }
       }

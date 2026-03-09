@@ -1,6 +1,3 @@
-// ✅ FULL REPLACEMENT: lib/admin/admin_home.dart
-// Copy-paste بالكامل (replace your whole file)
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -19,29 +16,48 @@ import '../shared/session_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'admin_booking.dart';
 import 'admin_attendance_overview_screen.dart';
-// ✅ timetable
 import 'admin_timetable_screen.dart';
-
-// ✅ call logs
 import '../calls/call_logs_screen.dart';
 
-class AdminHome extends StatelessWidget {
+class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
 
-  // ===== Brand colors =====
+  // ===== Brand / UI colors =====
   static const primaryBlue = Color(0xFF1A2B48);
+  static const deepBlue = Color(0xFF223554);
   static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
+  static const mainText = Color(0xFF243042);
+  static const appBg = Color(0xFFF6F8FC);
+  static const cardBg = Colors.white;
+  static const uiBorder = Color(0xFFE3EAF2);
+  static const softText = Color(0xFF6E7B8C);
+
+  // vivid accents for cards
+  static const accentBlue = Color(0xFF3B82F6);
+  static const accentTeal = Color(0xFF14B8A6);
+  static const accentPurple = Color(0xFF8B5CF6);
+  static const accentAmber = Color(0xFFF59E0B);
+  static const accentSky = Color(0xFF38BDF8);
+  static const accentRose = Color(0xFFEF4444);
+  static const accentIndigo = Color(0xFF6366F1);
+  static const accentSlate = Color(0xFF64748B);
+  static const accentCyan = Color(0xFF06B6D4);
+  static const accentGreen = Color(0xFF22C55E);
+
+  @override
+  State<AdminHome> createState() => _AdminHomeState();
+}
+
+class _AdminHomeState extends State<AdminHome> {
+  bool _isProMode = true;
 
   Future<void> _logout(BuildContext context) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
-    // ✅ stop "single device" listener (so it doesn't run after logout)
+    // ✅ stop "single device" listener
     await SessionManager.stopListening();
 
-    // ✅ remove FCM token record (your existing behavior)
+    // ✅ remove FCM token record
     try {
       if (userId != null && userId.isNotEmpty) {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
@@ -60,50 +76,214 @@ class AdminHome extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    // Responsive columns
     final width = MediaQuery.of(context).size.width;
-    final crossAxisCount = width >= 900 ? 4 : (width >= 600 ? 3 : 2);
+    final crossAxisCount = width >= 1100 ? 4 : (width >= 700 ? 3 : 2);
+    final cardRatio = width >= 700 ? 1.25 : 1.12;
 
-    // ✅ ADJUSTED: Increased ratio makes cards shorter (Width / Height)
-    final cardRatio = width >= 600 ? 1.4 : 1.3;
+    final allCards = <Widget>[
+      _DashCard(
+        title: 'Courses',
+        subtitle: 'Manage courses',
+        icon: Icons.menu_book_rounded,
+        color: AdminHome.primaryBlue,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
+        ),
+      ),
+      const _AdminOnlineBookingDashCard(),
+      _DashCard(
+        title: 'Classes',
+        subtitle: 'Manage classes',
+        icon: Icons.class_rounded,
+        color: AdminHome.actionOrange,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Attendance',
+        subtitle: 'Daily / Weekly stats',
+        icon: Icons.fact_check_rounded,
+        color: AdminHome.accentIndigo,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const AdminAttendanceOverviewScreen(),
+          ),
+        ),
+      ),
+      _DashCard(
+        title: 'Schedule',
+        subtitle: 'Weekly timetable',
+        icon: Icons.calendar_view_week_rounded,
+        color: AdminHome.accentTeal,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Payments',
+        subtitle: 'All payments',
+        icon: Icons.payments_rounded,
+        color: AdminHome.accentBlue,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+        ),
+      ),
+      const _SubscriptionsDashCard(),
+      _LearnersDashCard(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Staff',
+        subtitle: 'Teachers & staff',
+        icon: Icons.badge_rounded,
+        color: AdminHome.accentSlate,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Wages',
+        subtitle: 'Teacher payments',
+        icon: Icons.wallet_rounded,
+        color: AdminHome.accentRose,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminWagesScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Settings',
+        subtitle: 'Force update config',
+        icon: Icons.settings_rounded,
+        color: AdminHome.accentSlate,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminForceUpdateAllScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Contract',
+        subtitle: 'Contracts & documents',
+        icon: Icons.description_rounded,
+        color: AdminHome.accentCyan,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminContractScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Public Gallery',
+        subtitle: 'Teaser media',
+        icon: Icons.photo_library_rounded,
+        color: AdminHome.accentSky,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const AdminPublicGalleryScreen(),
+          ),
+        ),
+      ),
+    ];
+
+    final simpleCards = <Widget>[
+      _DashCard(
+        title: 'Classes',
+        subtitle: 'Manage classes',
+        icon: Icons.class_rounded,
+        color: AdminHome.actionOrange,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Payments',
+        subtitle: 'All payments',
+        icon: Icons.payments_rounded,
+        color: AdminHome.accentBlue,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Schedule',
+        subtitle: 'Weekly timetable',
+        icon: Icons.calendar_view_week_rounded,
+        color: AdminHome.accentTeal,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
+        ),
+      ),
+      const _SubscriptionsDashCard(),
+      _LearnersDashCard(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+        ),
+      ),
+      _DashCard(
+        title: 'Public Gallery',
+        subtitle: 'Teaser media',
+        icon: Icons.photo_library_rounded,
+        color: AdminHome.accentSky,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const AdminPublicGalleryScreen(),
+          ),
+        ),
+      ),
+    ];
+
+    final visibleCards = _isProMode ? allCards : simpleCards;
 
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: AdminHome.appBg,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.white,
         automaticallyImplyLeading: false,
-
-        // ✅ LEFT SIDE
-        leading: IconButton(
-          tooltip: 'Call Logs',
-          icon: const Icon(Icons.history, color: primaryBlue),
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-            );
-          },
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 10, top: 8, bottom: 8),
+          child: Material(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CallLogsScreen()),
+                );
+              },
+              child: const Center(
+                child: Icon(Icons.history, color: AdminHome.primaryBlue),
+              ),
+            ),
+          ),
         ),
-
-        // ✅ CENTER TITLE
         centerTitle: true,
         title: const Text(
           'Admin Dashboard',
           style: TextStyle(
-            color: primaryBlue,
+            color: AdminHome.primaryBlue,
             fontWeight: FontWeight.w900,
           ),
         ),
-
-        // ✅ RIGHT SIDE
         actions: [
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout, color: actionOrange),
-            onPressed: () => _logout(context),
+          Padding(
+            padding: const EdgeInsets.only(right: 10, top: 8, bottom: 8),
+            child: Material(
+              color: const Color(0xFFFFF1E5),
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _logout(context),
+                child: const SizedBox(
+                  width: 44,
+                  child: Center(
+                    child: Icon(Icons.logout, color: AdminHome.actionOrange),
+                  ),
+                ),
+              ),
+            ),
           ),
-          const SizedBox(width: 6),
         ],
       ),
       body: Stack(
@@ -111,10 +291,10 @@ class AdminHome extends StatelessWidget {
           Positioned.fill(
             child: IgnorePointer(
               child: Opacity(
-                opacity: 0.05,
+                opacity: 0.035,
                 child: Center(
                   child: FractionallySizedBox(
-                    widthFactor: 0.75,
+                    widthFactor: 0.72,
                     child: Image.asset(
                       'assets/images/ybs_logo.png',
                       fit: BoxFit.contain,
@@ -134,60 +314,169 @@ class AdminHome extends StatelessWidget {
                   // Header card
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: uiBorder.withOpacity(0.7)),
-                    ),
-                    child: Row(
-                      children: [
-                        InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
-                            );
-                          },
-                          child: Container(
-                            width: 52,
-                            height: 52,
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: primaryBlue.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: primaryBlue.withOpacity(0.12)),
-                            ),
-                            child: Image.asset(
-                              'assets/images/ybs_logo.png',
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.school_rounded, color: primaryBlue),
-                            ),
-                          ),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: AdminHome.uiBorder),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Welcome',
-                                style: TextStyle(
-                                  color: primaryBlue,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminPublicPreview(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                width: 58,
+                                height: 58,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF7FAFD),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: AdminHome.uiBorder),
+                                ),
+                                child: Image.asset(
+                                  'assets/images/ybs_logo.png',
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.school_rounded, color: AdminHome.primaryBlue),
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Welcome back',
+                                    style: TextStyle(
+                                      color: AdminHome.primaryBlue,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 17,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    user?.email ?? 'Admin',
+                                    style: const TextStyle(
+                                      color: AdminHome.softText,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 7),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _isProMode
+                                          ? const Color(0xFFEAF2FF)
+                                          : const Color(0xFFFFF1E5),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _isProMode
+                                          ? 'Pro mode: all tools visible'
+                                          : 'Simple mode: essential tools only',
+                                      style: TextStyle(
+                                        color: _isProMode
+                                            ? AdminHome.primaryBlue
+                                            : AdminHome.actionOrange,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: AdminHome.uiBorder),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: _isProMode
+                                      ? const Color(0xFFEAF2FF)
+                                      : const Color(0xFFFFF1E5),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  _isProMode
+                                      ? Icons.workspace_premium_rounded
+                                      : Icons.tune_rounded,
+                                  color: _isProMode
+                                      ? AdminHome.primaryBlue
+                                      : AdminHome.actionOrange,
+                                  size: 19,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Dashboard mode',
+                                  style: TextStyle(
+                                    color: AdminHome.mainText,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
                               Text(
-                                user?.email ?? 'Admin',
+                                _isProMode ? 'Pro' : 'Simple',
                                 style: TextStyle(
-                                  color: mainText.withOpacity(0.75),
-                                  fontWeight: FontWeight.w700,
+                                  color: _isProMode
+                                      ? AdminHome.primaryBlue
+                                      : AdminHome.actionOrange,
+                                  fontWeight: FontWeight.w900,
                                   fontSize: 12,
                                 ),
-                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(width: 8),
+                              Switch(
+                                value: _isProMode,
+                                activeColor: AdminHome.actionOrange,
+                                activeTrackColor:
+                                AdminHome.actionOrange.withOpacity(0.30),
+                                inactiveThumbColor: AdminHome.primaryBlue,
+                                inactiveTrackColor:
+                                AdminHome.primaryBlue.withOpacity(0.20),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _isProMode = value;
+                                  });
+                                },
                               ),
                             ],
                           ),
@@ -201,121 +490,20 @@ class AdminHome extends StatelessWidget {
                   Expanded(
                     child: GridView.count(
                       crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
                       childAspectRatio: cardRatio,
-                      children: [
-                        _DashCard(
-                          title: 'Courses',
-                          subtitle: 'Manage courses',
-                          icon: Icons.menu_book_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
-                          ),
-                        ),
-
-                        const _AdminOnlineBookingDashCard(),
-                        _DashCard(
-                          title: 'Classes',
-                          subtitle: 'Manage classes',
-                          icon: Icons.class_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Attendance',
-                          subtitle: 'Daily / Weekly stats',
-                          icon: Icons.fact_check_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const AdminAttendanceOverviewScreen(),
-                            ),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Schedule',
-                          subtitle: 'Weekly timetable',
-                          icon: Icons.calendar_view_week_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Payments',
-                          subtitle: 'All payments',
-                          icon: Icons.payments_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-                          ),
-                        ),
-                        const _SubscriptionsDashCard(),
-                        _LearnersDashCard(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Staff',
-                          subtitle: 'Teachers & staff',
-                          icon: Icons.badge_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Wages',
-                          subtitle: 'Teacher payments',
-                          icon: Icons.wallet_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminWagesScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Settings',
-                          subtitle: 'Force update config',
-                          icon: Icons.settings_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminForceUpdateAllScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Contract',
-                          subtitle: 'Contracts & documents',
-                          icon: Icons.description_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminContractScreen()),
-                          ),
-                        ),
-                        _DashCard(
-                          title: 'Public Gallery',
-                          subtitle: 'Teaser media',
-                          icon: Icons.photo_library_rounded,
-                          color: primaryBlue,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const AdminPublicGalleryScreen(),
-                            ),
-                          ),
-                        ),
-                      ],
+                      children: visibleCards,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Your Bridge School',
-                      style: TextStyle(
-                        color: mainText.withOpacity(0.55),
+                      _isProMode
+                          ? 'Your Bridge School • Pro View'
+                          : 'Your Bridge School • Simple View',
+                      style: const TextStyle(
+                        color: AdminHome.softText,
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -331,7 +519,8 @@ class AdminHome extends StatelessWidget {
   }
 }
 
-// ===================== SUBSCRIPTIONS CARD =====================
+// ===================== ONLINE BOOKING CARD =====================
+
 class _AdminOnlineBookingDashCard extends StatelessWidget {
   const _AdminOnlineBookingDashCard();
 
@@ -414,7 +603,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           title: 'Online Booking',
           subtitle: subtitle,
           icon: Icons.event_available_rounded,
-          color: AdminHome.primaryBlue,
+          color: AdminHome.accentGreen,
           badgeCount: count,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminBookingScreen()),
@@ -424,6 +613,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
     );
   }
 }
+
 class _SubscriptionsDashCard extends StatelessWidget {
   const _SubscriptionsDashCard();
 
@@ -438,14 +628,15 @@ class _SubscriptionsDashCard extends StatelessWidget {
         final v = snap.data?.snapshot.value;
         if (v is Map) count = v.length;
 
-        final subtitle =
-        count == 0 ? 'No new registrations' : '$count new application${count == 1 ? '' : 's'}';
+        final subtitle = count == 0
+            ? 'No new registrations'
+            : '$count new application${count == 1 ? '' : 's'}';
 
         return _DashCard(
           title: 'Subscriptions',
           subtitle: subtitle,
           icon: Icons.how_to_reg_rounded,
-          color: AdminHome.primaryBlue,
+          color: AdminHome.accentAmber,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminSubscriptionsScreen()),
           ),
@@ -455,10 +646,11 @@ class _SubscriptionsDashCard extends StatelessWidget {
   }
 }
 
-// ===================== PAY FLAG (TOP LEVEL) =====================
+// ===================== PAY FLAG =====================
 
 enum _PayFlag { ok, yellow, red, black, noCourse }
-// ===================== LEARNERS CARD (FIXED: uses CLASSES attendance like AdminLearnersScreen) =====================
+
+// ===================== LEARNERS CARD =====================
 
 class _LearnersDashCard extends StatelessWidget {
   final VoidCallback onTap;
@@ -470,6 +662,7 @@ class _LearnersDashCard extends StatelessWidget {
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
   }
+
   static int _countUniqueAttendanceDates(dynamic attendance) {
     if (attendance is! Map) return 0;
 
@@ -483,6 +676,7 @@ class _LearnersDashCard extends StatelessWidget {
 
     return dates.length;
   }
+
   static int _rank(_PayFlag f) {
     switch (f) {
       case _PayFlag.black:
@@ -503,18 +697,13 @@ class _LearnersDashCard extends StatelessWidget {
     required int sessionsDone,
     required int remindBeforeSession,
   }) {
-    // no payment at all => BLACK
     if (sessionsPaidTotal <= 0) return _PayFlag.black;
 
     final rb = remindBeforeSession > 0 ? remindBeforeSession : 1;
-
-    // next session to attend
     final currentSession = sessionsDone + 1;
 
-    // exceeded paid => BLACK
     if (currentSession > sessionsPaidTotal) return _PayFlag.black;
 
-    // dueAt example: paid=8, rb=1 => dueAt=7
     var dueAt = sessionsPaidTotal - rb;
     if (dueAt < 1) dueAt = 1;
 
@@ -542,7 +731,8 @@ class _LearnersDashCard extends StatelessWidget {
     final usersRef = FirebaseDatabase.instance.ref('users');
 
     return StreamBuilder<List<DatabaseEvent>>(
-      stream: StreamZip([usersRef.onValue]),      builder: (context, snap) {
+      stream: StreamZip([usersRef.onValue]),
+      builder: (context, snap) {
         int totalLearners = 0;
         int blackCount = 0;
         int redCount = 0;
@@ -552,7 +742,7 @@ class _LearnersDashCard extends StatelessWidget {
 
         if (!snap.hasData || snap.data!.isEmpty) {
           return InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             onTap: onTap,
             child: _learnersCardUi(
               total: 0,
@@ -568,7 +758,6 @@ class _LearnersDashCard extends StatelessWidget {
 
         final usersVal = snap.data![0].snapshot.value;
 
-
         if (usersVal is Map) {
           usersVal.forEach((uid, userVal) {
             if (uid == null || userVal == null) return;
@@ -576,7 +765,6 @@ class _LearnersDashCard extends StatelessWidget {
 
             final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-            // learners only
             final role = (userMap['role'] ?? '').toString().toLowerCase().trim();
             if (role != 'learner') return;
 
@@ -615,7 +803,7 @@ class _LearnersDashCard extends StatelessWidget {
               );
 
               if (_rank(flag) > _rank(worst)) worst = flag;
-              if (worst == _PayFlag.black) return; // strongest
+              if (worst == _PayFlag.black) return;
             });
 
             switch (worst) {
@@ -637,7 +825,7 @@ class _LearnersDashCard extends StatelessWidget {
         }
 
         return InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           onTap: onTap,
           child: _learnersCardUi(
             total: totalLearners,
@@ -664,14 +852,14 @@ class _LearnersDashCard extends StatelessWidget {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD1D9E0).withOpacity(0.8)),
+        color: AdminHome.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AdminHome.uiBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           )
         ],
       ),
@@ -682,12 +870,11 @@ class _LearnersDashCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: AdminHome.primaryBlue.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AdminHome.primaryBlue.withOpacity(0.12)),
+                color: const Color(0xFFF1EAFE),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: loading
                   ? const Padding(
@@ -696,11 +883,11 @@ class _LearnersDashCard extends StatelessWidget {
               )
                   : const Icon(
                 Icons.people_alt_rounded,
-                color: AdminHome.primaryBlue,
-                size: 18,
+                color: AdminHome.accentPurple,
+                size: 20,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             const Text(
               'Learners',
               maxLines: 1,
@@ -708,23 +895,21 @@ class _LearnersDashCard extends StatelessWidget {
               style: TextStyle(
                 fontWeight: FontWeight.w900,
                 fontSize: 14,
-                color: Color(0xFF1A2B48),
+                color: AdminHome.primaryBlue,
               ),
             ),
             const SizedBox(height: 2),
-            Text(
+            const Text(
               'Students list',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 fontSize: 11,
-                color: Colors.grey.shade600,
+                color: AdminHome.softText,
               ),
             ),
-            const SizedBox(height: 6),
-
-            // ✅ One-line stats (color accurate)
+            const SizedBox(height: 7),
             RichText(
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -738,8 +923,14 @@ class _LearnersDashCard extends StatelessWidget {
                   TextSpan(text: '$black   ', style: const TextStyle(color: Colors.black)),
                   const TextSpan(text: '🔴 ', style: TextStyle(color: Colors.red)),
                   TextSpan(text: '$red   ', style: const TextStyle(color: Colors.red)),
-                  TextSpan(text: '🟠 ', style: TextStyle(color: AdminHome.actionOrange)),
-                  TextSpan(text: '$yellow   ', style: TextStyle(color: AdminHome.actionOrange)),
+                  TextSpan(
+                    text: '🟠 ',
+                    style: TextStyle(color: AdminHome.actionOrange),
+                  ),
+                  TextSpan(
+                    text: '$yellow   ',
+                    style: TextStyle(color: AdminHome.actionOrange),
+                  ),
                   const TextSpan(text: '✅ ', style: TextStyle(color: Colors.green)),
                   TextSpan(text: '$ok', style: const TextStyle(color: Colors.green)),
                 ],
@@ -761,6 +952,7 @@ class _DashCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final int badgeCount;
+
   const _DashCard({
     required this.title,
     required this.subtitle,
@@ -770,23 +962,36 @@ class _DashCard extends StatelessWidget {
     this.badgeCount = 0,
   });
 
+  Color _softBg(Color color) {
+    if (color == AdminHome.actionOrange) return const Color(0xFFFFF1E5);
+    if (color == AdminHome.accentBlue) return const Color(0xFFEAF2FF);
+    if (color == AdminHome.accentTeal) return const Color(0xFFE8FBF7);
+    if (color == AdminHome.accentPurple) return const Color(0xFFF1EAFE);
+    if (color == AdminHome.accentAmber) return const Color(0xFFFFF6DB);
+    if (color == AdminHome.accentSky) return const Color(0xFFEAF8FF);
+    if (color == AdminHome.accentRose) return const Color(0xFFFFECEB);
+    if (color == AdminHome.accentIndigo) return const Color(0xFFEEF0FF);
+    if (color == AdminHome.accentSlate) return const Color(0xFFF1F5F9);
+    if (color == AdminHome.accentCyan) return const Color(0xFFE9FBFE);
+    if (color == AdminHome.accentGreen) return const Color(0xFFEAFBF1);
+    return const Color(0xFFEAF2FF);
+  }
+
   @override
   Widget build(BuildContext context) {
-    const uiBorder = Color(0xFFD1D9E0);
-
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: uiBorder.withOpacity(0.8)),
+          color: AdminHome.cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AdminHome.uiBorder),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             )
           ],
         ),
@@ -796,37 +1001,31 @@ class _DashCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Stack(
-                clipBehavior: Clip.none,
+              Row(
                 children: [
                   Container(
-                    width: 38,
-                    height: 38,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: color.withOpacity(0.12)),
+                      color: _softBg(color),
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Icon(icon, color: color, size: 20),
+                    child: Icon(icon, color: color, size: 21),
                   ),
+                  const Spacer(),
                   if (badgeCount > 0)
-                    Positioned(
-                      right: -6,
-                      top: -6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: Text(
-                          badgeCount > 99 ? '99+' : badgeCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 10,
-                          ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : badgeCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
                         ),
                       ),
                     ),
@@ -840,18 +1039,19 @@ class _DashCard extends StatelessWidget {
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 14,
-                  color: Color(0xFF1A2B48),
+                  color: AdminHome.primaryBlue,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 subtitle,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 11,
-                  color: Colors.grey.shade600,
+                  color: AdminHome.softText,
+                  height: 1.2,
                 ),
               ),
             ],
@@ -862,7 +1062,7 @@ class _DashCard extends StatelessWidget {
   }
 }
 
-// ===================== FORCE UPDATE SCREEN (YOUR ORIGINAL, UNCHANGED) =====================
+// ===================== FORCE UPDATE SCREEN (YOUR ORIGINAL, UNCHANGED LOGIC) =====================
 
 class AdminForceUpdateAllScreen extends StatefulWidget {
   const AdminForceUpdateAllScreen({super.key});
@@ -904,14 +1104,12 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
 
   @override
   void dispose() {
-    // android
     aMinVersionC.dispose();
     aMinBuildC.dispose();
     aMessageC.dispose();
     aStoreUrlC.dispose();
     aStoreWebUrlC.dispose();
 
-    // ios
     iMinVersionC.dispose();
     iMinBuildC.dispose();
     iMessageC.dispose();

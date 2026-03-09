@@ -112,6 +112,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       final raw = Map<String, dynamic>.from(snap.value as Map);
 
       for (final entry in raw.entries) {
+        if (entry.value is! Map) continue;
         final rec = Map<String, dynamic>.from(entry.value as Map);
         final dateStr = (rec['date'] ?? '').toString();
         if (selectedMonthKey != null && !dateStr.startsWith(selectedMonthKey)) continue;

@@ -49,6 +49,105 @@ class EnrollLimiter {
   }
 }
 
+/// ===== Canonical product keys =====
+/// inclass / flexible / private / recorded
+String normalizeDeliveryKey(String key) {
+  final v = key.trim().toLowerCase();
+
+  switch (v) {
+    case 'online':
+    case 'flexible':
+      return 'flexible';
+
+    case 'live':
+    case 'private':
+      return 'private';
+
+    case 'recorded':
+      return 'recorded';
+
+    case 'inclass':
+    case 'in-class':
+    case 'in class':
+    case 'in_class':
+      return 'inclass';
+
+    default:
+      return v;
+  }
+}
+
+String canonicalDeliveryLabel(String key) {
+  switch (normalizeDeliveryKey(key)) {
+    case 'inclass':
+      return 'In-Class';
+    case 'flexible':
+      return 'Flexible';
+    case 'private':
+      return 'Private';
+    case 'recorded':
+      return 'Recorded';
+    default:
+      return key;
+  }
+}
+
+String normalizeStudyMode(String key) {
+  final v = key.trim().toLowerCase();
+  switch (v) {
+    case 'online':
+      return 'online';
+    case 'inclass':
+    case 'in-class':
+    case 'in class':
+    case 'in_class':
+      return 'inclass';
+    default:
+      return '';
+  }
+}
+
+String studyModeLabel(String key) {
+  switch (normalizeStudyMode(key)) {
+    case 'online':
+      return 'Online';
+    case 'inclass':
+      return 'In-Class';
+    default:
+      return '';
+  }
+}
+
+String canonicalShortLabelEn(String key, {String? fallback}) {
+  switch (normalizeDeliveryKey(key)) {
+    case 'inclass':
+      return 'Fixed group classes';
+    case 'flexible':
+      return 'Group live classes • Online, In-Class';
+    case 'private':
+      return 'One-to-one • Fixed schedule';
+    case 'recorded':
+      return 'Self-paced video lessons';
+    default:
+      return (fallback ?? key).trim().isEmpty ? key : fallback!.trim();
+  }
+}
+
+String canonicalShortLabelAr(String key, {String? fallback}) {
+  switch (normalizeDeliveryKey(key)) {
+    case 'inclass':
+      return 'حصص جماعية ثابتة';
+    case 'flexible':
+      return 'حصص جماعية مباشرة • أونلاين، حضوري';
+    case 'private':
+      return 'حصص فردية • جدول ثابت';
+    case 'recorded':
+      return 'دروس مسجلة • تعلم ذاتي';
+    default:
+      return (fallback ?? key).trim().isEmpty ? key : fallback!.trim();
+  }
+}
+
 /// ===== New learner delivery model =====
 class EnrollDeliveryOption {
   const EnrollDeliveryOption({
@@ -62,8 +161,14 @@ class EnrollDeliveryOption {
     required this.enabled,
   });
 
-  final String key; // online, live, recorded, inclass
-  final String label; // Online, Live, Recorded, In-Class
+  /// Canonical keys used internally:
+  /// inclass / flexible / private / recorded
+  final String key;
+
+  /// Canonical learner-facing label:
+  /// In-Class / Flexible / Private / Recorded
+  final String label;
+
   final String shortLabelEn;
   final String shortLabelAr;
   final double? fee;
@@ -72,6 +177,23 @@ class EnrollDeliveryOption {
   final bool enabled;
 
   bool get isSelectable => enabled && (fee ?? 0) > 0;
+  bool get requiresStudyMode => normalizeDeliveryKey(key) == 'private';
+
+  EnrollDeliveryOption normalized() {
+    final normalizedKey = normalizeDeliveryKey(key);
+    final normalizedLabel = canonicalDeliveryLabel(normalizedKey);
+
+    return EnrollDeliveryOption(
+      key: normalizedKey,
+      label: normalizedLabel,
+      shortLabelEn: canonicalShortLabelEn(normalizedKey),
+      shortLabelAr: canonicalShortLabelAr(normalizedKey),
+      fee: fee,
+      accessMode: accessMode.trim().isEmpty ? 'lifetime' : accessMode.trim(),
+      accessDurationMonths: accessDurationMonths,
+      enabled: enabled,
+    );
+  }
 
   String feeLabel() {
     final f = fee;
@@ -100,30 +222,38 @@ class EnrollDeliveryOption {
   }
 
   String explanationEn() {
-    switch (key) {
+    switch (normalizeDeliveryKey(key)) {
       case 'inclass':
-        return 'Physical lessons at one of our branches or accredited institutions.';
-      case 'live':
-        return 'A pre-fixed schedule with our teachers. These are one-to-one sessions booked specifically for the learner.';
+        return 'Fixed-schedule group classes held at one of our branches or partner institutions. You study with learners at the same level, and progress follows the course duration and number of sessions.';
+
+      case 'flexible':
+        return 'Flexible sessions available online or in class. You can book any open session that suits your schedule. These sessions are shared with other learners at the same level, with a maximum of 6 participants. Progress depends on the number of sessions you attend.';
+
+      case 'private':
+        return 'Private one-to-one lessons with a teacher on a fixed schedule. You will choose whether you prefer online or in-class study before submitting your enrollment.';
+
       case 'recorded':
-        return 'Pre-set courses with explanations, videos, and learning materials for self-study.';
-      case 'online':
-        return 'Live sessions with teachers, but not on a fixed schedule. You choose a suitable day and time and book your place. These are group classes, up to 6 learners.';
+        return 'Pre-recorded video lessons with explanations, activities, and quizzes. You learn independently and progress at your own pace.';
+
       default:
         return '';
     }
   }
 
   String explanationAr() {
-    switch (key) {
+    switch (normalizeDeliveryKey(key)) {
       case 'inclass':
-        return 'دروس حضورية في أحد فروعنا أو في مؤسسة معتمدة.';
-      case 'live':
-        return 'برنامج ثابت ومحدد مسبقاً مع أساتذتنا. هذه حصص فردية مخصصة للمتعلم فقط.';
+        return 'دروس جماعية حضورية بجدول ثابت في أحد فروعنا أو المؤسسات الشريكة. تدرس مع متعلمين في نفس المستوى، ويعتمد التقدم على مدة الدورة وعدد الحصص.';
+
+      case 'flexible':
+        return 'حصص مرنة يمكن حضورها عبر الإنترنت أو في الفصل. يمكنك حجز أي حصة متاحة في الوقت المناسب لك. هذه الحصص جماعية مع متعلمين في نفس المستوى وبحد أقصى 6 متعلمين. يعتمد التقدم على عدد الحصص التي تحضرها.';
+
+      case 'private':
+        return 'حصص فردية مع الأستاذ بجدول ثابت. ستختار قبل إرسال التسجيل ما إذا كنت تفضل الدراسة أونلاين أو حضورياً.';
+
       case 'recorded':
-        return 'دورات جاهزة مسبقاً تحتوي على شروحات وفيديوهات ومواد تعليمية للدراسة الذاتية.';
-      case 'online':
-        return 'حصص مباشرة مع الأساتذة ولكن بدون جدول ثابت. تختار اليوم والوقت المناسبين وتحجز. هذه حصص جماعية حتى 6 متعلمين وليست فردية.';
+        return 'دروس مسجلة مسبقاً تحتوي على فيديوهات شرح وأنشطة واختبارات. تتعلم بشكل مستقل وتتقدم حسب سرعتك الخاصة.';
+
       default:
         return '';
     }
@@ -157,20 +287,68 @@ class _EnrollScreenState extends State<EnrollScreen> {
   late final List<EnrollDeliveryOption> deliveryOptions;
   String? selectedDeliveryKey;
 
+  /// Only required when deliveryKey == private
+  String _privateStudyMode = 'online';
+
   @override
   void initState() {
     super.initState();
 
-    final valid = widget.deliveryOptions.where((e) => e.enabled).toList();
-    deliveryOptions = valid;
+    final normalized = widget.deliveryOptions
+        .map((e) => e.normalized())
+        .where((e) => e.enabled)
+        .toList();
+
+    deliveryOptions = _dedupeNormalizedOptions(normalized);
 
     if (deliveryOptions.isNotEmpty) {
-      final firstSelectable = deliveryOptions.cast<EnrollDeliveryOption?>().firstWhere(
+      final firstSelectable = deliveryOptions
+          .cast<EnrollDeliveryOption?>()
+          .firstWhere(
             (e) => e?.isSelectable == true,
         orElse: () => deliveryOptions.first,
       );
       selectedDeliveryKey = firstSelectable?.key;
     }
+  }
+
+  List<EnrollDeliveryOption> _dedupeNormalizedOptions(
+      List<EnrollDeliveryOption> input,
+      ) {
+    final Map<String, EnrollDeliveryOption> byKey = {};
+
+    for (final item in input) {
+      final key = normalizeDeliveryKey(item.key);
+
+      if (!byKey.containsKey(key)) {
+        byKey[key] = item;
+        continue;
+      }
+
+      final existing = byKey[key]!;
+
+      final existingFee = existing.fee ?? 0;
+      final newFee = item.fee ?? 0;
+
+      final shouldReplace = newFee > existingFee ||
+          (!existing.enabled && item.enabled) ||
+          (existing.shortLabelEn.trim().isEmpty &&
+              item.shortLabelEn.trim().isNotEmpty);
+
+      if (shouldReplace) {
+        byKey[key] = item;
+      }
+    }
+
+    const preferredOrder = ['flexible', 'inclass', 'private', 'recorded'];
+
+    final out = byKey.values.toList();
+    out.sort((a, b) {
+      final ai = preferredOrder.indexOf(a.key);
+      final bi = preferredOrder.indexOf(b.key);
+      return ai.compareTo(bi);
+    });
+    return out;
   }
 
   @override
@@ -265,6 +443,14 @@ class _EnrollScreenState extends State<EnrollScreen> {
       return;
     }
 
+    if (selected.requiresStudyMode &&
+        normalizeStudyMode(_privateStudyMode).isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please choose Online or In-Class for Private.')),
+      );
+      return;
+    }
+
     final can = await EnrollLimiter.canEnrollNow(widget.courseId);
     if (!can) {
       final rem = await EnrollLimiter.remaining(widget.courseId);
@@ -284,19 +470,29 @@ class _EnrollScreenState extends State<EnrollScreen> {
     try {
       final ref = FirebaseDatabase.instance.ref('subscriptions').push();
 
+      final studyMode = selected.requiresStudyMode
+          ? normalizeStudyMode(_privateStudyMode)
+          : '';
+
+      final studyModeText = selected.requiresStudyMode
+          ? studyModeLabel(_privateStudyMode)
+          : '';
+
       await ref.set({
         'courseId': widget.courseId,
         'courseTitle': widget.courseTitle,
         'fullName': fullNameC.text.trim(),
         'phone': phoneC.text.trim(),
 
-        // ✅ keep old-friendly fields too
+        // legacy-friendly field
         'delivery': selected.label,
         'paymentPlan': 'By delivery option',
 
-        // ✅ new learner selection fields
+        // normalized product-first fields
         'deliveryKey': selected.key,
         'deliveryLabel': selected.label,
+        'studyMode': studyMode,
+        'studyModeLabel': studyModeText,
         'selectedFee': selected.fee,
         'accessMode': selected.accessMode,
         'accessDurationMonths': selected.accessDurationMonths,
@@ -382,6 +578,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
   @override
   Widget build(BuildContext context) {
     final selected = _selectedOption;
+    final showPrivateMode = selected?.requiresStudyMode == true;
 
     return Scaffold(
       backgroundColor: Brand.appBg,
@@ -416,12 +613,18 @@ class _EnrollScreenState extends State<EnrollScreen> {
             Positioned(
               top: -120,
               left: -120,
-              child: _SoftBlob(color: Brand.accentCyan.withOpacity(0.10), size: 260),
+              child: _SoftBlob(
+                color: Brand.accentCyan.withOpacity(0.10),
+                size: 260,
+              ),
             ),
             Positioned(
               bottom: -140,
               right: -140,
-              child: _SoftBlob(color: Brand.actionOrange.withOpacity(0.10), size: 300),
+              child: _SoftBlob(
+                color: Brand.actionOrange.withOpacity(0.10),
+                size: 300,
+              ),
             ),
             SingleChildScrollView(
               padding: _screenPadding(context),
@@ -455,7 +658,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 selected: selectedDeliveryKey == option.key,
                                 onTap: saving || !option.isSelectable
                                     ? null
-                                    : () => setState(() => selectedDeliveryKey = option.key),
+                                    : () => setState(() {
+                                  selectedDeliveryKey = option.key;
+                                }),
                                 onInfoTap: () => _showOptionInfo(option),
                               ),
                             ),
@@ -464,9 +669,35 @@ class _EnrollScreenState extends State<EnrollScreen> {
                     ),
                   ),
 
+                  if (showPrivateMode) ...[
+                    const SizedBox(height: 14),
+                    _GlassCard(
+                      radius: _cardRadius(context),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const _SectionTitle(
+                            icon: Icons.place_rounded,
+                            title: 'Private lesson mode',
+                          ),
+                          const SizedBox(height: 12),
+                          _StudyModeSelector(
+                            value: _privateStudyMode,
+                            onChanged: saving
+                                ? null
+                                : (v) => setState(() => _privateStudyMode = v ?? 'online'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   if (selected != null) ...[
                     const SizedBox(height: 14),
-                    _SelectedOptionSummary(option: selected),
+                    _SelectedOptionSummary(
+                      option: selected,
+                      studyMode: showPrivateMode ? _privateStudyMode : '',
+                    ),
                   ],
 
                   const SizedBox(height: 14),
@@ -674,16 +905,67 @@ class _DeliveryOptionCard extends StatelessWidget {
   }
 }
 
+class _StudyModeSelector extends StatelessWidget {
+  const _StudyModeSelector({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String?>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      value: normalizeStudyMode(value).isEmpty ? 'online' : normalizeStudyMode(value),
+      decoration: InputDecoration(
+        labelText: 'Choose mode',
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.92),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+        ),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+          borderSide: BorderSide(color: Brand.accentCyan, width: 2),
+        ),
+      ),
+      items: const [
+        DropdownMenuItem(
+          value: 'online',
+          child: Text('Online'),
+        ),
+        DropdownMenuItem(
+          value: 'inclass',
+          child: Text('In-Class'),
+        ),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
 class _SelectedOptionSummary extends StatelessWidget {
-  const _SelectedOptionSummary({required this.option});
+  const _SelectedOptionSummary({
+    required this.option,
+    required this.studyMode,
+  });
 
   final EnrollDeliveryOption option;
+  final String studyMode;
 
   @override
   Widget build(BuildContext context) {
     final accessText = option.accessMode == 'duration'
         ? 'Access expires ${option.accessDurationMonths ?? 0} month${(option.accessDurationMonths ?? 0) == 1 ? '' : 's'} after enrollment.'
         : 'Lifetime access.';
+
+    final modeText = option.requiresStudyMode ? studyModeLabel(studyMode) : '';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -732,6 +1014,16 @@ class _SelectedOptionSummary extends StatelessWidget {
                     fontSize: 16,
                   ),
                 ),
+                if (modeText.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    modeText,
+                    style: TextStyle(
+                      color: Brand.primaryBlue.withOpacity(0.85),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   option.feeLabel(),
@@ -1024,7 +1316,9 @@ class _BottomActionBar extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.78),
-            border: Border(top: BorderSide(color: Brand.uiBorder.withOpacity(0.9))),
+            border: Border(
+              top: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+            ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.08),

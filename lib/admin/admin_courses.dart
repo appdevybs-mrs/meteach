@@ -754,9 +754,9 @@ class _CourseCard extends StatelessWidget {
                 ),
               ),
               tile('in_class', 'In-Class', Icons.class_),
-              tile('online', 'Online', Icons.language),
+              tile('online', 'Flexible', Icons.event_available),
               tile('recorded', 'Recorded', Icons.ondemand_video),
-              tile('live', 'Live', Icons.videocam),
+              tile('live', 'Private', Icons.person),
               const SizedBox(height: 10),
             ],
           ),
@@ -839,7 +839,7 @@ class _CourseCard extends StatelessWidget {
                       if (course.language.trim().isNotEmpty) _Pill(label: course.language),
                       // show each delivery option as its own colored pill
                       ...course.deliveryOptions.map((opt) => _Pill(
-                        label: opt,
+                        label: _displayDeliveryLabel(opt),
                         bg: _deliveryBg(opt),
                         fg: _deliveryFg(opt),
                       )),
@@ -1121,34 +1121,46 @@ Color _statusFg(CourseStatus s) {
 Color _deliveryBg(String d) {
   switch (d.toLowerCase().trim()) {
     case 'online':
+    case 'flexible':
       return const Color(0xFFF3E8FF); // soft purple
+
     case 'recorded':
       return const Color(0xFFEAF2FF); // soft blue
+
     case 'live':
+    case 'private':
       return const Color(0xFFE8FFFB); // soft cyan
+
     case 'in-class':
     case 'in class':
       return const Color(0xFFFFE8EA); // soft pink
+
     default:
       return AdminCoursesScreen.appBg;
   }
 }
-
 Color _deliveryFg(String d) {
   switch (d.toLowerCase().trim()) {
     case 'online':
+    case 'flexible':
       return const Color(0xFF6A1B9A);
+
     case 'recorded':
       return const Color(0xFF1A4FA3);
+
     case 'live':
+    case 'private':
       return const Color(0xFF007A7A);
+
     case 'in-class':
     case 'in class':
       return const Color(0xFFB00020);
+
     default:
       return AdminCoursesScreen.primaryBlue;
   }
 }
+
 
 class _StateCard extends StatelessWidget {
   const _StateCard({
@@ -1276,8 +1288,8 @@ class CourseEditorScreen extends StatefulWidget {
 class _CourseEditorScreenState extends State<CourseEditorScreen> {
   final _formKey = GlobalKey<FormState>();
   static const List<String> _deliveryOptions = [
-    'Online',
-    'Live',
+    'Flexible',
+    'Private',
     'Recorded',
     'In-Class',
   ];
@@ -1471,8 +1483,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final existingConfigs = initial?.deliveryConfigs ?? {};
 
     _deliveryEnabled = {
-      'online': _deliverySelected.contains('Online') || (existingConfigs['online']?.enabled == true),
-      'live': _deliverySelected.contains('Live') || (existingConfigs['live']?.enabled == true),
+      'online': (_deliverySelected.contains('Online') || _deliverySelected.contains('Flexible')) || (existingConfigs['online']?.enabled == true),
+      'live': (_deliverySelected.contains('Live') || _deliverySelected.contains('Private')) || (existingConfigs['live']?.enabled == true),
       'recorded': _deliverySelected.contains('Recorded') || (existingConfigs['recorded']?.enabled == true),
       'inclass': _deliverySelected.contains('In-Class') || (existingConfigs['inclass']?.enabled == true),
     };
@@ -1529,8 +1541,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   void _syncOldDeliveryFields() {
     final selected = <String>[];
 
-    if (_deliveryEnabled['online'] == true) selected.add('Online');
-    if (_deliveryEnabled['live'] == true) selected.add('Live');
+    if (_deliveryEnabled['online'] == true) selected.add('Flexible');
+    if (_deliveryEnabled['live'] == true) selected.add('Private');
     if (_deliveryEnabled['recorded'] == true) selected.add('Recorded');
     if (_deliveryEnabled['inclass'] == true) selected.add('In-Class');
 
@@ -2614,8 +2626,8 @@ class _DeliveryConfigsEditor extends StatelessWidget {
   final VoidCallback onChanged;
 
   static const List<Map<String, String>> _items = [
-    {'key': 'online', 'label': 'Online'},
-    {'key': 'live', 'label': 'Live'},
+    {'key': 'online', 'label': 'Flexible'},
+    {'key': 'live', 'label': 'Private'},
     {'key': 'recorded', 'label': 'Recorded'},
     {'key': 'inclass', 'label': 'In-Class'},
   ];
@@ -2807,6 +2819,29 @@ class _DeliveryCheckboxes extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+String _displayDeliveryLabel(String value) {
+  switch (value.toLowerCase().trim()) {
+    case 'online':
+    case 'flexible':
+      return 'Flexible';
+
+    case 'live':
+    case 'private':
+      return 'Private';
+
+    case 'recorded':
+      return 'Recorded';
+
+    case 'in-class':
+    case 'in class':
+    case 'inclass':
+      return 'In-Class';
+
+    default:
+      return value;
   }
 }
 

@@ -104,7 +104,15 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                     final code = (p['course_code'] ?? '').toString();
                     final title = (p['course_title'] ?? '').toString();
                     final uid = (p['uid'] ?? '').toString();
+                    final variantKey = (p['variantKey'] ?? '').toString().trim();
+                    final studyMode = (p['studyMode'] ?? '').toString().trim();
+                    final studyModeLabel = (p['studyModeLabel'] ?? '').toString().trim();
 
+                    final studyTypeText = studyModeLabel.isNotEmpty
+                        ? studyModeLabel
+                        : (studyMode.isNotEmpty
+                        ? studyMode
+                        : variantKey);
                     return Card(
                       elevation: 0,
                       color: Colors.white,
@@ -126,6 +134,16 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                               'Learner UID: $uid',
                               style: TextStyle(color: Colors.black.withOpacity(0.7)),
                             ),
+                            if (studyTypeText.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'Study type: $studyTypeText',
+                                style: TextStyle(
+                                  color: Colors.black.withOpacity(0.7),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 6),
                             Wrap(
                               spacing: 8,

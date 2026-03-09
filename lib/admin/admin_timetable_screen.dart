@@ -1,4 +1,3 @@
-// lib/admin/admin_timetable_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dream_english_academy/admin/admin_classes.dart';
@@ -33,12 +32,11 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   // 30-min grid
   static const int _minutesStep = 30;
 
-  // ✅ Visible timetable window: 07:00 -> 00:00 (next day)
+  // Visible timetable window: 07:00 -> 00:00
   static const int _visibleStartMin = 7 * 60; // 07:00
   static const int _visibleEndMin = 24 * 60; // 00:00
-  // ✅ +1 so the last label (00:00) can appear
   static const int _visibleSlots =
-      ((_visibleEndMin - _visibleStartMin) ~/ _minutesStep) + 1; // 35
+      ((_visibleEndMin - _visibleStartMin) ~/ _minutesStep) + 1;
 
   // Teachers for filter
   bool _loadingTeachers = true;
@@ -47,11 +45,12 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // Filters
   String _teacherFilterUid = "ALL";
-
-  /// ✅ "Level" spinner requested: populated from classes/*/course_title
   String _levelTitleFilter = "ALL";
-
+  String _studyTypeFilter = "ALL";
   bool _showOnlyOpen = false;
+
+  // NEW: filter panel collapsed by default
+  bool _filtersExpanded = false;
 
   // Scroll controllers
   final ScrollController _hBodyCtrl = ScrollController();
@@ -64,7 +63,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     super.initState();
     _loadTeachers();
 
-    // ✅ Sync horizontal (body -> header)
     _hBodyCtrl.addListener(() {
       if (_syncingH) return;
       if (!_hHeaderCtrl.hasClients) return;
@@ -115,16 +113,147 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     return learners?.length ?? 0;
   }
 
-  // -------------------- Teacher-based colors (fixed + dynamic shades) --------------------
+  String _variantKeyOf(Map<String, dynamic> cls) {
+    final v = (cls["variantKey"] ?? cls["variant_key"] ?? cls["variant"] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    switch (v) {
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+      case 'inclass':
+        return 'inclass';
+      case 'flexible':
+      case 'online':
+        return 'flexible';
+      case 'private':
+      case 'live':
+      case 'vip':
+        return 'private';
+      case 'recorded':
+        return 'recorded';
+      default:
+        return v;
+    }
+  }
+
+  String _studyModeOf(Map<String, dynamic> cls) {
+    final v = (cls["studyMode"] ?? cls["study_mode"] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    switch (v) {
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+      case 'inclass':
+        return 'inclass';
+      case 'online':
+        return 'online';
+      default:
+        return v;
+    }
+  }
+
+  String _variantLabelFromKey(String key) {
+    switch (key) {
+      case 'inclass':
+        return 'In-Class';
+      case 'flexible':
+        return 'Flexible';
+      case 'private':
+        return 'VIP';
+      case 'recorded':
+        return 'Recorded';
+      default:
+        return key.trim().isEmpty ? '-' : key;
+    }
+  }
+
+  String _studyModeLabelFromKey(String key) {
+    switch (key) {
+      case 'online':
+        return 'Online';
+      case 'inclass':
+        return 'In-Class';
+      default:
+        return key.trim().isEmpty ? '' : key;
+    }
+  }
+
+  String _studyTypeLabelOf(Map<String, dynamic> cls) {
+    final explicit = (cls["studyModeLabel"] ??
+        cls["study_mode_label"] ??
+        cls["deliveryLabel"] ??
+        cls["delivery_label"] ??
+        '')
+        .toString()
+        .trim();
+    if (explicit.isNotEmpty) return explicit;
+
+    final variantKey = _variantKeyOf(cls);
+    final studyMode = _studyModeOf(cls);
+
+    if (variantKey == 'private') {
+      final modeLabel = _studyModeLabelFromKey(studyMode);
+      if (modeLabel.isNotEmpty) return 'VIP • $modeLabel';
+      return 'VIP';
+    }
+
+    return _variantLabelFromKey(variantKey);
+  }
+
+  String _studyTypeFilterValueOf(Map<String, dynamic> cls) {
+    final variantKey = _variantKeyOf(cls);
+    final studyMode = _studyModeOf(cls);
+
+    if (variantKey == 'private') {
+      if (studyMode == 'online') return 'vip_online';
+      if (studyMode == 'inclass') return 'vip_inclass';
+      return 'vip';
+    }
+
+    if (variantKey == 'inclass') return 'inclass';
+    if (variantKey == 'flexible') return 'flexible';
+    if (variantKey == 'recorded') return 'recorded';
+
+    return 'other';
+  }
+
+  String _studyTypeFilterLabel(String value) {
+    switch (value) {
+      case 'inclass':
+        return 'In-Class';
+      case 'flexible':
+        return 'Flexible';
+      case 'vip_online':
+        return 'VIP Online';
+      case 'vip_inclass':
+        return 'VIP In-Class';
+      case 'vip':
+        return 'VIP';
+      case 'recorded':
+        return 'Recorded';
+      case 'other':
+        return 'Other';
+      default:
+        return value;
+    }
+  }
+
+  // -------------------- Teacher-based colors --------------------
 
   static const List<double> _teacherHuePalette = <double>[
-    210, // A -> Blue
-    320, // Purple
-    150, // Green
-    25, // Orange
-    55, // S -> Yellow (because 18 % 7 = 4)
-    0, // Red
-    185, // Teal
+    210,
+    320,
+    150,
+    25,
+    55,
+    0,
+    185,
   ];
 
   String _teacherKey(String instructorName) {
@@ -159,9 +288,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   }) {
     final hue = _teacherBaseHue(instructorName);
     final h = _stableHash(classId.isEmpty ? "?" : classId);
-    final t = (h % 1000) / 999.0; // 0..1
+    final t = (h % 1000) / 999.0;
     final sat = 0.62;
-    final light = 0.34 + (t * 0.30); // 0.34..0.64
+    final light = 0.34 + (t * 0.30);
     return HSLColor.fromAHSL(1.0, hue, sat, light);
   }
 
@@ -170,10 +299,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     required String classId,
   }) {
     final base = _classHslForTeacher(instructorName: instructorName, classId: classId);
-    final c1 =
-    base.withLightness((base.lightness + 0.10).clamp(0.0, 1.0)).toColor();
-    final c2 =
-    base.withLightness((base.lightness - 0.05).clamp(0.0, 1.0)).toColor();
+    final c1 = base.withLightness((base.lightness + 0.10).clamp(0.0, 1.0)).toColor();
+    final c2 = base.withLightness((base.lightness - 0.05).clamp(0.0, 1.0)).toColor();
     return LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
@@ -260,7 +387,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     return idx < 0 ? 0 : idx;
   }
 
-  // -------------------- Sessions progress (done / left) --------------------
+  // -------------------- Sessions progress --------------------
 
   int _sessionsTotal(Map<String, dynamic> cls) {
     final sched = (cls["schedule"] is Map)
@@ -291,7 +418,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     final bool isOpen = (cls["is_open"] ?? true) == true;
     if (_showOnlyOpen && !isOpen) return false;
 
-    // teacher filter
     if (_teacherFilterUid != "ALL") {
       String uid = "";
       final cur = cls["instructor_current"];
@@ -306,10 +432,14 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       if (uid != _teacherFilterUid) return false;
     }
 
-    // "Level" filter = course_title
     if (_levelTitleFilter != "ALL") {
       final title = _titleOf(cls);
       if (title != _levelTitleFilter) return false;
+    }
+
+    if (_studyTypeFilter != "ALL") {
+      final v = _studyTypeFilterValueOf(cls);
+      if (v != _studyTypeFilter) return false;
     }
 
     return true;
@@ -325,6 +455,17 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     return list;
   }
 
+  List<String> _extractStudyTypeFilters(List<Map<String, dynamic>> classes) {
+    final set = <String>{};
+    for (final cls in classes) {
+      final v = _studyTypeFilterValueOf(cls);
+      if (v.isNotEmpty && v != 'other') set.add(v);
+    }
+    final list = set.toList()
+      ..sort((a, b) => _studyTypeFilterLabel(a).compareTo(_studyTypeFilterLabel(b)));
+    return list;
+  }
+
   // -------------------- Popup --------------------
 
   void _openClassPopup(Map<String, dynamic> cls) {
@@ -334,6 +475,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     final instructor = (cls["instructor"] ?? "").toString();
     final isOpen = (cls["is_open"] ?? true) == true;
     final status = (cls["status"] ?? "active").toString();
+    final studyType = _studyTypeLabelOf(cls);
 
     final sched = (cls["schedule"] is Map)
         ? Map<String, dynamic>.from(cls["schedule"])
@@ -386,14 +528,25 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text("Class ID: $id",
-                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
+                Text(
+                  "Class ID: $id",
+                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 4),
-                Text("Instructor: $instructor",
-                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
+                Text(
+                  "Instructor: $instructor",
+                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 4),
-                Text("Status: $status",
-                    style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700)),
+                Text(
+                  "Study type: ${studyType.isEmpty ? '-' : studyType}",
+                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Status: $status",
+                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 8),
                 Container(
                   width: double.infinity,
@@ -544,7 +697,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     );
   }
 
-  // -------------------- Blocks overlay (compact, no pixel overflow) --------------------
+  // -------------------- Blocks overlay --------------------
 
   List<Widget> _buildBlocks(List<Map<String, dynamic>> classes, _Sizes s) {
     final List<Widget> blocks = [];
@@ -578,7 +731,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         final startMin = _timeToMinutes(start);
         final endMin = startMin + dur;
 
-        // Clip to visible window 07:00-23:00
         final visStart = startMin < _visibleStartMin ? _visibleStartMin : startMin;
         final visEnd = endMin > _visibleEndMin ? _visibleEndMin : endMin;
         if (visEnd <= visStart) continue;
@@ -593,6 +745,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
         final title = _titleOf(cls);
         final learnersCount = _learnersCountOf(cls);
+        final studyType = _studyTypeLabelOf(cls);
 
         blocks.add(
           Positioned(
@@ -615,7 +768,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                 child: LayoutBuilder(
                   builder: (context, c) {
                     final fsTitle = (c.maxHeight < 42) ? 10.5 : 12.0;
-                    final fsSub = (c.maxHeight < 42) ? 10.0 : 11.0;
+                    final fsSub = (c.maxHeight < 42) ? 9.8 : 11.0;
 
                     return ClipRect(
                       child: FittedBox(
@@ -636,6 +789,17 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                   fontSize: fsTitle,
                                   height: 1.0,
                                   color: Colors.black.withOpacity(0.88),
+                                ),
+                              ),
+                              Text(
+                                studyType.isEmpty ? "-" : studyType,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: fsSub,
+                                  height: 1.0,
+                                  color: Colors.black.withOpacity(0.84),
                                 ),
                               ),
                               Text(
@@ -689,10 +853,71 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     return blocks;
   }
 
-  // -------------------- Filters UI (Teacher + Level same line, toggle below) --------------------
+  // -------------------- Compact top bar --------------------
+
+  Widget _topCompactBar({
+    required int shownCount,
+  }) {
+    final activeFiltersCount = [
+      _teacherFilterUid != "ALL",
+      _levelTitleFilter != "ALL",
+      _studyTypeFilter != "ALL",
+      _showOnlyOpen,
+    ].where((x) => x).length;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                "Showing $shownCount class${shownCount == 1 ? '' : 'es'}",
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            if (activeFiltersCount > 0)
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: Colors.blue.withOpacity(0.10),
+                  border: Border.all(color: Colors.blue.withOpacity(0.25)),
+                ),
+                child: Text(
+                  "$activeFiltersCount filter${activeFiltersCount == 1 ? '' : 's'}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+            IconButton(
+              tooltip: _filtersExpanded ? "Hide filters" : "Show filters",
+              onPressed: () => setState(() => _filtersExpanded = !_filtersExpanded),
+              icon: Icon(
+                _filtersExpanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------------------- Filters UI --------------------
 
   Widget _filtersCard({
     required List<String> levelTitles,
+    required List<String> studyTypes,
     required double maxWidth,
   }) {
     final twoCols = maxWidth >= 520;
@@ -744,6 +969,30 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       onChanged: (v) => setState(() => _levelTitleFilter = v ?? "ALL"),
     );
 
+    final studyTypeDrop = DropdownButtonFormField<String>(
+      isExpanded: true,
+      value: _studyTypeFilter,
+      decoration: const InputDecoration(
+        labelText: "Study type",
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        const DropdownMenuItem(value: "ALL", child: Text("All study types")),
+        ...studyTypes.map(
+              (t) => DropdownMenuItem(
+            value: t,
+            child: Text(
+              _studyTypeFilterLabel(t),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+      onChanged: (v) => setState(() => _studyTypeFilter = v ?? "ALL"),
+    );
+
     final toggle = SwitchListTile(
       contentPadding: EdgeInsets.zero,
       title: const Text("Only open", style: TextStyle(fontWeight: FontWeight.w800)),
@@ -751,35 +1000,63 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       onChanged: (v) => setState(() => _showOnlyOpen = v),
     );
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+    final clearButton = Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: () {
+          setState(() {
+            _teacherFilterUid = "ALL";
+            _levelTitleFilter = "ALL";
+            _studyTypeFilter = "ALL";
+            _showOnlyOpen = false;
+          });
+        },
+        icon: const Icon(Icons.filter_alt_off_rounded),
+        label: const Text("Clear filters"),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (twoCols)
-              Row(
-                children: [
-                  Expanded(child: teacherDrop),
-                  const SizedBox(width: 10),
-                  Expanded(child: levelDrop),
-                ],
-              )
-            else ...[
-              teacherDrop,
+    );
+
+    return AnimatedCrossFade(
+      duration: const Duration(milliseconds: 180),
+      crossFadeState:
+      _filtersExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+      firstChild: const SizedBox.shrink(),
+      secondChild: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (twoCols)
+                Row(
+                  children: [
+                    Expanded(child: teacherDrop),
+                    const SizedBox(width: 10),
+                    Expanded(child: levelDrop),
+                  ],
+                )
+              else ...[
+                teacherDrop,
+                const SizedBox(height: 10),
+                levelDrop,
+              ],
               const SizedBox(height: 10),
-              levelDrop,
+              studyTypeDrop,
+              const SizedBox(height: 6),
+              toggle,
+              clearButton,
             ],
-            const SizedBox(height: 6),
-            toggle,
-          ],
+          ),
         ),
       ),
+      // same height placeholder when collapsed
+      secondCurve: Curves.easeOut,
+      firstCurve: Curves.easeIn,
     );
   }
 
@@ -811,6 +1088,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
             if (classes.isEmpty) return const Center(child: Text("No classes found."));
 
             final levelTitles = _extractLevelTitles(classes);
+            final studyTypes = _extractStudyTypeFilters(classes);
             final filtered = classes.where(_matchesFilters).toList();
 
             return LayoutBuilder(
@@ -822,7 +1100,13 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
                 return Column(
                   children: [
-                    _filtersCard(levelTitles: levelTitles, maxWidth: c.maxWidth),
+                    _topCompactBar(shownCount: filtered.length),
+                    if (_filtersExpanded) const SizedBox(height: 8),
+                    _filtersCard(
+                      levelTitles: levelTitles,
+                      studyTypes: studyTypes,
+                      maxWidth: c.maxWidth,
+                    ),
                     const SizedBox(height: 10),
                     Expanded(
                       child: Column(
@@ -847,8 +1131,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                       child: Stack(
                                         children: [
                                           _gridBackground(gridH, fullW, s),
-
-                                          // Time labels (07:00 -> 00:00)
                                           Positioned(
                                             left: 0,
                                             top: 0,
@@ -880,8 +1162,6 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                               }),
                                             ),
                                           ),
-
-                                          // Blocks
                                           ..._buildBlocks(filtered, s),
                                         ],
                                       ),
@@ -942,14 +1222,12 @@ class _TimetableGridPainter extends CustomPainter {
       ..color = Colors.grey.withOpacity(0.35)
       ..strokeWidth = 1;
 
-    // Vertical separators
     for (int d = 0; d <= dayCount; d++) {
       final x = timeGutterW + (d * dayColW);
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), strong);
     }
     canvas.drawLine(Offset(timeGutterW, 0), Offset(timeGutterW, size.height), strong);
 
-    // Horizontal lines
     for (int s = 0; s <= slots; s++) {
       final y = s * slotH;
       final minutesFromStart = s * 30;

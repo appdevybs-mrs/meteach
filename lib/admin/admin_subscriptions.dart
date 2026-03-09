@@ -6,9 +6,14 @@ import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 
 // =======================================================
 // ADMIN SUBSCRIPTIONS (FULL REPLACEMENT FILE)
-// - Supports DB that stores: fullName + phone (+ courseId/courseTitle/createdAt)
-// - Still supports old data: firstName + lastName
-// - Phone is clickable (tap to call) in list + details
+// - Supports new enrollment fields:
+//   fullName, phone, courseId, courseTitle, createdAt,
+//   deliveryKey, deliveryLabel, studyMode, studyModeLabel,
+//   selectedFee, accessMode, accessDurationMonths, accessLabel, additionalInfo
+// - Still supports old data:
+//   firstName + lastName
+// - Also tolerates snake_case variants if they ever exist
+// - Phone is clickable in list + details
 // - "Create Learner" splits fullName into first/last
 // =======================================================
 
@@ -68,6 +73,14 @@ class AdminSubscriptionsScreen extends StatelessWidget {
             itemBuilder: (context, i) {
               final s = items[i];
 
+              final deliveryText = s.studyTypeDisplay;
+
+              final subtitleParts = <String>[
+                if (s.courseTitle.trim().isNotEmpty) s.courseTitle,
+                if (deliveryText.trim().isNotEmpty) deliveryText,
+                if (s.phone.trim().isNotEmpty) s.phone,
+              ];
+
               return InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => Navigator.of(context).push(
@@ -86,7 +99,10 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                         backgroundColor: appBg,
                         child: Text(
                           (s.displayName.isNotEmpty ? s.displayName[0].toUpperCase() : 'S'),
-                          style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -96,34 +112,52 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                           children: [
                             Text(
                               s.displayName,
-                              style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: primaryBlue,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${s.courseTitle}  •  ${s.phone}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black.withOpacity(0.65),
-                                      fontSize: 12,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Call',
-                                  icon: const Icon(Icons.call, color: actionOrange),
-                                  onPressed: s.phone.trim().isEmpty ? null : () => callPhone(s.phone),
-                                ),
-                              ],
+                            Text(
+                              subtitleParts.isEmpty ? '-' : subtitleParts.join('  •  '),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black.withOpacity(0.65),
+                                fontSize: 12,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
+                            if (s.selectedFee != null || s.accessLabel.trim().isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (s.selectedFee != null)
+                                    _pill(
+                                      label: '${s.selectedFee!.toStringAsFixed(0)} DA',
+                                      bg: actionOrange.withOpacity(0.10),
+                                      fg: actionOrange,
+                                    ),
+                                  if (s.accessLabel.trim().isNotEmpty)
+                                    _pill(
+                                      label: s.accessLabel,
+                                      bg: primaryBlue.withOpacity(0.08),
+                                      fg: primaryBlue,
+                                    ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
+                      ),
+                      IconButton(
+                        tooltip: 'Call',
+                        icon: const Icon(Icons.call, color: actionOrange),
+                        onPressed: s.phone.trim().isEmpty ? null : () => callPhone(s.phone),
                       ),
                       const Icon(Icons.chevron_right_rounded, color: primaryBlue),
                     ],
@@ -133,6 +167,28 @@ class AdminSubscriptionsScreen extends StatelessWidget {
             },
           );
         },
+      ),
+    );
+  }
+
+  static Widget _pill({
+    required String label,
+    required Color bg,
+    required Color fg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: fg,
+        ),
       ),
     );
   }
@@ -159,7 +215,10 @@ class SubscriptionDetailsScreen extends StatelessWidget {
         title: const Text('Delete subscription?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
@@ -230,7 +289,9 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                             firstName: split.first,
                             lastName: split.last,
                             phone1: sub.phone,
-                            selectedCourseIds: {sub.courseId},
+                            selectedCourseIds: {
+                              if (sub.courseId.trim().isNotEmpty) sub.courseId,
+                            },
                           ),
                         ),
                       ),
@@ -253,7 +314,21 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               _phoneLine(context, sub.phone),
               _line('Course', sub.courseTitle),
               _line('CourseId', sub.courseId),
-              _line('CreatedAt', sub.createdAt.toString()),
+              _line('Study type', sub.studyTypeDisplay),
+              _line('Delivery key', sub.deliveryKey),
+              _line('Study mode', sub.studyModeLabel),
+              _line(
+                'Selected fee',
+                sub.selectedFee == null ? '' : '${sub.selectedFee!.toStringAsFixed(0)} DA',
+              ),
+              _line('Access mode', sub.accessMode),
+              _line(
+                'Access months',
+                sub.accessDurationMonths == null ? '' : sub.accessDurationMonths.toString(),
+              ),
+              _line('Access label', sub.accessLabel),
+              _line('Additional info', sub.additionalInfo),
+              _line('CreatedAt', formatTimestamp(sub.createdAt)),
               _line('SubscriptionId', sub.id),
             ],
           ),
@@ -271,7 +346,10 @@ class SubscriptionDetailsScreen extends StatelessWidget {
         children: [
           const SizedBox(
             width: 110,
-            child: Text('Phone', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+            child: Text(
+              'Phone',
+              style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+            ),
           ),
           Expanded(
             child: InkWell(
@@ -304,12 +382,18 @@ class SubscriptionDetailsScreen extends StatelessWidget {
         children: [
           SizedBox(
             width: 110,
-            child: Text(k, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+            child: Text(
+              k,
+              style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+            ),
           ),
           Expanded(
             child: Text(
               v.trim().isEmpty ? '-' : v,
-              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black.withOpacity(0.7)),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.black.withOpacity(0.7),
+              ),
             ),
           ),
         ],
@@ -376,7 +460,10 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
         if (val is Map) {
           final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
           final title = (m['title'] ?? m['name'] ?? '').toString().trim();
-          items.add({'id': k.toString(), 'title': title.isEmpty ? k.toString() : title});
+          items.add({
+            'id': k.toString(),
+            'title': title.isEmpty ? k.toString() : title,
+          });
         }
       });
     }
@@ -396,7 +483,13 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
               final c = items[i];
               return ListTile(
                 title: Text(c['title']!),
-                subtitle: Text(c['id']!, style: TextStyle(color: Colors.black.withOpacity(0.5), fontSize: 12)),
+                subtitle: Text(
+                  c['id']!,
+                  style: TextStyle(
+                    color: Colors.black.withOpacity(0.5),
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () => Navigator.pop(context, c),
               );
             },
@@ -414,7 +507,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   Future<void> _save() async {
     if (selectedCourseId == null || selectedCourseId!.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pick a course first')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a course first')),
+      );
       return;
     }
 
@@ -423,7 +518,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     final ph = phoneC.text.trim();
 
     if (fn.isEmpty || ln.isEmpty || ph.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fill first name, last name, phone')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fill first name, last name, phone')),
+      );
       return;
     }
 
@@ -436,11 +533,10 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
         'courseTitle': selectedCourseTitle,
         'createdAt': ServerValue.timestamp,
 
-        // ✅ store both formats (compatible with your current DB + your UI)
+        // compatible with old + new UI
         'firstName': fn,
         'lastName': ln,
         'fullName': '$fn $ln'.trim(),
-
         'phone': ph,
       });
 
@@ -448,7 +544,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -463,7 +561,10 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text('Add Subscription', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        title: const Text(
+          'Add Subscription',
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -510,7 +611,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
               OutlinedButton.icon(
                 onPressed: _pickCourse,
                 icon: const Icon(Icons.school_rounded),
-                label: Text(selectedCourseId == null ? 'Pick course' : 'Course: $selectedCourseTitle'),
+                label: Text(
+                  selectedCourseId == null ? 'Pick course' : 'Course: $selectedCourseTitle',
+                ),
               ),
             ],
           ),
@@ -522,6 +625,74 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
 // -------------------- MODEL + HELPERS --------------------
 
+String _normalizeDeliveryKey(String key) {
+  final v = key.trim().toLowerCase();
+
+  switch (v) {
+    case 'online':
+    case 'flexible':
+      return 'flexible';
+
+    case 'live':
+    case 'private':
+      return 'private';
+
+    case 'recorded':
+      return 'recorded';
+
+    case 'inclass':
+    case 'in-class':
+    case 'in class':
+    case 'in_class':
+      return 'inclass';
+
+    default:
+      return v;
+  }
+}
+
+String _canonicalDeliveryLabel(String key) {
+  switch (_normalizeDeliveryKey(key)) {
+    case 'inclass':
+      return 'In-Class';
+    case 'flexible':
+      return 'Flexible';
+    case 'private':
+      return 'Private';
+    case 'recorded':
+      return 'Recorded';
+    default:
+      return key.trim();
+  }
+}
+
+String _normalizeStudyMode(String key) {
+  final v = key.trim().toLowerCase();
+
+  switch (v) {
+    case 'online':
+      return 'online';
+    case 'inclass':
+    case 'in-class':
+    case 'in class':
+    case 'in_class':
+      return 'inclass';
+    default:
+      return '';
+  }
+}
+
+String _studyModeLabel(String key) {
+  switch (_normalizeStudyMode(key)) {
+    case 'online':
+      return 'Online';
+    case 'inclass':
+      return 'In-Class';
+    default:
+      return '';
+  }
+}
+
 class SubscriptionItem {
   SubscriptionItem({
     required this.id,
@@ -530,6 +701,15 @@ class SubscriptionItem {
     required this.createdAt,
     required this.fullName,
     required this.phone,
+    required this.deliveryKey,
+    required this.deliveryLabel,
+    required this.studyMode,
+    required this.studyModeLabel,
+    required this.selectedFee,
+    required this.accessMode,
+    required this.accessDurationMonths,
+    required this.accessLabel,
+    required this.additionalInfo,
   });
 
   final String id;
@@ -539,7 +719,28 @@ class SubscriptionItem {
   final String fullName;
   final String phone;
 
+  final String deliveryKey;
+  final String deliveryLabel;
+  final String studyMode;
+  final String studyModeLabel;
+  final double? selectedFee;
+  final String accessMode;
+  final int? accessDurationMonths;
+  final String accessLabel;
+  final String additionalInfo;
+
   String get displayName => fullName.trim().isEmpty ? '(No name)' : fullName.trim();
+
+  String get studyTypeDisplay {
+    final delivery = deliveryLabel.trim();
+    final mode = studyModeLabel.trim();
+
+    if (delivery.isEmpty && mode.isEmpty) return '';
+    if (_normalizeDeliveryKey(deliveryKey) == 'private' && mode.isNotEmpty) {
+      return delivery.isEmpty ? mode : '$delivery • $mode';
+    }
+    return delivery;
+  }
 }
 
 List<SubscriptionItem> parseSubscriptions(dynamic v) {
@@ -551,6 +752,24 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
     return int.tryParse(x?.toString() ?? '') ?? 0;
   }
 
+  double? asDouble(dynamic x) {
+    if (x == null) return null;
+    if (x is double) return x;
+    if (x is int) return x.toDouble();
+    if (x is num) return x.toDouble();
+    return double.tryParse(x.toString().trim());
+  }
+
+  String readString(Map<String, dynamic> m, List<String> keys) {
+    for (final key in keys) {
+      final value = m[key];
+      if (value == null) continue;
+      final s = value.toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return '';
+  }
+
   final out = <SubscriptionItem>[];
 
   v.forEach((k, val) {
@@ -559,20 +778,46 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
 
     final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
 
-    // ✅ Prefer fullName; fallback to old firstName+lastName
-    final dbFullName = (m['fullName'] ?? '').toString().trim();
-    final fn = (m['firstName'] ?? '').toString().trim();
-    final ln = (m['lastName'] ?? '').toString().trim();
+    final dbFullName = readString(m, ['fullName', 'full_name']);
+    final fn = readString(m, ['firstName', 'first_name']);
+    final ln = readString(m, ['lastName', 'last_name']);
     final computedName = dbFullName.isNotEmpty ? dbFullName : ('$fn $ln').trim();
+
+    final rawDeliveryKey = readString(m, ['deliveryKey', 'delivery_key']);
+    final normalizedDeliveryKey = _normalizeDeliveryKey(rawDeliveryKey);
+
+    final rawDeliveryLabel = readString(m, ['deliveryLabel', 'delivery_label', 'delivery']);
+    final normalizedDeliveryLabel = rawDeliveryLabel.isNotEmpty
+        ? rawDeliveryLabel
+        : _canonicalDeliveryLabel(normalizedDeliveryKey);
+
+    final rawStudyMode = readString(m, ['studyMode', 'study_mode']);
+    final normalizedStudyMode = _normalizeStudyMode(rawStudyMode);
+
+    final rawStudyModeLabel = readString(m, ['studyModeLabel', 'study_mode_label']);
+    final normalizedStudyModeLabel = rawStudyModeLabel.isNotEmpty
+        ? rawStudyModeLabel
+        : _studyModeLabel(normalizedStudyMode);
 
     out.add(
       SubscriptionItem(
         id: k.toString(),
-        courseId: (m['courseId'] ?? '').toString(),
-        courseTitle: (m['courseTitle'] ?? '').toString(),
-        createdAt: asInt(m['createdAt']),
+        courseId: readString(m, ['courseId', 'course_id']),
+        courseTitle: readString(m, ['courseTitle', 'course_title']),
+        createdAt: asInt(m['createdAt'] ?? m['created_at']),
         fullName: computedName,
-        phone: (m['phone'] ?? '').toString(),
+        phone: readString(m, ['phone', 'phone1', 'phone_1']),
+        deliveryKey: normalizedDeliveryKey,
+        deliveryLabel: normalizedDeliveryLabel,
+        studyMode: normalizedStudyMode,
+        studyModeLabel: normalizedStudyModeLabel,
+        selectedFee: asDouble(m['selectedFee'] ?? m['selected_fee']),
+        accessMode: readString(m, ['accessMode', 'access_mode']),
+        accessDurationMonths: (m['accessDurationMonths'] ?? m['access_duration_months']) == null
+            ? null
+            : asInt(m['accessDurationMonths'] ?? m['access_duration_months']),
+        accessLabel: readString(m, ['accessLabel', 'access_label']),
+        additionalInfo: readString(m, ['additionalInfo', 'additional_info']),
       ),
     );
   });
@@ -589,6 +834,17 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
   if (parts.length == 1) return (first: parts[0], last: '');
 
   return (first: parts.first, last: parts.sublist(1).join(' '));
+}
+
+String formatTimestamp(int value) {
+  if (value <= 0) return '-';
+  final dt = DateTime.fromMillisecondsSinceEpoch(value);
+  final y = dt.year.toString().padLeft(4, '0');
+  final m = dt.month.toString().padLeft(2, '0');
+  final d = dt.day.toString().padLeft(2, '0');
+  final hh = dt.hour.toString().padLeft(2, '0');
+  final mm = dt.minute.toString().padLeft(2, '0');
+  return '$y-$m-$d $hh:$mm';
 }
 
 Future<void> callPhone(String phone) async {

@@ -2282,20 +2282,68 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   // for Assign Courses dialog
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
-  // ✅ Course variant selection (matches your syllabus structure)
-  static const List<String> _variantKeys = ['in_class', 'online', 'live', 'recorded'];
+  // ✅ Normalized learner course products
+  static const List<String> _variantKeys = [
+    'inclass',
+    'flexible',
+    'private',
+    'recorded',
+  ];
+
+  static String _normalizeVariantKey(String key) {
+    final v = key.trim().toLowerCase();
+
+    switch (v) {
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+      case 'inclass':
+        return 'inclass';
+
+      case 'online':
+      case 'flexible':
+        return 'flexible';
+
+      case 'live':
+      case 'private':
+        return 'private';
+
+      case 'recorded':
+        return 'recorded';
+
+      default:
+        return v;
+    }
+  }
 
   static String _variantLabel(String key) {
-    switch (key.trim().toLowerCase()) {
+    switch (_normalizeVariantKey(key)) {
+      case 'inclass':
+        return 'In-Class';
+      case 'flexible':
+        return 'Flexible';
+      case 'private':
+        return 'Private';
       case 'recorded':
         return 'Recorded';
-      case 'live':
-        return 'Live';
+      default:
+        return key;
+    }
+  }
+
+  static const List<String> _studyModeKeys = ['online', 'inclass'];
+
+  static String _studyModeLabel(String key) {
+    switch (key.trim().toLowerCase()) {
       case 'online':
         return 'Online';
+      case 'inclass':
       case 'in_class':
-      default:
+      case 'in-class':
+      case 'in class':
         return 'In-Class';
+      default:
+        return key;
     }
   }
 
@@ -2377,8 +2425,26 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       final courseId = (node['id'] ?? '').toString().trim();
       if (courseId.isEmpty) return;
 
-      final v = (node['variantKey'] ?? node['variant'] ?? '').toString().trim();
-      out[courseId] = v.isEmpty ? 'in_class' : v;
+      final raw = (node['variantKey'] ?? node['variant'] ?? '').toString().trim();
+      out[courseId] = raw.isEmpty ? 'inclass' : _normalizeVariantKey(raw);
+    });
+
+    return out;
+  }
+
+  Map<String, String> _currentlyAssignedStudyModesByCourseId() {
+    final out = <String, String>{};
+
+    _userCourses.forEach((_, nodeRaw) {
+      final node = nodeRaw is Map ? nodeRaw : <dynamic, dynamic>{};
+
+      final courseId = (node['id'] ?? '').toString().trim();
+      if (courseId.isEmpty) return;
+
+      final raw = (node['studyMode'] ?? '').toString().trim().toLowerCase();
+      if (raw == 'online' || raw == 'inclass') {
+        out[courseId] = raw;
+      }
     });
 
     return out;
@@ -2469,6 +2535,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   Future<void> _saveAssignedCourses(
       Set<String> selectedIds,
       Map<String, String> variantByCourseId,
+      Map<String, String> studyModeByCourseId,
       ) async {
     final coursesRef = _userCoursesRef;
 
@@ -2578,9 +2645,27 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       updates['$key/category'] = category;
       updates['$key/assignedAt'] = ServerValue.timestamp;
 
-      final chosenVariant = (variantByCourseId[courseId] ?? 'in_class').trim();
+      final chosenVariant = _normalizeVariantKey(
+        (variantByCourseId[courseId] ?? 'inclass').trim(),
+      );
+
       updates['$key/variantKey'] =
-      _variantKeys.contains(chosenVariant) ? chosenVariant : 'in_class';
+      _variantKeys.contains(chosenVariant) ? chosenVariant : 'inclass';
+      updates['$key/variantLabel'] = _variantLabel(chosenVariant);
+
+      if (chosenVariant == 'private') {
+        final chosenStudyMode =
+        (studyModeByCourseId[courseId] ?? 'online').trim().toLowerCase();
+
+        final safeStudyMode =
+        _studyModeKeys.contains(chosenStudyMode) ? chosenStudyMode : 'online';
+
+        updates['$key/studyMode'] = safeStudyMode;
+        updates['$key/studyModeLabel'] = _studyModeLabel(safeStudyMode);
+      } else {
+        updates['$key/studyMode'] = null;
+        updates['$key/studyModeLabel'] = null;
+      }
     }
 
     await coursesRef.update(updates);
@@ -2594,6 +2679,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     final temp = Set<String>.from(_currentlyAssignedCourseIds());
     final variantByCourseId = _currentlyAssignedVariantsByCourseId();
+    final studyModeByCourseId = _currentlyAssignedStudyModesByCourseId();
     // compute duplicate titles across ALL courses (so show code only when needed)
     String titleOf(String id) {
       final c = _allCourses[id] ?? {};
@@ -2634,7 +2720,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                 final checked = temp.contains(id);
 
                 if (!variantByCourseId.containsKey(id)) {
-                  variantByCourseId[id] = 'in_class';
+                  variantByCourseId[id] = 'inclass';
+                }
+
+                if (!studyModeByCourseId.containsKey(id)) {
+                  studyModeByCourseId[id] = 'online';
                 }
 
                 return CheckboxListTile(
@@ -2645,42 +2735,84 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                     setDialogState(() {
                       if (v == true) {
                         temp.add(id);
-                        variantByCourseId[id] = variantByCourseId[id] ?? 'in_class';
+                        variantByCourseId[id] = variantByCourseId[id] ?? 'inclass';
+                        studyModeByCourseId[id] = studyModeByCourseId[id] ?? 'online';
                       } else {
                         temp.remove(id);
-                        // optional: keep variant remembered or remove it
-                        // variantByCourseId.remove(id);
                       }
                     });
                   },
                   subtitle: checked
                       ? Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: DropdownButtonFormField<String>(
-                      value: variantByCourseId[id] ?? 'in_class',
-                      decoration: InputDecoration(
-                        labelText: 'Variant',
-                        filled: true,
-                        fillColor: AdminLearnersScreen.appBg,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
+                    child: Column(
+                      children: [
+                        DropdownButtonFormField<String>(
+                          value: variantByCourseId[id] ?? 'inclass',
+                          decoration: InputDecoration(
+                            labelText: 'Study type',
+                            filled: true,
+                            fillColor: AdminLearnersScreen.appBg,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          ),
+                          items: _variantKeys
+                              .map((k) => DropdownMenuItem(
+                            value: k,
+                            child: Text(_variantLabel(k)),
+                          ))
+                              .toList(),
+                          onChanged: (val) {
+                            setDialogState(() {
+                              final next = _normalizeVariantKey(val ?? 'inclass');
+                              variantByCourseId[id] = next;
+
+                              if (next == 'private') {
+                                studyModeByCourseId[id] = studyModeByCourseId[id] ?? 'online';
+                              } else {
+                                studyModeByCourseId[id] = '';
+                              }
+                            });
+                          },
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      ),
-                      items: _variantKeys
-                          .map((k) => DropdownMenuItem(
-                        value: k,
-                        child: Text(_variantLabel(k)),
-                      ))
-                          .toList(),
-                      onChanged: (val) {
-                        setDialogState(() {
-                          variantByCourseId[id] = (val ?? 'in_class');
-                        });
-                      },
+                        if ((variantByCourseId[id] ?? 'inclass') == 'private') ...[
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: (studyModeByCourseId[id] == 'inclass' || studyModeByCourseId[id] == 'online')
+                                ? studyModeByCourseId[id]
+                                : 'online',
+                            decoration: InputDecoration(
+                              labelText: 'Private mode',
+                              filled: true,
+                              fillColor: AdminLearnersScreen.appBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                            items: _studyModeKeys
+                                .map((k) => DropdownMenuItem(
+                              value: k,
+                              child: Text(_studyModeLabel(k)),
+                            ))
+                                .toList(),
+                            onChanged: (val) {
+                              setDialogState(() {
+                                studyModeByCourseId[id] = (val == 'inclass' || val == 'online')
+                                    ? val!
+                                    : 'online';
+                              });
+                            },
+                          ),
+                        ],
+                      ],
                     ),
                   )
+
                       : null,
                 );
               }).toList(),
@@ -2693,7 +2825,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
             ),
             FilledButton(
               onPressed: () async {
-                await _saveAssignedCourses(temp, variantByCourseId);
+                await _saveAssignedCourses(temp, variantByCourseId, studyModeByCourseId);
                 if (mounted) setState(() {}); // refresh picker + panels
                 if (mounted) Navigator.pop(dialogContext);
               },
@@ -2782,18 +2914,33 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       titleCount[t] = (titleCount[t] ?? 0) + 1;
     }
 
+
     String labelFor(String courseKey) {
       final m = (_userCourses[courseKey] ?? {}) as Map;
       final code = (m['course_code'] ?? '').toString().trim();
       final title = (m['title'] ?? '').toString().trim();
-      final variant = (m['variantKey'] ?? 'in_class').toString().trim();
+
+      final variant = _normalizeVariantKey(
+        (m['variantKey'] ?? m['variant'] ?? 'inclass').toString().trim(),
+      );
       final vLabel = _variantLabel(variant);
 
-      if (title.isEmpty) return code.isNotEmpty ? '$code • $vLabel' : '$courseKey • $vLabel';
+      final studyMode = (m['studyMode'] ?? '').toString().trim().toLowerCase();
+      final studyModeLabel =
+      studyMode.isEmpty ? '' : _studyModeLabel(studyMode);
+
+      final suffix =
+      (variant == 'private' && studyModeLabel.isNotEmpty)
+          ? '$vLabel • $studyModeLabel'
+          : vLabel;
+
+      if (title.isEmpty) {
+        return code.isNotEmpty ? '$code • $suffix' : '$courseKey • $suffix';
+      }
 
       final duplicate = (titleCount[title] ?? 0) > 1;
-      if (duplicate && code.isNotEmpty) return '$title ($code) • $vLabel';
-      return '$title • $vLabel';
+      if (duplicate && code.isNotEmpty) return '$title ($code) • $suffix';
+      return '$title • $suffix';
     }
 
     return DropdownButtonFormField<String>(

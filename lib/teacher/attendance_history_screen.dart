@@ -39,7 +39,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       if (!snap.exists) { setState(() => _busy = false); return; }
 
       final raw = Map<String, dynamic>.from(snap.value as Map);
-      final list = raw.entries.map((e) => {'id': e.key, ...Map<String, dynamic>.from(e.value as Map)}).toList();
+      final list = raw.entries
+          .where((e) => e.value is Map)
+          .map((e) => {
+        'id': e.key,
+        ...Map<String, dynamic>.from(e.value as Map),
+      })
+          .toList();
 
       // ✅ 1. Sort based on Date string (Descending: Newest Date first)
       list.sort((a, b) {
@@ -142,7 +148,21 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       itemCount: _sessions.length,
       itemBuilder: (context, i) {
         final s = _sessions[i];
-        final taughtTitle = (s['taught']?['title'] ?? 'Regular Session').toString();
+        String taughtTitle = 'Regular Session';
+
+        if (s['taughtItems'] is List && (s['taughtItems'] as List).isNotEmpty) {
+          final items = (s['taughtItems'] as List).whereType<Map>().toList();
+          final titles = items
+              .map((e) => (e['title'] ?? '').toString().trim())
+              .where((t) => t.isNotEmpty)
+              .toList();
+
+          if (titles.isNotEmpty) {
+            taughtTitle = titles.join(' + ');
+          }
+        } else if (s['taught'] is Map) {
+          taughtTitle = ((s['taught'] as Map)['title'] ?? 'Regular Session').toString();
+        }
         final presentCount = (s['present'] as Map? ?? {}).length;
         final absentCount = (s['absent'] as Map? ?? {}).length;
 

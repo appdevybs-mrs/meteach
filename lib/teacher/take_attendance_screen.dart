@@ -220,9 +220,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }));
 
       // load syllabus sessions for picker (+ include sessionNumber)
+      // load syllabus sessions for picker (+ include sessionNumber)
       if (_courseId.isNotEmpty) {
-        final sSnap = await _db.child('syllabi').child(_courseId).get();
-        if (sSnap.exists) {
+        final sSnap = await _db.child('syllabi').child(_courseId).child('inclass').get();
+        if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'] as List?;
           final List<Map<String, dynamic>> flat = [];
@@ -236,7 +237,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   final sess = Map<String, dynamic>.from(ss as Map);
                   flat.add({
                     'unitId': (unit['id'] ?? '').toString(),
-                    'unitTitle': (unit['title'] ?? '').toString(),
+                    'unitTitle': ((unit['title'] ?? '').toString().trim().isNotEmpty)
+                        ? (unit['title'] ?? '').toString()
+                        : (unit['description'] ?? '').toString(),
                     'sessionId': (sess['id'] ?? '').toString(),
                     'title': (sess['title'] ?? '').toString(),
                     'order': (sess['order'] is num) ? (sess['order'] as num).toInt() : 0,

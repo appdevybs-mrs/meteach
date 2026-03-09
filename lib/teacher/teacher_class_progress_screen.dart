@@ -160,7 +160,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     final cid = _courseId.trim();
     if (cid.isEmpty) return;
 
-    final sSnap = await _syllabiRef.child(cid).get();
+    final sSnap = await _syllabiRef.child(cid).child('inclass').get();
     if (!sSnap.exists || sSnap.value == null || sSnap.value is! Map) return;
 
     final s = Map<String, dynamic>.from(sSnap.value as Map);
@@ -172,7 +172,9 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
         if (u is! Map) continue;
         final unit = Map<String, dynamic>.from(u);
         final unitId = (unit['id'] ?? '').toString();
-        final unitTitle = (unit['title'] ?? '').toString();
+        final unitTitle = ((unit['title'] ?? '').toString().trim().isNotEmpty)
+            ? (unit['title'] ?? '').toString()
+            : (unit['description'] ?? '').toString();
         final unitOrder = unit['order'] ?? 0;
 
         final sessions = unit['sessions'];
