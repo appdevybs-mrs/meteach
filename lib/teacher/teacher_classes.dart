@@ -1,28 +1,33 @@
 // ✅ FULL REPLACEMENT (SAFE): lib/teacher/teacher_classes_screen.dart
 //
 // ✅ In-class tab: unchanged behavior (your existing screens still used)
+// ✅ Admin/teacher class matching logic kept
 // ✅ Online tab: bookings + attendance ONLY (Present / Absent)
 // ✅ Online UI shows learner NAMES (no UID shown anywhere)
 // ✅ Online attendance saved in TWO places (safe):
 //    A) online_attendance/<bookingKey>
-//    B) booking_progress/<learnerUid>/<courseId>/online_attendance/<bookingKey>   ✅ inside learner uid inside course
+//    B) booking_progress/<learnerUid>/<courseId>/online_attendance/<bookingKey>
 //
-// NOTE: This file does NOT change your in-class DB writes.
-// ------------------------------------------------------------
+// ✅ NEW UI:
+// - follows app_theme.dart
+// - cleaner, more professional cards
+// - prettier tabs / summary / empty states
+// - logic preserved
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'dart:async';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../shared/app_theme.dart';
 import 'teacher_learner_profile_screen.dart';
-// ✅ your existing in-class screens (keep)
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
 import 'attendance_stats_screen.dart';
 import 'teacher_class_progress_screen.dart';
-
 import 'teacher_learner_gallery_screen.dart';
 
 class TeacherClassesScreen extends StatefulWidget {
@@ -34,27 +39,13 @@ class TeacherClassesScreen extends StatefulWidget {
 
 class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     with TickerProviderStateMixin {
-  // ===== UI colors (your same style) =====
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  // ===== DB nodes (in-class) =====
   static const String usersNode = "users";
   static const String classesNode = "classes";
   static const String syllabiNode = "syllabi";
 
-  // ===== DB nodes (online bookings) =====
   static const String bookingReservationsNode = "booking_reservations";
   static const String bookingAvailabilityNode = "booking_availability";
-
-  // Online attendance storage (NEW, safe)
   static const String onlineAttendanceNode = "online_attendance";
-
-  // Learner course node (same base you use in learner booking screen)
-  // booking_progress/<learnerUid>/<courseId>/...
   static const String bookingProgressNode = "booking_progress";
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -69,24 +60,24 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   String _teacherSerial = '';
   String _teacherName = '';
 
-  // In-class
   List<Map<String, dynamic>> _myClasses = [];
   final Map<String, _ClassProg> _classProgCache = {};
 
-  // Online
   bool _onlineBusy = true;
   String? _onlineError;
   List<_OnlineBooking> _onlineAll = [];
 
-  // Cache user names: uid -> {full}
   final Map<String, Map<String, String>> _nameCache = {};
-  final Map<String, String> _sessionTitleCache = {}; // courseId|sessionNo -> title
-  final Map<String, String> _courseTitleCache = {}; // courseId -> course title
+  final Map<String, String> _sessionTitleCache = {};
+  final Map<String, String> _courseTitleCache = {};
+
   late TabController _tab;
   late TabController _onlineTab;
+
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _tab = TabController(length: 2, vsync: this);
     _onlineTab = TabController(length: 3, vsync: this);
     _loadAll();
@@ -94,12 +85,18 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   @override
   void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
     _tab.dispose();
     _onlineTab.dispose();
     super.dispose();
   }
 
-  // ===================== helpers =====================
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -174,7 +171,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     if (!ok) _toast('Could not open the link.');
   }
 
-
   Future<Map<String, String>> _loadUserName(String uid) async {
     if (uid.isEmpty) return {'full': ''};
     if (_nameCache.containsKey(uid)) return _nameCache[uid]!;
@@ -195,8 +191,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return out;
   }
 
-  // ===================== load all =====================
-
   Future<void> _loadAll() async {
     await _loadTeacherProfile();
     await Future.wait([
@@ -213,7 +207,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       _teacherUid = user.uid;
 
       final userSnap = await _usersRef.child(_teacherUid).get();
-      if (!userSnap.exists) throw Exception('Teacher record not found in /users/<uid>.');
+      if (!userSnap.exists) {
+        throw Exception('Teacher record not found in /users/<uid>.');
+      }
 
       final u = (userSnap.value is Map)
           ? Map<String, dynamic>.from(userSnap.value as Map)
@@ -225,7 +221,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       _teacherName = ('$fn $ln').trim();
 
       if (!_isTeacherRole(u['role'])) {
-        throw Exception('Your account role is not "teacher". Found: "${u['role']}"');
+        throw Exception(
+          'Your account role is not "teacher". Found: "${u['role']}"',
+        );
       }
     } catch (e) {
       setState(() {
@@ -234,8 +232,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       });
     }
   }
-
-  // ===================== IN-CLASS tab (your existing behavior) =====================
 
   Future<void> _loadMyClasses() async {
     setState(() {
@@ -287,11 +283,16 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         final matchesUid = curUid.isNotEmpty && curUid == _teacherUid;
 
         final matchesName = _teacherName.isNotEmpty &&
-            _norm(legacyInstructorName.isNotEmpty ? legacyInstructorName : curName) ==
+            _norm(
+              legacyInstructorName.isNotEmpty
+                  ? legacyInstructorName
+                  : curName,
+            ) ==
                 _norm(_teacherName);
 
         final legacySerial = _safeStr(c['instructorserial'] ?? c['serial']);
-        final matchesSerial = _teacherSerial.isNotEmpty && legacySerial == _teacherSerial;
+        final matchesSerial =
+            _teacherSerial.isNotEmpty && legacySerial == _teacherSerial;
 
         if (matchesUid || matchesName || matchesSerial) {
           mine.add({
@@ -372,6 +373,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     return out;
   }
+
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
     if (schedule is Map) {
@@ -392,7 +394,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return null;
   }
 
-  Future<_ClassProg> _loadClassProgress(String classId, Map<String, dynamic> classData) async {
+  Future<_ClassProg> _loadClassProgress(
+      String classId,
+      Map<String, dynamic> classData,
+      ) async {
     if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
 
     final courseId = _safeStr(classData['course_id']);
@@ -458,8 +463,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final coveredLessons = coveredLessonSessionIds.length;
     final plannedMeetings = _plannedMeetingsFromClass(classData);
 
-    final syllabusPct =
-    totalLessons <= 0 ? 0 : ((coveredLessons / totalLessons) * 100).round().clamp(0, 100);
+    final syllabusPct = totalLessons <= 0
+        ? 0
+        : ((coveredLessons / totalLessons) * 100)
+        .round()
+        .clamp(0, 100);
 
     final prog = _ClassProg(
       syllabusPercent: syllabusPct,
@@ -473,10 +481,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return prog;
   }
 
-  Future<Map<String, dynamic>?> _loadSessionDetails(String courseId, int sessionNo) async {
+  Future<Map<String, dynamic>?> _loadSessionDetails(
+      String courseId,
+      int sessionNo,
+      ) async {
     if (courseId.isEmpty || sessionNo <= 0) return null;
     try {
-      final snap = await _db.child('booking_curriculum/$courseId/sessions/$sessionNo').get();
+      final snap =
+      await _db.child('booking_curriculum/$courseId/sessions/$sessionNo').get();
       if (snap.exists && snap.value is Map) {
         return (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
       }
@@ -484,7 +496,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return null;
   }
 
-  Future<Map<String, dynamic>?> _loadOnlineSyllabusSession(String courseId, int sessionNo) async {
+  Future<Map<String, dynamic>?> _loadOnlineSyllabusSession(
+      String courseId,
+      int sessionNo,
+      ) async {
     if (courseId.isEmpty || sessionNo <= 0) return null;
 
     try {
@@ -532,7 +547,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
 
     final titleRaw = (info['sessionTitle'] ?? info['title'] ?? '').toString().trim();
-    final title = titleRaw.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $titleRaw';
+    final title = titleRaw.isEmpty
+        ? 'Session $sessionNo'
+        : 'Session $sessionNo — $titleRaw';
 
     final objective = (info['objective'] ?? '').toString().trim();
     final content = (info['content'] ?? '').toString().trim();
@@ -542,97 +559,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-      builder: (_) {
-        final bottomPad = MediaQuery.of(context).padding.bottom;
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: primaryBlue)),
-                  const SizedBox(height: 8),
-                  Text('Course: $courseId', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
-                  const SizedBox(height: 6),
-                  if (duration > 0)
-                    Text('Duration: $duration min',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
-                  const SizedBox(height: 12),
-
-                  if (objective.isNotEmpty) ...[
-                    const Text('Objectives', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-                    const SizedBox(height: 6),
-                    Text(objective, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (content.isNotEmpty) ...[
-                    const Text('Content', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-                    const SizedBox(height: 6),
-                    Text(content, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (homework.isNotEmpty) ...[
-                    const Text('Homework', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-                    const SizedBox(height: 6),
-                    Text(homework, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
-                    const SizedBox(height: 12),
-                  ],
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: actionOrange,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w900)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openOnlineSessionDetailsSheet(String courseId, int sessionNo, String courseTitle) async {
-    final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
-    if (!mounted) return;
-
-    if (info == null) {
-      _toast('Online session details not found.');
-      return;
-    }
-
-    final titleRaw = (info['title'] ?? '').toString().trim();
-    final title = titleRaw.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $titleRaw';
-
-    final courseLabel = courseTitle.trim().isEmpty ? courseId : courseTitle;
-
-    final objective = (info['objective'] ?? '').toString().trim();
-    final content = (info['content'] ?? '').toString().trim();
-    final homework = (info['homework'] ?? '').toString().trim();
-    final materialsUrl = (info['materialsUrl'] ?? '').toString().trim();
-    final duration = _asInt(info['durationMinutes'] ?? 0);
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: p.cardBg,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) {
         final bottomPad = MediaQuery.of(context).padding.bottom;
@@ -645,18 +575,18 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 16,
-                      color: primaryBlue,
+                      color: p.primary,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Course: $courseLabel',
+                    'Course: $courseId',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: Colors.grey.shade700,
+                      color: p.text.withOpacity(0.7),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -665,86 +595,70 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       'Duration: $duration min',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Colors.grey.shade700,
+                        color: p.text.withOpacity(0.7),
                       ),
                     ),
-                  const SizedBox(height: 12),
-
+                  const SizedBox(height: 14),
                   if (objective.isNotEmpty) ...[
-                    const Text(
+                    Text(
                       'Objectives',
-                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       objective,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
+                        color: p.text.withOpacity(0.72),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                   ],
-
                   if (content.isNotEmpty) ...[
-                    const Text(
+                    Text(
                       'Content',
-                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       content,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
+                        color: p.text.withOpacity(0.72),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                   ],
-
                   if (homework.isNotEmpty) ...[
-                    const Text(
+                    Text(
                       'Homework',
-                      style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       homework,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
+                        color: p.text.withOpacity(0.72),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                   ],
-
-                  if (materialsUrl.isNotEmpty) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: actionOrange,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: () => _openExternalUrl(materialsUrl),
-                        icon: const Icon(Icons.slideshow_rounded),
-                        label: const Text(
-                          'Open materials',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
                   SizedBox(
                     width: double.infinity,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: p.accent,
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
@@ -766,12 +680,183 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
+  Future<void> _openOnlineSessionDetailsSheet(
+      String courseId,
+      int sessionNo,
+      String courseTitle,
+      ) async {
+    final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
+    if (!mounted) return;
 
-  // ===================== ONLINE tab =====================
+    if (info == null) {
+      _toast('Online session details not found.');
+      return;
+    }
+
+    final titleRaw = (info['title'] ?? '').toString().trim();
+    final title = titleRaw.isEmpty
+        ? 'Session $sessionNo'
+        : 'Session $sessionNo — $titleRaw';
+
+    final courseLabel = courseTitle.trim().isEmpty ? courseId : courseTitle;
+
+    final objective = (info['objective'] ?? '').toString().trim();
+    final content = (info['content'] ?? '').toString().trim();
+    final homework = (info['homework'] ?? '').toString().trim();
+    final materialsUrl = (info['materialsUrl'] ?? '').toString().trim();
+    final duration = _asInt(info['durationMinutes'] ?? 0);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: p.cardBg,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        final bottomPad = MediaQuery.of(context).padding.bottom;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: p.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Course: $courseLabel',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: p.text.withOpacity(0.72),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (duration > 0)
+                    Text(
+                      'Duration: $duration min',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: p.text.withOpacity(0.72),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  if (objective.isNotEmpty) ...[
+                    Text(
+                      'Objectives',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      objective,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withOpacity(0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (content.isNotEmpty) ...[
+                    Text(
+                      'Content',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      content,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withOpacity(0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (homework.isNotEmpty) ...[
+                    Text(
+                      'Homework',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      homework,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: p.text.withOpacity(0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (materialsUrl.isNotEmpty) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: p.accent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () => _openExternalUrl(materialsUrl),
+                        icon: const Icon(Icons.slideshow_rounded),
+                        label: const Text(
+                          'Open materials',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: p.primary,
+                        side: BorderSide(color: p.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<String> _loadCourseTitle(String courseId, List<String> learnerUids) async {
     if (courseId.isEmpty) return '';
-    if (_courseTitleCache.containsKey(courseId)) return _courseTitleCache[courseId]!;
+    if (_courseTitleCache.containsKey(courseId)) {
+      return _courseTitleCache[courseId]!;
+    }
 
     try {
       for (final learnerUid in learnerUids) {
@@ -822,20 +907,30 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Future<_AvailMeta> _loadAvailMeta(String teacherId, String courseId) async {
-    // from booking_availability/<teacherId>/<courseId>/ {meetUrl, durationMinutes}
     try {
-      if (teacherId.isEmpty || courseId.isEmpty) return const _AvailMeta.empty();
-      final snap = await _db.child('$bookingAvailabilityNode/$teacherId/$courseId').get();
+      if (teacherId.isEmpty || courseId.isEmpty) {
+        return const _AvailMeta.empty();
+      }
+      final snap =
+      await _db.child('$bookingAvailabilityNode/$teacherId/$courseId').get();
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
 
-        final meetUrl =
-        _safeStr(m['meetUrl'] ?? m['meet_url'] ?? m['googleMeetUrl'] ?? m['google_meet_url']);
+        final meetUrl = _safeStr(
+          m['meetUrl'] ??
+              m['meet_url'] ??
+              m['googleMeetUrl'] ??
+              m['google_meet_url'],
+        );
         int dur = _asInt(m['durationMinutes'] ?? m['durationMin'] ?? m['duration']);
         if (dur <= 0) dur = 60;
 
         final teacherName = _safeStr(m['teacherName'] ?? m['teacher_name']);
-        return _AvailMeta(meetUrl: meetUrl, durationMinutes: dur, teacherName: teacherName);
+        return _AvailMeta(
+          meetUrl: meetUrl,
+          durationMinutes: dur,
+          teacherName: teacherName,
+        );
       }
     } catch (_) {}
     return const _AvailMeta.empty();
@@ -845,7 +940,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final now = DateTime.now();
     final openFrom = start.subtract(const Duration(minutes: 10));
     final dur = durationMinutes <= 0 ? 60 : durationMinutes;
-    final openUntil = start.add(Duration(minutes: dur)).add(const Duration(minutes: 15));
+    final openUntil = start.add(Duration(minutes: dur)).add(
+      const Duration(minutes: 15),
+    );
     return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
@@ -872,10 +969,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         return;
       }
 
-      final Map<dynamic, dynamic> byCourse = Map<dynamic, dynamic>.from(rootSnap.value as Map);
+      final Map<dynamic, dynamic> byCourse =
+      Map<dynamic, dynamic>.from(rootSnap.value as Map);
       final List<_OnlineBooking> out = [];
 
-      // iterate: courseId -> date -> time -> slot
       for (final courseEntry in byCourse.entries) {
         final courseId = courseEntry.key.toString();
         final courseNode = courseEntry.value;
@@ -884,26 +981,27 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         final Map<dynamic, dynamic> byDate = Map<dynamic, dynamic>.from(courseNode);
 
         for (final dateEntry in byDate.entries) {
-          final dayKey = dateEntry.key.toString(); // yyyy-mm-dd
+          final dayKey = dateEntry.key.toString();
           final dateNode = dateEntry.value;
           if (dateNode is! Map) continue;
 
           final Map<dynamic, dynamic> byTime = Map<dynamic, dynamic>.from(dateNode);
 
           for (final timeEntry in byTime.entries) {
-            final hhmm = timeEntry.key.toString(); // HH:MM
+            final hhmm = timeEntry.key.toString();
             final slotNode = timeEntry.value;
             if (slotNode is! Map) continue;
 
             final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
 
-            final teacherId = _safeStr(slot['teacherId'] ?? slot['teacherUid'] ?? slot['teacher_id']);
-            if (teacherId != _teacherUid) continue; // ✅ only assigned to me
+            final teacherId = _safeStr(
+              slot['teacherId'] ?? slot['teacherUid'] ?? slot['teacher_id'],
+            );
+            if (teacherId != _teacherUid) continue;
 
             final dt = _parseSlotStart(dayKey, hhmm);
             if (dt == null) continue;
 
-            // learners list
             final learnersRaw = slot['learners'];
             final List<String> learnerUids = [];
             if (learnersRaw is Map) {
@@ -917,9 +1015,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             final sessionNo = _asInt(slot['sessionNo']);
             final createdAt = slot['createdAt'];
 
-            // availability meta (meetUrl + duration)
             final meta = await _loadAvailMeta(teacherId, courseId);
-
             final courseTitle = await _loadCourseTitle(courseId, learnerUids);
 
             final bookingKey = _OnlineBooking.makeKey(courseId, dayKey, hhmm);
@@ -942,14 +1038,15 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 sessionNo: sessionNo,
                 createdAtRaw: createdAt,
                 meetUrl: meta.meetUrl,
-                durationMinutes: meta.durationMinutes <= 0 ? 60 : meta.durationMinutes,
+                durationMinutes: meta.durationMinutes <= 0
+                    ? 60
+                    : meta.durationMinutes,
               ),
             );
           }
         }
       }
 
-      // Sort by time
       out.sort((a, b) => a.startAtMillis.compareTo(b.startAtMillis));
 
       setState(() {
@@ -964,26 +1061,42 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
   }
 
-  // ===================== UI =====================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text(
-          'My Teaching',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'My Teaching',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Classes, online sessions, and attendance',
+              style: TextStyle(
+                color: p.text.withOpacity(0.65),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
         bottom: TabBar(
           controller: _tab,
-          labelColor: primaryBlue,
-          unselectedLabelColor: Colors.grey.shade600,
-          indicatorColor: actionOrange,
+          labelColor: p.primary,
+          unselectedLabelColor: p.text.withOpacity(0.62),
+          indicatorColor: p.accent,
           tabs: const [
             Tab(icon: Icon(Icons.groups_rounded), text: 'In-class'),
             Tab(icon: Icon(Icons.wifi_tethering_rounded), text: 'Online'),
@@ -992,7 +1105,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: actionOrange),
+            icon: Icon(Icons.refresh_rounded, color: p.accent),
             onPressed: () async {
               await _loadAll();
               _toast('Refreshed ✅');
@@ -1000,20 +1113,43 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tab,
+      body: Stack(
         children: [
-          _buildInClassTab(),
-          _buildOnlineTab(),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.045,
+                child: Center(
+                  child: FractionallySizedBox(
+                    widthFactor: 0.76,
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          TabBarView(
+            controller: _tab,
+            children: [
+              _buildInClassTab(),
+              _buildOnlineTab(),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  // -------------------- In-class tab UI --------------------
-
   Widget _buildInClassTab() {
-    if (_busy) return const Center(child: CircularProgressIndicator());
+    if (_busy) {
+      return Center(
+        child: CircularProgressIndicator(color: p.accent),
+      );
+    }
 
     if (_error != null) {
       return Center(
@@ -1021,7 +1157,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           padding: const EdgeInsets.all(16),
           child: Text(
             _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w800,
+            ),
             textAlign: TextAlign.center,
           ),
         ),
@@ -1031,125 +1170,186 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          elevation: 0,
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: uiBorder.withOpacity(0.8)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Teacher',
-                    style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
-                const SizedBox(height: 6),
-                Text(
-                  _teacherName.isEmpty ? '-' : _teacherName,
-                  style: const TextStyle(color: mainText, fontWeight: FontWeight.w900, fontSize: 16),
-                ),
-              ],
-            ),
-          ),
-        ),
+        _heroTeacherCard(),
         const SizedBox(height: 14),
         if (_myClasses.isEmpty)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'No classes found for you yet.',
-                style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
-              ),
-            ),
-          )
+          _emptyState('No classes found for you yet.')
         else
           ..._myClasses.map((c) => _classCard(c)).toList(),
       ],
     );
   }
 
+  Widget _heroTeacherCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            p.primary,
+            p.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: p.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Center(
+              child: Text(
+                _teacherName.isEmpty ? 'T' : _teacherName[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 26,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _teacherName.isEmpty ? 'Teacher' : _teacherName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Your in-class teaching overview',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _classCard(Map<String, dynamic> c) {
     final classId = _safeStr(c['id'] ?? c['class_id']);
-    final title = _safeStr(c['course_title']).isEmpty ? 'Class' : _safeStr(c['course_title']);
+    final title =
+    _safeStr(c['course_title']).isEmpty ? 'Class' : _safeStr(c['course_title']);
     final duration = _safeStr(c['course_duration']);
     final classTitle = title;
     final learnersCount = _learnersCount(c);
     final learnersList = _inClassLearnersList(c);
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.border.withOpacity(0.9)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        collapsedIconColor: primaryBlue,
-        iconColor: primaryBlue,
-        title: Text(title, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        collapsedIconColor: p.primary,
+        iconColor: p.primary,
+        title: Text(
+          title,
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.only(top: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Duration: ${duration.isEmpty ? '-' : duration}',
-                  style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
+              _miniInfoLine(Icons.timelapse_rounded, 'Duration',
+                  duration.isEmpty ? '-' : duration),
               const SizedBox(height: 4),
-              Text('First session: ${_firstSessionDate(c)}',
-                  style: TextStyle(color: mainText.withOpacity(0.8), fontWeight: FontWeight.w700)),
+              _miniInfoLine(
+                Icons.event_rounded,
+                'First session',
+                _firstSessionDate(c),
+              ),
               const SizedBox(height: 4),
-              Text('Learners: $learnersCount',
-                  style: TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700)),
-              const SizedBox(height: 10),
+              _miniInfoLine(
+                Icons.groups_rounded,
+                'Learners',
+                '$learnersCount',
+              ),
+              const SizedBox(height: 12),
               FutureBuilder<_ClassProg>(
-                future: classId.isEmpty ? Future.value(_ClassProg.zero()) : _loadClassProgress(classId, c),
+                future: classId.isEmpty
+                    ? Future.value(_ClassProg.zero())
+                    : _loadClassProgress(classId, c),
                 builder: (context, snap) {
-                  final p = snap.data ?? _ClassProg.zero();
+                  final prog = snap.data ?? _ClassProg.zero();
 
                   final plannedMeetingsStr =
-                  (p.plannedMeetings == null || p.plannedMeetings! <= 0) ? '-' : '${p.plannedMeetings}';
+                  (prog.plannedMeetings == null || prog.plannedMeetings! <= 0)
+                      ? '-'
+                      : '${prog.plannedMeetings}';
 
-                  final syllabusTotalStr = p.totalLessons <= 0 ? '-' : '${p.totalLessons}';
-                  final syllabusPct = p.syllabusPercent.clamp(0, 100);
+                  final syllabusTotalStr =
+                  prog.totalLessons <= 0 ? '-' : '${prog.totalLessons}';
+                  final syllabusPct = prog.syllabusPercent.clamp(0, 100);
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.event_available_rounded, size: 16, color: actionOrange),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text('Meetings: ${p.meetingsHeld}/$plannedMeetingsStr',
-                                style: TextStyle(color: mainText.withOpacity(0.80), fontWeight: FontWeight.w900)),
-                          ),
-                        ],
+                      _miniInfoLine(
+                        Icons.event_available_rounded,
+                        'Meetings',
+                        '${prog.meetingsHeld}/$plannedMeetingsStr',
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.menu_book_rounded, size: 16, color: actionOrange),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text('Syllabus: ${p.coveredLessons}/$syllabusTotalStr  •  $syllabusPct%',
-                                style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w800)),
-                          ),
-                        ],
+                      const SizedBox(height: 4),
+                      _miniInfoLine(
+                        Icons.menu_book_rounded,
+                        'Syllabus',
+                        '${prog.coveredLessons}/$syllabusTotalStr  •  $syllabusPct%',
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
-                          value: p.totalLessons <= 0 ? 0 : (p.coveredLessons / p.totalLessons).clamp(0, 1),
-                          minHeight: 8,
-                          backgroundColor: primaryBlue.withOpacity(0.10),
-                          valueColor: const AlwaysStoppedAnimation(actionOrange),
+                          value: prog.totalLessons <= 0
+                              ? 0
+                              : (prog.coveredLessons / prog.totalLessons)
+                              .clamp(0, 1),
+                          minHeight: 9,
+                          backgroundColor: p.primary.withOpacity(0.10),
+                          valueColor: AlwaysStoppedAnimation(p.accent),
                         ),
                       ),
                     ],
@@ -1160,135 +1360,160 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ),
         ),
         children: [
-          const SizedBox(height: 8),
-
+          const SizedBox(height: 6),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: appBg,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: uiBorder.withOpacity(0.85)),
+              color: p.soft.withOpacity(0.42),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: p.border.withOpacity(0.85)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Learners',
                   style: TextStyle(
-                    color: primaryBlue,
+                    color: p.primary,
                     fontWeight: FontWeight.w900,
+                    fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 if (learnersList.isEmpty)
                   Text(
                     'No learners found in this class.',
                     style: TextStyle(
-                      color: Colors.grey.shade700,
+                      color: p.text.withOpacity(0.72),
                       fontWeight: FontWeight.w700,
                     ),
                   )
                 else
                   ...learnersList.map((learner) {
                     final name = _safeStr(learner['name']);
-
                     final learnerUid = _safeStr(learner['uid']);
                     final learnerDisplayName = name.isEmpty ? 'Learner' : name;
 
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: uiBorder.withOpacity(0.65)),
+                        color: p.cardBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: p.border.withOpacity(0.8)),
                       ),
-                      child: Row(
+                      child: Column(
                         children: [
-                          const Icon(
-                            Icons.person_rounded,
-                            size: 16,
-                            color: actionOrange,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              learnerDisplayName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: mainText,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 13,
-                                height: 1.15,
+                          Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: p.soft,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.person_rounded,
+                                  size: 18,
+                                  color: p.primary,
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.person_rounded, size: 16),
-                            label: const Text('Profile'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryBlue,
-                              side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12,
-                              ),
-                            ),
-                            onPressed: learnerUid.isEmpty
-                                ? null
-                                : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => TeacherLearnerProfileScreen(
-                                    learnerUid: learnerUid,
-                                    learnerName: learnerDisplayName,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  learnerDisplayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: p.text,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
                                   ),
                                 ),
-                              );
-                            },
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.photo_library_rounded, size: 16),
-                            label: const Text('Gallery'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryBlue,
-                              side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12,
-                              ),
-                            ),
-                            onPressed: learnerUid.isEmpty
-                                ? null
-                                : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => TeacherLearnerGalleryScreen(
-                                    learnerUid: learnerUid,
-                                    learnerName: learnerDisplayName,
-                                    classId: classId,
-                                    classTitle: classTitle,
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.person_rounded, size: 16),
+                                  label: const Text('Profile'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: p.primary,
+                                    side: BorderSide(color: p.border),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
                                   ),
+                                  onPressed: learnerUid.isEmpty
+                                      ? null
+                                      : () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            TeacherLearnerProfileScreen(
+                                              learnerUid: learnerUid,
+                                              learnerName: learnerDisplayName,
+                                            ),
+                                      ),
+                                    );
+                                  },
                                 ),
-                              );
-                            },
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.photo_library_rounded,
+                                      size: 16),
+                                  label: const Text('Gallery'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: p.primary,
+                                    side: BorderSide(color: p.border),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onPressed: learnerUid.isEmpty
+                                      ? null
+                                      : () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            TeacherLearnerGalleryScreen(
+                                              learnerUid: learnerUid,
+                                              learnerName: learnerDisplayName,
+                                              classId: classId,
+                                              classTitle: classTitle,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
-
                         ],
                       ),
                     );
@@ -1296,9 +1521,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               ],
             ),
           ),
-
-          const SizedBox(height: 12),
-
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -1306,43 +1529,64 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   icon: const Icon(Icons.fact_check_rounded),
                   label: const Text("Take"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: actionOrange,
+                    backgroundColor: p.accent,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => TakeAttendanceScreen(classData: c)));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TakeAttendanceScreen(classData: c),
+                      ),
+                    );
                   },
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.history_rounded, color: primaryBlue),
-                  label: const Text("History", style: TextStyle(color: primaryBlue)),
+                  icon: Icon(Icons.history_rounded, color: p.primary),
+                  label: Text("History", style: TextStyle(color: p.primary)),
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: BorderSide(color: p.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => AttendanceHistoryScreen(classData: c)));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AttendanceHistoryScreen(classData: c),
+                      ),
+                    );
                   },
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.bar_chart_rounded, color: primaryBlue),
-                  label: const Text("Stats", style: TextStyle(color: primaryBlue)),
+                  icon: Icon(Icons.bar_chart_rounded, color: p.primary),
+                  label: Text("Stats", style: TextStyle(color: p.primary)),
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: BorderSide(color: p.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => AttendanceStatsScreen(classData: c)));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AttendanceStatsScreen(classData: c),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -1352,11 +1596,19 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              icon: const Icon(Icons.insights_rounded, color: primaryBlue),
-              label: const Text("Progress", style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+              icon: Icon(Icons.insights_rounded, color: p.primary),
+              label: Text(
+                "Progress",
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               style: OutlinedButton.styleFrom(
-                side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                side: BorderSide(color: p.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               onPressed: classId.isEmpty
@@ -1365,7 +1617,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TeacherClassProgressScreen(classId: classId, classData: c),
+                    builder: (_) => TeacherClassProgressScreen(
+                      classId: classId,
+                      classData: c,
+                    ),
                   ),
                 );
               },
@@ -1376,10 +1631,30 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
-  // -------------------- Online tab UI --------------------
+  Widget _miniInfoLine(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: p.accent),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '$label: $value',
+            style: TextStyle(
+              color: p.text.withOpacity(0.80),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildOnlineTab() {
-    if (_onlineBusy) return const Center(child: CircularProgressIndicator());
+    if (_onlineBusy) {
+      return Center(
+        child: CircularProgressIndicator(color: p.accent),
+      );
+    }
 
     if (_onlineError != null) {
       return Center(
@@ -1398,15 +1673,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
 
     if (_onlineAll.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'No online bookings found for you yet.',
-            style: TextStyle(color: mainText, fontWeight: FontWeight.w800),
-          ),
-        ),
-      );
+      return _emptyState('No online bookings found for you yet.');
     }
 
     final now = DateTime.now();
@@ -1438,50 +1705,24 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: _countCard(
-                  label: 'Live',
-                  value: '${startingOrOngoing.length}',
-                  icon: Icons.play_circle_fill_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _countCard(
-                  label: 'Upcoming',
-                  value: '${upcoming.length}',
-                  icon: Icons.schedule_rounded,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _countCard(
-                  label: 'Past',
-                  value: '${past.length}',
-                  icon: Icons.history_rounded,
-                ),
-              ),
-            ],
-          ),
+        _onlineHeroSummary(
+          live: startingOrOngoing.length,
+          upcoming: upcoming.length,
+          past: past.length,
         ),
-
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: uiBorder.withOpacity(0.85)),
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: p.border.withOpacity(0.85)),
             ),
             child: TabBar(
               controller: _onlineTab,
-              labelColor: primaryBlue,
-              unselectedLabelColor: Colors.grey.shade600,
-              indicatorColor: actionOrange,
+              labelColor: p.primary,
+              unselectedLabelColor: p.text.withOpacity(0.62),
+              indicatorColor: p.accent,
               tabs: const [
                 Tab(text: 'Live'),
                 Tab(text: 'Upcoming'),
@@ -1490,9 +1731,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             ),
           ),
         ),
-
         const SizedBox(height: 12),
-
         Expanded(
           child: TabBarView(
             controller: _onlineTab,
@@ -1515,63 +1754,105 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       ],
     );
   }
-  Widget _countCard({
-    required String label,
-    required String value,
-    required IconData icon,
+
+  Widget _onlineHeroSummary({
+    required int live,
+    required int upcoming,
+    required int past,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        gradient: LinearGradient(
+          colors: [
+            p.primary,
+            p.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: p.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: actionOrange, size: 20),
-          const SizedBox(height: 6),
           Text(
-            value,
-            style: const TextStyle(
-              color: primaryBlue,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
+            'Online Sessions',
             style: TextStyle(
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w800,
+              color: Colors.white.withOpacity(0.82),
+              fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Booking Overview',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(child: _heroMiniStat(label: 'Live', value: '$live')),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _heroMiniStat(label: 'Upcoming', value: '$upcoming'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: _heroMiniStat(label: 'Past', value: '$past')),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _sectionTitle(String title, {required String badge}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(title, style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900, fontSize: 14)),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: actionOrange.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: actionOrange.withOpacity(0.25)),
+  Widget _heroMiniStat({
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
           ),
-          child: Text(badge, style: const TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
-        )
-      ],
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.80),
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
-
 
   Widget _onlineBookingsList({
     required List<_OnlineBooking> items,
@@ -1591,21 +1872,29 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       children: items.map(_bookingCard).toList(),
     );
   }
+
   Widget _emptyHint(String text) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withOpacity(0.85)),
       ),
-      child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: p.text.withOpacity(0.72),
+        ),
+      ),
     );
   }
 
   Widget _bookingCard(_OnlineBooking b) {
     final dt = DateTime.fromMillisecondsSinceEpoch(b.startAtMillis);
-    final when = '${dt.year}-${_two(dt.month)}-${_two(dt.day)}  ${_two(dt.hour)}:${_two(dt.minute)}';
+    final when =
+        '${dt.year}-${_two(dt.month)}-${_two(dt.day)}  ${_two(dt.hour)}:${_two(dt.minute)}';
 
     final inWindow = _isInJoinWindow(dt, b.durationMinutes);
     final statusText = inWindow
@@ -1616,76 +1905,107 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     final statusBg = inWindow
         ? const Color(0xFFEAF7EE)
-        : (dt.isAfter(DateTime.now()) ? const Color(0xFFFFF1E3) : const Color(0xFFEFF3F8));
+        : (dt.isAfter(DateTime.now())
+        ? p.accent.withOpacity(0.12)
+        : p.soft.withOpacity(0.8));
 
     final statusBorder = inWindow
         ? const Color(0xFFB9E2C5)
-        : (dt.isAfter(DateTime.now()) ? const Color(0xFFF9C59D) : uiBorder.withOpacity(0.8));
+        : (dt.isAfter(DateTime.now())
+        ? p.accent.withOpacity(0.28)
+        : p.border.withOpacity(0.8));
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.border.withOpacity(0.9)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
-              style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+              ),
             ),
-            const SizedBox(height: 6),
-            Text('When: $when', style: TextStyle(color: mainText.withOpacity(0.85), fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            _bookingInfoLine(Icons.event_rounded, 'When', when),
             const SizedBox(height: 4),
-            Text('Teacher: ${b.teacherName}', style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
+            _bookingInfoLine(Icons.person_rounded, 'Teacher', b.teacherName),
             const SizedBox(height: 4),
-            Text('Learners: ${b.learnerUids.length}', style: TextStyle(color: mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
+            _bookingInfoLine(
+              Icons.groups_rounded,
+              'Learners',
+              '${b.learnerUids.length}',
+            ),
             const SizedBox(height: 4),
             FutureBuilder<String>(
               future: _loadSessionTitle(b.courseId, b.sessionNo),
               builder: (context, snap) {
                 final title = (snap.data ?? '').trim();
                 final sNo = b.sessionNo <= 0 ? '-' : '${b.sessionNo}';
-                final label = title.isEmpty ? 'Session: $sNo' : 'Session: $sNo — $title';
+                final label =
+                title.isEmpty ? 'Session: $sNo' : 'Session: $sNo — $title';
 
-                return Text(
-                  label,
-                  style: TextStyle(color: mainText.withOpacity(0.70), fontWeight: FontWeight.w700),
-                );
+                return _bookingInfoLine(Icons.menu_book_rounded, '', label);
               },
             ),
-            const SizedBox(height: 10),
-
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: statusBg,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: statusBorder),
               ),
               child: Row(
                 children: [
-                  Icon(inWindow ? Icons.play_circle_fill_rounded : Icons.schedule_rounded,
-                      color: primaryBlue, size: 18),
+                  Icon(
+                    inWindow
+                        ? Icons.play_circle_fill_rounded
+                        : Icons.schedule_rounded,
+                    color: p.primary,
+                    size: 18,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(statusText, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                    child: Text(
+                      statusText,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
                   ),
                   if (b.meetUrl.trim().isNotEmpty)
                     TextButton.icon(
                       onPressed: () => _openExternalUrl(b.meetUrl),
-                      icon: const Icon(Icons.video_call_rounded, color: actionOrange),
-                      label: const Text('Meet', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
+                      icon: Icon(Icons.video_call_rounded, color: p.accent),
+                      label: Text(
+                        'Meet',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.accent,
+                        ),
+                      ),
                     ),
                 ],
               ),
             ),
-
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
@@ -1695,11 +2015,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   b.sessionNo,
                   b.courseTitle,
                 ),
-                icon: const Icon(Icons.info_outline_rounded, color: actionOrange),
-                label: const Text('Details', style: TextStyle(fontWeight: FontWeight.w900, color: actionOrange)),
+                icon: Icon(Icons.info_outline_rounded, color: p.accent),
+                label: Text(
+                  'Details',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: p.accent,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Expanded(
@@ -1707,9 +2033,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     icon: const Icon(Icons.fact_check_rounded),
                     label: const Text("Take"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: actionOrange,
+                      backgroundColor: p.accent,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: () {
@@ -1719,7 +2047,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                           builder: (_) => OnlineTakeAttendanceScreen(
                             booking: b,
                             teacherUid: _teacherUid,
-                            teacherName: _teacherName.isEmpty ? 'Teacher' : _teacherName,
+                            teacherName:
+                            _teacherName.isEmpty ? 'Teacher' : _teacherName,
                           ),
                         ),
                       );
@@ -1729,11 +2058,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.history_rounded, color: primaryBlue),
-                    label: const Text("History", style: TextStyle(color: primaryBlue)),
+                    icon: Icon(Icons.history_rounded, color: p.primary),
+                    label: Text("History", style: TextStyle(color: p.primary)),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      side: BorderSide(color: p.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: () {
@@ -1752,11 +2083,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.bar_chart_rounded, color: primaryBlue),
-                    label: const Text("Stats", style: TextStyle(color: primaryBlue)),
+                    icon: Icon(Icons.bar_chart_rounded, color: p.primary),
+                    label: Text("Stats", style: TextStyle(color: p.primary)),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      side: BorderSide(color: p.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: () {
@@ -1775,12 +2108,30 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 ),
               ],
             ),
-
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             _learnersPreview(b),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _bookingInfoLine(IconData icon, String label, String value) {
+    final text = label.isEmpty ? value : '$label: $value';
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: p.accent),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: p.text.withOpacity(0.78),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1791,36 +2142,97 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final show = uids.take(3).toList();
     final more = uids.length - show.length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Learners (preview)', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
-        const SizedBox(height: 6),
-        ...show.map((uid) {
-          return FutureBuilder<Map<String, String>>(
-            future: _loadUserName(uid),
-            builder: (context, snap) {
-              final full = (snap.data?['full'] ?? '').trim();
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '• ${full.isEmpty ? "Learner" : full}',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.soft.withOpacity(0.38),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withOpacity(0.8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Learners (preview)',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: p.primary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...show.map((uid) {
+            return FutureBuilder<Map<String, String>>(
+              future: _loadUserName(uid),
+              builder: (context, snap) {
+                final full = (snap.data?['full'] ?? '').trim();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Text(
+                    '• ${full.isEmpty ? "Learner" : full}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: p.text.withOpacity(0.72),
+                    ),
+                  ),
+                );
+              },
+            );
+          }).toList(),
+          if (more > 0)
+            Text(
+              '… +$more more',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: p.text.withOpacity(0.72),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyState(String text) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: p.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  color: p.soft,
+                  shape: BoxShape.circle,
                 ),
-              );
-            },
-          );
-        }).toList(),
-        if (more > 0)
-          Text('… +$more more', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
-      ],
+                child: Icon(Icons.school_outlined, color: p.primary, size: 30),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
-
-// ============================================================
-// Models
-// ============================================================
 
 class _ClassProg {
   final int syllabusPercent;
@@ -1864,23 +2276,17 @@ class _AvailMeta {
 }
 
 class _OnlineBooking {
-  final String bookingKey; // courseId|yyyy-mm-dd|HH:MM
-
+  final String bookingKey;
   final String courseId;
   final String courseTitle;
-  final String dayKey; // yyyy-mm-dd
-  final String time; // HH:MM
-
+  final String dayKey;
+  final String time;
   final int startAtMillis;
-
   final String teacherId;
   final String teacherName;
-
   final List<String> learnerUids;
-
   final int sessionNo;
   final dynamic createdAtRaw;
-
   final String meetUrl;
   final int durationMinutes;
 
@@ -1900,13 +2306,9 @@ class _OnlineBooking {
     required this.durationMinutes,
   });
 
-  static String makeKey(String courseId, String dayKey, String hhmm) => '$courseId|$dayKey|$hhmm';
+  static String makeKey(String courseId, String dayKey, String hhmm) =>
+      '$courseId|$dayKey|$hhmm';
 }
-
-// ============================================================
-// ONLINE SCREENS (Attendance / History / Stats)
-// Present/Absent ONLY + show learner NAMES (no UID shown)
-// ============================================================
 
 class OnlineTakeAttendanceScreen extends StatefulWidget {
   const OnlineTakeAttendanceScreen({
@@ -1921,22 +2323,40 @@ class OnlineTakeAttendanceScreen extends StatefulWidget {
   final String teacherName;
 
   @override
-  State<OnlineTakeAttendanceScreen> createState() => _OnlineTakeAttendanceScreenState();
+  State<OnlineTakeAttendanceScreen> createState() =>
+      _OnlineTakeAttendanceScreenState();
 }
 
-class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen> {
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const uiBorder = Color(0xFFD1D9E0);
-  static const appBg = Color(0xFFF4F7F9);
-
+class _OnlineTakeAttendanceScreenState
+    extends State<OnlineTakeAttendanceScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool saving = false;
 
-  // per learner present/absent (default: present)
   final Map<String, bool> presentMap = {};
-  final Map<String, String> _localNameCache = {}; // uid -> full name
+  final Map<String, String> _localNameCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    appThemeController.addListener(_onThemeChanged);
+    for (final uid in widget.booking.learnerUids) {
+      presentMap[uid] = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   void _toast(String msg) {
     Fluttertoast.cancel();
@@ -1968,14 +2388,6 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
     return 'Learner';
   }
 
-  @override
-  void initState() {
-    super.initState();
-    // default everyone to Present
-    for (final uid in widget.booking.learnerUids) {
-      presentMap[uid] = true;
-    }
-  }
   DatabaseReference _teacherAttendanceRef() =>
       _db.child('${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}');
 
@@ -1984,7 +2396,6 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
 
   Future<void> _save() async {
     setState(() => saving = true);
-    // ✅ NEW: what was taught (online = booked sessionNo)
     final int sessionNo = widget.booking.sessionNo;
 
     String sessionTitle = '';
@@ -2009,8 +2420,8 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
       }
     ]
         : <Map<String, dynamic>>[];
+
     try {
-      // Build learners map to store
       final Map<String, dynamic> learners = {};
       for (final uid in widget.booking.learnerUids) {
         learners[uid] = {
@@ -2036,15 +2447,11 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
         'updatedAt': ServerValue.timestamp,
       };
 
-      // A) teacher/global node
       await _teacherAttendanceRef().set(payload);
 
-// B) mirror to each learner inside their course node ✅
-// + ✅ advance currentSession ONLY when Present
       for (final uid in widget.booking.learnerUids) {
         final isPresent = presentMap[uid] == true;
 
-        // 1) save online attendance record inside learner course
         await _learnerAttendanceRef(uid).set({
           'bookingKey': widget.booking.bookingKey,
           'courseId': widget.booking.courseId,
@@ -2058,8 +2465,6 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
           'updatedAt': ServerValue.timestamp,
         });
 
-        // 2) ✅ Only if Present -> advance booking progress
-        // currentSession should become sessionNo + 1 (but never go backwards)
         if (isPresent && widget.booking.sessionNo > 0) {
           final curRef = _db.child(
             '${_TeacherClassesScreenState.bookingProgressNode}/$uid/${widget.booking.courseId}/currentSession',
@@ -2069,13 +2474,15 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
           final curVal = curSnap.value;
 
           int cur = 0;
-          if (curVal is int) cur = curVal;
-          else if (curVal is num) cur = curVal.toInt();
-          else cur = int.tryParse(curVal?.toString() ?? '') ?? 0;
+          if (curVal is int) {
+            cur = curVal;
+          } else if (curVal is num) {
+            cur = curVal.toInt();
+          } else {
+            cur = int.tryParse(curVal?.toString() ?? '') ?? 0;
+          }
 
           final next = widget.booking.sessionNo + 1;
-
-          // Don't decrease if someone already progressed further
           if (cur < next) {
             await curRef.set(next);
           }
@@ -2100,21 +2507,30 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
 
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text('Online Attendance',
-            style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Text(
+          'Online Attendance',
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+        ),
         actions: [
           IconButton(
             tooltip: 'Save',
             onPressed: saving ? null : _save,
             icon: saving
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.save_rounded, color: actionOrange),
+                ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: p.accent,
+              ),
+            )
+                : Icon(Icons.save_rounded, color: p.accent),
           )
         ],
       ),
@@ -2127,37 +2543,69 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
               children: [
                 Text(
                   'Course: ${b.courseTitle.trim().isEmpty ? b.courseId : b.courseTitle}',
-                  style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: p.primary,
+                  ),
                 ),
                 const SizedBox(height: 6),
-                Text('When: $when', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                Text(
+                  'When: $when',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: p.text.withOpacity(0.72),
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text('Learners: ${b.learnerUids.length}', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700)),
+                Text(
+                  'Learners: ${b.learnerUids.length}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: p.text.withOpacity(0.72),
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text('Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                Text(
+                  'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: p.text.withOpacity(0.62),
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-
           _box(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Presence', style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+                Text(
+                  'Presence',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: p.primary,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 if (b.learnerUids.isEmpty)
-                  Text('No learners found in this booking.',
-                      style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey.shade700))
+                  Text(
+                    'No learners found in this booking.',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: p.text.withOpacity(0.72),
+                    ),
+                  )
                 else
                   ...b.learnerUids.map((uid) {
                     final v = presentMap[uid] == true;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: uiBorder.withOpacity(0.85)),
+                        border: Border.all(color: p.border.withOpacity(0.85)),
+                        color: p.soft.withOpacity(0.18),
                       ),
                       child: Row(
                         children: [
@@ -2168,7 +2616,10 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
                                 final name = (snap.data ?? 'Learner').trim();
                                 return Text(
                                   name.isEmpty ? 'Learner' : name,
-                                  style: const TextStyle(fontWeight: FontWeight.w900),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: p.text,
+                                  ),
                                 );
                               },
                             ),
@@ -2177,7 +2628,7 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
                           Switch(
                             value: v,
                             onChanged: (x) => setState(() => presentMap[uid] = x),
-                            activeColor: actionOrange,
+                            activeColor: p.accent,
                           ),
                         ],
                       ),
@@ -2193,52 +2644,89 @@ class _OnlineTakeAttendanceScreenState extends State<OnlineTakeAttendanceScreen>
 
   Widget _box({required Widget child}) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withOpacity(0.85)),
       ),
       child: child,
     );
   }
 }
 
-class OnlineAttendanceHistoryScreen extends StatelessWidget {
-  const OnlineAttendanceHistoryScreen({super.key, required this.booking, required this.teacherUid});
+class OnlineAttendanceHistoryScreen extends StatefulWidget {
+  const OnlineAttendanceHistoryScreen({
+    super.key,
+    required this.booking,
+    required this.teacherUid,
+  });
+
   final _OnlineBooking booking;
   final String teacherUid;
 
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
+  @override
+  State<OnlineAttendanceHistoryScreen> createState() =>
+      _OnlineAttendanceHistoryScreenState();
+}
+
+class _OnlineAttendanceHistoryScreenState
+    extends State<OnlineAttendanceHistoryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    appThemeController.addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   @override
   Widget build(BuildContext context) {
     final ref = FirebaseDatabase.instance
-        .ref('${_TeacherClassesScreenState.onlineAttendanceNode}/${booking.bookingKey}');
+        .ref('${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}');
 
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text('Online Attendance History',
-            style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Text(
+          'Online Attendance History',
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+        ),
       ),
       body: FutureBuilder<DataSnapshot>(
         future: ref.get(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(
+              child: CircularProgressIndicator(color: p.accent),
+            );
           }
           if (!snap.hasData || !snap.data!.exists || snap.data!.value == null) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No online attendance found yet.', style: TextStyle(fontWeight: FontWeight.w800)),
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No online attendance found yet.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: p.text,
+                  ),
+                ),
               ),
             );
           }
@@ -2257,11 +2745,20 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Course: ${booking.courseTitle.trim().isEmpty ? booking.courseId : booking.courseTitle}',
-                      style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                      'Course: ${widget.booking.courseTitle.trim().isEmpty ? widget.booking.courseId : widget.booking.courseTitle}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
                     ),
                     const SizedBox(height: 10),
-                    const Text('Learners:', style: TextStyle(fontWeight: FontWeight.w900)),
+                    Text(
+                      'Learners:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: p.primary,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     if (learners is Map && learners.isNotEmpty)
                       ...learners.entries.map((e) {
@@ -2274,7 +2771,7 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
                         }
 
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.only(bottom: 8),
                           child: FutureBuilder<DataSnapshot>(
                             future: FirebaseDatabase.instance
                                 .ref('${_TeacherClassesScreenState.usersNode}/$uid')
@@ -2292,16 +2789,33 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
                                 if (f.isNotEmpty) fullName = f;
                               }
 
-                              return Text(
-                                '• $fullName  —  ${present ? "Present" : "Absent"}',
-                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: p.soft.withOpacity(0.24),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: p.border.withOpacity(0.8)),
+                                ),
+                                child: Text(
+                                  '$fullName  —  ${present ? "Present" : "Absent"}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: p.text,
+                                  ),
+                                ),
                               );
                             },
                           ),
                         );
                       }).toList()
                     else
-                      const Text('No learners map saved.', style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text(
+                        'No learners map saved.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: p.text.withOpacity(0.72),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -2314,11 +2828,11 @@ class OnlineAttendanceHistoryScreen extends StatelessWidget {
 
   Widget _box({required Widget child}) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withOpacity(0.85)),
       ),
       child: child,
     );
@@ -2338,14 +2852,12 @@ class OnlineAttendanceStatsScreen extends StatefulWidget {
   final String teacherUid;
 
   @override
-  State<OnlineAttendanceStatsScreen> createState() => _OnlineAttendanceStatsScreenState();
+  State<OnlineAttendanceStatsScreen> createState() =>
+      _OnlineAttendanceStatsScreenState();
 }
 
-class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScreen> {
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
+class _OnlineAttendanceStatsScreenState
+    extends State<OnlineAttendanceStatsScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool loading = true;
@@ -2356,15 +2868,29 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _load();
   }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   Future<void> _load() async {
     setState(() => loading = true);
 
     int sessions = 0;
-    int p = 0;
-    int a = 0;
+    int present = 0;
+    int absent = 0;
 
     try {
       final snap = await _db.child(_TeacherClassesScreenState.onlineAttendanceNode).get();
@@ -2388,9 +2914,9 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
               if (v is Map) {
                 final mm = v.map((k, vv) => MapEntry(k.toString(), vv));
                 if (mm['present'] == true) {
-                  p++;
+                  present++;
                 } else {
-                  a++;
+                  absent++;
                 }
               }
             }
@@ -2401,8 +2927,8 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
 
     setState(() {
       totalSessions = sessions;
-      presentCount = p;
-      absentCount = a;
+      presentCount = present;
+      absentCount = absent;
       loading = false;
     });
   }
@@ -2410,16 +2936,21 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text('Online Stats', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900)),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Text(
+          'Online Stats',
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+        ),
       ),
       body: loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+        child: CircularProgressIndicator(color: p.accent),
+      )
           : ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -2429,14 +2960,17 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
               children: [
                 Text(
                   'Course: ${widget.courseTitle.trim().isEmpty ? widget.courseId : widget.courseTitle}',
-                  style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: p.primary,
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Text('Sessions with attendance: $totalSessions', style: const TextStyle(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Text('Total Present marks: $presentCount', style: const TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Text('Total Absent marks: $absentCount', style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                _statLine('Sessions with attendance', '$totalSessions'),
+                const SizedBox(height: 8),
+                _statLine('Total Present marks', '$presentCount'),
+                const SizedBox(height: 8),
+                _statLine('Total Absent marks', '$absentCount'),
               ],
             ),
           ),
@@ -2445,13 +2979,37 @@ class _OnlineAttendanceStatsScreenState extends State<OnlineAttendanceStatsScree
     );
   }
 
+  Widget _statLine(String label, String value) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: p.text.withOpacity(0.78),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: p.primary,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _box({required Widget child}) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withOpacity(0.85)),
       ),
       child: child,
     );

@@ -1,9 +1,11 @@
 // TeacherSchedule.dart
-// Drop-in replacement with:
-// ✅ Shows ONLY logged-in teacher schedule (by instructor_current.uid)
-// ✅ Admin can still see ALL classes (role == "admin" from /users/{uid}/role)
-// ✅ Settings tab removed; Settings is now a ⚙️ gear button (top-right) that opens a bottom sheet
-// ✅ No new dependencies added.
+// Full replacement
+// ✅ Follows app theme from app_theme.dart
+// ✅ Cleaner and more professional UI
+// ✅ Logged-in teacher sees only own schedule
+// ✅ Admin still sees all classes
+// ✅ Settings moved to gear button
+// ✅ No new dependencies added
 
 import 'dart:async';
 import 'dart:io';
@@ -17,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../services/notification_service.dart';
+import '../shared/app_theme.dart';
 import 'attendance_history_screen.dart';
 import 'take_attendance_screen.dart';
 
@@ -28,12 +31,6 @@ class TeacherSchedule extends StatefulWidget {
 }
 
 class _TeacherScheduleState extends State<TeacherSchedule> {
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const errorRed = Color(0xFFD32F2F);
-  static const appBg = Color(0xFFF4F7F9);
-  static const cardBorder = Color(0xFFE0E6ED);
-
   final DatabaseReference _classesRef =
   FirebaseDatabase.instance.ref().child('classes');
 
@@ -48,11 +45,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   bool _didAutoApply = false;
 
-  // Keep latest computed lists so the gear button can open Settings safely.
   List<_Occ> _latestUpcoming = const [];
   List<_Occ> _latestAllOcc = const [];
 
-  // Debounce / concurrency guards for scheduling
   Timer? _applyDebounce;
   bool _applyInProgress = false;
   bool _applyPending = false;
@@ -62,14 +57,23 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _boot();
   }
 
   @override
   void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
     _applyDebounce?.cancel();
     super.dispose();
   }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   Future<void> _boot() async {
     await NotificationService.I.init();
@@ -86,7 +90,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   void _openSettingsSheet() {
-    // If data isn't ready yet, do nothing (prevents crashes).
     if (!_prefsReady) return;
 
     showModalBottomSheet(
@@ -98,9 +101,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           builder: (context, setSheetState) {
             return SafeArea(
               child: Container(
-                decoration: const BoxDecoration(
-                  color: appBg,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                decoration: BoxDecoration(
+                  color: p.appBg,
+                  borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
                 ),
                 child: Padding(
                   padding: EdgeInsets.only(
@@ -133,27 +137,51 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Important: Enable No Restrictions"),
-        content: const Text(
-          "To make class reminders work even when the app is closed, please set Battery to 'No restrictions' for this app.\n\n"
-              "Tap Open Settings → then choose: Battery → No restrictions.",
+        backgroundColor: p.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          'Important: Enable No Restrictions',
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: Text(
+          "To make class reminders work even when the app is closed, please set Battery to 'No restrictions' for this app.\n\nTap Open Settings → then choose: Battery → No restrictions.",
+          style: TextStyle(
+            color: p.text,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Later"),
+            child: Text(
+              'Later',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: p.accent,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
               Navigator.pop(context);
 
               const intent = AndroidIntent(
                 action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
-                data: 'package:com.dreamenglish.academy.dream_english_academy',
+                data:
+                'package:com.dreamenglish.academy.dream_english_academy',
               );
               await intent.launch();
             },
-            child: const Text("Open App Settings"),
+            child: const Text('Open App Settings'),
           ),
         ],
       ),
@@ -187,14 +215,14 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   bool _hasConflict(_Occ current, List<_Occ> allOnDay) {
     for (final other in allOnDay) {
       if (identical(current, other)) continue;
-      if (current.start.isBefore(other.end) && other.start.isBefore(current.end)) {
+      if (current.start.isBefore(other.end) &&
+          other.start.isBefore(current.end)) {
         return true;
       }
     }
     return false;
   }
 
-  // Debounced apply to avoid cancel/reschedule storms when user toggles quickly.
   void _queueApplyAllReminders({
     required List<_Occ> upcoming,
     required List<_Occ> allOcc,
@@ -219,15 +247,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       final upcoming = _lastUpcoming;
       final allOcc = _lastAllOcc;
 
-      debugPrint(
-        'APPLY reminders: daily=$_dailyEnabled session=$_sessionEnabled upcoming=${upcoming.length} all=${allOcc.length}',
-      );
-
       await NotificationService.I.cancelAll();
-      debugPrint('Canceled all notifications');
 
       if (_dailyEnabled) {
-        debugPrint('Scheduling daily reminder 08:00');
         await NotificationService.I.scheduleDailyReminder(
           hour: 8,
           minute: 0,
@@ -237,7 +259,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       }
 
       if (_sessionEnabled) {
-        debugPrint('Scheduling session reminders...');
         final filtered = upcoming
             .where((e) => _isClassEnabled(e.classId))
             .where((e) => _isDayEnabled(e.start))
@@ -267,30 +288,59 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return DefaultTabController(
-      length: 2, // ✅ only Schedule + Calendar now
+      length: 2,
       child: Scaffold(
-        backgroundColor: appBg,
+        backgroundColor: p.appBg,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: p.cardBg,
+          surfaceTintColor: p.cardBg,
           elevation: 0,
-          title: const Text(
-            'Teacher Schedule',
-            style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+          titleSpacing: 16,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Teacher Schedule',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Classes, attendance, and reminders',
+                style: TextStyle(
+                  color: p.text.withOpacity(0.65),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ),
           actions: [
             IconButton(
               tooltip: 'Settings',
-              icon: const Icon(Icons.settings_rounded, color: primaryBlue),
+              icon: Icon(Icons.settings_rounded, color: p.primary),
               onPressed: _openSettingsSheet,
             ),
           ],
-          bottom: const TabBar(
-            labelColor: primaryBlue,
-            indicatorColor: actionOrange,
-            tabs: [
-              Tab(text: 'Schedule', icon: Icon(Icons.format_list_bulleted_rounded)),
-              Tab(text: 'Calendar', icon: Icon(Icons.calendar_month_rounded)),
+          bottom: TabBar(
+            labelColor: p.primary,
+            unselectedLabelColor: p.text.withOpacity(0.65),
+            indicatorColor: p.accent,
+            tabs: const [
+              Tab(
+                text: 'Schedule',
+                icon: Icon(Icons.format_list_bulleted_rounded),
+              ),
+              Tab(
+                text: 'Calendar',
+                icon: Icon(Icons.calendar_month_rounded),
+              ),
             ],
           ),
         ),
@@ -298,15 +348,21 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           stream: _classesRef.onValue,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting || !_prefsReady) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(
+                child: CircularProgressIndicator(color: p.accent),
+              );
             }
 
             final data = snap.data?.snapshot.value;
             if (data == null) {
-              return const Center(child: Text('No classes found.'));
+              return _EmptyState(
+                palette: p,
+                icon: Icons.school_outlined,
+                title: 'No classes found',
+                subtitle: 'There are no class records available yet.',
+              );
             }
 
-            // Safely parse RTDB data
             final rawClasses = <Map<String, dynamic>>[];
             if (data is Map) {
               for (final v in data.values) {
@@ -317,33 +373,43 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             }
 
             if (rawClasses.isEmpty) {
-              return const Center(child: Text('No classes found.'));
+              return _EmptyState(
+                palette: p,
+                icon: Icons.event_busy_rounded,
+                title: 'No classes found',
+                subtitle: 'There are no class records available yet.',
+              );
             }
 
-            // ✅ Logged-in uid
             final currentUser = FirebaseAuth.instance.currentUser;
             final myUid = currentUser?.uid;
 
             if (myUid == null || myUid.isEmpty) {
-              return const Center(
-                child: Text('No logged-in user found. Please log out and log in again.'),
+              return _EmptyState(
+                palette: p,
+                icon: Icons.lock_outline_rounded,
+                title: 'No logged-in user found',
+                subtitle: 'Please log out and log in again.',
               );
             }
 
-            // ✅ Admin override: role from /users/{uid}/role
             final roleRef = FirebaseDatabase.instance.ref('users/$myUid/role');
 
             return FutureBuilder<DataSnapshot>(
               future: roleRef.get(),
               builder: (context, roleSnap) {
                 if (!roleSnap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
+                  return Center(
+                    child: CircularProgressIndicator(color: p.accent),
+                  );
                 }
 
-                final role = (roleSnap.data?.value ?? '').toString().toLowerCase().trim();
+                final role = (roleSnap.data?.value ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .trim();
                 final isAdmin = role == 'admin';
 
-                // ✅ Teacher filter: class.instructor_current.uid == myUid
                 final teacherOnlyClasses = rawClasses.where((c) {
                   final instructorCurrent = c['instructor_current'];
                   if (instructorCurrent is Map) {
@@ -357,8 +423,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 final visibleClasses = isAdmin ? rawClasses : teacherOnlyClasses;
 
                 if (!isAdmin && visibleClasses.isEmpty) {
-                  return const Center(
-                    child: Text('No classes assigned to this teacher.'),
+                  return _EmptyState(
+                    palette: p,
+                    icon: Icons.groups_rounded,
+                    title: 'No classes assigned',
+                    subtitle: 'No classes are assigned to this teacher yet.',
                   );
                 }
 
@@ -373,23 +442,45 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 final recentAndUpcoming =
                 allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
 
-                // Save latest lists for Settings gear usage
                 _latestAllOcc = allOcc;
                 _latestUpcoming = recentAndUpcoming;
 
-                // Auto reschedule once after first data load
                 if (_prefsReady && !_didAutoApply) {
                   _didAutoApply = true;
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!mounted) return;
-                    _queueApplyAllReminders(upcoming: recentAndUpcoming, allOcc: allOcc);
+                    _queueApplyAllReminders(
+                      upcoming: recentAndUpcoming,
+                      allOcc: allOcc,
+                    );
                   });
                 }
 
-                return TabBarView(
+                return Column(
                   children: [
-                    _buildGroupedSchedule(recentAndUpcoming, allOcc, visibleClasses),
-                    _buildCalendarView(allOcc, recentAndUpcoming, visibleClasses),
+                    _ScheduleTopSummary(
+                      palette: p,
+                      totalClasses: visibleClasses.length,
+                      totalSessions: recentAndUpcoming.length,
+                      remindersOn: _sessionEnabled || _dailyEnabled,
+                      isAdmin: isAdmin,
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _buildGroupedSchedule(
+                            recentAndUpcoming,
+                            allOcc,
+                            visibleClasses,
+                          ),
+                          _buildCalendarView(
+                            allOcc,
+                            recentAndUpcoming,
+                            visibleClasses,
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 );
               },
@@ -406,7 +497,12 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       List<Map<String, dynamic>> visibleClasses,
       ) {
     if (displayList.isEmpty) {
-      return const Center(child: Text('No recent or upcoming classes.'));
+      return _EmptyState(
+        palette: p,
+        icon: Icons.schedule_rounded,
+        title: 'No recent or upcoming classes',
+        subtitle: 'Your schedule is clear for now.',
+      );
     }
 
     final Map<String, List<_Occ>> grouped = {};
@@ -417,28 +513,52 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final headers = grouped.keys.toList();
 
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
       itemCount: headers.length,
       itemBuilder: (context, index) {
         final day = headers[index];
         final dayClasses = grouped[day]!;
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-              child: Text(
-                day,
-                style: const TextStyle(
-                  color: primaryBlue,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
+            Container(
+              margin: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: p.soft.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: p.border.withOpacity(0.85)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.calendar_today_rounded, size: 16, color: p.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      day,
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${dayClasses.length} session${dayClasses.length == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      color: p.text.withOpacity(0.65),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
             ...dayClasses.map((o) {
               final isConflict = _hasConflict(o, dayClasses);
               return _SessionCard(
+                palette: p,
                 o: o,
                 isConflict: isConflict,
                 enabled: _isClassEnabled(o.classId),
@@ -469,60 +589,153 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     return Column(
       children: [
-        TableCalendar(
-          firstDay: DateTime.now().subtract(const Duration(days: 365)),
-          lastDay: DateTime.now().add(const Duration(days: 365)),
-          focusedDay: _focusedDay,
-          selectedDayPredicate: (day) => isSameDay(selected, day),
-          calendarFormat: CalendarFormat.month,
-          headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
-          calendarStyle: const CalendarStyle(
-            selectedDecoration: BoxDecoration(color: primaryBlue, shape: BoxShape.circle),
-            markerDecoration: BoxDecoration(color: actionOrange, shape: BoxShape.circle),
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: p.border.withOpacity(0.85)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 14,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          onDaySelected: (s, f) => setState(() {
-            _selectedDay = s;
-            _focusedDay = f;
-          }),
-          eventLoader: (day) => byDay[_fmtKey(day)] ?? const [],
+          child: TableCalendar(
+            firstDay: DateTime.now().subtract(const Duration(days: 365)),
+            lastDay: DateTime.now().add(const Duration(days: 365)),
+            focusedDay: _focusedDay,
+            selectedDayPredicate: (day) => isSameDay(selected, day),
+            calendarFormat: CalendarFormat.month,
+            headerStyle: HeaderStyle(
+              formatButtonVisible: false,
+              titleCentered: true,
+              titleTextStyle: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+              leftChevronIcon:
+              Icon(Icons.chevron_left_rounded, color: p.primary),
+              rightChevronIcon:
+              Icon(Icons.chevron_right_rounded, color: p.primary),
+            ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(
+                color: p.text.withOpacity(0.72),
+                fontWeight: FontWeight.w700,
+              ),
+              weekendStyle: TextStyle(
+                color: p.text.withOpacity(0.72),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            calendarStyle: CalendarStyle(
+              defaultTextStyle: TextStyle(
+                color: p.text,
+                fontWeight: FontWeight.w700,
+              ),
+              weekendTextStyle: TextStyle(
+                color: p.text,
+                fontWeight: FontWeight.w700,
+              ),
+              todayDecoration: BoxDecoration(
+                color: p.soft,
+                shape: BoxShape.circle,
+              ),
+              todayTextStyle: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+              ),
+              selectedDecoration: BoxDecoration(
+                color: p.primary,
+                shape: BoxShape.circle,
+              ),
+              selectedTextStyle: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+              markerDecoration: BoxDecoration(
+                color: p.accent,
+                shape: BoxShape.circle,
+              ),
+              markersMaxCount: 3,
+              outsideTextStyle: TextStyle(
+                color: p.text.withOpacity(0.35),
+              ),
+            ),
+            onDaySelected: (s, f) => setState(() {
+              _selectedDay = s;
+              _focusedDay = f;
+            }),
+            eventLoader: (day) => byDay[_fmtKey(day)] ?? const [],
+          ),
         ),
-        const Divider(height: 1),
-
         Padding(
           padding: const EdgeInsets.all(12),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: cardBorder),
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: p.border),
             ),
             child: SwitchListTile(
-              title: Text("Reminders for ${DateFormat('yyyy-MM-dd').format(selected)}"),
-              subtitle: const Text("Disable = no reminders for all classes on this date"),
+              activeColor: p.accent,
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              title: Text(
+                'Reminders for ${DateFormat('yyyy-MM-dd').format(selected)}',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
+              subtitle: Text(
+                'Disable = no reminders for all classes on this date',
+                style: TextStyle(
+                  color: p.text.withOpacity(0.68),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
               value: _isDayEnabled(selected),
               onChanged: (v) => _toggleDay(selected, v, upcoming, allOcc),
               secondary: Icon(
                 _isDayEnabled(selected)
                     ? Icons.notifications_active_rounded
                     : Icons.notifications_off_rounded,
-                color: _isDayEnabled(selected) ? actionOrange : Colors.grey,
+                color: _isDayEnabled(selected)
+                    ? p.accent
+                    : p.text.withOpacity(0.45),
               ),
             ),
           ),
         ),
-
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
+          child: events.isEmpty
+              ? _EmptyState(
+            palette: p,
+            icon: Icons.event_available_rounded,
+            title: 'No sessions on this date',
+            subtitle: 'Pick another day to view scheduled classes.',
+          )
+              : ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
             itemCount: events.length,
             itemBuilder: (context, i) {
               final isConflict = _hasConflict(events[i], events);
               return _SessionCard(
+                palette: p,
                 o: events[i],
                 isConflict: isConflict,
                 enabled: _isClassEnabled(events[i].classId),
-                onToggle: () => _toggleClassNotif(events[i].classId, upcoming, allOcc),
-                onAttendance: () => _openAttendance(events[i], visibleClasses),
+                onToggle: () =>
+                    _toggleClassNotif(events[i].classId, upcoming, allOcc),
+                onAttendance: () =>
+                    _openAttendance(events[i], visibleClasses),
                 onHistory: () => _openHistory(events[i], visibleClasses),
               );
             },
@@ -541,7 +754,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => TakeAttendanceScreen(classData: classMap)),
+      MaterialPageRoute(
+        builder: (_) => TakeAttendanceScreen(classData: classMap),
+      ),
     );
   }
 
@@ -554,7 +769,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => AttendanceHistoryScreen(classData: classMap)),
+      MaterialPageRoute(
+        builder: (_) => AttendanceHistoryScreen(classData: classMap),
+      ),
     );
   }
 
@@ -569,15 +786,19 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                "Notifications",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primaryBlue),
+                'Notifications',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: p.primary,
+                ),
               ),
             ),
             IconButton(
               tooltip: 'Close',
-              icon: const Icon(Icons.close_rounded),
+              icon: Icon(Icons.close_rounded, color: p.primary),
               onPressed: () => Navigator.pop(context),
             ),
           ],
@@ -585,28 +806,68 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: cardBorder),
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: p.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Column(
             children: [
               SwitchListTile(
-                secondary: const Icon(Icons.wb_sunny_rounded, color: actionOrange),
-                title: const Text("Daily Briefing (8:00 AM)"),
+                activeColor: p.accent,
+                secondary: Icon(Icons.wb_sunny_rounded, color: p.accent),
+                title: Text(
+                  'Daily Briefing (8:00 AM)',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+                subtitle: Text(
+                  'A simple morning reminder to check the day schedule.',
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.65),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
                 value: _dailyEnabled,
                 onChanged: (v) async {
                   await _toggleDaily(v, upcoming, allOcc);
                   onSheetRefresh?.call();
                 },
               ),
-              const Divider(height: 1, indent: 50),
+              Divider(height: 1, indent: 56, color: p.border),
               SwitchListTile(
-                secondary: const Icon(Icons.notifications_active_rounded, color: primaryBlue),
-                title: const Text("Session Alerts (15m before)"),
+                activeColor: p.accent,
+                secondary:
+                Icon(Icons.notifications_active_rounded, color: p.primary),
+                title: Text(
+                  'Session Alerts (15m before)',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+                subtitle: Text(
+                  'Get alerted shortly before each class starts.',
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.65),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
                 value: _sessionEnabled,
                 onChanged: (v) async {
-                  await _toggleDaily(v, upcoming, allOcc);
+                  await _toggleSession(v, upcoming, allOcc);
                   onSheetRefresh?.call();
                 },
               ),
@@ -617,7 +878,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     );
   }
 
-  // Safer occurrence generator: handles malformed data and sessions_count edge cases.
   List<_Occ> _generateOccurrences(Map<String, dynamic> cls) {
     if (cls['status']?.toString() != 'active') return [];
 
@@ -641,7 +901,6 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
     final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
     int countLimit = int.tryParse(countLimitRaw) ?? 0;
-
     if (countLimit <= 0) countLimit = 200;
 
     final classId = (cls['class_id'] ?? cls['id'] ?? '').toString();
@@ -651,6 +910,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
     final List<_Occ> occ = [];
 
     DateTime cursor = DateTime(firstDate.year, firstDate.month, firstDate.day);
+
     for (int week = 0; week < 52; week++) {
       for (final s in pattern) {
         if (occ.length >= countLimit) break;
@@ -664,13 +924,19 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
         final startTimeStr = (s['start_time'] ?? '00:00').toString();
         final parts = startTimeStr.split(':');
-        final hh = (parts.isNotEmpty) ? int.tryParse(parts[0]) : null;
-        final mm = (parts.length >= 2) ? int.tryParse(parts[1]) : null;
+        final hh = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
+        final mm = parts.length >= 2 ? int.tryParse(parts[1]) : null;
 
         final startHour = (hh != null && hh >= 0 && hh <= 23) ? hh : 0;
         final startMin = (mm != null && mm >= 0 && mm <= 59) ? mm : 0;
 
-        final start = DateTime(sDate.year, sDate.month, sDate.day, startHour, startMin);
+        final start = DateTime(
+          sDate.year,
+          sDate.month,
+          sDate.day,
+          startHour,
+          startMin,
+        );
 
         if (start.isBefore(firstDate)) continue;
 
@@ -688,6 +954,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           ),
         );
       }
+
       cursor = cursor.add(const Duration(days: 7));
       if (occ.length >= countLimit) break;
     }
@@ -704,12 +971,16 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       'Thu': 4,
       'Fri': 5,
       'Sat': 6,
-      'Sun': 7
+      'Sun': 7,
     };
     return days[day] ?? 1;
   }
 
-  Future<void> _toggleClassNotif(String classId, List<_Occ> up, List<_Occ> all) async {
+  Future<void> _toggleClassNotif(
+      String classId,
+      List<_Occ> up,
+      List<_Occ> all,
+      ) async {
     if (!_prefsReady) return;
 
     final current = _isClassEnabled(classId);
@@ -741,8 +1012,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 }
 
 class _Occ {
-  final String classId, courseCode, courseTitle;
-  final DateTime start, end;
+  final String classId;
+  final String courseCode;
+  final String courseTitle;
+  final DateTime start;
+  final DateTime end;
 
   _Occ({
     required this.classId,
@@ -753,15 +1027,142 @@ class _Occ {
   });
 }
 
-class _SessionCard extends StatelessWidget {
-  final _Occ o;
-  final bool enabled;
-  final bool isConflict;
-  final VoidCallback onToggle;
-  final VoidCallback onAttendance;
-  final VoidCallback onHistory;
+class _ScheduleTopSummary extends StatelessWidget {
+  const _ScheduleTopSummary({
+    required this.palette,
+    required this.totalClasses,
+    required this.totalSessions,
+    required this.remindersOn,
+    required this.isAdmin,
+  });
 
+  final AppPalette palette;
+  final int totalClasses;
+  final int totalSessions;
+  final bool remindersOn;
+  final bool isAdmin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            palette.primary,
+            palette.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: palette.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isAdmin ? 'Admin view' : 'Teacher view',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.80),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Your Schedule Overview',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 20,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroStat(
+                  label: 'Classes',
+                  value: '$totalClasses',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _HeroStat(
+                  label: 'Sessions',
+                  value: '$totalSessions',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _HeroStat(
+                  label: 'Alerts',
+                  value: remindersOn ? 'On' : 'Off',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  const _HeroStat({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.80),
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionCard extends StatelessWidget {
   const _SessionCard({
+    required this.palette,
     required this.o,
     required this.enabled,
     required this.isConflict,
@@ -770,39 +1171,64 @@ class _SessionCard extends StatelessWidget {
     required this.onHistory,
   });
 
+  final AppPalette palette;
+  final _Occ o;
+  final bool enabled;
+  final bool isConflict;
+  final VoidCallback onToggle;
+  final VoidCallback onAttendance;
+  final VoidCallback onHistory;
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final bool isLive = now.isAfter(o.start) && now.isBefore(o.end);
     final bool isPast = now.isAfter(o.end);
 
-    Color statusColor = enabled ? const Color(0xFFF98D28) : Colors.grey.shade400;
+    Color statusColor = enabled ? palette.accent : palette.text.withOpacity(0.35);
     if (isConflict) statusColor = const Color(0xFFD32F2F);
-    if (isLive) statusColor = const Color(0xFF1A2B48);
-    if (isPast) statusColor = Colors.grey.shade400;
+    if (isLive) statusColor = palette.primary;
+    if (isPast) statusColor = palette.text.withOpacity(0.30);
+
+    final Color bgColor = isPast
+        ? palette.soft.withOpacity(0.35)
+        : (isConflict
+        ? const Color(0xFFFFEBEE)
+        : palette.cardBg);
+
+    final Color borderColor =
+    isConflict ? const Color(0xFFD32F2F).withOpacity(0.28) : palette.border;
+
+    final Color titleColor = isPast ? palette.text.withOpacity(0.45) : palette.text;
+    final Color timeColor =
+    isPast ? palette.text.withOpacity(0.45) : (isLive ? palette.primary : palette.primary);
 
     return Opacity(
-      opacity: isPast ? 0.7 : 1.0,
+      opacity: isPast ? 0.78 : 1,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: isPast ? Colors.grey.shade50 : (isConflict ? const Color(0xFFFFEBEE) : Colors.white),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isConflict ? const Color(0xFFD32F2F).withOpacity(0.3) : const Color(0xFFE0E6ED),
-          ),
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor),
           boxShadow: isLive
               ? [
             BoxShadow(
-              color: const Color(0xFF1A2B48).withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            )
+              color: palette.primary.withOpacity(0.10),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
           ]
-              : null,
+              : [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: IntrinsicHeight(
             child: Row(
               children: [
@@ -819,69 +1245,110 @@ class _SessionCard extends StatelessWidget {
                               DateFormat('hh:mm a').format(o.start),
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                                color: isPast
-                                    ? Colors.grey
-                                    : (isLive ? const Color(0xFF1A2B48) : const Color(0xFF2D2D2D)),
+                                fontSize: 17,
+                                color: timeColor,
                               ),
                             ),
                             const Spacer(),
-                            if (isLive) _LiveBadge(),
+                            if (isLive) _LiveBadge(palette: palette),
                             if (isPast)
-                              const Text(
+                              Text(
                                 'FINISHED',
                                 style: TextStyle(
                                   fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w900,
+                                  color: palette.text.withOpacity(0.45),
                                 ),
                               ),
                             if (isConflict)
-                              const Icon(Icons.warning_rounded, color: Color(0xFFD32F2F), size: 20),
+                              const Padding(
+                                padding: EdgeInsets.only(left: 8),
+                                child: Icon(
+                                  Icons.warning_rounded,
+                                  color: Color(0xFFD32F2F),
+                                  size: 20,
+                                ),
+                              ),
                             if (!isPast)
                               IconButton(
                                 constraints: const BoxConstraints(),
                                 padding: const EdgeInsets.only(left: 8),
                                 icon: Icon(
-                                  enabled ? Icons.notifications_active : Icons.notifications_off_outlined,
-                                  color: enabled ? const Color(0xFFF98D28) : Colors.grey,
+                                  enabled
+                                      ? Icons.notifications_active_rounded
+                                      : Icons.notifications_off_outlined,
+                                  color: enabled
+                                      ? palette.accent
+                                      : palette.text.withOpacity(0.45),
                                   size: 20,
                                 ),
                                 onPressed: onToggle,
-                              )
+                              ),
                           ],
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          o.courseTitle,
+                          o.courseTitle.isEmpty ? 'Untitled Class' : o.courseTitle,
                           style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                            color: isPast ? Colors.grey : Colors.black,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: titleColor,
                           ),
                         ),
+                        const SizedBox(height: 4),
                         Text(
                           '${o.courseCode} • ID: ${o.classId}',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                          style: TextStyle(
+                            color: palette.text.withOpacity(0.62),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        const Divider(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            _ActionButton(
-                              label: isPast ? 'Update Attendance' : 'Take Attendance',
-                              icon: isPast ? Icons.edit_note_rounded : Icons.how_to_reg_rounded,
-                              color: isPast ? Colors.grey : const Color(0xFF1A2B48),
-                              onTap: onAttendance,
+                            _InfoPill(
+                              palette: palette,
+                              icon: Icons.schedule_rounded,
+                              text:
+                              '${DateFormat('hh:mm a').format(o.start)} - ${DateFormat('hh:mm a').format(o.end)}',
+                            ),
+                            if (isConflict)
+                              const _ConflictPill(),
+                          ],
+                        ),
+                        Divider(
+                          height: 20,
+                          color: palette.border.withOpacity(0.9),
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ActionButton(
+                                label:
+                                isPast ? 'Update Attendance' : 'Take Attendance',
+                                icon: isPast
+                                    ? Icons.edit_note_rounded
+                                    : Icons.how_to_reg_rounded,
+                                color: isPast
+                                    ? palette.text.withOpacity(0.55)
+                                    : palette.primary,
+                                onTap: onAttendance,
+                              ),
                             ),
                             const SizedBox(width: 8),
-                            _ActionButton(
-                              label: 'History',
-                              icon: Icons.history_rounded,
-                              color: Colors.grey.shade700,
-                              onTap: onHistory,
+                            Expanded(
+                              child: _ActionButton(
+                                label: 'History',
+                                icon: Icons.history_rounded,
+                                color: palette.text.withOpacity(0.72),
+                                onTap: onHistory,
+                              ),
                             ),
                           ],
-                        )
+                        ),
                       ],
                     ),
                   ),
@@ -895,14 +1362,86 @@ class _SessionCard extends StatelessWidget {
   }
 }
 
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({
+    required this.palette,
+    required this.icon,
+    required this.text,
+  });
+
+  final AppPalette palette;
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: palette.soft.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: palette.primary),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: palette.primary,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConflictPill extends StatelessWidget {
+  const _ConflictPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.warning_rounded, size: 14, color: Color(0xFFD32F2F)),
+          SizedBox(width: 6),
+          Text(
+            'Conflict detected',
+            style: TextStyle(
+              color: Color(0xFFD32F2F),
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LiveBadge extends StatelessWidget {
+  const _LiveBadge({required this.palette});
+
+  final AppPalette palette;
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A2B48),
-        borderRadius: BorderRadius.circular(6),
+        color: palette.primary,
+        borderRadius: BorderRadius.circular(8),
       ),
       child: const Row(
         children: [
@@ -910,7 +1449,11 @@ class _LiveBadge extends StatelessWidget {
           SizedBox(width: 4),
           Text(
             'LIVE NOW',
-            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ],
       ),
@@ -919,11 +1462,6 @@ class _LiveBadge extends StatelessWidget {
 }
 
 class _ActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
   const _ActionButton({
     required this.label,
     required this.icon,
@@ -931,25 +1469,103 @@ class _ActionButton extends StatelessWidget {
     required this.onTap,
   });
 
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(color: color.withOpacity(0.2)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 4),
-              Text(
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: color.withOpacity(0.20)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
                 label,
-                style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final AppPalette palette;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(26),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: palette.cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: palette.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  color: palette.soft,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: palette.primary, size: 30),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: palette.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: palette.text.withOpacity(0.68),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
-import '../shared/ui_constants.dart';
+import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
 import 'teacher_syllabus_details_screen.dart';
 
@@ -23,8 +23,22 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _load();
   }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   Future<void> _load() async {
     setState(() {
@@ -54,8 +68,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
 
         final fallbackMeta = _firstVariantMeta(courseMap);
 
-        final courseId =
-        _readString(courseMap['courseId']).isNotEmpty
+        final courseId = _readString(courseMap['courseId']).isNotEmpty
             ? _readString(courseMap['courseId'])
             : key.toString();
 
@@ -137,12 +150,12 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
       final variant = _asStringKeyMap(courseMap[key]);
       if (variant == null) continue;
 
-      final hasUnits = variant['units'] is List && (variant['units'] as List).isNotEmpty;
-      final hasMeta =
-          _readString(variant['title']).isNotEmpty ||
-              _readString(variant['courseCode']).isNotEmpty ||
-              _readString(variant['duration']).isNotEmpty ||
-              _toInt(variant['updatedAt']) > 0;
+      final hasUnits =
+          variant['units'] is List && (variant['units'] as List).isNotEmpty;
+      final hasMeta = _readString(variant['title']).isNotEmpty ||
+          _readString(variant['courseCode']).isNotEmpty ||
+          _readString(variant['duration']).isNotEmpty ||
+          _toInt(variant['updatedAt']) > 0;
 
       if (hasUnits || hasMeta) {
         out.add(key);
@@ -207,23 +220,39 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: UiK.appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        centerTitle: true,
-        title: const Text(
-          'Syllabi',
-          style: TextStyle(
-            color: UiK.primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+        surfaceTintColor: p.cardBg,
+        centerTitle: false,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Syllabi',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Browse course outlines and available variants',
+              style: TextStyle(
+                color: p.text.withOpacity(0.65),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
+            icon: Icon(Icons.refresh_rounded, color: p.accent),
             onPressed: _load,
           ),
         ],
@@ -231,41 +260,53 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
       body: WatermarkBackground(
         child: SafeArea(
           child: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(child: CircularProgressIndicator(color: p.accent))
               : _error != null
               ? _ErrorBox(
+            palette: p,
             message: 'Failed to load syllabi.\n$_error',
             onRetry: _load,
           )
               : _items.isEmpty
-              ? const _InfoBox(
+              ? _InfoBox(
+            palette: p,
             title: 'No syllabi',
-            message: 'لا توجد مناهج متاحة حاليا.',
+            message: 'No syllabi are available right now.',
             icon: Icons.info_rounded,
           )
-              : ListView.separated(
+              : ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-            itemCount: _items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final it = _items[i];
-              return _SyllabusTile(
-                title: it.title,
-                code: it.code,
-                duration: it.duration,
-                updatedLabel: _fmtDate(it.updatedAt),
-                variants: it.variants.map(_variantLabel).toList(),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => TeacherSyllabusDetailsScreen(
-                        courseId: it.courseId,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+            children: [
+              _HeroCard(
+                palette: p,
+                totalCount: _items.length,
+              ),
+              const SizedBox(height: 14),
+              ..._items.map((it) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _SyllabusTile(
+                    palette: p,
+                    title: it.title,
+                    code: it.code,
+                    duration: it.duration,
+                    updatedLabel: _fmtDate(it.updatedAt),
+                    variants:
+                    it.variants.map(_variantLabel).toList(),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              TeacherSyllabusDetailsScreen(
+                                courseId: it.courseId,
+                              ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }),
+            ],
           ),
         ),
       ),
@@ -293,8 +334,104 @@ class _SyllabusLite {
 
 /* ================== UI ================== */
 
+class _HeroCard extends StatelessWidget {
+  const _HeroCard({
+    required this.palette,
+    required this.totalCount,
+  });
+
+  final AppPalette palette;
+  final int totalCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            palette.primary,
+            palette.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: palette.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Curriculum Center',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.82),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Available Syllabi',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Open any course to view its detailed syllabus and structure.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.86),
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.14)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.menu_book_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$totalCount course${totalCount == 1 ? '' : 's'} found',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SyllabusTile extends StatelessWidget {
   const _SyllabusTile({
+    required this.palette,
     required this.title,
     required this.code,
     required this.duration,
@@ -303,6 +440,7 @@ class _SyllabusTile extends StatelessWidget {
     required this.onTap,
   });
 
+  final AppPalette palette;
   final String title;
   final String code;
   final String duration;
@@ -313,28 +451,36 @@ class _SyllabusTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(22),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: palette.border.withOpacity(0.88)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: UiK.primaryBlue.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                color: palette.soft,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: palette.border.withOpacity(0.85)),
               ),
-              child: const Icon(Icons.menu_book_rounded, color: UiK.primaryBlue),
+              child: Icon(Icons.menu_book_rounded, color: palette.primary),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -343,32 +489,51 @@ class _SyllabusTile extends StatelessWidget {
                     title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: UiK.primaryBlue,
+                      color: palette.primary,
+                      fontSize: 15,
                       height: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       if (code.trim().isNotEmpty)
-                        _Pill(icon: Icons.qr_code_rounded, text: code),
+                        _Pill(
+                          palette: palette,
+                          icon: Icons.qr_code_rounded,
+                          text: code,
+                        ),
                       if (duration.trim().isNotEmpty)
-                        _Pill(icon: Icons.timer_rounded, text: duration),
+                        _Pill(
+                          palette: palette,
+                          icon: Icons.timer_rounded,
+                          text: duration,
+                        ),
                       if (updatedLabel.trim().isNotEmpty)
-                        _Pill(icon: Icons.update_rounded, text: updatedLabel),
+                        _Pill(
+                          palette: palette,
+                          icon: Icons.update_rounded,
+                          text: updatedLabel,
+                        ),
                     ],
                   ),
                   if (variants.isNotEmpty) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: variants
-                          .map((v) => _Pill(icon: Icons.layers_rounded, text: v))
+                          .map(
+                            (v) => _Pill(
+                          palette: palette,
+                          icon: Icons.layers_rounded,
+                          text: v,
+                        ),
+                      )
                           .toList(),
                     ),
                   ],
@@ -376,7 +541,10 @@ class _SyllabusTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: palette.text.withOpacity(0.45),
+            ),
           ],
         ),
       ),
@@ -385,7 +553,13 @@ class _SyllabusTile extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({required this.icon, required this.text});
+  const _Pill({
+    required this.palette,
+    required this.icon,
+    required this.text,
+  });
+
+  final AppPalette palette;
   final IconData icon;
   final String text;
 
@@ -394,20 +568,20 @@ class _Pill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: UiK.primaryBlue.withOpacity(0.06),
+        color: palette.soft.withOpacity(0.8),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.75)),
+        border: Border.all(color: palette.border.withOpacity(0.75)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: UiK.primaryBlue),
+          Icon(icon, size: 14, color: palette.primary),
           const SizedBox(width: 6),
           Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w900,
-              color: UiK.primaryBlue,
+              color: palette.primary,
               fontSize: 12,
             ),
           ),
@@ -419,11 +593,13 @@ class _Pill extends StatelessWidget {
 
 class _InfoBox extends StatelessWidget {
   const _InfoBox({
+    required this.palette,
     required this.title,
     required this.message,
     required this.icon,
   });
 
+  final AppPalette palette;
   final String title;
   final String message;
   final IconData icon;
@@ -433,22 +609,30 @@ class _InfoBox extends StatelessWidget {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: palette.border.withOpacity(0.86)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: UiK.primaryBlue, size: 34),
-            const SizedBox(height: 10),
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: palette.soft,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: palette.primary, size: 30),
+            ),
+            const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: UiK.primaryBlue,
+                color: palette.primary,
                 fontSize: 16,
               ),
             ),
@@ -458,7 +642,7 @@ class _InfoBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
+                color: palette.text.withOpacity(0.72),
                 height: 1.35,
               ),
             ),
@@ -470,7 +654,13 @@ class _InfoBox extends StatelessWidget {
 }
 
 class _ErrorBox extends StatelessWidget {
-  const _ErrorBox({required this.message, required this.onRetry});
+  const _ErrorBox({
+    required this.palette,
+    required this.message,
+    required this.onRetry,
+  });
+
+  final AppPalette palette;
   final String message;
   final VoidCallback onRetry;
 
@@ -479,26 +669,26 @@ class _ErrorBox extends StatelessWidget {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: palette.border.withOpacity(0.86)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.error_outline_rounded,
-              color: UiK.actionOrange,
+              color: Color(0xFFD97706),
               size: 34,
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Error',
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: UiK.primaryBlue,
+                color: palette.primary,
                 fontSize: 16,
               ),
             ),
@@ -508,7 +698,7 @@ class _ErrorBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
+                color: palette.text.withOpacity(0.72),
                 height: 1.35,
               ),
             ),
@@ -517,7 +707,7 @@ class _ErrorBox extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: UiK.actionOrange,
+                  backgroundColor: palette.accent,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(

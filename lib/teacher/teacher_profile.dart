@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -10,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
+import '../shared/app_theme.dart';
+
 class TeacherProfileScreen extends StatefulWidget {
   const TeacherProfileScreen({super.key});
 
@@ -17,16 +20,12 @@ class TeacherProfileScreen extends StatefulWidget {
   State<TeacherProfileScreen> createState() => _TeacherProfileScreenState();
 }
 
-class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
-  // ===== Brand colors =====
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
+class _TeacherProfileScreenState extends State<TeacherProfileScreen>
+    with SingleTickerProviderStateMixin {
   final _auth = FirebaseAuth.instance;
   final _formKey = GlobalKey<FormState>();
+
+  late final TabController _tabController;
 
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
@@ -47,7 +46,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   DatabaseReference? _userRef;
 
-  // ===== Media =====
   static const int _maxPhotos = 6;
 
   final List<String> _photoUrls = [];
@@ -56,28 +54,27 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   VideoPlayerController? _videoController;
   bool _videoReady = false;
 
-  // ===== PHP upload settings =====
-  // IMPORTANT:
-  // Replace this with your REAL upload.php URL
   static const String _uploadEndpoint =
       'https://www.yourbridgeschool.com/app/upload.php';
 
-  // This is sha1('GBVJyfCBd1yx0NOzG310uALt6Tp1Z9WZ')
   static const String _uploadKeySha1 =
       'a7a995d9c499128351d827eaad7285bcc891919b';
 
-  // Password rule: 8+ and at least 1 special character
   static final RegExp _specialRegex =
   RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]');
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    appThemeController.addListener(_onThemeChanged);
     _loadProfile();
   }
 
   @override
   void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    _tabController.dispose();
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _phone1Ctrl.dispose();
@@ -86,6 +83,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     _disposeVideoController();
     super.dispose();
   }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  AppPalette get p => appThemeController.palette;
 
   Future<void> _disposeVideoController() async {
     final controller = _videoController;
@@ -169,7 +173,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await controller.initialize();
-      controller.setLooping(false);
+      await controller.setLooping(false);
 
       if (!mounted) {
         await controller.dispose();
@@ -210,6 +214,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       initialDate: initial,
       firstDate: DateTime(1940, 1, 1),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: p.primary,
+              secondary: p.accent,
+              surface: p.cardBg,
+              onSurface: p.text,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked == null) return;
@@ -220,6 +237,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     _dobCtrl.text = '$yyyy-$mm-$dd';
 
     _formKey.currentState?.validate();
+    if (mounted) setState(() {});
   }
 
   Future<void> _save() async {
@@ -251,7 +269,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       });
 
       if (mounted) {
-        setState(() => _ok = 'Saved ✅');
+        setState(() => _ok = 'Profile saved successfully ✅');
       }
     } catch (e) {
       if (mounted) {
@@ -263,10 +281,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       }
     }
   }
-
-  // ---------------------------
-  // Upload helpers
-  // ---------------------------
 
   String _teacherAppId(String uid) => 'teacher_$uid';
 
@@ -315,12 +329,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     final responseBody = await streamedResponse.stream.bytesToString();
 
     if (streamedResponse.statusCode != 200) {
-      throw Exception('Upload failed (${streamedResponse.statusCode}): $responseBody');
+      throw Exception(
+        'Upload failed (${streamedResponse.statusCode}): $responseBody',
+      );
     }
 
     final decoded = jsonDecode(responseBody);
     if (decoded is! Map || decoded['success'] != true) {
-      throw Exception(decoded is Map ? (decoded['message'] ?? 'Upload failed') : 'Upload failed');
+      throw Exception(
+        decoded is Map ? (decoded['message'] ?? 'Upload failed') : 'Upload failed',
+      );
     }
 
     final url = (decoded['url'] ?? '').toString().trim();
@@ -337,7 +355,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     final remaining = _maxPhotos - _photoUrls.length;
     if (remaining <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You already reached the 6 photo limit.')),
+        const SnackBar(
+          content: Text('You already reached the 6 photo limit.'),
+        ),
       );
       return;
     }
@@ -367,7 +387,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
       if (mounted) {
         setState(() {
-          _ok = 'Photos uploaded ✅';
+          _ok = 'Photos uploaded successfully ✅';
         });
       }
     } catch (e) {
@@ -408,7 +428,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
       if (mounted) {
         setState(() {
-          _ok = 'Intro video uploaded ✅';
+          _ok = 'Intro video uploaded successfully ✅';
         });
       }
     } catch (e) {
@@ -462,15 +482,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     });
   }
 
-  // ---------------------------
-  // Password change
-  // ---------------------------
-
   String? _newPasswordValidator(String? v) {
     final value = (v ?? '').trim();
     if (value.isEmpty) return 'Password is required';
     if (value.length < 8) return 'Must be at least 8 characters';
-    if (!_specialRegex.hasMatch(value)) return 'Add at least 1 special character';
+    if (!_specialRegex.hasMatch(value)) {
+      return 'Add at least 1 special character';
+    }
     return null;
   }
 
@@ -482,19 +500,42 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: p.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            color: p.text,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: actionOrange,
+              backgroundColor: p.accent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(confirmText),
@@ -528,9 +569,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      backgroundColor: Colors.white,
+      backgroundColor: p.cardBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (ctx) {
         return StatefulBuilder(
@@ -573,7 +614,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                 );
               } on FirebaseAuthException catch (e) {
                 String msg = e.message ?? 'Failed to update password.';
-                if (e.code == 'wrong-password') msg = 'Current password is incorrect.';
+                if (e.code == 'wrong-password') {
+                  msg = 'Current password is incorrect.';
+                }
                 if (e.code == 'requires-recent-login') {
                   msg = 'Please log in again, then retry changing your password.';
                 }
@@ -607,58 +650,66 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Change Password',
                         style: TextStyle(
-                          color: primaryBlue,
+                          color: p.primary,
                           fontWeight: FontWeight.w900,
                           fontSize: 18,
                         ),
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Min 8 characters + at least 1 special character.',
+                        'Minimum 8 characters and at least 1 special character.',
                         style: TextStyle(
-                          color: mainText.withOpacity(0.7),
+                          color: p.text.withOpacity(0.7),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 14),
-
                       _pwField(
                         label: 'Current password',
                         controller: currentCtrl,
                         obscure: obscureCurrent,
-                        onToggle: () => setModalState(() => obscureCurrent = !obscureCurrent),
-                        validator: (v) => (v ?? '').isEmpty ? 'Current password is required' : null,
+                        onToggle: () => setModalState(
+                              () => obscureCurrent = !obscureCurrent,
+                        ),
+                        validator: (v) => (v ?? '').isEmpty
+                            ? 'Current password is required'
+                            : null,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
                       const SizedBox(height: 10),
-
                       _pwField(
                         label: 'New password',
                         controller: newCtrl,
                         obscure: obscureNew,
-                        onToggle: () => setModalState(() => obscureNew = !obscureNew),
+                        onToggle: () => setModalState(
+                              () => obscureNew = !obscureNew,
+                        ),
                         validator: _newPasswordValidator,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
                       const SizedBox(height: 10),
-
                       _pwField(
                         label: 'Confirm new password',
                         controller: confirmCtrl,
                         obscure: obscureConfirm,
-                        onToggle: () => setModalState(() => obscureConfirm = !obscureConfirm),
+                        onToggle: () => setModalState(
+                              () => obscureConfirm = !obscureConfirm,
+                        ),
                         validator: (v) {
                           final value = (v ?? '').trim();
-                          if (value.isEmpty) return 'Please confirm your new password';
-                          if (value != newCtrl.text.trim()) return 'Passwords do not match';
+                          if (value.isEmpty) {
+                            return 'Please confirm your new password';
+                          }
+                          if (value != newCtrl.text.trim()) {
+                            return 'Passwords do not match';
+                          }
                           return null;
                         },
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
-
                       const SizedBox(height: 14),
                       SizedBox(
                         width: double.infinity,
@@ -666,7 +717,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                           icon: const Icon(Icons.lock_reset_rounded),
                           label: const Text('Update password'),
                           style: FilledButton.styleFrom(
-                            backgroundColor: actionOrange,
+                            backgroundColor: p.accent,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
@@ -685,11 +736,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         );
       },
     );
-  }
 
-  // ---------------------------
-  // UI helpers
-  // ---------------------------
+    currentCtrl.dispose();
+    newCtrl.dispose();
+    confirmCtrl.dispose();
+  }
 
   InputDecoration _dec(
       String label, {
@@ -700,16 +751,18 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
       labelText: label,
       hintText: hintText,
       filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      fillColor: p.cardBg,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: uiBorder.withOpacity(0.9)),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: p.border.withOpacity(0.95)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: primaryBlue, width: 1.6),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: p.primary, width: 1.8),
       ),
       suffixIcon: suffixIcon,
     );
@@ -729,7 +782,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         Text(
           label,
           style: TextStyle(
-            color: mainText.withOpacity(0.75),
+            color: p.text.withOpacity(0.78),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -744,8 +797,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
             suffixIcon: IconButton(
               tooltip: obscure ? 'Show' : 'Hide',
               icon: Icon(
-                obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                color: primaryBlue,
+                obscure
+                    ? Icons.visibility_rounded
+                    : Icons.visibility_off_rounded,
+                color: p.primary,
               ),
               onPressed: onToggle,
             ),
@@ -755,30 +810,54 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     );
   }
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+  Widget _infoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.soft.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withOpacity(0.85)),
+      ),
       child: Row(
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: mainText.withOpacity(0.7),
-                fontWeight: FontWeight.w800,
-              ),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Icon(icon, color: p.primary),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              value.isEmpty ? '-' : value,
-              style: const TextStyle(
-                color: mainText,
-                fontWeight: FontWeight.w900,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.62),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value.isEmpty ? '-' : value,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -788,64 +867,80 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   Widget _buildPhotosSection() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Profile Photos',
           style: TextStyle(
-            color: primaryBlue,
+            color: p.primary,
             fontWeight: FontWeight.w900,
             fontSize: 16,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
-          'Upload up to 6 photos.',
+          'Upload up to 6 photos to present yourself professionally.',
           style: TextStyle(
-            color: mainText.withOpacity(0.7),
+            color: p.text.withOpacity(0.68),
             fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: 12,
+          runSpacing: 12,
           children: [
             ...List.generate(_photoUrls.length, (index) {
               final url = _photoUrls[index];
               return Stack(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.network(
-                      url,
-                      width: 110,
-                      height: 110,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: p.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.network(
+                        url,
                         width: 110,
                         height: 110,
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image_outlined),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 110,
+                          height: 110,
+                          color: p.soft,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: p.primary,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                   Positioned(
-                    top: 4,
-                    right: 4,
+                    top: 6,
+                    right: 6,
                     child: InkWell(
                       onTap: () => _removePhoto(index),
                       child: Container(
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: Colors.black54,
-                          shape: BoxShape.circle,
+                          borderRadius: BorderRadius.circular(999),
                         ),
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(5),
                         child: const Icon(
-                          Icons.close,
+                          Icons.close_rounded,
                           color: Colors.white,
-                          size: 18,
+                          size: 16,
                         ),
                       ),
                     ),
@@ -856,26 +951,31 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
             if (_photoUrls.length < _maxPhotos)
               InkWell(
                 onTap: (_uploadingPhotos || _busy) ? null : _pickAndUploadPhotos,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(18),
                 child: Container(
                   width: 110,
                   height: 110,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: uiBorder),
+                    color: p.cardBg,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: p.border),
                   ),
                   child: _uploadingPhotos
-                      ? const Center(child: CircularProgressIndicator())
-                      : const Column(
+                      ? Center(
+                    child: CircularProgressIndicator(color: p.accent),
+                  )
+                      : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_photo_alternate_outlined, color: primaryBlue),
-                      SizedBox(height: 6),
+                      Icon(
+                        Icons.add_photo_alternate_outlined,
+                        color: p.primary,
+                      ),
+                      const SizedBox(height: 8),
                       Text(
                         'Add photo',
                         style: TextStyle(
-                          color: primaryBlue,
+                          color: p.primary,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -891,44 +991,97 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   Widget _buildVideoSection() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Intro Video',
           style: TextStyle(
-            color: primaryBlue,
+            color: p.primary,
             fontWeight: FontWeight.w900,
             fontSize: 16,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
-          'Upload 1 short video so learners can know you better.',
+          'Upload one short introduction video for your profile.',
           style: TextStyle(
-            color: mainText.withOpacity(0.7),
+            color: p.text.withOpacity(0.68),
             fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         if (_introVideoUrl == null)
-          OutlinedButton.icon(
-            icon: _uploadingVideo
-                ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-                : const Icon(Icons.video_call_rounded),
-            label: Text(_uploadingVideo ? 'Uploading...' : 'Upload intro video'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: primaryBlue,
-              side: BorderSide(color: uiBorder.withOpacity(0.9)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border),
             ),
-            onPressed: (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+            child: Column(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: p.soft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.video_call_rounded,
+                    color: p.primary,
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No intro video uploaded yet',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'A short intro helps learners know you better.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.68),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  icon: _uploadingVideo
+                      ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: p.primary,
+                    ),
+                  )
+                      : const Icon(Icons.upload_rounded),
+                  label: Text(
+                    _uploadingVideo ? 'Uploading...' : 'Upload intro video',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: p.primary,
+                    side: BorderSide(color: p.border),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed:
+                  (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+                ),
+              ],
+            ),
           )
         else
           Column(
@@ -937,10 +1090,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
               Container(
                 decoration: BoxDecoration(
                   color: Colors.black,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 14,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                   child: AspectRatio(
                     aspectRatio: (_videoReady && _videoController != null)
                         ? _videoController!.value.aspectRatio
@@ -950,6 +1110,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                       alignment: Alignment.center,
                       children: [
                         VideoPlayer(_videoController!),
+                        Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black26,
+                          ),
+                        ),
                         IconButton(
                           onPressed: () {
                             final controller = _videoController!;
@@ -960,7 +1125,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                             }
                             setState(() {});
                           },
-                          iconSize: 54,
+                          iconSize: 60,
                           color: Colors.white,
                           icon: Icon(
                             _videoController!.value.isPlaying
@@ -973,44 +1138,59 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                         : const Center(
                       child: Padding(
                         padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(color: Colors.white),
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
-                _introVideoUrl!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: mainText.withOpacity(0.7),
-                  fontWeight: FontWeight.w600,
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: p.soft.withOpacity(0.48),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  _introVideoUrl!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.72),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: [
                   OutlinedButton.icon(
                     icon: _uploadingVideo
-                        ? const SizedBox(
+                        ? SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: p.primary,
+                      ),
                     )
                         : const Icon(Icons.swap_horiz_rounded),
-                    label: Text(_uploadingVideo ? 'Uploading...' : 'Replace video'),
+                    label: Text(
+                      _uploadingVideo ? 'Uploading...' : 'Replace video',
+                    ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: primaryBlue,
-                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                      foregroundColor: p.primary,
+                      side: BorderSide(color: p.border),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+                    onPressed:
+                    (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
                   ),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -1032,43 +1212,444 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     );
   }
 
-  // ---------------------------
-  // Build
-  // ---------------------------
+  Widget _buildCredentialsTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      children: [
+        _heroCard(),
+        const SizedBox(height: 14),
+        _sectionCard(
+          title: 'Account Credentials',
+          subtitle: 'Your account details and access settings',
+          child: Column(
+            children: [
+              _infoRow(
+                icon: Icons.email_rounded,
+                label: 'Email',
+                value: _emailReadOnly,
+              ),
+              _infoRow(
+                icon: Icons.badge_rounded,
+                label: 'Role',
+                value: _roleReadOnly,
+              ),
+              _infoRow(
+                icon: Icons.verified_user_rounded,
+                label: 'Status',
+                value: _statusReadOnly,
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.lock_outline_rounded),
+                  label: const Text('Change password'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: p.primary,
+                    side: BorderSide(color: p.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  onPressed: _busy ? null : _showChangePasswordSheet,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _sectionCard(
+          title: 'Personal Information',
+          subtitle: 'Update your public and contact details',
+          child: Form(
+            key: _formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _firstNameCtrl,
+                  decoration: _dec('First name'),
+                  onChanged: (_) => _formKey.currentState?.validate(),
+                  validator: (v) => (v ?? '').trim().isEmpty
+                      ? 'First name is required'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _lastNameCtrl,
+                  decoration: _dec('Last name'),
+                  onChanged: (_) => _formKey.currentState?.validate(),
+                  validator: (v) => (v ?? '').trim().isEmpty
+                      ? 'Last name is required'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _phone1Ctrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: _dec('Phone 1'),
+                  onChanged: (_) => _formKey.currentState?.validate(),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _phone2Ctrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: _dec('Phone 2'),
+                  onChanged: (_) => _formKey.currentState?.validate(),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _dobCtrl,
+                  readOnly: true,
+                  decoration: _dec(
+                    'Date of birth (YYYY-MM-DD)',
+                    hintText: 'e.g. 1994-01-12',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        Icons.calendar_month_rounded,
+                        color: p.primary,
+                      ),
+                      onPressed: _busy ? null : _pickDob,
+                    ),
+                  ),
+                  onTap: _busy ? null : _pickDob,
+                  validator: (v) {
+                    final value = (v ?? '').trim();
+                    if (value.isEmpty) return null;
+                    final ok = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+                    if (!ok) return 'Use YYYY-MM-DD format';
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMediaTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      children: [
+        _sectionCard(
+          title: 'Profile Media',
+          subtitle: 'Manage photos and introduction video',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPhotosSection(),
+              const SizedBox(height: 22),
+              Divider(color: p.border),
+              const SizedBox(height: 22),
+              _buildVideoSection(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _heroCard() {
+    final fullName =
+    '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim();
+    final displayName = fullName.isEmpty ? 'Teacher Profile' : fullName;
+    final subtitle = _roleReadOnly.isEmpty ? 'Teacher' : _roleReadOnly;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            p.primary,
+            p.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: p.primary.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.16),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Center(
+              child: Text(
+                displayName.isNotEmpty
+                    ? displayName[0].toUpperCase()
+                    : 'T',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 28,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 22,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle.isEmpty ? 'Teacher' : subtitle,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.84),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _heroPill(
+                      icon: Icons.photo_library_rounded,
+                      text: '${_photoUrls.length}/$_maxPhotos photos',
+                    ),
+                    _heroPill(
+                      icon: Icons.videocam_rounded,
+                      text: _introVideoUrl == null ? 'No video' : 'Video added',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroPill({
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionCard({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: p.border.withOpacity(0.9)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 17,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: p.text.withOpacity(0.65),
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusBanner() {
+    if (_error == null && _ok == null) return const SizedBox.shrink();
+
+    final bool isError = _error != null;
+    final Color bg = isError
+        ? const Color(0xFFFFEBEE)
+        : p.soft.withOpacity(0.75);
+    final Color border = isError
+        ? const Color(0xFFFFCDD2)
+        : p.border;
+    final Color textColor = isError
+        ? const Color(0xFFC62828)
+        : p.primary;
+    final IconData icon = isError
+        ? Icons.error_outline_rounded
+        : Icons.check_circle_rounded;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: textColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isError ? _error! : _ok!,
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text(
-          'Teacher Profile',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Teacher Profile',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Professional profile and media',
+              style: TextStyle(
+                color: p.text.withOpacity(0.65),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: actionOrange),
+            icon: Icon(Icons.refresh_rounded, color: p.accent),
             onPressed: _busy ? null : _loadProfile,
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: p.primary,
+          unselectedLabelColor: p.text.withOpacity(0.65),
+          indicatorColor: p.accent,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.badge_rounded),
+              text: 'Credentials',
+            ),
+            Tab(
+              icon: Icon(Icons.perm_media_rounded),
+              text: 'Profile Media',
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: p.accent,
+        foregroundColor: Colors.white,
+        onPressed: _busy ? null : _save,
+        icon: _busy
+            ? const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        )
+            : const Icon(Icons.save_rounded),
+        label: Text(_busy ? 'Saving...' : 'Save Profile'),
       ),
       body: SafeArea(
         child: Stack(
           children: [
-            Container(color: appBg),
             Positioned.fill(
               child: IgnorePointer(
                 child: Opacity(
-                  opacity: 0.05,
+                  opacity: 0.045,
                   child: Center(
                     child: FractionallySizedBox(
-                      widthFactor: 0.75,
+                      widthFactor: 0.76,
                       child: Image.asset(
                         'assets/images/ybs_logo.png',
                         fit: BoxFit.contain,
@@ -1079,190 +1660,24 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                 ),
               ),
             ),
-            LayoutBuilder(
-              builder: (ctx, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: Form(
-                        key: _formKey,
-                        autovalidateMode: AutovalidateMode.onUserInteraction,
-                        child: Card(
-                          elevation: 0,
-                          color: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            side: BorderSide(color: uiBorder.withOpacity(0.8)),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (_busy) const LinearProgressIndicator(),
-                                const SizedBox(height: 12),
-
-                                const Text(
-                                  'Account',
-                                  style: TextStyle(
-                                    color: primaryBlue,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                _infoRow('Email', _emailReadOnly),
-                                _infoRow('Role', _roleReadOnly),
-                                _infoRow('Status', _statusReadOnly),
-
-                                const SizedBox(height: 10),
-                                OutlinedButton.icon(
-                                  icon: const Icon(Icons.lock_outline_rounded),
-                                  label: const Text('Change password'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: primaryBlue,
-                                    side: BorderSide(color: uiBorder.withOpacity(0.9)),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                  onPressed: _busy ? null : _showChangePasswordSheet,
-                                ),
-
-                                const SizedBox(height: 14),
-                                const Divider(),
-                                const SizedBox(height: 14),
-
-                                const Text(
-                                  'Edit Information',
-                                  style: TextStyle(
-                                    color: primaryBlue,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-
-                                TextFormField(
-                                  controller: _firstNameCtrl,
-                                  decoration: _dec('First name'),
-                                  onChanged: (_) => _formKey.currentState?.validate(),
-                                  validator: (v) => (v ?? '').trim().isEmpty
-                                      ? 'First name is required'
-                                      : null,
-                                ),
-                                const SizedBox(height: 12),
-
-                                TextFormField(
-                                  controller: _lastNameCtrl,
-                                  decoration: _dec('Last name'),
-                                  onChanged: (_) => _formKey.currentState?.validate(),
-                                  validator: (v) => (v ?? '').trim().isEmpty
-                                      ? 'Last name is required'
-                                      : null,
-                                ),
-                                const SizedBox(height: 12),
-
-                                TextFormField(
-                                  controller: _phone1Ctrl,
-                                  keyboardType: TextInputType.phone,
-                                  decoration: _dec('Phone 1'),
-                                  onChanged: (_) => _formKey.currentState?.validate(),
-                                ),
-                                const SizedBox(height: 12),
-
-                                TextFormField(
-                                  controller: _phone2Ctrl,
-                                  keyboardType: TextInputType.phone,
-                                  decoration: _dec('Phone 2'),
-                                  onChanged: (_) => _formKey.currentState?.validate(),
-                                ),
-                                const SizedBox(height: 12),
-
-                                TextFormField(
-                                  controller: _dobCtrl,
-                                  readOnly: true,
-                                  decoration: _dec(
-                                    'Date of birth (YYYY-MM-DD)',
-                                    hintText: 'e.g. 1994-01-12',
-                                    suffixIcon: IconButton(
-                                      icon: const Icon(
-                                        Icons.calendar_month_rounded,
-                                        color: primaryBlue,
-                                      ),
-                                      onPressed: _busy ? null : _pickDob,
-                                    ),
-                                  ),
-                                  onTap: _busy ? null : _pickDob,
-                                  validator: (v) {
-                                    final value = (v ?? '').trim();
-                                    if (value.isEmpty) return null;
-                                    final ok = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
-                                    if (!ok) return 'Use YYYY-MM-DD format';
-                                    return null;
-                                  },
-                                ),
-
-                                const SizedBox(height: 18),
-                                const Divider(),
-                                const SizedBox(height: 18),
-
-                                _buildPhotosSection(),
-
-                                const SizedBox(height: 18),
-                                const Divider(),
-                                const SizedBox(height: 18),
-
-                                _buildVideoSection(),
-
-                                const SizedBox(height: 16),
-
-                                if (_error != null) ...[
-                                  Text(
-                                    _error!,
-                                    style: TextStyle(
-                                      color: Theme.of(context).colorScheme.error,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                ],
-
-                                if (_ok != null) ...[
-                                  Text(
-                                    _ok!,
-                                    style: const TextStyle(
-                                      color: primaryBlue,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                ],
-
-                                FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: actionOrange,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                  onPressed: _busy ? null : _save,
-                                  child: Text(_busy ? 'Saving...' : 'Save'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+            Column(
+              children: [
+                if (_busy)
+                  LinearProgressIndicator(
+                    color: p.accent,
+                    backgroundColor: p.soft,
                   ),
-                );
-              },
+                _statusBanner(),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildCredentialsTab(),
+                      _buildMediaTab(),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),

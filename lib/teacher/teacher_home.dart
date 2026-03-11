@@ -1,10 +1,13 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import '../shared/app_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
 import '../calls/audio_call_screen.dart';
 import '../calls/call_logs_screen.dart';
+import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
 import 'teacher_classes.dart';
 import 'teacher_mail.dart';
@@ -24,8 +27,8 @@ class TeacherHomeScreen extends StatefulWidget {
 }
 
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
-  static const String usersNode = "users";
-  static const String classesNode = "classes";
+  static const String usersNode = 'users';
+  static const String classesNode = 'classes';
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -36,19 +39,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Future<_ClassesSummary>? _classesSummaryFuture;
   Future<int>? _upcomingOnlineCountFuture;
   Future<String>? _displayNameFuture;
+  Future<_HomeUpcomingClass?>? _nextUpcomingClassFuture;
 
   @override
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
-    final uid = FirebaseAuth.instance.currentUser?.uid;
 
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      _remindersStream = _db.child('reminders/$uid').onValue.asBroadcastStream();
-      _mailIndexStream = _db.child('mail_index/$uid').onValue.asBroadcastStream();
+      _remindersStream =
+          _db.child('reminders/$uid').onValue.asBroadcastStream();
+      _mailIndexStream =
+          _db.child('mail_index/$uid').onValue.asBroadcastStream();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       _displayNameFuture = _myDisplayName();
+      _nextUpcomingClassFuture = _loadNextUpcomingClassForHome(uid);
     }
   }
 
@@ -68,6 +75,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       _displayNameFuture = _myDisplayName();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
+      _nextUpcomingClassFuture = _loadNextUpcomingClassForHome(uid);
     });
 
     await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -83,7 +91,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
       }
     } catch (e) {
-      debugPrint("Error removing token: $e");
+      debugPrint('Error removing token: $e');
     }
 
     await FirebaseAuth.instance.signOut();
@@ -95,13 +103,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   String _norm(String s) => s.trim().toLowerCase();
 
   bool _isTeacherRole(dynamic role) {
-    final r = (role ?? "").toString().trim().toLowerCase();
-    return r == "teacher" || r == "teachers" || r == "teacher(s)";
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
   }
 
   bool _isAdminRole(dynamic role) {
-    final r = (role ?? "").toString().trim().toLowerCase();
-    return r == "admin" || r == "administrator";
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'admin' || r == 'administrator';
   }
 
   int _learnersCount(Map<String, dynamic> classData) {
@@ -245,8 +253,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
             final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
 
-            final teacherId =
-            (slot['teacherId'] ??
+            final teacherId = (slot['teacherId'] ??
                 slot['teacherUid'] ??
                 slot['teacher_id'] ??
                 '')
@@ -269,6 +276,151 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     } catch (_) {
       return 0;
     }
+  }
+
+  Future<_HomeUpcomingClass?> _loadNextUpcomingClassForHome(
+      String teacherUid,
+      ) async {
+    try {
+      final snap = await _db.child(classesNode).get();
+      if (!snap.exists || snap.value == null || snap.value is! Map) {
+        return null;
+      }
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      final now = DateTime.now();
+      final allUpcoming = <_HomeUpcomingClass>[];
+
+      for (final entry in raw.entries) {
+        final value = entry.value;
+        if (value is! Map) continue;
+
+        final c = Map<String, dynamic>.from(value as Map);
+
+        final instructorCurrent = c['instructor_current'];
+        if (instructorCurrent is! Map) continue;
+
+        final currentMap = Map<String, dynamic>.from(instructorCurrent);
+        final currentUid = (currentMap['uid'] ?? '').toString().trim();
+        if (currentUid != teacherUid) continue;
+
+        final occurrences = _generateOccurrencesForHome(c);
+
+        for (final occ in occurrences) {
+          if (occ.start.isAfter(now)) {
+            allUpcoming.add(occ);
+          }
+        }
+      }
+
+      if (allUpcoming.isEmpty) return null;
+
+      allUpcoming.sort((a, b) => a.start.compareTo(b.start));
+      return allUpcoming.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<_HomeUpcomingClass> _generateOccurrencesForHome(
+      Map<String, dynamic> cls,
+      ) {
+    if (cls['status']?.toString() != 'active') return [];
+
+    final schedule = (cls['schedule'] is Map)
+        ? Map<String, dynamic>.from(cls['schedule'] as Map)
+        : null;
+    if (schedule == null) return [];
+
+    final firstDateRaw = schedule['first_session_date']?.toString() ?? '';
+    final firstDate = DateTime.tryParse(firstDateRaw);
+    if (firstDate == null) return [];
+
+    final sessionsRaw = schedule['sessions'];
+    if (sessionsRaw is! List) return [];
+
+    final pattern = sessionsRaw
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+    if (pattern.isEmpty) return [];
+
+    final countLimitRaw = schedule['sessions_count']?.toString() ?? '';
+    int countLimit = int.tryParse(countLimitRaw) ?? 0;
+    if (countLimit <= 0) countLimit = 200;
+
+    final classId = (cls['class_id'] ?? cls['id'] ?? '').toString().trim();
+    final courseCode = (cls['course_code'] ?? '').toString().trim();
+    final courseTitle = (cls['course_title'] ?? '').toString().trim();
+
+    final List<_HomeUpcomingClass> occ = [];
+
+    DateTime cursor = DateTime(firstDate.year, firstDate.month, firstDate.day);
+
+    for (int week = 0; week < 52; week++) {
+      for (final s in pattern) {
+        if (occ.length >= countLimit) break;
+
+        final dayShort = (s['day'] ?? 'Mon').toString();
+        final targetWeekday = _weekdayFromShortForHome(dayShort);
+
+        int diff = targetWeekday - cursor.weekday;
+        if (diff < 0) diff += 7;
+        final sDate = cursor.add(Duration(days: diff));
+
+        final startTimeStr = (s['start_time'] ?? '00:00').toString();
+        final parts = startTimeStr.split(':');
+
+        final hh = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
+        final mm = parts.length >= 2 ? int.tryParse(parts[1]) : null;
+
+        final startHour = (hh != null && hh >= 0 && hh <= 23) ? hh : 0;
+        final startMin = (mm != null && mm >= 0 && mm <= 59) ? mm : 0;
+
+        final start = DateTime(
+          sDate.year,
+          sDate.month,
+          sDate.day,
+          startHour,
+          startMin,
+        );
+
+        if (start.isBefore(firstDate)) continue;
+
+        final durRaw = (s['duration_min'] ?? '60').toString();
+        final dur = int.tryParse(durRaw);
+        final durationMin = (dur != null && dur > 0) ? dur : 60;
+
+        occ.add(
+          _HomeUpcomingClass(
+            classId: classId,
+            courseCode: courseCode,
+            courseTitle: courseTitle,
+            start: start,
+            end: start.add(Duration(minutes: durationMin)),
+          ),
+        );
+      }
+
+      cursor = cursor.add(const Duration(days: 7));
+      if (occ.length >= countLimit) break;
+    }
+
+    occ.sort((a, b) => a.start.compareTo(b.start));
+    return occ;
+  }
+
+  int _weekdayFromShortForHome(String day) {
+    const days = {
+      'Mon': 1,
+      'Tue': 2,
+      'Wed': 3,
+      'Thu': 4,
+      'Fri': 5,
+      'Sat': 6,
+      'Sun': 7,
+    };
+    return days[day] ?? 1;
   }
 
   int _countNotDoneReminders(dynamic snapshotValue) {
@@ -303,7 +455,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     return total;
   }
 
-  static int _toInt(dynamic v) {
+  int _toInt(dynamic v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
@@ -546,7 +698,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             decoration: BoxDecoration(
                               color: p.primary.withOpacity(0.08),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: p.border.withOpacity(0.9)),
+                              border: Border.all(
+                                color: p.border.withOpacity(0.9),
+                              ),
                             ),
                             child: Icon(icon, color: p.primary),
                           ),
@@ -576,7 +730,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: p.border.withOpacity(0.85)),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
                           ),
                           child: Text(
                             'No users found.',
@@ -589,12 +745,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       else
                         ConstrainedBox(
                           constraints: BoxConstraints(
-                            maxHeight: MediaQuery.of(context).size.height * 0.55,
+                            maxHeight:
+                            MediaQuery.of(context).size.height * 0.55,
                           ),
                           child: ListView.separated(
                             shrinkWrap: true,
                             itemCount: items.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            separatorBuilder: (_, __) =>
+                            const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final it = items[i];
                               return InkWell(
@@ -611,12 +769,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(color: p.border.withOpacity(0.85)),
+                                    border: Border.all(
+                                      color: p.border.withOpacity(0.85),
+                                    ),
                                   ),
                                   child: Row(
                                     children: [
                                       CircleAvatar(
-                                        backgroundColor: p.primary.withOpacity(0.08),
+                                        backgroundColor:
+                                        p.primary.withOpacity(0.08),
                                         child: Text(
                                           it.name.isNotEmpty
                                               ? it.name[0].toUpperCase()
@@ -630,7 +791,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               it.name,
@@ -661,7 +823,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: p.accent.withOpacity(0.10),
-                                          borderRadius: BorderRadius.circular(999),
+                                          borderRadius:
+                                          BorderRadius.circular(999),
                                           border: Border.all(
                                             color: p.accent.withOpacity(0.22),
                                           ),
@@ -833,7 +996,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     ),
                     const SizedBox(height: 14),
                     ...AppThemeMode.values.map((mode) {
-                      final previewPalette = appThemeController.paletteForMode(mode);
+                      final previewPalette =
+                      appThemeController.paletteForMode(mode);
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -880,11 +1044,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         onOpenProfile: () => _pushScreen(const TeacherProfileScreen()),
         onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
         onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
-        onOpenOnlineBooking: () => _pushScreen(const TeacherOnlineBookingScreen()),
+        onOpenOnlineBooking: () =>
+            _pushScreen(const TeacherOnlineBookingScreen()),
         onOpenMail: () => _pushScreen(const TeacherMailScreen()),
         onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
         onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
-        onOpenRegulations: () => _pushScreen(const TeacherRegulationsScreen()),
+        onOpenRegulations: () =>
+            _pushScreen(const TeacherRegulationsScreen()),
         onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
         onOpenCallLogs: () => _pushScreen(const CallLogsScreen()),
         onOpenThemeSettings: _openThemeSheet,
@@ -981,8 +1147,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     return _HeroSummaryCard(
                       palette: p,
                       teacherName: name.isEmpty ? 'Teacher' : name,
-                      onOpenProfile: () => _pushScreen(const TeacherProfileScreen()),
-                      onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
+                      onOpenProfile: () =>
+                          _pushScreen(const TeacherProfileScreen()),
+                      onOpenSchedule: () =>
+                          _pushScreen(const TeacherSchedule()),
                     );
                   },
                 ),
@@ -993,9 +1161,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       child: StreamBuilder<DatabaseEvent>(
                         stream: _mailIndexStream,
                         builder: (context, snap) {
-                          final unread = _countUnreadMail(
-                            snap.data?.snapshot.value,
-                          );
+                          final unread =
+                          _countUnreadMail(snap.data?.snapshot.value);
                           return _MiniStatCard(
                             palette: p,
                             label: 'Inbox',
@@ -1023,7 +1190,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             icon: Icons.alarm_rounded,
                             badgeCount: pending,
                             badgeColor: p.accent,
-                            onTap: () => _pushScreen(const TeacherReminderScreen()),
+                            onTap: () => _pushScreen(
+                              const TeacherReminderScreen(),
+                            ),
                           );
                         },
                       ),
@@ -1035,7 +1204,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   future: _classesSummaryFuture,
                   builder: (context, classSnap) {
                     final s = classSnap.data ??
-                        const _ClassesSummary(classesCount: 0, learnersCount: 0);
+                        const _ClassesSummary(
+                          classesCount: 0,
+                          learnersCount: 0,
+                        );
 
                     return FutureBuilder<int>(
                       future: _upcomingOnlineCountFuture,
@@ -1053,23 +1225,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
-                _DashboardActionGrid(
+                _SingleDashboardActionCard(
                   palette: p,
-                  onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
-                  onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
-                  onOpenMail: () => _pushScreen(const TeacherMailScreen()),
-                  onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
+                  icon: Icons.school_rounded,
+                  title: 'My Classes',
+                  subtitle: 'Open your classes',
+                  onTap: () => _pushScreen(const TeacherClassesScreen()),
                 ),
-                const SizedBox(height: 18),
-                Center(
-                  child: Text(
-                    'Your Bridge School',
-                    style: TextStyle(
-                      color: p.text.withOpacity(0.4),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
+                const SizedBox(height: 12),
+                FutureBuilder<_HomeUpcomingClass?>(
+                  future: _nextUpcomingClassFuture,
+                  builder: (context, snap) {
+                    return _NextComingClassCard(
+                      palette: p,
+                      upcomingClass: snap.data,
+                      onTap: () => _pushScreen(const TeacherSchedule()),
+                    );
+                  },
                 ),
               ],
             ),
@@ -1120,6 +1292,22 @@ class _ClassesSummary {
 
   final int classesCount;
   final int learnersCount;
+}
+
+class _HomeUpcomingClass {
+  const _HomeUpcomingClass({
+    required this.classId,
+    required this.courseCode,
+    required this.courseTitle,
+    required this.start,
+    required this.end,
+  });
+
+  final String classId;
+  final String courseCode;
+  final String courseTitle;
+  final DateTime start;
+  final DateTime end;
 }
 
 class _UserPick {
@@ -1186,7 +1374,11 @@ class _TeacherDrawer extends StatelessWidget {
                   CircleAvatar(
                     radius: 24,
                     backgroundColor: Colors.white24,
-                    child: Icon(Icons.school_rounded, color: Colors.white, size: 28),
+                    child: Icon(
+                      Icons.school_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                   ),
                   SizedBox(height: 12),
                   Text(
@@ -1466,7 +1658,7 @@ class _HeroSummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Welcome back',
+            'Peace Be Upon You',
             style: TextStyle(
               color: Colors.white.withOpacity(0.80),
               fontWeight: FontWeight.w700,
@@ -1486,15 +1678,6 @@ class _HeroSummaryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Everything important is now on one compact screen.',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.86),
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -1698,76 +1881,8 @@ class _OverviewStatBox extends StatelessWidget {
   }
 }
 
-class _DashboardActionGrid extends StatelessWidget {
-  const _DashboardActionGrid({
-    required this.palette,
-    required this.onOpenSchedule,
-    required this.onOpenClasses,
-    required this.onOpenMail,
-    required this.onOpenReminders,
-  });
-
-  final _HomePalette palette;
-  final VoidCallback onOpenSchedule;
-  final VoidCallback onOpenClasses;
-  final VoidCallback onOpenMail;
-  final VoidCallback onOpenReminders;
-
-  @override
-  Widget build(BuildContext context) {
-    final cardWidth = (MediaQuery.of(context).size.width - 44) / 2;
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        SizedBox(
-          width: cardWidth,
-          child: _DashboardActionCard(
-            palette: palette,
-            icon: Icons.calendar_today_rounded,
-            title: 'Schedule',
-            subtitle: 'Check calendar',
-            onTap: onOpenSchedule,
-          ),
-        ),
-        SizedBox(
-          width: cardWidth,
-          child: _DashboardActionCard(
-            palette: palette,
-            icon: Icons.school_rounded,
-            title: 'My Classes',
-            subtitle: 'Open classes',
-            onTap: onOpenClasses,
-          ),
-        ),
-        SizedBox(
-          width: cardWidth,
-          child: _DashboardActionCard(
-            palette: palette,
-            icon: Icons.email_rounded,
-            title: 'Mail',
-            subtitle: 'Open inbox',
-            onTap: onOpenMail,
-          ),
-        ),
-        SizedBox(
-          width: cardWidth,
-          child: _DashboardActionCard(
-            palette: palette,
-            icon: Icons.alarm_rounded,
-            title: 'Reminders',
-            subtitle: 'Check tasks',
-            onTap: onOpenReminders,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DashboardActionCard extends StatelessWidget {
-  const _DashboardActionCard({
+class _SingleDashboardActionCard extends StatelessWidget {
+  const _SingleDashboardActionCard({
     required this.palette,
     required this.icon,
     required this.title,
@@ -1790,7 +1905,8 @@ class _DashboardActionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(14),
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: palette.border.withOpacity(0.8)),
@@ -1802,39 +1918,199 @@ class _DashboardActionCard extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
                   color: palette.soft,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(icon, color: palette.primary),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.text.withOpacity(0.60),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: palette.text.withOpacity(0.45),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NextComingClassCard extends StatelessWidget {
+  const _NextComingClassCard({
+    required this.palette,
+    required this.upcomingClass,
+    required this.onTap,
+  });
+
+  final _HomePalette palette;
+  final _HomeUpcomingClass? upcomingClass;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = upcomingClass;
+
+    return Material(
+      color: palette.cardBg,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: palette.border.withOpacity(0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: c == null
+              ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                'Next Coming Class',
                 style: TextStyle(
                   color: palette.primary,
                   fontWeight: FontWeight.w900,
-                  fontSize: 14,
+                  fontSize: 15,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                'No upcoming classes found.',
                 style: TextStyle(
-                  color: palette.text.withOpacity(0.60),
+                  color: palette.text.withOpacity(0.70),
                   fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                  fontSize: 13,
                 ),
+              ),
+            ],
+          )
+              : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Next Coming Class',
+                style: TextStyle(
+                  color: palette.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: palette.soft,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.access_time_rounded,
+                      color: palette.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          c.courseTitle.isNotEmpty
+                              ? c.courseTitle
+                              : 'Untitled Class',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          c.courseCode.isNotEmpty
+                              ? c.courseCode
+                              : 'No course code',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.text.withOpacity(0.65),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _InfoChip(
+                    palette: palette,
+                    icon: Icons.calendar_today_rounded,
+                    text: DateFormat('EEE, MMM d').format(c.start),
+                  ),
+                  _InfoChip(
+                    palette: palette,
+                    icon: Icons.schedule_rounded,
+                    text:
+                    '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
+                  ),
+                  _InfoChip(
+                    palette: palette,
+                    icon: Icons.badge_rounded,
+                    text: 'ID: ${c.classId}',
+                  ),
+                ],
               ),
             ],
           ),
@@ -1909,6 +2185,44 @@ class _SupportTile extends StatelessWidget {
             const Icon(Icons.chevron_right_rounded, color: Colors.grey),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({
+    required this.palette,
+    required this.icon,
+    required this.text,
+  });
+
+  final _HomePalette palette;
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: palette.soft.withOpacity(0.75),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: palette.primary),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: palette.primary,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
       ),
     );
   }
