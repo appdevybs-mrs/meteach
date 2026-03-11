@@ -75,9 +75,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _loadSyllabus() async {
     setState(() => _loading = true);
     try {
-// 1) Read the normalized per-variant syllabus location first
+      // 1) Read the normalized per-variant syllabus location first
       final snap = await _syllabusRef.get();
-      dynamic v = snap.value;
+      final v = snap.value;
 
       // If this variant doesn't exist yet, create a placeholder flag in the course node
       if (v == null) {
@@ -89,18 +89,21 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             .set(false);
       }
 
-      if (v is Map && v['units'] is List) {
-        final rawUnits = (v['units'] as List).whereType<Map>().toList();
-        final units = rawUnits.map(SyllabusUnit.fromMap).toList();
+      if (v is Map) {
+        final map = Map<String, dynamic>.from(
+          v.map((k, value) => MapEntry(k.toString(), value)),
+        );
 
-        // ensure order sorting
+        final rawUnits = _asListOfMaps(map['units']);
+        final units = rawUnits.map((x) => SyllabusUnit.fromMap(x)).toList();
+
         units.sort((a, b) => a.order.compareTo(b.order));
         for (final u in units) {
           u.sessions.sort((a, b) => a.order.compareTo(b.order));
         }
+
         _units = units;
         _ensureSessionNumbers();
-
       } else {
         _units = [];
       }
@@ -549,6 +552,32 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       ),
     )) ??
         false;
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
+    final out = <Map<String, dynamic>>[];
+
+    if (node is List) {
+      for (final x in node) {
+        if (x is Map) {
+          out.add(Map<String, dynamic>.from(x));
+        }
+      }
+      return out;
+    }
+
+    if (node is Map) {
+      final mm = Map<dynamic, dynamic>.from(node);
+      for (final entry in mm.entries) {
+        final v = entry.value;
+        if (v is Map) {
+          out.add(Map<String, dynamic>.from(v));
+        }
+      }
+      return out;
+    }
+
+    return out;
   }
 
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
@@ -1329,18 +1358,43 @@ class SyllabusUnit {
   }
 
   factory SyllabusUnit.fromMap(Map m) {
-    final rawSessions = (m['sessions'] is List) ? (m['sessions'] as List) : [];
-    final sessions = rawSessions
-        .whereType<Map>()
-        .map((x) => SyllabusSession.fromMap(x))
-        .toList();
+    List<Map<String, dynamic>> asListOfMaps(dynamic node) {
+      final out = <Map<String, dynamic>>[];
+
+      if (node is List) {
+        for (final x in node) {
+          if (x is Map) {
+            out.add(Map<String, dynamic>.from(x));
+          }
+        }
+        return out;
+      }
+
+      if (node is Map) {
+        final mm = Map<dynamic, dynamic>.from(node);
+        for (final entry in mm.entries) {
+          final v = entry.value;
+          if (v is Map) {
+            out.add(Map<String, dynamic>.from(v));
+          }
+        }
+        return out;
+      }
+
+      return out;
+    }
+
+    final rawSessions = asListOfMaps(m['sessions']);
+    final sessions = rawSessions.map((x) => SyllabusSession.fromMap(x)).toList();
 
     return SyllabusUnit(
       id: (m['id'] ?? '').toString(),
       title: (m['title'] ?? '').toString(),
       otherTitle: (m['otherTitle'] ?? '').toString(),
       description: (m['description'] ?? '').toString(),
-      order: (m['order'] is num) ? (m['order'] as num).toInt() : (int.tryParse('${m['order']}') ?? 0),
+      order: (m['order'] is num)
+          ? (m['order'] as num).toInt()
+          : (int.tryParse('${m['order']}') ?? 0),
       sessions: sessions,
     );
   }
