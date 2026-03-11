@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
-import '../shared/ui_constants.dart';
+import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
 
 class LearnerRegulationsScreen extends StatefulWidget {
   const LearnerRegulationsScreen({super.key});
 
   @override
-  State<LearnerRegulationsScreen> createState() => _LearnerRegulationsScreenState();
+  State<LearnerRegulationsScreen> createState() =>
+      _LearnerRegulationsScreenState();
 }
 
 class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
@@ -25,7 +26,33 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  _RegPalette get palette => _toRegPalette(appThemeController.palette);
+
+  _RegPalette _toRegPalette(AppPalette p) {
+    return _RegPalette(
+      primary: p.primary,
+      accent: p.accent,
+      text: p.text,
+      appBg: p.appBg,
+      cardBg: p.cardBg,
+      border: p.border,
+      soft: p.soft,
+    );
   }
 
   Future<void> _loadAll() async {
@@ -46,7 +73,6 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
         return;
       }
 
-      // ✅ 1) Learner-only (users/$uid/role)
       bool isLearner = false;
       try {
         final roleSnap = await _db.child('users/$uid/role').get();
@@ -67,7 +93,6 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
         return;
       }
 
-      // ✅ 2) Load contract/learner (ALL sections, titles from Firebase)
       final snap = await _db.child('contract/learner').get();
       final v = snap.value;
 
@@ -81,17 +106,13 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
       }
 
       final raw = Map<dynamic, dynamic>.from(v);
-
       final sections = <_RegSection>[];
 
-      // Keep it simple: iterate all sections as they exist in Firebase,
-      // but we will sort by updatedAt (newest first). If updatedAt missing, it goes last.
       final keys = raw.keys.map((e) => e.toString()).toList();
 
       keys.sort((a, b) {
         final aa = _extractUpdatedAt(raw[a]);
         final bb = _extractUpdatedAt(raw[b]);
-        // newest first
         return bb.compareTo(aa);
       });
 
@@ -101,19 +122,15 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
 
         final m = node.map((k, vv) => MapEntry(k.toString(), vv));
 
-        // ✅ Title comes from Firebase
         final title = (m['title'] ?? key).toString().trim();
         final updatedAt = _toInt(m['updatedAt']);
 
-        // ✅ Items map
         final itemsNode = m['items'];
         final items = <_RegItem>[];
 
-// ✅ Handle BOTH Map and List because RTDB may decode numeric keys as List
         if (itemsNode is Map) {
           final im = Map<dynamic, dynamic>.from(itemsNode);
 
-          // numeric sort: 1,2,3,...,10
           final itemKeys = im.keys.map((e) => e.toString()).toList()
             ..sort((a, b) => _safeInt(a).compareTo(_safeInt(b)));
 
@@ -123,29 +140,23 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
             items.add(_RegItem(n: _safeInt(ik), text: text));
           }
         } else if (itemsNode is List) {
-          // items might be like: [null, "text1", "text2", ...] if keys start at 1
           for (int i = 0; i < itemsNode.length; i++) {
             final text = (itemsNode[i] ?? '').toString().trim();
             if (text.isEmpty) continue;
-
-            // If your DB uses keys 1..N, keep numbering as index (so index 1 => item 1)
-            // If your DB uses 0..N, it will also work.
             items.add(_RegItem(n: i, text: text));
           }
-
-          // Optional: if the first item becomes 0 and you want to hide it:
-          // items.removeWhere((x) => x.n == 0);
         }
 
-        // only show sections that have at least 1 item (clean UI)
         if (items.isEmpty) continue;
 
-        sections.add(_RegSection(
-          keyName: key,
-          title: title,
-          updatedAt: updatedAt,
-          items: items,
-        ));
+        sections.add(
+          _RegSection(
+            keyName: key,
+            title: title,
+            updatedAt: updatedAt,
+            items: items,
+          ),
+        );
       }
 
       if (!mounted) return;
@@ -193,27 +204,29 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Arabic-friendly (RTL)
+    final p = palette;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: UiK.appBg,
+        backgroundColor: p.appBg,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: p.cardBg,
           elevation: 0,
-          surfaceTintColor: Colors.white,
+          surfaceTintColor: p.cardBg,
           centerTitle: true,
-          title: const Text(
+          iconTheme: IconThemeData(color: p.primary),
+          title: Text(
             'Regulations',
             style: TextStyle(
-              color: UiK.primaryBlue,
+              color: p.primary,
               fontWeight: FontWeight.w900,
             ),
           ),
           actions: [
             IconButton(
               tooltip: 'Refresh',
-              icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
+              icon: Icon(Icons.refresh_rounded, color: p.accent),
               onPressed: _loadAll,
             ),
           ],
@@ -221,41 +234,55 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
         body: WatermarkBackground(
           child: SafeArea(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(
+              child: CircularProgressIndicator(color: p.primary),
+            )
                 : _error != null
                 ? _ErrorBox(
+              palette: p,
               message: 'Failed to load regulations.\n$_error',
               onRetry: _loadAll,
             )
                 : !_isLearner
-                ? const _InfoBox(
+                ? _InfoBox(
+              palette: p,
               title: 'Learners only',
               message: 'هذه الصفحة مخصصة للمتعلمين فقط.',
               icon: Icons.lock_rounded,
             )
                 : _sections.isEmpty
-                ? const _InfoBox(
+                ? _InfoBox(
+              palette: p,
               title: 'No content',
               message: 'لا توجد قوانين متاحة حاليًا.',
               icon: Icons.info_rounded,
             )
-                : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-              children: [
-                const _HeaderCard(
-                  title: 'القوانين والتنظيم',
-                  subtitle: 'اضغط على أي عنوان لعرض التفاصيل.',
-                ),
-                const SizedBox(height: 12),
-                ..._sections.map(
-                      (s) => _SectionCard(
-                    section: s,
-                    updatedAtLabel: _formatUpdatedAt(s.updatedAt),
+                : RefreshIndicator(
+              color: p.primary,
+              onRefresh: _loadAll,
+              child: ListView(
+                padding:
+                const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                children: [
+                  _HeroHeaderCard(palette: p),
+                  const SizedBox(height: 16),
+                  _QuickMetaStrip(
+                    palette: p,
+                    sectionsCount: _sections.length,
                   ),
-                ),
-                const SizedBox(height: 12),
-                const _FooterHint(),
-              ],
+                  const SizedBox(height: 16),
+                  ..._sections.map(
+                        (s) => _SectionCard(
+                      palette: p,
+                      section: s,
+                      updatedAtLabel:
+                      _formatUpdatedAt(s.updatedAt),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _FooterHint(palette: p),
+                ],
+              ),
             ),
           ),
         ),
@@ -264,57 +291,178 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   }
 }
 
-class _HeaderCard extends StatelessWidget {
-  const _HeaderCard({
-    required this.title,
-    required this.subtitle,
+class _HeroHeaderCard extends StatelessWidget {
+  const _HeroHeaderCard({required this.palette});
+
+  final _RegPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            palette.primary,
+            palette.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: palette.primary.withOpacity(0.18),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
+            ),
+            child: const Icon(
+              Icons.policy_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'القوانين والتنظيم',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 22,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'اطلع على التعليمات الرسمية الخاصة بالمتعلمين بشكل منظم وواضح. اضغط على أي قسم لعرض التفاصيل.',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.88),
+                    fontWeight: FontWeight.w700,
+                    height: 1.45,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickMetaStrip extends StatelessWidget {
+  const _QuickMetaStrip({
+    required this.palette,
+    required this.sectionsCount,
   });
 
+  final _RegPalette palette;
+  final int sectionsCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _MetaMiniCard(
+            palette: palette,
+            icon: Icons.menu_book_rounded,
+            title: 'الأقسام',
+            value: '$sectionsCount',
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _MetaMiniCard(
+            palette: palette,
+            icon: Icons.visibility_outlined,
+            title: 'التصفح',
+            value: 'واضح وسريع',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MetaMiniCard extends StatelessWidget {
+  const _MetaMiniCard({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  final _RegPalette palette;
+  final IconData icon;
   final String title;
-  final String subtitle;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.border.withOpacity(0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 7),
+          ),
+        ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: UiK.primaryBlue.withOpacity(0.08),
+              color: palette.soft,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
             ),
-            child: const Icon(Icons.policy_rounded, color: UiK.primaryBlue),
+            child: Icon(icon, color: palette.primary),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: UiK.primaryBlue,
-                    fontSize: 16,
+                  style: TextStyle(
+                    color: palette.text.withOpacity(0.64),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 3),
                 Text(
-                  subtitle,
+                  value,
                   style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade700,
-                    height: 1.35,
+                    color: palette.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
                   ),
                 ),
               ],
@@ -328,10 +476,12 @@ class _HeaderCard extends StatelessWidget {
 
 class _SectionCard extends StatefulWidget {
   const _SectionCard({
+    required this.palette,
     required this.section,
     required this.updatedAtLabel,
   });
 
+  final _RegPalette palette;
   final _RegSection section;
   final String updatedAtLabel;
 
@@ -345,59 +495,118 @@ class _SectionCardState extends State<_SectionCard> {
   @override
   Widget build(BuildContext context) {
     final s = widget.section;
+    final p = widget.palette;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: _expanded
+              ? p.accent.withOpacity(0.35)
+              : p.border.withOpacity(0.85),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             onExpansionChanged: (v) => setState(() => _expanded = v),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            tilePadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            collapsedBackgroundColor: p.cardBg,
+            backgroundColor: p.cardBg,
             title: Row(
               children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: p.soft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(Icons.gavel_rounded, color: p.primary),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     s.title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: UiK.primaryBlue,
+                      color: p.primary,
                       height: 1.2,
+                      fontSize: 15,
                     ),
                   ),
                 ),
-                if (widget.updatedAtLabel.isNotEmpty)
+                if (widget.updatedAtLabel.isNotEmpty) ...[
+                  const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
-                      color: UiK.primaryBlue.withOpacity(0.08),
+                      color: p.accent.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                      border: Border.all(
+                        color: p.accent.withOpacity(0.22),
+                      ),
                     ),
                     child: Text(
                       widget.updatedAtLabel,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w900,
-                        color: UiK.primaryBlue,
-                        fontSize: 12,
+                        color: p.accent,
+                        fontSize: 11,
                       ),
                     ),
                   ),
+                ],
               ],
             ),
-            trailing: Icon(
-              _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-              color: UiK.primaryBlue,
+            trailing: AnimatedRotation(
+              turns: _expanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 180),
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: p.primary,
+                size: 28,
+              ),
             ),
             children: [
-              ...s.items.map((it) => _RegItemRow(item: it)),
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: p.soft.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: p.border.withOpacity(0.75)),
+                ),
+                child: Text(
+                  '${s.items.length} بند',
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.72),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              ...s.items.map((it) => _RegItemRow(palette: p, item: it)),
             ],
           ),
         ),
@@ -407,49 +616,59 @@ class _SectionCardState extends State<_SectionCard> {
 }
 
 class _RegItemRow extends StatelessWidget {
-  const _RegItemRow({required this.item});
+  const _RegItemRow({
+    required this.palette,
+    required this.item,
+  });
 
+  final _RegPalette palette;
   final _RegItem item;
 
   @override
   Widget build(BuildContext context) {
+    final isBullet = item.n <= 0;
+
     return Container(
       margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: UiK.primaryBlue.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+        color: palette.soft.withOpacity(0.45),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.border.withOpacity(0.72)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: UiK.actionOrange.withOpacity(0.10),
+              color: palette.accent.withOpacity(0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: UiK.actionOrange.withOpacity(0.25)),
+              border: Border.all(
+                color: palette.accent.withOpacity(0.25),
+              ),
             ),
             child: Text(
-              item.n <= 0 ? '•' : item.n.toString(),
-              style: const TextStyle(
+              isBullet ? '•' : item.n.toString(),
+              style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: UiK.actionOrange,
+                color: palette.accent,
+                fontSize: 13,
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               item.text,
               textAlign: TextAlign.start,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade800,
-                height: 1.45,
+                color: palette.text,
+                height: 1.5,
+                fontSize: 13.5,
               ),
             ),
           ),
@@ -460,28 +679,43 @@ class _RegItemRow extends StatelessWidget {
 }
 
 class _FooterHint extends StatelessWidget {
-  const _FooterHint();
+  const _FooterHint({required this.palette});
+
+  final _RegPalette palette;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: palette.border.withOpacity(0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 7),
+          ),
+        ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              color: UiK.actionOrange.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+              color: palette.accent.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: palette.accent.withOpacity(0.18),
+              ),
             ),
-            child: const Icon(Icons.info_outline_rounded, color: UiK.actionOrange),
+            child: Icon(
+              Icons.info_outline_rounded,
+              color: palette.accent,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -489,8 +723,8 @@ class _FooterHint extends StatelessWidget {
               'للاستفسارات أو الاعتراضات، يرجى التواصل عبر القنوات الرسمية للمؤسسة.',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
-                height: 1.35,
+                color: palette.text.withOpacity(0.74),
+                height: 1.4,
               ),
             ),
           ),
@@ -502,11 +736,13 @@ class _FooterHint extends StatelessWidget {
 
 class _InfoBox extends StatelessWidget {
   const _InfoBox({
+    required this.palette,
     required this.title,
     required this.message,
     required this.icon,
   });
 
+  final _RegPalette palette;
   final String title;
   final String message;
   final IconData icon;
@@ -516,33 +752,48 @@ class _InfoBox extends StatelessWidget {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: palette.border.withOpacity(0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: UiK.primaryBlue, size: 34),
-            const SizedBox(height: 10),
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: palette.soft,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(icon, color: palette.primary, size: 30),
+            ),
+            const SizedBox(height: 14),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: UiK.primaryBlue,
-                fontSize: 16,
+                color: palette.primary,
+                fontSize: 17,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               message,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
-                height: 1.35,
+                color: palette.text.withOpacity(0.72),
+                height: 1.4,
               ),
             ),
           ],
@@ -554,10 +805,12 @@ class _InfoBox extends StatelessWidget {
 
 class _ErrorBox extends StatelessWidget {
   const _ErrorBox({
+    required this.palette,
     required this.message,
     required this.onRetry,
   });
 
+  final _RegPalette palette;
   final String message;
   final VoidCallback onRetry;
 
@@ -566,23 +819,42 @@ class _ErrorBox extends StatelessWidget {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: palette.border.withOpacity(0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: UiK.actionOrange, size: 34),
-            const SizedBox(height: 10),
-            const Text(
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: palette.accent.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                color: palette.accent,
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
               'Error',
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: UiK.primaryBlue,
-                fontSize: 16,
+                color: palette.primary,
+                fontSize: 17,
               ),
             ),
             const SizedBox(height: 8),
@@ -591,22 +863,24 @@ class _ErrorBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
-                height: 1.35,
+                color: palette.text.withOpacity(0.72),
+                height: 1.4,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
+                onPressed: onRetry,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: UiK.actionOrange,
+                  backgroundColor: palette.accent,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text(
                   'Retry',
@@ -643,4 +917,24 @@ class _RegItem {
 
   final int n;
   final String text;
+}
+
+class _RegPalette {
+  const _RegPalette({
+    required this.primary,
+    required this.accent,
+    required this.text,
+    required this.appBg,
+    required this.cardBg,
+    required this.border,
+    required this.soft,
+  });
+
+  final Color primary;
+  final Color accent;
+  final Color text;
+  final Color appBg;
+  final Color cardBg;
+  final Color border;
+  final Color soft;
 }

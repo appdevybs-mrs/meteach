@@ -1,6 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 import '../shared/material_webview_screen.dart';
 
@@ -17,7 +24,109 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
   bool _saving = false;
 
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _statusFilter = 'all';
+  String _categoryFilter = 'all';
+  String _sortBy = 'updated_desc';
+
+  static const String _secret = 'my_super_secret_key';
+  static const String _uploadUrl =
+      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+
   DatabaseReference get _gamesRef => _db.child('games');
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _sha1(String s) {
+    final bytes = utf8.encode(s);
+    return crypto.sha1.convert(bytes).toString();
+  }
+
+  String _safeFolderName(String value) {
+    final cleaned = value
+        .trim()
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+
+    if (cleaned.isEmpty) return 'game';
+    return cleaned;
+  }
+
+  Future<String?> _uploadToServer({
+    required String teacherUid,
+    required String gameUid,
+    required String gameName,
+    required bool isThumbnail,
+  }) async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      withData: true,
+      type: isThumbnail ? FileType.image : FileType.any,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return null;
+    }
+
+    final picked = result.files.single;
+    final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
+
+    req.fields['key'] = _sha1(_secret);
+    req.fields['root'] = 'games';
+    req.fields['path'] =
+    'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
+
+    if (picked.path != null && picked.path!.isNotEmpty) {
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          picked.path!,
+          filename: picked.name,
+        ),
+      );
+    } else {
+      final Uint8List? bytes = picked.bytes;
+      if (bytes == null) {
+        throw Exception('Could not read selected file');
+      }
+
+      req.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: picked.name,
+        ),
+      );
+    }
+
+    final streamed = await req.send();
+    final response = await http.Response.fromStream(streamed);
+
+    final raw = response.body.trim();
+    if (!raw.startsWith('{')) {
+      throw Exception('Server did not return JSON.\n$raw');
+    }
+
+    final data = json.decode(raw);
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid upload response');
+    }
+
+    if (data['success'] == true) {
+      final url = (data['url'] ?? '').toString().trim();
+      if (url.isEmpty) {
+        throw Exception('Upload succeeded but no URL was returned');
+      }
+      return url;
+    }
+
+    throw Exception((data['message'] ?? 'Upload failed').toString());
+  }
 
   Future<Map<String, dynamic>?> _loadMyTeacherData() async {
     final uid = _myUid;
@@ -62,6 +171,27 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         final v = tags.trim();
         if (v.isNotEmpty) out.add(v);
       }
+    }
+
+    final list = out.toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  List<String> _extractAllCategories(dynamic gamesValue) {
+    final out = <String>{};
+
+    if (gamesValue is! Map) return [];
+
+    final raw = Map<dynamic, dynamic>.from(gamesValue);
+
+    for (final entry in raw.entries) {
+      final value = entry.value;
+      if (value is! Map) continue;
+
+      final game = Map<String, dynamic>.from(value as Map);
+      final category = (game['category'] ?? '').toString().trim();
+      if (category.isNotEmpty) out.add(category);
     }
 
     final list = out.toList();
@@ -133,12 +263,88 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     }
   }
 
+  Future<void> _duplicateGame({
+    required String gameId,
+    required Map<String, dynamic> existingGame,
+  }) async {
+    if (!_canEditGame(existingGame)) return;
+
+    try {
+      final teacher = await _loadMyTeacherData();
+      if (teacher == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load teacher details.')),
+        );
+        return;
+      }
+
+      final ref = _gamesRef.push();
+      final now = ServerValue.timestamp;
+
+      final cloned = <String, dynamic>{
+        ...existingGame,
+        'gameUid': ref.key ?? '',
+        'name': '${(existingGame['name'] ?? 'Game').toString().trim()} Copy',
+        'createdAt': now,
+        'updatedAt': now,
+        'status': 'draft',
+      };
+
+      await ref.set(cloned);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Game duplicated successfully.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to duplicate game: $e')),
+      );
+    }
+  }
+
+  Future<void> _toggleArchive({
+    required String gameId,
+    required Map<String, dynamic> game,
+  }) async {
+    if (!_canEditGame(game)) return;
+
+    final currentStatus = (game['status'] ?? 'ready').toString().trim();
+    final nextStatus = currentStatus == 'archived' ? 'ready' : 'archived';
+
+    try {
+      await _gamesRef.child(gameId).update({
+        'status': nextStatus,
+        'updatedAt': ServerValue.timestamp,
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            nextStatus == 'archived'
+                ? 'Game archived successfully.'
+                : 'Game restored successfully.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update game: $e')),
+      );
+    }
+  }
+
   Future<void> _showGameForm({
     String? gameId,
     Map<String, dynamic>? existingGame,
     List<String> knownTags = const <String>[],
   }) async {
     final isEdit = gameId != null && existingGame != null;
+    final draftGameUid = gameId ?? _gamesRef.push().key ?? '';
 
     final nameController = TextEditingController(
       text: (existingGame?['name'] ?? '').toString(),
@@ -149,8 +355,17 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final rulesController = TextEditingController(
       text: (existingGame?['rules'] ?? '').toString(),
     );
-    final linkController = TextEditingController(
-      text: (existingGame?['link'] ?? '').toString(),
+    final categoryController = TextEditingController(
+      text: (existingGame?['category'] ?? '').toString(),
+    );
+    final levelController = TextEditingController(
+      text: (existingGame?['level'] ?? '').toString(),
+    );
+    final durationController = TextEditingController(
+      text: (existingGame?['durationMinutes'] ?? '').toString(),
+    );
+    final teacherNotesController = TextEditingController(
+      text: (existingGame?['teacherNotes'] ?? '').toString(),
     );
     final tagInputController = TextEditingController();
 
@@ -186,6 +401,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       showDragHandle: true,
       builder: (ctx) {
         bool localSaving = false;
+        bool localUploadingGame = false;
+        bool localUploadingThumb = false;
+
+        String uploadedUrl = (existingGame?['link'] ?? '').toString().trim();
+        String uploadedThumbnail =
+        (existingGame?['thumbnail'] ?? '').toString().trim();
+        String selectedStatus =
+        (existingGame?['status'] ?? 'ready').toString().trim();
 
         return StatefulBuilder(
           builder: (context, setLocalState) {
@@ -200,11 +423,123 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               });
             }
 
+            Future<void> uploadGameFile() async {
+              final uid = _myUid;
+              if (uid == null || uid.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No logged-in teacher found.')),
+                );
+                return;
+              }
+
+              final gameName = nameController.text.trim();
+              if (gameName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Enter the game name before uploading.'),
+                  ),
+                );
+                return;
+              }
+
+              setLocalState(() {
+                localUploadingGame = true;
+              });
+
+              try {
+                final url = await _uploadToServer(
+                  teacherUid: uid,
+                  gameUid: draftGameUid,
+                  gameName: gameName,
+                  isThumbnail: false,
+                );
+
+                if (url != null && url.trim().isNotEmpty) {
+                  setLocalState(() {
+                    uploadedUrl = url.trim();
+                  });
+
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Game file uploaded successfully.')),
+                  );
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Upload failed: $e')),
+                );
+              } finally {
+                setLocalState(() {
+                  localUploadingGame = false;
+                });
+              }
+            }
+
+            Future<void> uploadThumbnail() async {
+              final uid = _myUid;
+              if (uid == null || uid.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No logged-in teacher found.')),
+                );
+                return;
+              }
+
+              final gameName = nameController.text.trim();
+              if (gameName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Enter the game name before uploading thumbnail.'),
+                  ),
+                );
+                return;
+              }
+
+              setLocalState(() {
+                localUploadingThumb = true;
+              });
+
+              try {
+                final url = await _uploadToServer(
+                  teacherUid: uid,
+                  gameUid: draftGameUid,
+                  gameName: gameName,
+                  isThumbnail: true,
+                );
+
+                if (url != null && url.trim().isNotEmpty) {
+                  setLocalState(() {
+                    uploadedThumbnail = url.trim();
+                  });
+
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Thumbnail uploaded successfully.')),
+                  );
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Thumbnail upload failed: $e')),
+                );
+              } finally {
+                setLocalState(() {
+                  localUploadingThumb = false;
+                });
+              }
+            }
+
             Future<void> saveGame() async {
               final name = nameController.text.trim();
               final description = descriptionController.text.trim();
               final rules = rulesController.text.trim();
-              final link = linkController.text.trim();
+              final category = categoryController.text.trim();
+              final level = levelController.text.trim();
+              final teacherNotes = teacherNotesController.text.trim();
+              final link = uploadedUrl.trim();
+              final thumbnail = uploadedThumbnail.trim();
+              final durationMinutes =
+                  int.tryParse(durationController.text.trim()) ?? 0;
 
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -224,19 +559,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               if (link.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter the game link.')),
-                );
-                return;
-              }
-
-              final uri = Uri.tryParse(link);
-              if (uri == null ||
-                  (!uri.hasScheme ||
-                      (uri.scheme.toLowerCase() != 'http' &&
-                          uri.scheme.toLowerCase() != 'https'))) {
-                ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Please enter a valid http/https link.'),
+                    content: Text('Please upload the game file first.'),
                   ),
                 );
                 return;
@@ -280,12 +604,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               }
 
               try {
-                final ref = isEdit
-                    ? _gamesRef.child(gameId!)
-                    : _gamesRef.push();
+                final ref = isEdit ? _gamesRef.child(gameId!) : _gamesRef.child(draftGameUid);
 
                 final data = <String, dynamic>{
-                  'gameUid': ref.key ?? gameId ?? '',
+                  'gameUid': ref.key ?? draftGameUid,
                   'teacherUid': uid,
                   'teacherFirstName': firstName,
                   'teacherLastName': lastName,
@@ -295,7 +617,13 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   'description': description,
                   'rules': rules,
                   'link': link,
+                  'thumbnail': thumbnail,
                   'tags': tagsToSave,
+                  'category': category,
+                  'level': level,
+                  'durationMinutes': durationMinutes,
+                  'teacherNotes': teacherNotes,
+                  'status': selectedStatus,
                   'updatedAt': now,
                 };
 
@@ -387,11 +715,223 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                       ),
                       const SizedBox(height: 12),
                       TextField(
-                        controller: linkController,
-                        keyboardType: TextInputType.url,
+                        controller: categoryController,
+                        textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
-                          labelText: 'Link to the game',
+                          labelText: 'Category',
                           border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: levelController,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Level',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: durationController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Duration in minutes',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: const ['draft', 'ready', 'hidden', 'archived']
+                            .contains(selectedStatus)
+                            ? selectedStatus
+                            : 'ready',
+                        decoration: const InputDecoration(
+                          labelText: 'Status',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
+                          DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                          DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setLocalState(() {
+                            selectedStatus = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: teacherNotesController,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Teacher Notes',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Game File',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (uploadedUrl.isNotEmpty) ...[
+                              Text(
+                                uploadedUrl,
+                                style: TextStyle(
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: uploadedUrl),
+                                      );
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Link copied')),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.link_rounded),
+                                    label: const Text('Copy Link'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: localUploadingGame ? null : uploadGameFile,
+                                    icon: const Icon(Icons.sync_rounded),
+                                    label: const Text('Replace File'),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              const Text(
+                                'No game file uploaded yet.',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed: localUploadingGame ? null : uploadGameFile,
+                                icon: localUploadingGame
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                                    : const Icon(Icons.upload_file_rounded),
+                                label: Text(
+                                  localUploadingGame ? 'Uploading...' : 'Upload Game File',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Thumbnail',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (uploadedThumbnail.isNotEmpty) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  uploadedThumbnail,
+                                  height: 140,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    height: 140,
+                                    alignment: Alignment.center,
+                                    color: Colors.grey.shade100,
+                                    child: const Text('Could not load thumbnail'),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: uploadedThumbnail),
+                                      );
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Thumbnail link copied')),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.link_rounded),
+                                    label: const Text('Copy Link'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: localUploadingThumb ? null : uploadThumbnail,
+                                    icon: const Icon(Icons.image_rounded),
+                                    label: const Text('Replace Thumbnail'),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              const Text(
+                                'No thumbnail uploaded yet.',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed: localUploadingThumb ? null : uploadThumbnail,
+                                icon: localUploadingThumb
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                                    : const Icon(Icons.upload_rounded),
+                                label: Text(
+                                  localUploadingThumb
+                                      ? 'Uploading...'
+                                      : 'Upload Thumbnail',
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -529,6 +1069,20 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     return out;
   }
 
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'draft':
+        return Colors.orange;
+      case 'hidden':
+        return Colors.grey;
+      case 'archived':
+        return Colors.blueGrey;
+      case 'ready':
+      default:
+        return Colors.green;
+    }
+  }
+
   Widget _buildGameCard({
     required String gameId,
     required Map<String, dynamic> game,
@@ -540,21 +1094,62 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final description = (game['description'] ?? '').toString().trim();
     final rules = (game['rules'] ?? '').toString().trim();
     final link = (game['link'] ?? '').toString().trim();
+    final thumbnail = (game['thumbnail'] ?? '').toString().trim();
     final ownerName = _teacherName(game);
+    final category = (game['category'] ?? '').toString().trim();
+    final level = (game['level'] ?? '').toString().trim();
+    final status = (game['status'] ?? 'ready').toString().trim();
+    final teacherNotes = (game['teacherNotes'] ?? '').toString().trim();
+    final durationMinutes = _toInt(game['durationMinutes']);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              name.isEmpty ? 'Untitled Game' : name,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
+            if (thumbnail.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  thumbnail,
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    color: Colors.grey.shade100,
+                    alignment: Alignment.center,
+                    child: const Text('Thumbnail failed to load'),
+                  ),
+                ),
               ),
+              const SizedBox(height: 12),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name.isEmpty ? 'Untitled Game' : name,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Chip(
+                  label: Text(status),
+                  backgroundColor: _statusColor(status).withOpacity(0.12),
+                  side: BorderSide(color: _statusColor(status)),
+                  labelStyle: TextStyle(
+                    color: _statusColor(status),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(
@@ -563,6 +1158,16 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 color: Colors.grey.shade700,
                 fontWeight: FontWeight.w700,
               ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (category.isNotEmpty) Chip(label: Text(category)),
+                if (level.isNotEmpty) Chip(label: Text(level)),
+                if (durationMinutes > 0) Chip(label: Text('$durationMinutes min')),
+              ],
             ),
             if (description.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -578,14 +1183,28 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               const SizedBox(height: 10),
               const Text(
                 'Rules',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 4),
               Text(
                 rules,
                 style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                ),
+              ),
+            ],
+            if (teacherNotes.isNotEmpty && canEdit) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Teacher Notes',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                teacherNotes,
+                style: TextStyle(
+                  color: Colors.grey.shade700,
                   fontWeight: FontWeight.w600,
                   height: 1.4,
                 ),
@@ -608,13 +1227,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: tags
-                    .map(
-                      (tag) => Chip(
-                    label: Text(tag),
-                  ),
-                )
-                    .toList(),
+                children: tags.map((tag) => Chip(label: Text(tag))).toList(),
               ),
             ],
             const SizedBox(height: 14),
@@ -639,6 +1252,30 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   ),
                 if (canEdit)
                   OutlinedButton.icon(
+                    onPressed: () => _duplicateGame(
+                      gameId: gameId,
+                      existingGame: game,
+                    ),
+                    icon: const Icon(Icons.copy_rounded),
+                    label: const Text('Duplicate'),
+                  ),
+                if (canEdit)
+                  OutlinedButton.icon(
+                    onPressed: () => _toggleArchive(
+                      gameId: gameId,
+                      game: game,
+                    ),
+                    icon: Icon(
+                      status == 'archived'
+                          ? Icons.unarchive_rounded
+                          : Icons.archive_rounded,
+                    ),
+                    label: Text(
+                      status == 'archived' ? 'Restore' : 'Archive',
+                    ),
+                  ),
+                if (canEdit)
+                  OutlinedButton.icon(
                     onPressed: () => _deleteGame(gameId),
                     icon: const Icon(Icons.delete_rounded),
                     label: const Text('Delete'),
@@ -649,6 +1286,176 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         ),
       ),
     );
+  }
+
+  List<MapEntry<String, Map<String, dynamic>>> _applyFiltersAndSort({
+    required List<MapEntry<String, Map<String, dynamic>>> items,
+  }) {
+    var filtered = items.where((entry) {
+      final game = entry.value;
+
+      final name = (game['name'] ?? '').toString().toLowerCase().trim();
+      final description =
+      (game['description'] ?? '').toString().toLowerCase().trim();
+      final category = (game['category'] ?? '').toString().toLowerCase().trim();
+      final level = (game['level'] ?? '').toString().toLowerCase().trim();
+      final status = (game['status'] ?? 'ready').toString().toLowerCase().trim();
+      final tags = _tagsFromGame(game).map((e) => e.toLowerCase()).join(' ');
+
+      final matchesSearch = _searchQuery.isEmpty ||
+          name.contains(_searchQuery) ||
+          description.contains(_searchQuery) ||
+          category.contains(_searchQuery) ||
+          level.contains(_searchQuery) ||
+          tags.contains(_searchQuery);
+
+      final matchesStatus =
+          _statusFilter == 'all' || status == _statusFilter.toLowerCase();
+
+      final matchesCategory = _categoryFilter == 'all' ||
+          category == _categoryFilter.toLowerCase();
+
+      return matchesSearch && matchesStatus && matchesCategory;
+    }).toList();
+
+    filtered.sort((a, b) {
+      switch (_sortBy) {
+        case 'name_asc':
+          return (a.value['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo((b.value['name'] ?? '').toString().toLowerCase());
+        case 'name_desc':
+          return (b.value['name'] ?? '')
+              .toString()
+              .toLowerCase()
+              .compareTo((a.value['name'] ?? '').toString().toLowerCase());
+        case 'created_desc':
+          return _toInt(b.value['createdAt']).compareTo(_toInt(a.value['createdAt']));
+        case 'created_asc':
+          return _toInt(a.value['createdAt']).compareTo(_toInt(b.value['createdAt']));
+        case 'updated_asc':
+          return _toInt(a.value['updatedAt']).compareTo(_toInt(b.value['updatedAt']));
+        case 'updated_desc':
+        default:
+          return _toInt(b.value['updatedAt']).compareTo(_toInt(a.value['updatedAt']));
+      }
+    });
+
+    return filtered;
+  }
+
+  Widget _buildFilterBar(List<String> categories) {
+    final categoryItems = ['all', ...categories];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.trim().toLowerCase();
+              });
+            },
+            decoration: InputDecoration(
+              hintText: 'Search games...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {
+                    _searchQuery = '';
+                  });
+                },
+                icon: const Icon(Icons.clear_rounded),
+              ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _statusFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'all', child: Text('All')),
+                    DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                    DropdownMenuItem(value: 'ready', child: Text('Ready')),
+                    DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                    DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _statusFilter = value;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _categoryFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Category',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: categoryItems
+                      .map(
+                        (e) => DropdownMenuItem(
+                      value: e,
+                      child: Text(e == 'all' ? 'All' : e),
+                    ),
+                  )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _categoryFilter = value;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            value: _sortBy,
+            decoration: const InputDecoration(
+              labelText: 'Sort by',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'updated_desc', child: Text('Recently updated')),
+              DropdownMenuItem(value: 'updated_asc', child: Text('Oldest updated')),
+              DropdownMenuItem(value: 'created_desc', child: Text('Newest created')),
+              DropdownMenuItem(value: 'created_asc', child: Text('Oldest created')),
+              DropdownMenuItem(value: 'name_asc', child: Text('Name A-Z')),
+              DropdownMenuItem(value: 'name_desc', child: Text('Name Z-A')),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _sortBy = value;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _myGamesCount(List<MapEntry<String, Map<String, dynamic>>> items) {
+    return items.where((e) => _canEditGame(e.value)).length;
   }
 
   @override
@@ -676,6 +1483,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
           final value = snap.data?.snapshot.value;
           final knownTags = _extractAllKnownTags(value);
+          final categories = _extractAllCategories(value);
 
           if (value == null || value is! Map) {
             return Center(
@@ -728,29 +1536,64 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             return MapEntry(gameId, game);
           }).toList();
 
-          items.sort((a, b) {
-            final aUpdated = _toInt(a.value['updatedAt']);
-            final bUpdated = _toInt(b.value['updatedAt']);
-            return bUpdated.compareTo(aUpdated);
-          });
+          final visibleItems = _applyFiltersAndSort(items: items);
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              await _gamesRef.get();
-            },
-            child: ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return _buildGameCard(
-                  gameId: item.key,
-                  game: item.value,
-                  knownTags: knownTags,
-                );
-              },
-            ),
+          return Column(
+            children: [
+              _buildFilterBar(categories),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Total games: ${visibleItems.length} • My games: ${_myGamesCount(items)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    await _gamesRef.get();
+                  },
+                  child: visibleItems.isEmpty
+                      ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                    children: const [
+                      Center(
+                        child: Text(
+                          'No games match your filters.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                      : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                    itemCount: visibleItems.length,
+                    itemBuilder: (context, index) {
+                      final item = visibleItems[index];
+                      return _buildGameCard(
+                        gameId: item.key,
+                        game: item.value,
+                        knownTags: knownTags,
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
           );
         },
       ),

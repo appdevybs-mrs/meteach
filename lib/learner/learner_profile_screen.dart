@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import '../shared/ui_constants.dart';
+import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
 
 class _BioChoice {
@@ -114,33 +113,30 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _BioChoice(ar: 'الاستمتاع بالتعلم', en: 'enjoy learning more'),
   ];
 
-  // Small profile statistics only
   int _statCourses = 0;
   int _statAttendancePct = 0;
   int _statLessonsCovered = 0;
   int _statHomeworkPending = 0;
 
-  // IMPORTANT:
-  // Use the SAME working values from your TeacherProfileScreen.
   static const String _uploadEndpoint =
       'https://www.yourbridgeschool.com/app/upload.php';
 
-  // Use the SAME working key from your TeacherProfileScreen.
   static const String _uploadKeySha1 =
       'a7a995d9c499128351d827eaad7285bcc891919b';
 
-  // Password rule: 8+ and at least 1 special character
   static final RegExp _specialRegex =
   RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]');
 
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _load();
   }
 
   @override
   void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
     _fn.dispose();
     _ln.dispose();
     _phone1.dispose();
@@ -150,9 +146,24 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     super.dispose();
   }
 
-  // ---------------------------
-  // Small safe helpers
-  // ---------------------------
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  _ProfilePalette get palette => _toProfilePalette(appThemeController.palette);
+
+  _ProfilePalette _toProfilePalette(AppPalette p) {
+    return _ProfilePalette(
+      primary: p.primary,
+      accent: p.accent,
+      text: p.text,
+      appBg: p.appBg,
+      cardBg: p.cardBg,
+      border: p.border,
+      soft: p.soft,
+    );
+  }
 
   static int _toInt(dynamic v) {
     if (v == null) return 0;
@@ -266,7 +277,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final remaining = _maxExtraPhotos - _photoUrls.length;
     if (remaining <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You already reached the 6 extra photo limit.')),
+        const SnackBar(
+          content: Text('You already reached the 6 extra photo limit.'),
+        ),
       );
       return;
     }
@@ -424,15 +437,16 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         : <String, dynamic>{};
 
     final courseId = (cls['course_id'] ?? course['id'] ?? '').toString().trim();
-    final variantKey =
-    (course['variantKey'] ?? course['variant'] ?? '').toString().trim().toLowerCase();
+    final variantKey = (course['variantKey'] ?? course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
 
     final sessionIdByNumber = await _loadSessionIdByNumber(
       courseId: courseId,
       variantKey: variantKey,
     );
 
-    // In-class attendance
     final attendance = course['attendance'];
     if (attendance is Map) {
       final attMap = Map<String, dynamic>.from(attendance);
@@ -491,7 +505,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       }
     }
 
-    // Online attendance
     if (learnerUid.isNotEmpty && courseId.isNotEmpty) {
       try {
         final snap = await _db
@@ -572,7 +585,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         final course = Map<String, dynamic>.from(courseVal);
         _statCourses += 1;
 
-        // In-class attendance
         final attendance = course['attendance'];
         if (attendance is Map) {
           final attMap = Map<dynamic, dynamic>.from(attendance);
@@ -603,7 +615,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           }
         }
 
-        // Online attendance
         final cls = (course['class'] is Map)
             ? Map<String, dynamic>.from(course['class'] as Map)
             : <String, dynamic>{};
@@ -629,7 +640,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           } catch (_) {}
         }
 
-        // Lessons covered
         final coveredSet = await _coveredSessionIdsFromCourse(
           learnerUid: _uid,
           course: course,
@@ -641,9 +651,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       _statHomeworkPending = homeworkPending;
       _statAttendancePct =
       totalAttendance == 0 ? 0 : ((totalPresent / totalAttendance) * 100).round();
-    } catch (_) {
-      // Keep stats quiet if anything fails
-    }
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -759,10 +767,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     }
   }
 
-  // ---------------------------
-  // Password change UI/logic
-  // ---------------------------
-
   String? _newPasswordValidator(String? v) {
     final value = (v ?? '').trim();
     if (value.isEmpty) return 'Password is required';
@@ -776,22 +780,46 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required String message,
     required String confirmText,
   }) async {
+    final p = palette;
+
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: p.cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            color: p.text.withOpacity(0.75),
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: UiK.actionOrange,
+              backgroundColor: p.accent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(confirmText),
@@ -804,6 +832,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   Future<void> _showChangePasswordSheet() async {
     final currentUser = _auth.currentUser;
+    final p = palette;
+
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You must be logged in.')),
@@ -825,9 +855,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      backgroundColor: Colors.white,
+      backgroundColor: p.appBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
         return StatefulBuilder(
@@ -904,44 +934,62 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Change Password', style: UiK.titleText()),
+                      Text(
+                        'Change Password',
+                        style: TextStyle(
+                          color: p.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                        ),
+                      ),
                       const SizedBox(height: 10),
                       Text(
                         'Min 8 characters + at least 1 special character.',
                         style: TextStyle(
-                          color: UiK.mainText.withOpacity(0.7),
+                          color: p.text.withOpacity(0.7),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 14),
                       _pwField(
+                        palette: p,
                         label: 'Current password',
                         controller: currentCtrl,
                         obscure: obscureCurrent,
-                        onToggle: () => setModalState(() => obscureCurrent = !obscureCurrent),
+                        onToggle: () => setModalState(
+                              () => obscureCurrent = !obscureCurrent,
+                        ),
                         validator: (v) =>
                         (v ?? '').isEmpty ? 'Current password is required' : null,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
                       const SizedBox(height: 10),
                       _pwField(
+                        palette: p,
                         label: 'New password',
                         controller: newCtrl,
                         obscure: obscureNew,
-                        onToggle: () => setModalState(() => obscureNew = !obscureNew),
+                        onToggle: () => setModalState(
+                              () => obscureNew = !obscureNew,
+                        ),
                         validator: _newPasswordValidator,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
                       const SizedBox(height: 10),
                       _pwField(
+                        palette: p,
                         label: 'Confirm new password',
                         controller: confirmCtrl,
                         obscure: obscureConfirm,
-                        onToggle: () => setModalState(() => obscureConfirm = !obscureConfirm),
+                        onToggle: () => setModalState(
+                              () => obscureConfirm = !obscureConfirm,
+                        ),
                         validator: (v) {
                           final value = (v ?? '').trim();
                           if (value.isEmpty) return 'Please confirm your new password';
-                          if (value != newCtrl.text.trim()) return 'Passwords do not match';
+                          if (value != newCtrl.text.trim()) {
+                            return 'Passwords do not match';
+                          }
                           return null;
                         },
                         onChanged: (_) => sheetKey.currentState?.validate(),
@@ -953,10 +1001,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                           icon: const Icon(Icons.lock_reset_rounded),
                           label: const Text('Update password'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: UiK.actionOrange,
+                            backgroundColor: p.accent,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
@@ -975,6 +1023,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 
   Widget _pwField({
+    required _ProfilePalette palette,
     required String label,
     required TextEditingController controller,
     required bool obscure,
@@ -988,7 +1037,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         Text(
           label,
           style: TextStyle(
-            color: UiK.mainText.withOpacity(0.75),
+            color: palette.text.withOpacity(0.75),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -1000,22 +1049,28 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           onChanged: onChanged,
           decoration: InputDecoration(
             filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            fillColor: palette.cardBg,
+            contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.85)),
+              borderSide: BorderSide(color: palette.border.withOpacity(0.85)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: UiK.actionOrange, width: 1.2),
+              borderSide: BorderSide(color: palette.accent, width: 1.4),
             ),
             suffixIcon: IconButton(
               tooltip: obscure ? 'Show' : 'Hide',
               onPressed: onToggle,
               icon: Icon(
-                obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                obscure
+                    ? Icons.visibility_rounded
+                    : Icons.visibility_off_rounded,
+                color: palette.primary,
               ),
             ),
           ),
@@ -1023,10 +1078,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       ],
     );
   }
-
-  // ---------------------------
-  // Bio helpers
-  // ---------------------------
 
   bool get _hasBioSelections =>
       _selectedHobbiesAr.isNotEmpty ||
@@ -1041,7 +1092,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     return null;
   }
 
-  List<String> _mapArabicSetToEnglish(Set<String> selected, List<_BioChoice> source) {
+  List<String> _mapArabicSetToEnglish(
+      Set<String> selected,
+      List<_BioChoice> source,
+      ) {
     return selected
         .map((ar) => _findChoice(source, ar)?.en ?? '')
         .where((e) => e.trim().isNotEmpty)
@@ -1067,7 +1121,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   String _generatedEnglishBio() {
     final firstName = _fn.text.trim();
     final hobbiesEn = _mapArabicSetToEnglish(_selectedHobbiesAr, _hobbyChoices);
-    final learningEn = _mapArabicSetToEnglish(_selectedLearningAr, _learningChoices);
+    final learningEn =
+    _mapArabicSetToEnglish(_selectedLearningAr, _learningChoices);
     final traitsEn = _mapArabicSetToEnglish(_selectedTraitsAr, _traitChoices);
     final goalEn = _selectedGoalAr == null
         ? ''
@@ -1175,21 +1230,19 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     });
   }
 
-  // ---------------------------
-  // UI helpers
-  // ---------------------------
-
   Widget _readonlyRow(String label, String value) {
+    final p = palette;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
           SizedBox(
-            width: 72,
+            width: 86,
             child: Text(
               label,
               style: TextStyle(
-                color: UiK.mainText.withOpacity(0.7),
+                color: p.text.withOpacity(0.7),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1197,8 +1250,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: const TextStyle(
-                color: UiK.mainText,
+              style: TextStyle(
+                color: p.text,
                 fontWeight: FontWeight.w900,
               ),
               overflow: TextOverflow.ellipsis,
@@ -1218,13 +1271,15 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         int? maxLength,
         String? Function(String?)? validator,
       }) {
+    final p = palette;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
           style: TextStyle(
-            color: UiK.mainText.withOpacity(0.75),
+            color: p.text.withOpacity(0.75),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -1239,16 +1294,19 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           decoration: InputDecoration(
             hintText: hintText,
             filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            fillColor: p.cardBg,
+            contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.85)),
+              borderSide: BorderSide(color: p.border.withOpacity(0.85)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: UiK.actionOrange, width: 1.2),
+              borderSide: BorderSide(color: p.accent, width: 1.4),
             ),
           ),
         ),
@@ -1261,20 +1319,22 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final p = palette;
+
     return FilterChip(
       label: Text(
         label,
         style: TextStyle(
           fontWeight: FontWeight.w800,
-          color: selected ? Colors.white : UiK.mainText,
+          color: selected ? Colors.white : p.text,
         ),
       ),
       selected: selected,
       onSelected: (_) => onTap(),
-      selectedColor: UiK.actionOrange,
-      backgroundColor: Colors.white,
+      selectedColor: p.accent,
+      backgroundColor: p.cardBg,
       side: BorderSide(
-        color: selected ? UiK.actionOrange : UiK.uiBorder.withOpacity(0.9),
+        color: selected ? p.accent : p.border.withOpacity(0.9),
       ),
       checkmarkColor: Colors.white,
       shape: RoundedRectangleBorder(
@@ -1291,12 +1351,27 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required Set<String> selectedValues,
     required ValueChanged<String> onTap,
   }) {
+    final p = palette;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: UiK.titleText(size: 15)),
+        Text(
+          title,
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(subtitle, style: UiK.subtleText()),
+        Text(
+          subtitle,
+          style: TextStyle(
+            color: p.text.withOpacity(0.65),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -1320,12 +1395,27 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required String? selectedValue,
     required ValueChanged<String> onTap,
   }) {
+    final p = palette;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: UiK.titleText(size: 15)),
+        Text(
+          title,
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(subtitle, style: UiK.subtleText()),
+        Text(
+          subtitle,
+          style: TextStyle(
+            color: p.text.withOpacity(0.65),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -1347,29 +1437,38 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required String text,
     required IconData icon,
   }) {
+    final p = palette;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: UiK.primaryBlue.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.9)),
+        color: p.soft.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withOpacity(0.9)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: UiK.actionOrange),
+              Icon(icon, size: 18, color: p.accent),
               const SizedBox(width: 8),
-              Text(title, style: UiK.titleText(size: 14)),
+              Text(
+                title,
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             text.trim().isEmpty ? '-' : text.trim(),
-            style: const TextStyle(
-              color: UiK.mainText,
+            style: TextStyle(
+              color: p.text,
               fontWeight: FontWeight.w700,
               height: 1.5,
             ),
@@ -1380,294 +1479,306 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 
   Widget _buildAboutMeCard() {
+    final p = palette;
     final arabicPreview = _hasBioSelections ? _generatedArabicBio() : '';
-    final englishPreview = _hasBioSelections ? _generatedEnglishBio() : _aboutMe.text.trim();
+    final englishPreview =
+    _hasBioSelections ? _generatedEnglishBio() : _aboutMe.text.trim();
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: UiK.cardShape(),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Build My Bio', style: UiK.titleText()),
-            const SizedBox(height: 8),
-            Text(
-              'Pick in Arabic, and we will generate an English profile for the teacher.',
-              style: UiK.subtleText(),
+    return _SectionCard(
+      palette: p,
+      title: 'Build My Bio',
+      subtitle:
+      'Pick in Arabic, and we will generate an English profile for the teacher.',
+      icon: Icons.auto_awesome_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _previewBox(
+            title: 'Arabic Preview',
+            text: arabicPreview,
+            icon: Icons.translate_rounded,
+          ),
+          const SizedBox(height: 10),
+          _previewBox(
+            title: 'English Teacher Bio',
+            text: englishPreview,
+            icon: Icons.description_rounded,
+          ),
+          const SizedBox(height: 14),
+          _buildChoiceSection(
+            title: 'أنا أحب',
+            subtitle: 'اختر الهوايات أو الأشياء التي يحبها المتعلم',
+            choices: _hobbyChoices,
+            selectedValues: _selectedHobbiesAr,
+            onTap: (value) => _toggleMultiChoice(_selectedHobbiesAr, value),
+          ),
+          const SizedBox(height: 16),
+          _buildChoiceSection(
+            title: 'أفضل التعلم من خلال',
+            subtitle: 'ما نوع الدروس أو الأنشطة التي تناسبه أكثر؟',
+            choices: _learningChoices,
+            selectedValues: _selectedLearningAr,
+            onTap: (value) => _toggleMultiChoice(_selectedLearningAr, value),
+          ),
+          const SizedBox(height: 16),
+          _buildChoiceSection(
+            title: 'أنا عادة',
+            subtitle: 'اختر الصفات التي تساعد المعلم على فهم المتعلم',
+            choices: _traitChoices,
+            selectedValues: _selectedTraitsAr,
+            onTap: (value) => _toggleMultiChoice(_selectedTraitsAr, value),
+          ),
+          const SizedBox(height: 16),
+          _buildSingleChoiceSection(
+            title: 'هدفي هو',
+            subtitle: 'اختر هدفاً رئيسياً واحداً',
+            choices: _goalChoices,
+            selectedValue: _selectedGoalAr,
+            onTap: _selectSingleChoice,
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.restart_alt_rounded),
+            label: const Text('Clear selections'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: p.primary,
+              side: BorderSide(color: p.border.withOpacity(0.9)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
-            const SizedBox(height: 14),
-            _previewBox(
-              title: 'Arabic Preview',
-              text: arabicPreview,
-              icon: Icons.translate_rounded,
-            ),
-            const SizedBox(height: 10),
-            _previewBox(
-              title: 'English Teacher Bio',
-              text: englishPreview,
-              icon: Icons.auto_awesome_rounded,
-            ),
-            const SizedBox(height: 14),
-            _buildChoiceSection(
-              title: 'أنا أحب',
-              subtitle: 'اختر الهوايات أو الأشياء التي يحبها المتعلم',
-              choices: _hobbyChoices,
-              selectedValues: _selectedHobbiesAr,
-              onTap: (value) => _toggleMultiChoice(_selectedHobbiesAr, value),
-            ),
-            const SizedBox(height: 16),
-            _buildChoiceSection(
-              title: 'أفضل التعلم من خلال',
-              subtitle: 'ما نوع الدروس أو الأنشطة التي تناسبه أكثر؟',
-              choices: _learningChoices,
-              selectedValues: _selectedLearningAr,
-              onTap: (value) => _toggleMultiChoice(_selectedLearningAr, value),
-            ),
-            const SizedBox(height: 16),
-            _buildChoiceSection(
-              title: 'أنا عادة',
-              subtitle: 'اختر الصفات التي تساعد المعلم على فهم المتعلم',
-              choices: _traitChoices,
-              selectedValues: _selectedTraitsAr,
-              onTap: (value) => _toggleMultiChoice(_selectedTraitsAr, value),
-            ),
-            const SizedBox(height: 16),
-            _buildSingleChoiceSection(
-              title: 'هدفي هو',
-              subtitle: 'اختر هدفاً رئيسياً واحداً',
-              choices: _goalChoices,
-              selectedValue: _selectedGoalAr,
-              onTap: _selectSingleChoice,
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.restart_alt_rounded),
-                  label: const Text('Clear selections'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: UiK.primaryBlue,
-                    side: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onPressed: _clearBioSelections,
-                ),
-              ],
-            ),
-          ],
-        ),
+            onPressed: _clearBioSelections,
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildMainPhotoCard() {
+    final p = palette;
     final fullName = '${_fn.text.trim()} ${_ln.text.trim()}'.trim();
     final role = (_user['role'] ?? '').toString();
     final hasPhoto = (_profilePhotoUrl ?? '').trim().isNotEmpty;
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: UiK.cardShape(),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            Container(
-              width: 108,
-              height: 108,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: UiK.uiBorder.withOpacity(0.9), width: 2),
-                color: UiK.primaryBlue.withOpacity(0.06),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: hasPhoto
-                  ? Image.network(
-                _profilePhotoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.person_rounded,
-                  size: 54,
-                  color: UiK.primaryBlue.withOpacity(0.8),
-                ),
-              )
-                  : Icon(
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            p.primary,
+            p.primary.withOpacity(0.88),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: p.primary.withOpacity(0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 112,
+            height: 112,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.80), width: 3),
+              color: Colors.white.withOpacity(0.12),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: hasPhoto
+                ? Image.network(
+              _profilePhotoUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
                 Icons.person_rounded,
-                size: 54,
-                color: UiK.primaryBlue.withOpacity(0.8),
+                size: 56,
+                color: Colors.white,
               ),
+            )
+                : const Icon(
+              Icons.person_rounded,
+              size: 56,
+              color: Colors.white,
             ),
-            const SizedBox(height: 12),
-            Text(
-              fullName.isEmpty ? 'Learner' : fullName,
-              textAlign: TextAlign.center,
-              style: UiK.titleText(size: 18),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            fullName.isEmpty ? 'Learner' : fullName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
             ),
-            const SizedBox(height: 4),
-            Text(
-              role.isEmpty ? 'Learner' : role,
-              style: UiK.subtleText(),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            role.isEmpty ? 'Learner' : role,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.82),
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              alignment: WrapAlignment.center,
-              children: [
-                OutlinedButton.icon(
-                  icon: _uploadingMainPhoto
-                      ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                      : const Icon(Icons.add_a_photo_rounded),
-                  label: Text(
-                    _uploadingMainPhoto
-                        ? 'Uploading...'
-                        : (hasPhoto ? 'Replace main photo' : 'Upload main photo'),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                icon: _uploadingMainPhoto
+                    ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
                   ),
+                )
+                    : const Icon(Icons.add_a_photo_rounded),
+                label: Text(
+                  _uploadingMainPhoto
+                      ? 'Uploading...'
+                      : (hasPhoto ? 'Replace main photo' : 'Upload main photo'),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withOpacity(0.35)),
+                  backgroundColor: Colors.white.withOpacity(0.10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
+                    ? null
+                    : _pickAndUploadMainPhoto,
+              ),
+              if (hasPhoto)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Remove'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: UiK.primaryBlue,
-                    side: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
+                    foregroundColor: Colors.white,
+                    side: BorderSide(color: Colors.white.withOpacity(0.28)),
+                    backgroundColor: Colors.white.withOpacity(0.08),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                   onPressed: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
                       ? null
-                      : _pickAndUploadMainPhoto,
+                      : _removeMainPhoto,
                 ),
-                if (hasPhoto)
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Remove'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade700,
-                      side: BorderSide(color: Colors.red.shade200),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
-                        ? null
-                        : _removeMainPhoto,
-                  ),
-              ],
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildExtraPhotosCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: UiK.cardShape(),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Extra Photos', style: UiK.titleText()),
-            const SizedBox(height: 8),
-            Text(
-              'Add up to 6 extra photos so teachers can know you better.',
-              style: UiK.subtleText(),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
+    final p = palette;
+
+    return _SectionCard(
+      palette: p,
+      title: 'Photos & Media',
+      subtitle: 'Add up to 6 extra photos so teachers can know you better.',
+      icon: Icons.collections_rounded,
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          ...List.generate(_photoUrls.length, (index) {
+            final url = _photoUrls[index];
+            return Stack(
               children: [
-                ...List.generate(_photoUrls.length, (index) {
-                  final url = _photoUrls[index];
-                  return Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.network(
-                          url,
-                          width: 96,
-                          height: 96,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 96,
-                            height: 96,
-                            color: Colors.grey.shade200,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.broken_image_outlined),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: InkWell(
-                          onTap: () => _removeExtraPhoto(index),
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            padding: const EdgeInsets.all(4),
-                            child: const Icon(
-                              Icons.close,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }),
-                if (_photoUrls.length < _maxExtraPhotos)
-                  InkWell(
-                    onTap: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
-                        ? null
-                        : _pickAndUploadExtraPhotos,
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: UiK.uiBorder),
-                      ),
-                      child: _uploadingExtraPhotos
-                          ? const Center(child: CircularProgressIndicator())
-                          : const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.add_photo_alternate_outlined, color: UiK.primaryBlue),
-                          SizedBox(height: 6),
-                          Text(
-                            'Add photo',
-                            style: TextStyle(
-                              color: UiK.primaryBlue,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: p.border.withOpacity(0.85)),
+                    color: p.soft,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: p.primary,
                       ),
                     ),
                   ),
+                ),
+                Positioned(
+                  top: 5,
+                  right: 5,
+                  child: InkWell(
+                    onTap: () => _removeExtraPhoto(index),
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        shape: BoxShape.circle,
+                      ),
+                      padding: const EdgeInsets.all(5),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ),
               ],
+            );
+          }),
+          if (_photoUrls.length < _maxExtraPhotos)
+            InkWell(
+              onTap: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
+                  ? null
+                  : _pickAndUploadExtraPhotos,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: p.cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: p.border),
+                ),
+                child: _uploadingExtraPhotos
+                    ? Center(
+                  child: CircularProgressIndicator(color: p.primary),
+                )
+                    : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: p.primary,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Add photo',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1677,30 +1788,40 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     required String label,
     required String value,
   }) {
+    final p = palette;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-        color: UiK.primaryBlue.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withOpacity(0.85)),
+        color: p.soft.withOpacity(0.5),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: UiK.actionOrange),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: p.accent.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 18, color: p.accent),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                color: UiK.mainText.withOpacity(0.72),
+                color: p.text.withOpacity(0.72),
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
           Text(
             value,
-            style: const TextStyle(
-              color: UiK.mainText,
+            style: TextStyle(
+              color: p.primary,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -1710,231 +1831,374 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 
   Widget _buildSummaryCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: UiK.cardShape(),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Learning Summary', style: UiK.titleText()),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.school_rounded,
-              label: 'Courses',
-              value: '$_statCourses',
-            ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.how_to_reg_rounded,
-              label: 'Attendance',
-              value: '$_statAttendancePct%',
-            ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.menu_book_rounded,
-              label: 'Lessons Covered',
-              value: '$_statLessonsCovered',
-            ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.assignment_late_rounded,
-              label: 'Homework Pending',
-              value: '$_statHomeworkPending',
-            ),
-          ],
-        ),
+    final p = palette;
+
+    return _SectionCard(
+      palette: p,
+      title: 'Learning Summary',
+      subtitle: 'A quick view of your activity and study progress.',
+      icon: Icons.insights_rounded,
+      child: Column(
+        children: [
+          _smallStatTile(
+            icon: Icons.school_rounded,
+            label: 'Courses',
+            value: '$_statCourses',
+          ),
+          const SizedBox(height: 10),
+          _smallStatTile(
+            icon: Icons.how_to_reg_rounded,
+            label: 'Attendance',
+            value: '$_statAttendancePct%',
+          ),
+          const SizedBox(height: 10),
+          _smallStatTile(
+            icon: Icons.menu_book_rounded,
+            label: 'Lessons Covered',
+            value: '$_statLessonsCovered',
+          ),
+          const SizedBox(height: 10),
+          _smallStatTile(
+            icon: Icons.assignment_late_rounded,
+            label: 'Homework Pending',
+            value: '$_statHomeworkPending',
+          ),
+        ],
       ),
     );
   }
 
-  // ---------------------------
-  // Main UI
-  // ---------------------------
+  Widget _buildCredentialsTab({
+    required String email,
+    required String serial,
+    required String role,
+    required String status,
+  }) {
+    final p = palette;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      children: [
+        _buildMainPhotoCard(),
+        const SizedBox(height: 16),
+        _buildSummaryCard(),
+        const SizedBox(height: 16),
+        _SectionCard(
+          palette: p,
+          title: 'Account',
+          subtitle: 'Your account credentials and access details.',
+          icon: Icons.verified_user_rounded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _readonlyRow('Email', email),
+              _readonlyRow('Serial', serial),
+              _readonlyRow('Role', role),
+              _readonlyRow('Status', status),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.lock_outline_rounded),
+                  label: const Text('Change password'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: p.primary,
+                    side: BorderSide(color: p.border.withOpacity(0.9)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  onPressed: _busy ? null : _showChangePasswordSheet,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
+          palette: p,
+          title: 'Edit Information',
+          subtitle: 'Update your main profile details.',
+          icon: Icons.edit_note_rounded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _field(
+                'First name',
+                _fn,
+                validator: (v) =>
+                (v ?? '').trim().isEmpty ? 'First name is required' : null,
+              ),
+              const SizedBox(height: 10),
+              _field(
+                'Last name',
+                _ln,
+                validator: (v) =>
+                (v ?? '').trim().isEmpty ? 'Last name is required' : null,
+              ),
+              const SizedBox(height: 10),
+              _field(
+                'Phone 1',
+                _phone1,
+                keyboard: TextInputType.phone,
+              ),
+              const SizedBox(height: 10),
+              _field(
+                'Phone 2',
+                _phone2,
+                keyboard: TextInputType.phone,
+              ),
+              const SizedBox(height: 10),
+              _field(
+                'Date of birth (YYYY-MM-DD)',
+                _dob,
+                hintText: 'e.g. 2000-01-31',
+                validator: (v) {
+                  final value = (v ?? '').trim();
+                  if (value.isEmpty) return null;
+                  final ok = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+                  if (!ok) return 'Use YYYY-MM-DD format';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.save_rounded),
+                  label: const Text('Save'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: p.accent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _busy ? null : _save,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMediaTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      children: [
+        _buildExtraPhotosCard(),
+        const SizedBox(height: 16),
+        _buildAboutMeCard(),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final p = palette;
     final email = (_user['email'] ?? '').toString();
     final serial = (_user['serial'] ?? '').toString();
     final role = (_user['role'] ?? '').toString();
     final status = (_user['status'] ?? '').toString();
 
-    return Scaffold(
-      backgroundColor: UiK.appBg,
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: UiK.primaryBlue),
-        title: const Text(
-          'My Profile',
-          style: TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: UiK.actionOrange),
-            onPressed: _busy ? null : _load,
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: WatermarkBackground(
-          child: _busy
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _error!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w800,
-                ),
-                textAlign: TextAlign.center,
-              ),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: p.appBg,
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          backgroundColor: p.cardBg,
+          elevation: 0,
+          surfaceTintColor: p.cardBg,
+          iconTheme: IconThemeData(color: p.primary),
+          title: Text(
+            'My Profile',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
             ),
-          )
-              : Form(
-            key: _formKey,
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            child: LayoutBuilder(
-              builder: (ctx, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildMainPhotoCard(),
-                        const SizedBox(height: 14),
-                        _buildExtraPhotosCard(),
-                        const SizedBox(height: 14),
-                        _buildSummaryCard(),
-                        const SizedBox(height: 14),
-                        _buildAboutMeCard(),
-                        const SizedBox(height: 14),
-                        Card(
-                          elevation: 0,
-                          color: Colors.white,
-                          shape: UiK.cardShape(),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Account', style: UiK.titleText()),
-                                const SizedBox(height: 10),
-                                _readonlyRow('Email', email),
-                                _readonlyRow('Serial', serial),
-                                _readonlyRow('Role', role),
-                                _readonlyRow('Status', status),
-                                const SizedBox(height: 10),
-                                OutlinedButton.icon(
-                                  icon: const Icon(Icons.lock_outline_rounded),
-                                  label: const Text('Change password'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: UiK.primaryBlue,
-                                    side: BorderSide(
-                                      color: UiK.uiBorder.withOpacity(0.9),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                  onPressed: _busy ? null : _showChangePasswordSheet,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Card(
-                          elevation: 0,
-                          color: Colors.white,
-                          shape: UiK.cardShape(),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Edit Information', style: UiK.titleText()),
-                                const SizedBox(height: 10),
-                                _field(
-                                  'First name',
-                                  _fn,
-                                  validator: (v) => (v ?? '').trim().isEmpty
-                                      ? 'First name is required'
-                                      : null,
-                                ),
-                                const SizedBox(height: 10),
-                                _field(
-                                  'Last name',
-                                  _ln,
-                                  validator: (v) => (v ?? '').trim().isEmpty
-                                      ? 'Last name is required'
-                                      : null,
-                                ),
-                                const SizedBox(height: 10),
-                                _field(
-                                  'Phone 1',
-                                  _phone1,
-                                  keyboard: TextInputType.phone,
-                                ),
-                                const SizedBox(height: 10),
-                                _field(
-                                  'Phone 2',
-                                  _phone2,
-                                  keyboard: TextInputType.phone,
-                                ),
-                                const SizedBox(height: 10),
-                                _field(
-                                  'Date of birth (YYYY-MM-DD)',
-                                  _dob,
-                                  hintText: 'e.g. 2000-01-31',
-                                  validator: (v) {
-                                    final value = (v ?? '').trim();
-                                    if (value.isEmpty) return null;
-                                    final ok = RegExp(r'^\d{4}-\d{2}-\d{2}$')
-                                        .hasMatch(value);
-                                    if (!ok) return 'Use YYYY-MM-DD format';
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 14),
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.save_rounded),
-                                  label: const Text('Save'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: UiK.actionOrange,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                  ),
-                                  onPressed: _busy ? null : _save,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Refresh',
+              icon: Icon(Icons.refresh_rounded, color: p.accent),
+              onPressed: _busy ? null : _load,
+            ),
+          ],
+          bottom: TabBar(
+            dividerColor: Colors.transparent,
+            labelColor: p.primary,
+            unselectedLabelColor: p.text.withOpacity(0.62),
+            indicator: UnderlineTabIndicator(
+              borderSide: BorderSide(color: p.accent, width: 3),
+              insets: const EdgeInsets.symmetric(horizontal: 20),
+            ),
+            tabs: const [
+              Tab(
+                icon: Icon(Icons.badge_rounded),
+                text: 'Credentials',
+              ),
+              Tab(
+                icon: Icon(Icons.perm_media_rounded),
+                text: 'Media & Bio',
+              ),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: WatermarkBackground(
+            child: _busy
+                ? Center(
+              child: CircularProgressIndicator(color: p.primary),
+            )
+                : _error != null
+                ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: p.cardBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: p.border.withOpacity(0.85),
                     ),
                   ),
-                );
-              },
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            )
+                : Form(
+              key: _formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: TabBarView(
+                children: [
+                  _buildCredentialsTab(
+                    email: email,
+                    serial: serial,
+                    role: role,
+                    status: status,
+                  ),
+                  _buildMediaTab(),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.palette,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.child,
+  });
+
+  final _ProfilePalette palette;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.cardBg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: palette.border.withOpacity(0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: palette.soft,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(icon, color: palette.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: palette.primary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: palette.text.withOpacity(0.64),
+                          fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfilePalette {
+  const _ProfilePalette({
+    required this.primary,
+    required this.accent,
+    required this.text,
+    required this.appBg,
+    required this.cardBg,
+    required this.border,
+    required this.soft,
+  });
+
+  final Color primary;
+  final Color accent;
+  final Color text;
+  final Color appBg;
+  final Color cardBg;
+  final Color border;
+  final Color soft;
 }
