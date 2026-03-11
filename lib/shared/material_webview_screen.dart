@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -105,7 +106,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
   int _fontScalePercent = 100;
   bool _didApplyInitialEnhancements = false;
 
-  static const List<int> _fontScaleSteps = <int>[80, 90, 100, 110, 120, 135, 150];
+  static const List<int> _fontScaleSteps = <int>[90, 100, 110, 125, 140];
 
   @override
   void initState() {
@@ -194,11 +195,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
               return NavigationDecision.navigate;
             }
 
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Blocked external action: $scheme')),
-              );
-            }
             return NavigationDecision.prevent;
           },
         ),
@@ -211,6 +207,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
 
     _controller = controller;
   }
+
   Future<void> _loadInitialContent() async {
     try {
       if (widget.isUrl) {
@@ -349,24 +346,13 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
 
                       if (widget.onReportIssue != null) {
                         await widget.onReportIssue!(report);
-                        if (!mounted) return;
-                        Navigator.pop(ctx, true);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Issue reported.')),
-                        );
-                      } else {
-                        if (!mounted) return;
-                        Navigator.pop(ctx, true);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(report.toMessage())),
-                        );
                       }
-                    } catch (e) {
+
+                      if (!mounted) return;
+                      Navigator.pop(ctx, true);
+                    } catch (_) {
                       if (!mounted) return;
                       setLocal(() => sending = false);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Report failed: $e')),
-                      );
                     }
                   },
                   child: Text(sending ? 'Sending...' : 'Send report'),
@@ -388,7 +374,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     _didApplyInitialEnhancements = true;
 
     await _injectBaseLessonSupport();
-    await _applyFontScale(_fontScalePercent, showSnack: false);
+    await _applyFontScale(_fontScalePercent);
     await _forceLessonFit();
   }
 
@@ -415,6 +401,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
         text-size-adjust: 100% !important;
       }
 
+      body {
+        overscroll-behavior: contain !important;
+      }
+
       img, video, iframe, canvas, svg {
         max-width: 100% !important;
         height: auto !important;
@@ -427,6 +417,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
 
       table {
         max-width: 100% !important;
+        display: block !important;
+        overflow-x: auto !important;
       }
 
       input, textarea, select, button {
@@ -444,7 +436,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
 
     document.documentElement.style.backgroundColor = '#ffffff';
     document.body.style.backgroundColor = '#ffffff';
-    document.body.style.overscrollBehavior = 'contain';
 
     var metas = document.querySelectorAll('meta[name="viewport"]');
     if (!metas || metas.length === 0) {
@@ -492,7 +483,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     await _runJavascriptSafely(script);
   }
 
-  Future<void> _applyFontScale(int percent, {bool showSnack = true}) async {
+  Future<void> _applyFontScale(int percent) async {
     final safe = percent.clamp(_fontScaleSteps.first, _fontScaleSteps.last);
     final scale = safe / 100.0;
 
@@ -556,28 +547,13 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     setState(() {
       _fontScalePercent = safe;
     });
-
-    if (showSnack) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Font size: $safe%')),
-      );
-    }
   }
 
-  Future<void> _increaseFontScale() async {
+  Future<void> _cycleFontScale() async {
     final currentIndex = _fontScaleSteps.indexOf(_fontScalePercent);
-    if (currentIndex < 0 || currentIndex >= _fontScaleSteps.length - 1) return;
-    await _applyFontScale(_fontScaleSteps[currentIndex + 1]);
-  }
-
-  Future<void> _decreaseFontScale() async {
-    final currentIndex = _fontScaleSteps.indexOf(_fontScalePercent);
-    if (currentIndex <= 0) return;
-    await _applyFontScale(_fontScaleSteps[currentIndex - 1]);
-  }
-
-  Future<void> _resetFontScale() async {
-    await _applyFontScale(100);
+    final safeIndex = currentIndex < 0 ? 0 : currentIndex;
+    final nextIndex = (safeIndex + 1) % _fontScaleSteps.length;
+    await _applyFontScale(_fontScaleSteps[nextIndex]);
   }
 
   Future<void> _toggleFullscreen() async {
@@ -611,79 +587,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     try {
       await _controller.runJavaScript(script);
     } catch (_) {}
-  }
-
-  void _showToolsSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (_) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ToolAction(
-                icon: Icons.text_decrease_rounded,
-                title: 'Smaller text',
-                subtitle: 'Reduce forced lesson font size',
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_decreaseFontScale());
-                },
-              ),
-              _ToolAction(
-                icon: Icons.text_increase_rounded,
-                title: 'Bigger text',
-                subtitle: 'Increase forced lesson font size',
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_increaseFontScale());
-                },
-              ),
-              _ToolAction(
-                icon: Icons.restart_alt_rounded,
-                title: 'Reset text size',
-                subtitle: 'Back to normal lesson size',
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_resetFontScale());
-                },
-              ),
-              _ToolAction(
-                icon: Icons.fit_screen_rounded,
-                title: 'Refit lesson',
-                subtitle: 'Re-apply layout for interactive slides',
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_forceLessonFit());
-                },
-              ),
-              _ToolAction(
-                icon: Icons.refresh_rounded,
-                title: 'Reload lesson',
-                subtitle: 'Refresh page and re-run support tools',
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_reload());
-                },
-              ),
-              if (widget.allowReporting)
-                _ToolAction(
-                  icon: Icons.flag_outlined,
-                  title: 'Report issue',
-                  subtitle: 'Send this lesson/problem to admin',
-                  onTap: () {
-                    Navigator.pop(context);
-                    unawaited(_showReportDialog());
-                  },
-                ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Widget _buildErrorState() {
@@ -755,7 +658,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     return SafeArea(
       bottom: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border(
@@ -778,58 +681,46 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
                     ),
                   ),
                 ),
+                if (widget.allowReporting)
+                  IconButton(
+                    tooltip: 'Report issue',
+                    onPressed: () => unawaited(_showReportDialog()),
+                    icon: const Icon(Icons.flag_outlined),
+                  ),
                 IconButton(
                   tooltip: _isFullscreen ? 'Exit full screen' : 'Full screen',
                   onPressed: () => unawaited(_toggleFullscreen()),
                   icon: Icon(
-                    _isFullscreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                    _isFullscreen
+                        ? Icons.fullscreen_exit_rounded
+                        : Icons.fullscreen_rounded,
                   ),
-                ),
-                IconButton(
-                  tooltip: 'More tools',
-                  onPressed: _showToolsSheet,
-                  icon: const Icon(Icons.tune_rounded),
                 ),
               ],
             ),
-            if (shownUrl.isNotEmpty)
-              Text(
-                shownUrl,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade700,
-                ),
-              ),
-            const SizedBox(height: 8),
             Row(
               children: [
-                _MiniControlChip(
-                  icon: Icons.text_decrease_rounded,
-                  label: 'A-',
-                  onTap: _decreaseFontScale,
-                ),
-                const SizedBox(width: 8),
-                _MiniControlChip(
-                  icon: Icons.text_increase_rounded,
-                  label: 'A+',
-                  onTap: _increaseFontScale,
-                ),
-                const SizedBox(width: 8),
-                _MiniControlChip(
-                  icon: Icons.restart_alt_rounded,
-                  label: '100%',
-                  onTap: _resetFontScale,
-                ),
-                const Spacer(),
-                if (widget.allowReporting)
-                  _MiniControlChip(
-                    icon: Icons.flag_outlined,
-                    label: 'Report',
-                    onTap: _showReportDialog,
+                Expanded(
+                  child: Text(
+                    shownUrl,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
                   ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Text ${_fontScalePercent}%',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
               ],
             ),
           ],
@@ -880,17 +771,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
             ),
             const SizedBox(width: 6),
             _BottomControlButton(
-              tooltip: 'Smaller text',
-              icon: Icons.text_decrease_rounded,
+              tooltip: 'Change text size',
+              icon: Icons.text_fields_rounded,
               enabled: true,
-              onTap: _decreaseFontScale,
-            ),
-            const SizedBox(width: 6),
-            _BottomControlButton(
-              tooltip: 'Bigger text',
-              icon: Icons.text_increase_rounded,
-              enabled: true,
-              onTap: _increaseFontScale,
+              onTap: _cycleFontScale,
             ),
             const Spacer(),
             if (widget.allowReporting)
@@ -924,8 +808,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
         child: Column(
           children: [
             if (!_isFullscreen) _buildTopLessonBar(),
-            if (_isLoading)
-              LinearProgressIndicator(value: progressValue),
+            if (_isLoading) LinearProgressIndicator(value: progressValue),
             Expanded(
               child: _lastError != null
                   ? _buildErrorState()
@@ -942,77 +825,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
               ),
             ),
             if (!_isFullscreen) _buildBottomBar(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolAction extends StatelessWidget {
-  const _ToolAction({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.w800),
-      ),
-      subtitle: Text(subtitle),
-      onTap: onTap,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-    );
-  }
-}
-
-class _MiniControlChip extends StatelessWidget {
-  const _MiniControlChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Future<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => unawaited(onTap()),
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
           ],
         ),
       ),

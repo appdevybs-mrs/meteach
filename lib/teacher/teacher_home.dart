@@ -10,6 +10,7 @@ import '../calls/call_logs_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
 import 'teacher_classes.dart';
+import 'teacher_games_screen.dart';
 import 'teacher_mail.dart';
 import 'teacher_online_booking.dart';
 import 'teacher_profile.dart';
@@ -1044,6 +1045,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         onOpenProfile: () => _pushScreen(const TeacherProfileScreen()),
         onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
         onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
+        onOpenGames: () => _pushScreen(const TeacherGamesScreen()),
         onOpenOnlineBooking: () =>
             _pushScreen(const TeacherOnlineBookingScreen()),
         onOpenMail: () => _pushScreen(const TeacherMailScreen()),
@@ -1053,6 +1055,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             _pushScreen(const TeacherRegulationsScreen()),
         onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
         onOpenCallLogs: () => _pushScreen(const CallLogsScreen()),
+
         onOpenThemeSettings: _openThemeSheet,
         onLogout: () => _logout(context),
       ),
@@ -1337,6 +1340,7 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenCallLogs,
     required this.onOpenThemeSettings,
     required this.onLogout,
+    required this.onOpenGames,
   });
 
   final _HomePalette palette;
@@ -1351,6 +1355,7 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenSyllabi;
   final VoidCallback onOpenCallLogs;
   final VoidCallback onOpenThemeSettings;
+  final VoidCallback onOpenGames;
   final VoidCallback onLogout;
 
   @override
@@ -1430,6 +1435,15 @@ class _TeacherDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenClasses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.sports_esports_rounded,
+                    title: 'Games',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGames();
                     },
                   ),
                   _DrawerTile(

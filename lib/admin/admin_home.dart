@@ -8,6 +8,7 @@ import 'admin_payments.dart';
 import 'admin_courses.dart';
 import 'admin_learners.dart';
 import 'admin_staff.dart';
+import 'admin_file_manager.dart';
 import 'admin_classes.dart';
 import 'admin_public_gallery_screen.dart';
 import 'admin_public_preview.dart';
@@ -172,16 +173,15 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       _DashCard(
-        title: 'Public Gallery',
-        subtitle: 'Teaser media',
-        icon: Icons.photo_library_rounded,
-        color: AdminHome.accentSky,
+        title: 'File Manager',
+        subtitle: 'Courses & Games files',
+        icon: Icons.folder_open,
+        color: AdminHome.accentGreen,
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const AdminPublicGalleryScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const AdminFileManager()),
         ),
       ),
+
     ];
 
     final simpleCards = <Widget>[
@@ -227,6 +227,15 @@ class _AdminHomeState extends State<AdminHome> {
           MaterialPageRoute(
             builder: (_) => const AdminPublicGalleryScreen(),
           ),
+        ),
+      ),
+      _DashCard(
+        title: 'File Manager',
+        subtitle: 'Courses & Games files',
+        icon: Icons.folder_open,
+        color: AdminHome.accentGreen,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminFileManager()),
         ),
       ),
     ];

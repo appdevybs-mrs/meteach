@@ -15,6 +15,7 @@ import 'learner_regulations_screen.dart';
 import 'learner_mail_screen.dart';
 import 'learner_homework_screen.dart' as hw;
 import 'learner_courses_screen.dart';
+import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
@@ -712,6 +713,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
         onOpenMail: () => _pushScreen(LearnerMailScreen()),
         onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
+        onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
         onOpenRegulations: () =>
             _pushScreen(const LearnerRegulationsScreen()),
         onOpenThemeSettings: _openThemeSheet,
@@ -3252,6 +3254,7 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenProfile,
     required this.onOpenMail,
     required this.onOpenCourses,
+    required this.onOpenGames,
     required this.onOpenRegulations,
     required this.onOpenThemeSettings,
     required this.onLogout,
@@ -3261,6 +3264,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenCourses;
+  final VoidCallback onOpenGames;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onLogout;
@@ -3315,6 +3319,15 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenCourses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.sports_esports_rounded,
+                    title: 'Games',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGames();
                     },
                   ),
                   _DrawerTile(
