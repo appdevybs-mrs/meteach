@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
+import '../shared/app_theme.dart';
+
 class TeacherLearnerGalleryScreen extends StatefulWidget {
   const TeacherLearnerGalleryScreen({
     super.key,
@@ -30,12 +32,6 @@ class TeacherLearnerGalleryScreen extends StatefulWidget {
 
 class _TeacherLearnerGalleryScreenState
     extends State<TeacherLearnerGalleryScreen> {
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
   static const String _uploadEndpoint =
       'https://www.yourbridgeschool.com/app/upload.php';
 
@@ -48,13 +44,26 @@ class _TeacherLearnerGalleryScreenState
   bool _uploadingVideo = false;
   String? _error;
   String? _ok;
-
   String _teacherName = 'Teacher';
+
+  AppPalette get palette => appThemeController.palette;
 
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _loadTeacherName();
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _loadTeacherName() async {
@@ -261,22 +270,42 @@ class _TeacherLearnerGalleryScreenState
   }
 
   Future<bool> _confirmDelete() async {
+    final p = palette;
+
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete item'),
-        content: const Text(
-          'Do you want to remove this gallery item for this learner?',
+        backgroundColor: p.cardBg,
+        title: Text(
+          'Delete item',
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+          ),
         ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Text(
+          'Do you want to remove this gallery item for this learner?',
+          style: TextStyle(
+            color: p.text,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: actionOrange,
+              backgroundColor: p.accent,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -379,8 +408,74 @@ class _TeacherLearnerGalleryScreenState
     );
   }
 
+  Widget _messageBox({
+    required Color color,
+    required IconData icon,
+    required String text,
+  }) {
+    final p = palette;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color == p.accent ? p.primary : color,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statChip({
+    required String text,
+    required IconData icon,
+  }) {
+    final p = palette;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final p = palette;
+
     final displayLearnerName = widget.learnerName.trim().isEmpty
         ? 'Learner'
         : widget.learnerName.trim();
@@ -390,20 +485,37 @@ class _TeacherLearnerGalleryScreenState
         : widget.classTitle.trim();
 
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
-        title: Text(
-          widget.learnerName.trim().isEmpty
-              ? 'Learner Gallery'
-              : '${widget.learnerName} Gallery',
-          style: const TextStyle(
-            color: primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$displayLearnerName Gallery',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              displayClassTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: p.text.withOpacity(0.72),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ),
       ),
       body: SafeArea(
@@ -411,34 +523,95 @@ class _TeacherLearnerGalleryScreenState
           stream: _galleryRef().onValue,
           builder: (context, snap) {
             final items = _itemsFromSnapshot(snap.data?.snapshot.value);
+            final photoCount = items
+                .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'photo')
+                .length;
+            final videoCount = items
+                .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'video')
+                .length;
 
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                    gradient: LinearGradient(
+                      colors: [
+                        p.primary,
+                        p.primary.withOpacity(0.88),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: p.primary.withOpacity(0.16),
+                        blurRadius: 18,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        displayLearnerName,
-                        style: const TextStyle(
-                          color: primaryBlue,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.collections_rounded,
+                          color: Colors.white,
+                          size: 30,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Class: $displayClassTitle',
-                        style: TextStyle(
-                          color: mainText.withOpacity(0.75),
-                          fontWeight: FontWeight.w700,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayLearnerName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 20,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Class: $displayClassTitle',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.84),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _statChip(
+                                  text: '${items.length} total',
+                                  icon: Icons.grid_view_rounded,
+                                ),
+                                _statChip(
+                                  text: '$photoCount photos',
+                                  icon: Icons.photo_rounded,
+                                ),
+                                _statChip(
+                                  text: '$videoCount videos',
+                                  icon: Icons.videocam_rounded,
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -463,12 +636,12 @@ class _TeacherLearnerGalleryScreenState
                           _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: actionOrange,
+                          backgroundColor: p.accent,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         onPressed: (_uploadingPhoto || _uploadingVideo)
                             ? null
@@ -482,20 +655,19 @@ class _TeacherLearnerGalleryScreenState
                             ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child:
-                          CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
                             : const Icon(Icons.video_call_rounded),
                         label: Text(
                           _uploadingVideo ? 'Uploading...' : 'Upload Video',
                         ),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: primaryBlue,
-                          side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                          foregroundColor: p.primary,
+                          side: BorderSide(color: p.border.withOpacity(0.9)),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         onPressed: (_uploadingPhoto || _uploadingVideo)
                             ? null
@@ -506,48 +678,77 @@ class _TeacherLearnerGalleryScreenState
                 ),
                 const SizedBox(height: 14),
                 if (_error != null) ...[
-                  Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  _messageBox(
+                    color: Theme.of(context).colorScheme.error,
+                    icon: Icons.error_outline_rounded,
+                    text: _error!,
                   ),
                   const SizedBox(height: 10),
                 ],
                 if (_ok != null) ...[
-                  Text(
-                    _ok!,
-                    style: const TextStyle(
-                      color: primaryBlue,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  _messageBox(
+                    color: p.accent,
+                    icon: Icons.check_circle_rounded,
+                    text: _ok!,
                   ),
                   const SizedBox(height: 10),
                 ],
-                const Text(
-                  'Gallery Items',
-                  style: TextStyle(
-                    color: primaryBlue,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      'Gallery Items',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${items.length} item${items.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: p.text.withOpacity(0.7),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 if (items.isEmpty)
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: uiBorder.withOpacity(0.85)),
+                      color: p.cardBg,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: p.border.withOpacity(0.85)),
                     ),
-                    child: const Text(
-                      'No gallery items yet.',
-                      style: TextStyle(
-                        color: mainText,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.perm_media_outlined,
+                          size: 56,
+                          color: p.primary.withOpacity(0.22),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No gallery items yet.',
+                          style: TextStyle(
+                            color: p.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Upload a photo or a video for this learner.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: p.text.withOpacity(0.7),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 else
@@ -560,84 +761,143 @@ class _TeacherLearnerGalleryScreenState
                       crossAxisCount: 2,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 1,
+                      childAspectRatio: 0.88,
                     ),
                     itemBuilder: (context, index) {
                       final item = items[index];
                       final type =
                       (item['type'] ?? '').toString().trim().toLowerCase();
                       final url = (item['url'] ?? '').toString().trim();
+                      final createdAt = _fmtDate(item['createdAt']);
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(18),
                         onTap: () => _openViewer(item),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
                             border:
-                            Border.all(color: uiBorder.withOpacity(0.85)),
+                            Border.all(color: p.border.withOpacity(0.85)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.03),
+                                blurRadius: 10,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                if (type == 'video')
-                                  const _TeacherVideoTile()
-                                else
-                                  Image.network(
-                                    url,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      color: Colors.grey.shade200,
-                                      alignment: Alignment.center,
-                                      child: const Icon(
-                                        Icons.broken_image_outlined,
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(18),
+                                  ),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (type == 'video')
+                                        const _TeacherVideoTile()
+                                      else
+                                        Image.network(
+                                          url,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              Container(
+                                                color: p.soft,
+                                                alignment: Alignment.center,
+                                                child: Icon(
+                                                  Icons.broken_image_outlined,
+                                                  color: p.primary.withOpacity(0.55),
+                                                ),
+                                              ),
+                                        ),
+                                      Positioned(
+                                        top: 8,
+                                        left: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color:
+                                            Colors.black.withOpacity(0.58),
+                                            borderRadius:
+                                            BorderRadius.circular(12),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                type == 'video'
+                                                    ? Icons.play_circle_fill_rounded
+                                                    : Icons.photo_rounded,
+                                                color: Colors.white,
+                                                size: 14,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                type == 'video'
+                                                    ? 'Video'
+                                                    : 'Photo',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      createdAt,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: p.text.withOpacity(0.72),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 11,
                                       ),
                                     ),
-                                  ),
-                                Positioned(
-                                  left: 8,
-                                  right: 8,
-                                  bottom: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.58),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
+                                    const SizedBox(height: 6),
+                                    Row(
                                       children: [
                                         Icon(
-                                          type == 'video'
-                                              ? Icons.play_circle_fill_rounded
-                                              : Icons.photo_rounded,
-                                          color: Colors.white,
-                                          size: 16,
+                                          Icons.person_rounded,
+                                          size: 14,
+                                          color: p.primary,
                                         ),
                                         const SizedBox(width: 6),
                                         Expanded(
                                           child: Text(
-                                            type == 'video' ? 'Video' : 'Photo',
+                                            _teacherName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w900,
+                                            style: TextStyle(
+                                              color: p.primary,
+                                              fontWeight: FontWeight.w800,
                                               fontSize: 12,
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -657,6 +917,8 @@ class _TeacherVideoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -671,13 +933,30 @@ class _TeacherVideoTile extends StatelessWidget {
           ),
         ),
         Container(
-          color: Colors.black.withOpacity(0.18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.black.withOpacity(0.10),
+                Colors.black.withOpacity(0.35),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
         ),
-        const Center(
-          child: Icon(
-            Icons.play_circle_fill_rounded,
-            color: Colors.white,
-            size: 52,
+        Center(
+          child: Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: p.accent.withOpacity(0.90),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.play_arrow_rounded,
+              color: Colors.white,
+              size: 34,
+            ),
           ),
         ),
       ],
@@ -743,12 +1022,14 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
+
     if (_failed) {
       return Container(
         height: 220,
         decoration: BoxDecoration(
           color: Colors.black,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
         ),
         alignment: Alignment.center,
         child: const Icon(
@@ -764,7 +1045,7 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
         height: 220,
         decoration: BoxDecoration(
           color: Colors.black,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: const Center(
           child: CircularProgressIndicator(color: Colors.white),
@@ -775,16 +1056,28 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: AspectRatio(
           aspectRatio: _controller!.value.aspectRatio,
           child: Stack(
             alignment: Alignment.center,
             children: [
               VideoPlayer(_controller!),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.20),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+              ),
               IconButton(
                 onPressed: () {
                   if (_controller!.value.isPlaying) {
@@ -794,12 +1087,26 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
                   }
                   setState(() {});
                 },
-                iconSize: 54,
+                iconSize: 62,
                 color: Colors.white,
                 icon: Icon(
                   _controller!.value.isPlaying
                       ? Icons.pause_circle_filled_rounded
                       : Icons.play_circle_fill_rounded,
+                ),
+              ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: VideoProgressIndicator(
+                  _controller!,
+                  allowScrubbing: true,
+                  colors: VideoProgressColors(
+                    playedColor: p.accent,
+                    bufferedColor: Colors.white38,
+                    backgroundColor: Colors.white24,
+                  ),
                 ),
               ),
             ],
@@ -833,6 +1140,7 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = appThemeController.palette;
     final isVideo = type.trim().toLowerCase() == 'video';
     final displayTeacher =
     teacherName.trim().isEmpty ? 'Teacher' : teacherName.trim();
@@ -861,9 +1169,9 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
                   Navigator.of(context).pop(true);
                 }
               },
-              icon: const Icon(
+              icon: Icon(
                 Icons.delete_outline_rounded,
-                color: Colors.white,
+                color: p.accent,
               ),
             ),
         ],
@@ -909,42 +1217,51 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
                     fontSize: 15,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Uploaded by: $displayTeacher',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (learnerName.trim().isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Learner: $learnerName',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w700,
+                const SizedBox(height: 8),
+                Wrap(
+                  runSpacing: 6,
+                  children: [
+                    Text(
+                      'Uploaded by: $displayTeacher',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ],
-                if (classTitle.trim().isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Class: $classTitle',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w700,
+                    if (learnerName.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Learner: $learnerName',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    if (classTitle.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Class: $classTitle',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Added: $createdAt',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  'Added: $createdAt',
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+                  ],
                 ),
               ],
             ),

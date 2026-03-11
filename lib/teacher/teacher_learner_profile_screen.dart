@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
+import '../shared/app_theme.dart';
+
 class TeacherLearnerProfileScreen extends StatefulWidget {
   const TeacherLearnerProfileScreen({
     super.key,
@@ -18,12 +20,6 @@ class TeacherLearnerProfileScreen extends StatefulWidget {
 
 class _TeacherLearnerProfileScreenState
     extends State<TeacherLearnerProfileScreen> {
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
-
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool _busy = true;
@@ -37,10 +33,24 @@ class _TeacherLearnerProfileScreenState
   int _statLessonsCovered = 0;
   int _statHomeworkPending = 0;
 
+  AppPalette get palette => appThemeController.palette;
+
   @override
   void initState() {
     super.initState();
+    appThemeController.addListener(_onThemeChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    appThemeController.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   static int _toInt(dynamic v) {
@@ -367,17 +377,40 @@ class _TeacherLearnerProfileScreenState
     }
   }
 
-  Widget _readonlyRow(String label, String value) {
+  Color _attendanceColor(int pct) {
+    if (pct >= 80) return const Color(0xFF10B981);
+    if (pct >= 50) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
+
+  String _attendanceLabel(int pct) {
+    if (pct >= 90) return 'Excellent';
+    if (pct >= 80) return 'Strong';
+    if (pct >= 60) return 'Fair';
+    return 'Needs Support';
+  }
+
+  String _displayName() {
+    final first = _safeStr(_user['first_name']);
+    final last = _safeStr(_user['last_name']);
+    final fullName = ('$first $last').trim();
+    if (fullName.isNotEmpty) return fullName;
+    if (widget.learnerName.trim().isNotEmpty) return widget.learnerName.trim();
+    return 'Learner';
+  }
+
+  Widget _readonlyRow(AppPalette p, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 88,
+            width: 92,
             child: Text(
               label,
               style: TextStyle(
-                color: mainText.withOpacity(0.7),
+                color: p.text.withOpacity(0.7),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -385,11 +418,12 @@ class _TeacherLearnerProfileScreenState
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: const TextStyle(
-                color: mainText,
+              style: TextStyle(
+                color: p.text,
                 fontWeight: FontWeight.w900,
               ),
               overflow: TextOverflow.ellipsis,
+              maxLines: 2,
             ),
           ),
         ],
@@ -397,35 +431,47 @@ class _TeacherLearnerProfileScreenState
     );
   }
 
-  Widget _smallStatTile({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  Widget _smallStatTile(
+      AppPalette p, {
+        required IconData icon,
+        required String label,
+        required String value,
+        Color? tint,
+      }) {
+    final color = tint ?? p.accent;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
-        color: primaryBlue.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withOpacity(0.85)),
+        color: p.primary.withOpacity(0.04),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: actionOrange),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 18, color: color),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                color: mainText.withOpacity(0.72),
+                color: p.text.withOpacity(0.72),
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
           Text(
             value,
-            style: const TextStyle(
-              color: mainText,
+            style: TextStyle(
+              color: p.text,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -434,220 +480,345 @@ class _TeacherLearnerProfileScreenState
     );
   }
 
-  Widget _buildMainProfileCard() {
-    final first = _safeStr(_user['first_name']);
-    final last = _safeStr(_user['last_name']);
-    final fullName = ('$first $last').trim();
+  Widget _buildMainProfileCard(AppPalette p) {
+    final fullName = _displayName();
+    final role = _safeStr(_user['role']).isEmpty ? 'Learner' : _safeStr(_user['role']);
+    final serial = _safeStr(_user['serial']);
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            Container(
-              width: 108,
-              height: 108,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: uiBorder.withOpacity(0.9), width: 2),
-                color: primaryBlue.withOpacity(0.06),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: (_profilePhotoUrl ?? '').isNotEmpty
-                  ? Image.network(
-                _profilePhotoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.person_rounded,
-                  size: 54,
-                  color: primaryBlue.withOpacity(0.8),
-                ),
-              )
-                  : Icon(
-                Icons.person_rounded,
-                size: 54,
-                color: primaryBlue.withOpacity(0.8),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              fullName.isEmpty ? widget.learnerName : fullName,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _safeStr(_user['role']).isEmpty ? 'Learner' : _safeStr(_user['role']),
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            p.primary,
+            p.primary.withOpacity(0.88),
           ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: p.primary.withOpacity(0.16),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 110,
+            height: 110,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24, width: 2),
+              color: Colors.white.withOpacity(0.10),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: (_profilePhotoUrl ?? '').isNotEmpty
+                ? Image.network(
+              _profilePhotoUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.person_rounded,
+                size: 56,
+                color: Colors.white,
+              ),
+            )
+                : const Icon(
+              Icons.person_rounded,
+              size: 56,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            fullName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 20,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            role,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.84),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _heroChip(
+                text: serial.isEmpty ? 'No serial' : 'ID: $serial',
+                icon: Icons.badge_rounded,
+              ),
+              _heroChip(
+                text: 'Attendance $_statAttendancePct%',
+                icon: Icons.how_to_reg_rounded,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildExtraPhotosCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+  Widget _heroChip({
+    required String text,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white24),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Extra Photos',
-              style: TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
             ),
-            const SizedBox(height: 10),
-            if (_photoUrls.isEmpty)
-              Text(
-                'No extra photos yet.',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w700,
-                ),
-              )
-            else
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: _photoUrls.map((url) {
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.network(
-                      url,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExtraPhotosCard(AppPalette p) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Extra Photos',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_photoUrls.isEmpty)
+            Text(
+              'No extra photos yet.',
+              style: TextStyle(
+                color: p.text.withOpacity(0.7),
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _photoUrls.map((url) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.network(
+                    url,
+                    width: 96,
+                    height: 96,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
                       width: 96,
                       height: 96,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 96,
-                        height: 96,
-                        color: Colors.grey.shade200,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.broken_image_outlined),
+                      color: p.soft,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: p.primary.withOpacity(0.55),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-          ],
-        ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildSummaryCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+  Widget _buildSummaryCard(AppPalette p) {
+    final attendanceColor = _attendanceColor(_statAttendancePct);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Learning Summary',
-              style: TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Learning Summary',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
             ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.school_rounded,
-              label: 'Courses',
-              value: '$_statCourses',
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: p.primary.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: p.border.withOpacity(0.85)),
             ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.how_to_reg_rounded,
-              label: 'Attendance',
-              value: '$_statAttendancePct%',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Attendance Health',
+                  style: TextStyle(
+                    color: p.text.withOpacity(0.7),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      '$_statAttendancePct%',
+                      style: TextStyle(
+                        color: attendanceColor,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _attendanceLabel(_statAttendancePct),
+                      style: TextStyle(
+                        color: attendanceColor,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: (_statAttendancePct / 100).clamp(0, 1),
+                    minHeight: 10,
+                    backgroundColor: attendanceColor.withOpacity(0.12),
+                    valueColor: AlwaysStoppedAnimation(attendanceColor),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.menu_book_rounded,
-              label: 'Lessons Covered',
-              value: '$_statLessonsCovered',
-            ),
-            const SizedBox(height: 10),
-            _smallStatTile(
-              icon: Icons.assignment_late_rounded,
-              label: 'Homework Pending',
-              value: '$_statHomeworkPending',
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          _smallStatTile(
+            p,
+            icon: Icons.school_rounded,
+            label: 'Courses',
+            value: '$_statCourses',
+            tint: p.accent,
+          ),
+          const SizedBox(height: 10),
+          _smallStatTile(
+            p,
+            icon: Icons.menu_book_rounded,
+            label: 'Lessons Covered',
+            value: '$_statLessonsCovered',
+            tint: p.primary,
+          ),
+          const SizedBox(height: 10),
+          _smallStatTile(
+            p,
+            icon: Icons.assignment_late_rounded,
+            label: 'Homework Pending',
+            value: '$_statHomeworkPending',
+            tint: _statHomeworkPending > 0 ? const Color(0xFFEF4444) : p.accent,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildAboutMeCard() {
+  Widget _buildAboutMeCard(AppPalette p) {
     final aboutMe = _safeStr(_user['about_me']);
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'About Me',
-              style: TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'About Me',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
             ),
-            const SizedBox(height: 10),
-            Text(
-              aboutMe.isEmpty ? 'No about me yet.' : aboutMe,
-              style: const TextStyle(
-                color: mainText,
-                fontWeight: FontWeight.w700,
-                height: 1.4,
-              ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            aboutMe.isEmpty ? 'No about me yet.' : aboutMe,
+            style: TextStyle(
+              color: p.text,
+              fontWeight: FontWeight.w700,
+              height: 1.45,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildAccountCard() {
+  Widget _buildAccountCard(AppPalette p) {
     final email = _safeStr(_user['email']);
     final serial = _safeStr(_user['serial']);
     final role = _safeStr(_user['role']);
@@ -656,35 +827,86 @@ class _TeacherLearnerProfileScreenState
     final phone2 = _safeStr(_user['phone2']);
     final dob = _safeStr(_user['dob']);
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: uiBorder.withOpacity(0.8)),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withOpacity(0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Profile Info',
-              style: TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Profile Info',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
             ),
-            const SizedBox(height: 10),
-            _readonlyRow('Email', email),
-            _readonlyRow('Serial', serial),
-            _readonlyRow('Role', role),
-            _readonlyRow('Status', status),
-            _readonlyRow('Phone 1', phone1),
-            _readonlyRow('Phone 2', phone2),
-            _readonlyRow('DOB', dob),
-          ],
+          ),
+          const SizedBox(height: 10),
+          _readonlyRow(p, 'Email', email),
+          _readonlyRow(p, 'Serial', serial),
+          _readonlyRow(p, 'Role', role),
+          _readonlyRow(p, 'Status', status),
+          _readonlyRow(p, 'Phone 1', phone1),
+          _readonlyRow(p, 'Phone 2', phone2),
+          _readonlyRow(p, 'DOB', dob),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(AppPalette p) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                size: 56,
+                color: Color(0xFFEF4444),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Something went wrong',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFFEF4444),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _error ?? 'Unknown error',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: p.text,
+                  fontWeight: FontWeight.w700,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -692,56 +914,47 @@ class _TeacherLearnerProfileScreenState
 
   @override
   Widget build(BuildContext context) {
+    final p = palette;
+    final title = widget.learnerName.isEmpty ? 'Learner Profile' : widget.learnerName;
+
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: p.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: p.cardBg,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: primaryBlue),
+        surfaceTintColor: p.cardBg,
+        iconTheme: IconThemeData(color: p.primary),
         title: Text(
-          widget.learnerName.isEmpty ? 'Learner Profile' : widget.learnerName,
-          style: const TextStyle(
-            color: primaryBlue,
+          title,
+          style: TextStyle(
+            color: p.primary,
             fontWeight: FontWeight.w900,
           ),
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded, color: actionOrange),
+            icon: Icon(Icons.refresh_rounded, color: p.accent),
             onPressed: _busy ? null : _load,
           ),
         ],
       ),
       body: _busy
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: p.primary))
           : _error != null
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            _error!,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.error,
-              fontWeight: FontWeight.w800,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
+          ? _buildErrorState(p)
           : ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildMainProfileCard(),
+          _buildMainProfileCard(p),
           const SizedBox(height: 14),
-          _buildExtraPhotosCard(),
+          _buildExtraPhotosCard(p),
           const SizedBox(height: 14),
-          _buildSummaryCard(),
+          _buildSummaryCard(p),
           const SizedBox(height: 14),
-          _buildAboutMeCard(),
+          _buildAboutMeCard(p),
           const SizedBox(height: 14),
-          _buildAccountCard(),
+          _buildAccountCard(p),
         ],
       ),
     );

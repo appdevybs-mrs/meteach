@@ -12,7 +12,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-
+import '../shared/material_webview_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1171,10 +1171,29 @@ class _SessionExpansion extends StatefulWidget {
 class _SessionExpansionState extends State<_SessionExpansion> {
   bool _expanded = false;
   Future<void> _openMaterials(String url) async {
-    final uri = Uri.tryParse(url.trim());
-    if (uri == null) return;
+    final cleanUrl = url.trim();
+    final uri = Uri.tryParse(cleanUrl);
 
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (cleanUrl.isEmpty || uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid materials link.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: widget.session.title.trim().isEmpty
+              ? 'Material Viewer'
+              : widget.session.title.trim(),
+          url: cleanUrl,
+        ),
+      ),
+    );
   }
   List<_RecItem> _sessionRecs(_Session s) {
     final out = <_RecItem>[];
