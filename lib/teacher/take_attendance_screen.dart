@@ -36,13 +36,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   // Syllabus flattened sessions for picker
   List<Map<String, dynamic>> _syllabiSessions = [];
 
-  // ✅ NEW: Meeting number (1..N), auto computed (reuses gaps after delete)
+  // Meeting number (1..N), auto computed (reuses gaps after delete)
   int _meetingNumber = 1;
 
-  // ✅ NEW: “taught” can contain multiple items (syllabus lessons + custom items)
+  // “taught” can contain multiple items (syllabus lessons + custom items)
   // Item schema:
   // - syllabus:
-  //   { type:'syllabus', unitId, unitTitle, sessionId, title, sessionNumber }
+  //   {
+  //     type:'syllabus',
+  //     unitId, unitTitle, sessionId, title, sessionNumber,
+  //     objective, skillType, lessonHomework
+  //   }
   // - custom:
   //   { type:'custom', title, notes }
   final List<Map<String, dynamic>> _taughtItems = [];
@@ -66,7 +70,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   String get _courseId => (widget.classData['course_id'] ?? '').toString();
   String get _courseCode => (widget.classData['course_code'] ?? '').toString();
-  String get _courseTitle => (widget.classData['course_title'] ?? '').toString();
+  String get _courseTitle =>
+      (widget.classData['course_title'] ?? '').toString();
 
   @override
   void initState() {
@@ -105,8 +110,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Future<int> _computeNextMeetingNumber() async {
     // Reads all existing attendance records and finds the first missing meetingNumber.
-    // If meetingNumber is missing in old records, we ignore it (they won’t block).
-    final snap = await _db.child('classes').child(_classId).child('attendance').get();
+    // If meetingNumber is missing in old records, we ignore it.
+    final snap =
+    await _db.child('classes').child(_classId).child('attendance').get();
     if (!snap.exists) return 1;
 
     final used = <int>{};
@@ -150,7 +156,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         final parsed = _parseDate((rec['date'] ?? '').toString());
         if (parsed != null) _date = parsed;
 
-        if (rec['successRate'] is num) _successRate = (rec['successRate'] as num).toInt();
+        if (rec['successRate'] is num) {
+          _successRate = (rec['successRate'] as num).toInt();
+        }
 
         // homework
         final hw = Map<String, dynamic>.from(rec['homework'] ?? {});
@@ -159,10 +167,14 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         _homeworkTouchedByUser = _homeworkCtrl.text.trim().isNotEmpty;
 
         // present/absent
-        for (final uid in learnerSet) _present[uid] = false;
-        for (final uid in p.keys) _present[uid.toString()] = true;
+        for (final uid in learnerSet) {
+          _present[uid] = false;
+        }
+        for (final uid in p.keys) {
+          _present[uid.toString()] = true;
+        }
 
-        // ✅ taught items restore
+        // taught items restore
         _taughtItems.clear();
 
         // NEW format: taughtItems list
@@ -176,7 +188,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           final taught = Map<String, dynamic>.from(rec['taught'] ?? {});
           if (taught.isNotEmpty) {
             _taughtItems.add({
-              'type': 'syllabus',
+              'type': (taught['type'] ?? 'syllabus').toString(),
               'unitId': (taught['unitId'] ?? '').toString(),
               'unitTitle': (taught['unitTitle'] ?? '').toString(),
               'sessionId': (taught['sessionId'] ?? '').toString(),
@@ -184,18 +196,26 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               'sessionNumber': (taught['sessionNumber'] is num)
                   ? (taught['sessionNumber'] as num).toInt()
                   : (int.tryParse('${taught['sessionNumber']}') ?? 0),
+              'objective': (taught['objective'] ?? '').toString(),
+              'skillType': (taught['skillType'] ?? '').toString(),
+              'lessonHomework': (taught['lessonHomework'] ?? '').toString(),
+              'notes': (taught['notes'] ?? '').toString(),
             });
           }
         }
 
-        // ✅ meeting number restore
+        // meeting number restore
         final mnRaw = rec['meetingNumber'];
         if (mnRaw is num) _meetingNumber = mnRaw.toInt();
-        if (mnRaw is String) _meetingNumber = int.tryParse(mnRaw) ?? _meetingNumber;
+        if (mnRaw is String) {
+          _meetingNumber = int.tryParse(mnRaw) ?? _meetingNumber;
+        }
         if (_meetingNumber <= 0) _meetingNumber = 1;
       } else {
         // new mode defaults
-        for (final uid in learnerSet) _present[uid] = true;
+        for (final uid in learnerSet) {
+          _present[uid] = true;
+        }
         _homeworkTouchedByUser = false;
         _taughtItems.clear();
       }
@@ -219,10 +239,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         };
       }));
 
-      // load syllabus sessions for picker (+ include sessionNumber)
-      // load syllabus sessions for picker (+ include sessionNumber)
+      // load syllabus sessions for picker (+ include sessionNumber + snapshot fields)
       if (_courseId.isNotEmpty) {
-        final sSnap = await _db.child('syllabi').child(_courseId).child('inclass').get();
+        final sSnap =
+        await _db.child('syllabi').child(_courseId).child('inclass').get();
         if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'] as List?;
@@ -237,20 +257,22 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   final sess = Map<String, dynamic>.from(ss as Map);
                   flat.add({
                     'unitId': (unit['id'] ?? '').toString(),
-                    'unitTitle': ((unit['title'] ?? '').toString().trim().isNotEmpty)
+                    'unitTitle':
+                    ((unit['title'] ?? '').toString().trim().isNotEmpty)
                         ? (unit['title'] ?? '').toString()
                         : (unit['description'] ?? '').toString(),
                     'sessionId': (sess['id'] ?? '').toString(),
                     'title': (sess['title'] ?? '').toString(),
-                    'order': (sess['order'] is num) ? (sess['order'] as num).toInt() : 0,
-                    'unitOrder': (unit['order'] is num) ? (unit['order'] as num).toInt() : 0,
+                    'order':
+                    (sess['order'] is num) ? (sess['order'] as num).toInt() : 0,
+                    'unitOrder':
+                    (unit['order'] is num) ? (unit['order'] as num).toInt() : 0,
 
-                    // UI info
+                    // snapshot fields
                     'objective': (sess['objective'] ?? '').toString(),
                     'homework': (sess['homework'] ?? '').toString(),
                     'skillType': (sess['skillType'] ?? '').toString(),
 
-                    // ✅ NEW: sessionNumber from syllabus
                     'sessionNumber': (sess['sessionNumber'] is num)
                         ? (sess['sessionNumber'] as num).toInt()
                         : (int.tryParse('${sess['sessionNumber']}') ?? 0),
@@ -261,37 +283,49 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           }
 
           flat.sort((a, b) {
-            final cmp = (a['unitOrder'] as int).compareTo(b['unitOrder'] as int);
-            return cmp != 0 ? cmp : (a['order'] as int).compareTo(b['order'] as int);
+            final cmp =
+            (a['unitOrder'] as int).compareTo(b['unitOrder'] as int);
+            return cmp != 0
+                ? cmp
+                : (a['order'] as int).compareTo(b['order'] as int);
           });
 
           _syllabiSessions = flat;
 
-          // In new mode: if nothing taught yet, auto add first syllabus lesson (optional)
+          // In new mode: auto add first syllabus lesson if empty
           if (!_isEdit && _taughtItems.isEmpty && _syllabiSessions.isNotEmpty) {
             final first = _syllabiSessions.first;
             _taughtItems.add(_syllabusToTaughtItem(first));
 
-            // auto-fill homework from first lesson (safe)
+            // auto-fill homework from first lesson
             _applyHomeworkAutofillFromSelectedSession(first);
           }
 
-          // In edit mode: try to enrich existing syllabus items with unitTitle/title/sessionNumber if needed
+          // In edit mode: enrich syllabus items with latest missing fields
           if (_isEdit && _taughtItems.isNotEmpty && _syllabiSessions.isNotEmpty) {
             for (int i = 0; i < _taughtItems.length; i++) {
               final item = _taughtItems[i];
               if ((item['type'] ?? 'syllabus') != 'syllabus') continue;
+
               final sid = (item['sessionId'] ?? '').toString();
               final uid = (item['unitId'] ?? '').toString();
-              final match = _syllabiSessions.where((x) =>
-              x['sessionId'] == sid && x['unitId'] == uid);
+              final match = _syllabiSessions
+                  .where((x) => x['sessionId'] == sid && x['unitId'] == uid);
+
               if (match.isNotEmpty) {
                 final s = match.first;
                 _taughtItems[i] = {
                   ...item,
-                  'unitTitle': (s['unitTitle'] ?? item['unitTitle'] ?? '').toString(),
+                  'unitTitle':
+                  (s['unitTitle'] ?? item['unitTitle'] ?? '').toString(),
                   'title': (s['title'] ?? item['title'] ?? '').toString(),
                   'sessionNumber': (s['sessionNumber'] ?? item['sessionNumber'] ?? 0),
+                  'objective':
+                  (item['objective'] ?? s['objective'] ?? '').toString(),
+                  'skillType':
+                  (item['skillType'] ?? s['skillType'] ?? '').toString(),
+                  'lessonHomework':
+                  (item['lessonHomework'] ?? s['homework'] ?? '').toString(),
                 };
               }
             }
@@ -299,7 +333,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         }
       }
 
-      // ✅ Auto meetingNumber ONLY in new mode
+      // Auto meetingNumber ONLY in new mode
       if (!_isEdit && _classId.isNotEmpty) {
         _meetingNumber = await _computeNextMeetingNumber();
       }
@@ -323,6 +357,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       'sessionNumber': (session['sessionNumber'] is num)
           ? (session['sessionNumber'] as num).toInt()
           : (int.tryParse('${session['sessionNumber']}') ?? 0),
+
+      // snapshot fields for history
+      'objective': (session['objective'] ?? '').toString(),
+      'skillType': (session['skillType'] ?? '').toString(),
+      'lessonHomework': (session['homework'] ?? '').toString(),
     };
   }
 
@@ -347,13 +386,14 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     if (picked != null) setState(() => _homeworkDueDate = _dateStr(picked));
   }
 
-  // Duplicate date check
   Future<bool> _confirmDuplicateDialog() async {
     return (await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Duplicate Date'),
-        content: const Text('Attendance already exists for this date. Save anyway?'),
+        content: const Text(
+          'Attendance already exists for this date. Save anyway?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -369,7 +409,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         false;
   }
 
-  // Homework autofill (from a syllabus session map)
+  // Homework autofill from syllabus session
   void _applyHomeworkAutofillFromSelectedSession(Map<String, dynamic> session) {
     final hwFromSyllabus = (session['homework'] ?? '').toString().trim();
     if (hwFromSyllabus.isEmpty) return;
@@ -384,7 +424,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     }
   }
 
-  // ✅ Add taught item from syllabus picker
   Future<void> _openSyllabusLessonPickerToAdd() async {
     if (_syllabiSessions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -441,8 +480,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
                       final unitTitle = (s['unitTitle'] ?? '').toString();
                       final title = (s['title'] ?? '').toString();
-                      final objective = (s['objective'] ?? '').toString().trim();
-                      final skillType = (s['skillType'] ?? '').toString().trim();
+                      final objective =
+                      (s['objective'] ?? '').toString().trim();
+                      final skillType =
+                      (s['skillType'] ?? '').toString().trim();
                       final hasHomework =
                           (s['homework'] ?? '').toString().trim().isNotEmpty;
                       final sn = (s['sessionNumber'] is num)
@@ -549,12 +590,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         _taughtItems.add(_syllabusToTaughtItem(chosen));
       });
 
-      // If homework is still empty/not user-touched, this can autofill from the newly added lesson
       _applyHomeworkAutofillFromSelectedSession(chosen);
     }
   }
 
-  // ✅ Add custom taught item (meeting / admin / not in syllabus but counts as lesson taught)
   Future<void> _openCustomTaughtDialog() async {
     final titleC = TextEditingController();
     final notesC = TextEditingController();
@@ -586,7 +625,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () {
               if (titleC.text.trim().isEmpty) return;
@@ -611,11 +653,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   void _removeTaughtAt(int index) {
     setState(() {
-      if (index >= 0 && index < _taughtItems.length) _taughtItems.removeAt(index);
+      if (index >= 0 && index < _taughtItems.length) {
+        _taughtItems.removeAt(index);
+      }
     });
   }
 
-  Widget _chip({required IconData icon, required String text, required Color tint}) {
+  Widget _chip({
+    required IconData icon,
+    required String text,
+    required Color tint,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -641,7 +689,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     );
   }
 
-  // ✅ Save attendance with meetingNumber + taughtItems + backward-compatible taught(single)
   Future<void> _saveAttendance() async {
     if (_classId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -693,11 +740,14 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       final Map<String, bool> presentMap = {};
       final Map<String, bool> absentMap = {};
       for (final uid in _learnerUids) {
-        (_present[uid] ?? false) ? presentMap[uid] = true : absentMap[uid] = true;
+        (_present[uid] ?? false)
+            ? presentMap[uid] = true
+            : absentMap[uid] = true;
       }
 
       final hwText = _homeworkCtrl.text.trim();
-      final prevHw = Map<String, dynamic>.from(widget.existingRecord?['homework'] ?? {});
+      final prevHw =
+      Map<String, dynamic>.from(widget.existingRecord?['homework'] ?? {});
       final hwCreatedAt = prevHw['createdAt'] ??
           (widget.existingRecord?['createdAt'] ?? ServerValue.timestamp);
 
@@ -723,6 +773,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           'sessionNumber': (first['sessionNumber'] is num)
               ? (first['sessionNumber'] as num).toInt()
               : (int.tryParse('${first['sessionNumber']}') ?? 0),
+          'objective': (first['objective'] ?? '').toString(),
+          'skillType': (first['skillType'] ?? '').toString(),
+          'lessonHomework': (first['lessonHomework'] ?? '').toString(),
         };
       } else {
         taughtSingle = {
@@ -740,11 +793,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'sessionId': sessionId,
         'date': dateStr,
         'updatedAt': ServerValue.timestamp,
-        'createdAt': widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
-
-        // ✅ NEW
+        'createdAt':
+        widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
         'meetingNumber': _meetingNumber,
-
         'teacherUid': user.uid,
         'teacherName': teacherName,
         'course_id': _courseId,
@@ -752,10 +803,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'course_title': _courseTitle,
         'successRate': _successRate,
 
-        // ✅ NEW multi taught
+        // multi taught with saved snapshot fields
         'taughtItems': _taughtItems,
 
-        // ✅ Keep old single taught for existing screens/logic
+        // old single taught for compatibility
         'taught': taughtSingle,
 
         'present': presentMap,
@@ -767,7 +818,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'classes/$_classId/attendance/$sessionId': classRecord,
       };
 
-      // Also write to each learner course node (your existing logic)
+      // Also write to each learner course node
       for (final lUid in _learnerUids) {
         final cSnap = await _db.child('users').child(lUid).child('courses').get();
         if (!cSnap.exists) continue;
@@ -792,14 +843,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         if (targetKey != null) {
           updates['users/$lUid/courses/$targetKey/attendance/$sessionId'] = {
             ...classRecord,
-
-            // stamp the class so counts never mix across class changes
             'class_id': _classId,
             'course_id': _courseId,
-
             'status': (_present[lUid] ?? false) ? 'present' : 'absent',
-
-            // keep learner homework short (optional)
             'homework': homeworkObj != null
                 ? {'text': hwText, 'dueDate': _homeworkDueDate}
                 : null,
@@ -822,7 +868,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     }
   }
 
-  // UI helpers
   Widget _sectionLabel(String text) => Padding(
     padding: const EdgeInsets.only(left: 4, bottom: 8),
     child: Row(
@@ -849,7 +894,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     ),
   );
 
-  // UI: Meeting + taught items
   Widget _buildLessonCard() {
     return Card(
       elevation: 0,
@@ -871,7 +915,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ),
             ),
             const Divider(height: 24),
-
             Row(
               children: [
                 const Icon(Icons.event, size: 20, color: primaryBlue),
@@ -886,11 +929,13 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ],
             ),
             const SizedBox(height: 10),
-
-            // ✅ Meeting number (auto)
             Row(
               children: [
-                const Icon(Icons.confirmation_number, size: 20, color: primaryBlue),
+                const Icon(
+                  Icons.confirmation_number,
+                  size: 20,
+                  color: primaryBlue,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -908,9 +953,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   ),
               ],
             ),
-
             const SizedBox(height: 16),
-
             const Text(
               "Lessons Taught (this meeting)",
               style: TextStyle(
@@ -920,7 +963,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ),
             ),
             const SizedBox(height: 8),
-
             if (_taughtItems.isEmpty)
               Text(
                 "No lessons added yet.",
@@ -949,7 +991,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                           CircleAvatar(
                             radius: 16,
                             backgroundColor: actionOrange.withOpacity(0.12),
-                            child: const Icon(Icons.edit_note, color: actionOrange, size: 18),
+                            child: const Icon(
+                              Icons.edit_note,
+                              color: actionOrange,
+                              size: 18,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -967,11 +1013,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                                   const SizedBox(height: 4),
                                   Text(
                                     notes,
-                                    style: TextStyle(color: Colors.black.withOpacity(0.65)),
+                                    style: TextStyle(
+                                      color: Colors.black.withOpacity(0.65),
+                                    ),
                                   ),
                                 ],
                                 const SizedBox(height: 8),
-                                _chip(icon: Icons.star, text: 'Custom', tint: actionOrange),
+                                _chip(
+                                  icon: Icons.star,
+                                  text: 'Custom',
+                                  tint: actionOrange,
+                                ),
                               ],
                             ),
                           ),
@@ -988,8 +1040,16 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   // syllabus
                   final unitTitle = (item['unitTitle'] ?? '').toString();
                   final title = (item['title'] ?? '').toString();
+                  final objective =
+                  (item['objective'] ?? '').toString().trim();
+                  final skillType =
+                  (item['skillType'] ?? '').toString().trim();
+                  final hasLessonHomework =
+                      (item['lessonHomework'] ?? '').toString().trim().isNotEmpty;
                   final snRaw = item['sessionNumber'];
-                  final sn = (snRaw is num) ? snRaw.toInt() : (int.tryParse('$snRaw') ?? 0);
+                  final sn = (snRaw is num)
+                      ? snRaw.toInt()
+                      : (int.tryParse('$snRaw') ?? 0);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -1005,7 +1065,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                         CircleAvatar(
                           radius: 16,
                           backgroundColor: appBg,
-                          child: const Icon(Icons.menu_book, color: primaryBlue, size: 18),
+                          child: const Icon(
+                            Icons.menu_book,
+                            color: primaryBlue,
+                            size: 18,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -1031,8 +1095,43 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                                   fontSize: 14,
                                 ),
                               ),
+                              if (objective.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  objective,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: mainText,
+                                    fontSize: 12,
+                                    height: 1.25,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 8),
-                              _chip(icon: Icons.check, text: 'Syllabus', tint: primaryBlue),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _chip(
+                                    icon: Icons.check,
+                                    text: 'Syllabus',
+                                    tint: primaryBlue,
+                                  ),
+                                  if (skillType.isNotEmpty)
+                                    _chip(
+                                      icon: Icons.category,
+                                      text: skillType,
+                                      tint: primaryBlue,
+                                    ),
+                                  if (hasLessonHomework)
+                                    _chip(
+                                      icon: Icons.assignment_turned_in,
+                                      text: 'Lesson Homework',
+                                      tint: actionOrange,
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
@@ -1046,9 +1145,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   );
                 }),
               ),
-
             const SizedBox(height: 6),
-
             Row(
               children: [
                 Expanded(
@@ -1091,7 +1188,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               children: [
                 const Text(
                   "Success Rate",
-                  style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                  ),
                 ),
                 Text(
                   "$_successRate%",
@@ -1171,11 +1271,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                     const Icon(Icons.history_edu, size: 20, color: primaryBlue),
                     const SizedBox(width: 10),
                     Text(
-                      _homeworkDueDate.isEmpty ? "No Due Date" : "Due: $_homeworkDueDate",
+                      _homeworkDueDate.isEmpty
+                          ? "No Due Date"
+                          : "Due: $_homeworkDueDate",
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const Spacer(),
-                    const Icon(Icons.calendar_month, size: 18, color: secondaryText),
+                    const Icon(
+                      Icons.calendar_month,
+                      size: 18,
+                      color: secondaryText,
+                    ),
                   ],
                 ),
               ),
@@ -1257,15 +1363,12 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         _sectionLabel("LESSON DETAILS"),
         _buildLessonCard(),
         const SizedBox(height: 20),
-
         _sectionLabel("HOMEWORK"),
         _buildHomeworkCard(),
         const SizedBox(height: 20),
-
         _sectionLabel("PROGRESS"),
         _buildSuccessRateCard(),
         const SizedBox(height: 20),
-
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -1281,7 +1384,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           ],
         ),
         ..._learnerUids.map(_buildLearnerTile),
-
         const SizedBox(height: 30),
         ElevatedButton(
           onPressed: _saveAttendance,
@@ -1289,11 +1391,16 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             backgroundColor: actionOrange,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           child: Text(
             _isEdit ? 'UPDATE SESSION' : 'SAVE ATTENDANCE',
-            style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.1),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
           ),
         ),
         const SizedBox(height: 40),

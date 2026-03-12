@@ -809,6 +809,74 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     );
   }
 
+  void _openQuickReactions(_MailMsg m) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏'];
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'React',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: _navy.withOpacity(0.9),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: emojis.map((e) {
+                  final selected = (m.reactions[e] ?? const <String>{}).contains(_meUid);
+
+                  return InkWell(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _toggleReaction(m, e);
+                    },
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? _orange.withOpacity(0.18)
+                            : Colors.grey.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: selected
+                              ? _orange.withOpacity(0.55)
+                              : Colors.grey.withOpacity(0.18),
+                        ),
+                      ),
+                      child: Text(
+                        e,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+
   Widget _buildReactionsRow(_MailMsg m, {required bool mine}) {
     if (m.reactions.isEmpty) return const SizedBox.shrink();
 
@@ -820,34 +888,65 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (entries.isEmpty) return const SizedBox.shrink();
 
     entries.sort((a, b) => b.value.compareTo(a.value));
-    final show = entries.take(4).toList();
 
+    const maxVisible = 4;
+    final show = entries.take(maxVisible).toList();
+    final hiddenCount = entries.length - show.length;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Align(
         alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
         child: Wrap(
           spacing: 6,
-          children: show.map((e) {
-            final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
-            final bg = selected ? Colors.white.withOpacity(0.22) : Colors.white.withOpacity(0.16);
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: mine ? bg : Colors.black.withOpacity(0.05),
+          children: [
+            ...show.map((e) {
+              final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
+              final bg = selected
+                  ? Colors.white.withOpacity(0.22)
+                  : Colors.white.withOpacity(0.16);
+
+              return InkWell(
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: mine ? Colors.white.withOpacity(0.22) : _navy.withOpacity(0.12)),
-              ),
-              child: Text(
-                '${e.key} ${e.value}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                  color: mine ? Colors.white : _navy.withOpacity(0.92),
+                onTap: () => _toggleReaction(m, e.key),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: mine ? bg : Colors.black.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: mine
+                          ? Colors.white.withOpacity(0.22)
+                          : _navy.withOpacity(0.12),
+                    ),
+                  ),
+                  child: Text(
+                    '${e.key} ${e.value}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                      color: mine ? Colors.white : _navy.withOpacity(0.92),
+                    ),
+                  ),
+                ),
+              );
+            }),
+
+            if (hiddenCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '+$hiddenCount',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
                 ),
               ),
-            );
-          }).toList(),
+          ],
         ),
       ),
     );
@@ -2607,7 +2706,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 340),
                             child: GestureDetector(
-                              onLongPress: () => _openMessageActions(m),
+                              onLongPress: () => _openQuickReactions(m),
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: bubbleBg,
@@ -2678,7 +2777,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                         const SizedBox(width: 6),
                                         PopupMenuButton<String>(
                                           padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
                                           tooltip: 'Message actions',
                                           icon: Icon(
                                             Icons.more_vert_rounded,

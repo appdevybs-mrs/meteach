@@ -289,6 +289,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           'title': (taught['title'] ?? '').toString(),
           'sessionNumber': taught['sessionNumber'] ?? 0,
           'notes': (taught['notes'] ?? '').toString(),
+
+          // NEW snapshot fields
+          'objective': (taught['objective'] ?? '').toString(),
+          'skillType': (taught['skillType'] ?? '').toString(),
+          'lessonHomework': (taught['lessonHomework'] ?? '').toString(),
         });
       }
     }
@@ -410,6 +415,12 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         final unitTitle =
                         (item['unitTitle'] ?? '').toString().trim();
                         final notes = (item['notes'] ?? '').toString().trim();
+                        final objective =
+                        (item['objective'] ?? '').toString().trim();
+                        final skillType =
+                        (item['skillType'] ?? '').toString().trim();
+                        final lessonHomework =
+                        (item['lessonHomework'] ?? '').toString().trim();
                         final sessionNumber = _safeInt(item['sessionNumber']);
 
                         final isCustom = type == 'custom';
@@ -493,8 +504,52 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                           text: isCustom ? 'Custom' : 'Syllabus',
                                           tint: isCustom ? p.accent : p.primary,
                                         ),
+                                        if (skillType.isNotEmpty)
+                                          _pillChip(
+                                            p,
+                                            icon: Icons.category_rounded,
+                                            text: skillType,
+                                            tint: p.accent,
+                                          ),
                                       ],
                                     ),
+                                    if (objective.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: p.appBg,
+                                          borderRadius:
+                                          BorderRadius.circular(12),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Objective',
+                                              style: TextStyle(
+                                                color: p.text.withOpacity(0.65),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.4,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              objective,
+                                              style: TextStyle(
+                                                color: p.text,
+                                                height: 1.4,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                     if (notes.isNotEmpty) ...[
                                       const SizedBox(height: 10),
                                       Container(
@@ -505,14 +560,67 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                           borderRadius:
                                           BorderRadius.circular(12),
                                         ),
-                                        child: Text(
-                                          notes,
-                                          style: TextStyle(
-                                            color: p.text,
-                                            height: 1.4,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Notes',
+                                              style: TextStyle(
+                                                color: p.text.withOpacity(0.65),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.4,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              notes,
+                                              style: TextStyle(
+                                                color: p.text,
+                                                height: 1.4,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                    if (lessonHomework.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: p.appBg,
+                                          borderRadius:
+                                          BorderRadius.circular(12),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Lesson Homework',
+                                              style: TextStyle(
+                                                color: p.text.withOpacity(0.65),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.4,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              lessonHomework,
+                                              style: TextStyle(
+                                                color: p.text,
+                                                height: 1.4,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],

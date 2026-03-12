@@ -248,7 +248,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       _ok = null;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    final formState = _formKey.currentState;
+    if (formState != null && !formState.validate()) return;
 
     setState(() => _busy = true);
 
