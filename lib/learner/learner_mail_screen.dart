@@ -18,7 +18,6 @@ class LearnerMailScreen extends StatefulWidget {
 class _LearnerMailScreenState extends State<LearnerMailScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  // --- Brand colors (ONLY 2 colors + white) ---
   Color get _navy => UiK.primaryBlue;
   Color get _orange => UiK.actionOrange;
   Color get _navyDark => UiK.primaryBlue.withOpacity(0.92);
@@ -51,9 +50,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // -------------------------------------------------------
-  // Robust parser for mail_index shapes (direct + nested buckets)
-  // -------------------------------------------------------
   bool _looksLikeThreadObject(Map<String, dynamic> m) {
     return m.containsKey('peerUid') ||
         m.containsKey('peerName') ||
@@ -83,13 +79,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       if (vv is Map) {
         final asMap = vv.map((kk, vvv) => MapEntry(kk.toString(), vvv));
 
-        // direct thread object
         if (_looksLikeThreadObject(asMap)) {
           addIfThreadObject(key, vv);
           return;
         }
 
-        // nested bucket: peerUid -> { threadId -> true OR threadId -> {fields} }
         asMap.forEach((innerK, innerV) {
           if (innerK.trim().isEmpty || innerV == null) return;
           if (innerV is Map) {
@@ -102,7 +96,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       }
     });
 
-    // dedupe by threadId
     final byId = <String, _TopicRow>{};
     for (final r in out) {
       final existing = byId[r.threadId];
@@ -116,9 +109,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     return rows;
   }
 
-  // -------------------------------------------------------
-  // Compose
-  // -------------------------------------------------------
   Future<void> _composeNewTopic() async {
     final meUid = _meUid.trim();
     if (meUid.isEmpty) {
@@ -131,6 +121,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         context: context,
         showDragHandle: true,
         isScrollControlled: true,
+        backgroundColor: Colors.white,
         builder: (ctx) => _LearnerComposeSheet(db: _db, meUid: meUid),
       );
 
@@ -145,8 +136,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       const placeholderLastMessage = '(No messages yet)';
       final now = _nowMs();
 
-      // --- helper to create a 1:1 thread ---
-      Future<void> create1to1({
+      Future<String> create1to1({
         required String toUid,
         required String toName,
         required String myName,
@@ -155,7 +145,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         if (threadId == null) throw Exception('Failed to create thread id.');
 
         final Map<String, dynamic> updates = {
-          // thread
           'mail_threads/$threadId/subject': subject,
           'mail_threads/$threadId/createdAt': now,
           'mail_threads/$threadId/updatedAt': now,
@@ -163,7 +152,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'mail_threads/$threadId/participants/$meUid': true,
           'mail_threads/$threadId/participants/$toUid': true,
 
-          // my index
           'mail_index/$meUid/$threadId/subject': subject,
           'mail_index/$meUid/$threadId/updatedAt': now,
           'mail_index/$meUid/$threadId/lastMessage': placeholderLastMessage,
@@ -172,7 +160,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           'mail_index/$meUid/$threadId/peerName': toName,
           'mail_index/$meUid/$threadId/deletedAt': null,
 
-          // receiver index
           'mail_index/$toUid/$threadId/subject': subject,
           'mail_index/$toUid/$threadId/updatedAt': now,
           'mail_index/$toUid/$threadId/lastMessage': placeholderLastMessage,
@@ -183,26 +170,12 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         };
 
         await _db.update(updates);
-
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            settings: RouteSettings(name: '/mail/thread/$threadId'),
-            builder: (_) => LearnerMailThreadScreen(
-              threadId: threadId,
-              peerUid: toUid,
-              peerName: toName.isEmpty ? 'User' : toName,
-              subject: subject,
-            ),
-          ),
-        );
+        return threadId;
       }
 
       final myName = picked.myName.trim().isEmpty ? 'Learner' : picked.myName.trim();
 
-      // 1) Single: one person OR admins(all)
       if (picked.mode == _LearnerComposeMode.single) {
-        // Admins(all)
         if (picked.sendToAllAdmins == true) {
           final admins = picked.adminUids;
           if (admins.isEmpty) {
@@ -223,11 +196,10 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
             sent++;
           }
 
-          _snack('Sent to $sent admins ✅');
+          _snack('Created $sent admin topic(s) ✅');
           return;
         }
 
-        // Normal single recipient
         final toUid = picked.receiverUid?.trim() ?? '';
         final toName = picked.receiverName?.trim() ?? '';
         if (toUid.isEmpty) {
@@ -235,11 +207,27 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           return;
         }
 
-        await create1to1(toUid: toUid, toName: toName.isEmpty ? 'User' : toName, myName: myName);
+        final threadId = await create1to1(
+          toUid: toUid,
+          toName: toName.isEmpty ? 'User' : toName,
+          myName: myName,
+        );
+
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            settings: RouteSettings(name: '/mail/thread/$threadId'),
+            builder: (_) => LearnerMailThreadScreen(
+              threadId: threadId,
+              peerUid: toUid,
+              peerName: toName.isEmpty ? 'User' : toName,
+              subject: subject,
+            ),
+          ),
+        );
         return;
       }
 
-      // 2) Whole class: send to all classmates in selected class (excluding me)
       if (picked.mode == _LearnerComposeMode.classGroup) {
         final classId = picked.classId?.trim() ?? '';
         if (classId.isEmpty) {
@@ -265,7 +253,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           sent++;
         }
 
-        _snack('Sent to $sent classmates ✅');
+        _snack('Created $sent class topic(s) ✅');
         return;
       }
     } catch (e) {
@@ -299,7 +287,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
           : FloatingActionButton.extended(
         onPressed: _composeNewTopic,
         icon: const Icon(Icons.edit_rounded),
-        label: const Text('New'),
+        label: const Text('New message'),
       ),
       body: WatermarkBackground(
         child: uid.isEmpty
@@ -372,7 +360,10 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(color: _navy.withOpacity(0.14)),
                               ),
-                              child: Icon(Icons.mail_rounded, color: _navy.withOpacity(0.92)),
+                              child: Icon(
+                                Icons.mail_rounded,
+                                color: _navy.withOpacity(0.92),
+                              ),
                             ),
                             if (unread > 0)
                               Positioned(
@@ -475,10 +466,6 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   }
 }
 
-// ===================================================================
-// Compose Sheet for Learner
-// ===================================================================
-
 enum _LearnerComposeMode { single, classGroup }
 enum _LearnerRecipientType { adminAll, admin, teacher, classmate }
 
@@ -505,15 +492,11 @@ class _LearnerComposeResult {
     required this.mode,
     required this.subject,
     required this.myName,
-
-    // single
     required this.receiverUid,
     required this.receiverName,
     required this.sendToAllAdmins,
     required this.adminUids,
     required this.adminNameByUid,
-
-    // class group
     required this.classId,
     required this.classmateUidsByClass,
     required this.nameByUid,
@@ -587,9 +570,35 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
     return 'learner';
   }
 
+  IconData _recipientIcon(_LearnerRecipientType t) {
+    if (t == _LearnerRecipientType.adminAll || t == _LearnerRecipientType.admin) {
+      return Icons.admin_panel_settings_rounded;
+    }
+    if (t == _LearnerRecipientType.teacher) {
+      return Icons.school_rounded;
+    }
+    return Icons.person_rounded;
+  }
+
+  String _recipientSubtitle(_LearnerRecipientType t) {
+    if (t == _LearnerRecipientType.adminAll) return 'School administration';
+    if (t == _LearnerRecipientType.admin) return 'Administration';
+    if (t == _LearnerRecipientType.teacher) return 'Teacher';
+    return 'Classmate';
+  }
+
+  Color _recipientTint(_LearnerRecipientType t) {
+    if (t == _LearnerRecipientType.adminAll || t == _LearnerRecipientType.admin) {
+      return Colors.deepPurple;
+    }
+    if (t == _LearnerRecipientType.teacher) {
+      return Colors.teal;
+    }
+    return Colors.blueGrey;
+  }
+
   Future<void> _loadEverything() async {
     try {
-      // 1) My name
       final meSnap = await widget.db.child('users/${widget.meUid}').get();
       if (meSnap.exists && meSnap.value is Map) {
         final m = (meSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
@@ -600,7 +609,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
         _myName = full.isNotEmpty ? full : (email.isNotEmpty ? email : 'Learner');
       }
 
-      // 2) Load all users once (for names + admins)
       final usersSnap = await widget.db.child('users').get();
       final usersVal = usersSnap.value;
 
@@ -626,7 +634,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
         });
       }
 
-      // 3) Find my classes + classmates + teachers from classes/*
       final classesSnap = await widget.db.child('classes').get();
       final classesVal = classesSnap.value;
 
@@ -639,7 +646,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           if (classId == null || classVal == null || classVal is! Map) return;
           final c = classVal.map((k, v) => MapEntry(k.toString(), v));
 
-          // Am I in learners?
           final learners = c['learners'];
           bool imIn = false;
           if (learners is Map) {
@@ -648,12 +654,13 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           if (!imIn) return;
 
           final title = (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId).toString().trim();
-          myClasses.add(_LearnerClassRow(
-            classId: classId.toString(),
-            title: title.isEmpty ? classId.toString() : title,
-          ));
+          myClasses.add(
+            _LearnerClassRow(
+              classId: classId.toString(),
+              title: title.isEmpty ? classId.toString() : title,
+            ),
+          );
 
-          // teacher from instructor_current.uid
           final cur = c['instructor_current'];
           if (cur is Map) {
             final curM = cur.map((k, v) => MapEntry(k.toString(), v));
@@ -661,7 +668,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
             if (tUid.isNotEmpty && tUid != widget.meUid) teachers.add(tUid);
           }
 
-          // classmates
           final classmateList = <String>[];
           if (learners is Map) {
             learners.forEach((u, _) {
@@ -678,36 +684,41 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
 
       myClasses.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
-      // 4) Build recipients list for Single
       final all = <_LearnerRecipientRow>[];
 
-      // Admins (ALL)
-      all.add(_LearnerRecipientRow(uid: '__ADMINS__', name: 'Administration (all)', type: _LearnerRecipientType.adminAll));
+      all.add(
+        _LearnerRecipientRow(
+          uid: '__ADMINS__',
+          name: 'Administration (all)',
+          type: _LearnerRecipientType.adminAll,
+        ),
+      );
 
-      // Teachers
       for (final tUid in teachers) {
-        all.add(_LearnerRecipientRow(
-          uid: tUid,
-          name: _nameByUid[tUid] ?? 'Teacher',
-          type: _LearnerRecipientType.teacher,
-        ));
+        all.add(
+          _LearnerRecipientRow(
+            uid: tUid,
+            name: _nameByUid[tUid] ?? 'Teacher',
+            type: _LearnerRecipientType.teacher,
+          ),
+        );
       }
 
-      // Classmates
       for (final cUid in classmates) {
-        all.add(_LearnerRecipientRow(
-          uid: cUid,
-          name: _nameByUid[cUid] ?? 'Classmate',
-          type: _LearnerRecipientType.classmate,
-        ));
+        all.add(
+          _LearnerRecipientRow(
+            uid: cUid,
+            name: _nameByUid[cUid] ?? 'Classmate',
+            type: _LearnerRecipientType.classmate,
+          ),
+        );
       }
 
-      // Sort: adminAll first, then teachers, then classmates
       int rank(_LearnerRecipientType t) {
         if (t == _LearnerRecipientType.adminAll) return 0;
         if (t == _LearnerRecipientType.teacher) return 1;
         if (t == _LearnerRecipientType.admin) return 2;
-        return 3; // classmate
+        return 3;
       }
 
       all.sort((a, b) {
@@ -720,10 +731,8 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
       setState(() {
         _classes = myClasses;
         _pickedClass = myClasses.isNotEmpty ? myClasses.first : null;
-
         _recipients = all;
         _picked = all.isNotEmpty ? all.first : null;
-
         _loading = false;
       });
     } catch (_) {
@@ -740,7 +749,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
       final r = _picked;
       if (r == null) return;
 
-      // Admins(all)
       if (r.type == _LearnerRecipientType.adminAll) {
         Navigator.pop(
           context,
@@ -780,7 +788,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
       return;
     }
 
-    // Whole class
     final c = _pickedClass;
     if (c == null) return;
 
@@ -802,16 +809,101 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
     );
   }
 
+  Widget _buildRecipientItem(_LearnerRecipientRow r) {
+    final tint = _recipientTint(r.type);
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: tint.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: tint.withOpacity(0.18)),
+          ),
+          child: Icon(_recipientIcon(r.type), color: tint.withOpacity(0.95), size: 19),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                r.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _recipientSubtitle(r.type),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: Colors.black.withOpacity(0.58),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClassItem(_LearnerClassRow c) {
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: Colors.indigo.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.indigo.withOpacity(0.16)),
+          ),
+          child: Icon(
+            Icons.groups_rounded,
+            color: Colors.indigo.withOpacity(0.95),
+            size: 19,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                c.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Whole class',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: Colors.black.withOpacity(0.58),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final bottom = media.viewInsets.bottom + media.padding.bottom;
-
-    String prefixFor(_LearnerRecipientType t) {
-      if (t == _LearnerRecipientType.adminAll || t == _LearnerRecipientType.admin) return '🛡️ ';
-      if (t == _LearnerRecipientType.teacher) return '👩‍🏫 ';
-      return '🎓 ';
-    }
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottom),
@@ -822,7 +914,10 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 6),
-              const Text('New topic', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              const Text(
+                'New message',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
               const SizedBox(height: 12),
               if (_loading)
                 const Padding(
@@ -838,23 +933,44 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
               else ...[
                 SegmentedButton<_LearnerComposeMode>(
                   segments: const [
-                    ButtonSegment(value: _LearnerComposeMode.single, label: Text('Single')),
-                    ButtonSegment(value: _LearnerComposeMode.classGroup, label: Text('Whole class')),
+                    ButtonSegment(
+                      value: _LearnerComposeMode.single,
+                      icon: Icon(Icons.person_rounded),
+                      label: Text('One person'),
+                    ),
+                    ButtonSegment(
+                      value: _LearnerComposeMode.classGroup,
+                      icon: Icon(Icons.groups_rounded),
+                      label: Text('Whole class'),
+                    ),
                   ],
                   selected: {_mode},
                   onSelectionChanged: (s) => setState(() => _mode = s.first),
                 ),
                 const SizedBox(height: 12),
-
                 if (_mode == _LearnerComposeMode.single)
                   DropdownButtonFormField<_LearnerRecipientRow>(
                     value: _picked,
+                    isExpanded: true,
                     items: _recipients.map((r) {
                       return DropdownMenuItem<_LearnerRecipientRow>(
                         value: r,
-                        child: Text('${prefixFor(r.type)}${r.name}'),
+                        child: _buildRecipientItem(r),
                       );
                     }).toList(),
+                    selectedItemBuilder: (_) {
+                      return _recipients.map((r) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${r.name} • ${_recipientSubtitle(r.type)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        );
+                      }).toList();
+                    },
                     onChanged: (v) => setState(() => _picked = v),
                     decoration: const InputDecoration(
                       labelText: 'Send to',
@@ -864,25 +980,39 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 else
                   DropdownButtonFormField<_LearnerClassRow>(
                     value: _pickedClass,
+                    isExpanded: true,
                     items: _classes.map((c) {
                       return DropdownMenuItem<_LearnerClassRow>(
                         value: c,
-                        child: Text('👥 ${c.title} (${c.classId})'),
+                        child: _buildClassItem(c),
                       );
                     }).toList(),
+                    selectedItemBuilder: (_) {
+                      return _classes.map((c) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${c.title} • Whole class',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        );
+                      }).toList();
+                    },
                     onChanged: (v) => setState(() => _pickedClass = v),
                     decoration: const InputDecoration(
                       labelText: 'Class',
                       border: OutlineInputBorder(),
                     ),
                   ),
-
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _subjectC,
                   textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
                     labelText: 'Topic / Subject',
+                    hintText: 'Example: Homework question',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -892,7 +1022,9 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                   child: FilledButton.icon(
                     onPressed: _submit,
                     icon: const Icon(Icons.send_rounded),
-                    label: Text(_mode == _LearnerComposeMode.classGroup ? 'Send to class' : 'Create topic'),
+                    label: Text(
+                      _mode == _LearnerComposeMode.classGroup ? 'Create class topics' : 'Create topic',
+                    ),
                   ),
                 ),
               ],
@@ -903,10 +1035,6 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
     );
   }
 }
-
-// ===================================================================
-// Topic model (same fields you already use)
-// ===================================================================
 
 class _TopicRow {
   _TopicRow({

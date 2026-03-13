@@ -1,20 +1,23 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
-import '../admin/admin_payments.dart'; // keep (project safety)
-import 'route_state.dart';
 
-import '../main.dart'; // appNavigatorKey + messengerKey
+import '../admin/admin_payments.dart'; // keep (project safety)
+import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
 import '../calls/audio_call_screen.dart';
-import 'mail_thread_by_id_screen.dart';
+import '../learner/learner_mail_thread_screen.dart';
+import '../main.dart'; // appNavigatorKey + messengerKey
+import '../teacher/teacher_mail_thread_screen.dart';
+import 'mail_thread_by_id_screen.dart'; // safe fallback only
+import 'route_state.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -35,7 +38,8 @@ class FCMService {
   static final FCMService I = FCMService._();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _local =
+  FlutterLocalNotificationsPlugin();
 
   bool _localInited = false;
 
@@ -173,6 +177,7 @@ class FCMService {
       _localInited = true;
       return;
     }
+
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidInit);
 
@@ -225,7 +230,8 @@ class FCMService {
     }
 
     final androidPlugin =
-    _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    _local.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
 
     if (androidPlugin != null) {
       await androidPlugin.createNotificationChannel(
@@ -507,6 +513,205 @@ class FCMService {
     );
   }
 
+  String _normalizeRole(dynamic raw) {
+    final s = (raw ?? '').toString().trim().toLowerCase();
+
+    if (s == 'admin' ||
+        s == 'adin' ||
+        s == 'admn' ||
+        s == 'adm' ||
+        s == 'administration' ||
+        s == 'administrator') {
+      return 'admin';
+    }
+
+    if (s == 'teacher' ||
+        s == 'teachers' ||
+        s == 'teacher(s)' ||
+        s == 'teach' ||
+        s == 'instructor' ||
+        s == 'prof') {
+      return 'teacher';
+    }
+
+    if (s == 'learner' ||
+        s == 'learners' ||
+        s == 'learner(s)' ||
+        s == 'lerner' ||
+        s == 'student' ||
+        s == 'pupil') {
+      return 'learner';
+    }
+
+    return '';
+  }
+
+  Future<String> _fetchCurrentUserRole() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.trim().isEmpty) return '';
+
+    try {
+      final snap = await FirebaseDatabase.instance.ref('users/$uid/role').get();
+      return _normalizeRole(snap.value);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<String> _fetchMailSubject(String threadId) async {
+    if (threadId.trim().isEmpty) return '';
+
+    try {
+      final threadSnap =
+      await FirebaseDatabase.instance.ref('mail_threads/$threadId/subject').get();
+      final threadSubject = (threadSnap.value ?? '').toString().trim();
+      if (threadSubject.isNotEmpty) return threadSubject;
+    } catch (_) {}
+
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (myUid == null || myUid.trim().isEmpty) return '';
+
+    try {
+      final indexSnap = await FirebaseDatabase.instance
+          .ref('mail_index/$myUid/$threadId/subject')
+          .get();
+      return (indexSnap.value ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<String> _fetchPeerName(String peerUid, {String seed = ''}) async {
+    final seeded = seed.trim();
+    if (seeded.isNotEmpty) return seeded;
+    if (peerUid.trim().isEmpty) return '';
+
+    try {
+      final snap = await FirebaseDatabase.instance.ref('users/$peerUid').get();
+      if (!snap.exists || snap.value is! Map) return '';
+
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final full = ('$fn $ln').trim();
+      if (full.isNotEmpty) return full;
+
+      final email = (m['email'] ?? '').toString().trim();
+      return email;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchAdminTeacherMap(String peerUid) async {
+    if (peerUid.trim().isEmpty) return null;
+
+    try {
+      final userSnap = await FirebaseDatabase.instance.ref('users/$peerUid').get();
+      final v = userSnap.value;
+
+      if (v is! Map) return null;
+
+      return Map<String, dynamic>.from(v as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _openMailNotificationByRole(Map<String, dynamic> data) async {
+    final threadId = (data['threadId'] ?? '').toString().trim();
+    final peerUid = (data['peerUid'] ?? '').toString().trim();
+    final seededPeerName = (data['peerName'] ?? '').toString().trim();
+
+    if (threadId.isEmpty || peerUid.isEmpty) return;
+    if (RouteState.currentMailThreadId == threadId) return;
+
+    final nav = appNavigatorKey.currentState;
+    if (nav == null) return;
+
+    final targetName = '/mail/thread/$threadId';
+
+    bool found = false;
+    nav.popUntil((route) {
+      if (route.settings.name == targetName) {
+        found = true;
+        return true;
+      }
+      return route.isFirst;
+    });
+
+    if (found) return;
+
+    final role = await _fetchCurrentUserRole();
+    final subject = await _fetchMailSubject(threadId);
+    final peerName = await _fetchPeerName(peerUid, seed: seededPeerName);
+
+    if (role == 'teacher') {
+      nav.push(
+        MaterialPageRoute(
+          settings: RouteSettings(name: targetName),
+          builder: (_) => TeacherMailThreadScreen(
+            threadId: threadId,
+            peerUid: peerUid,
+            peerName: peerName.isEmpty ? 'User' : peerName,
+            subject: subject,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (role == 'learner') {
+      nav.push(
+        MaterialPageRoute(
+          settings: RouteSettings(name: targetName),
+          builder: (_) => LearnerMailThreadScreen(
+            threadId: threadId,
+            peerUid: peerUid,
+            peerName: peerName.isEmpty ? 'User' : peerName,
+            subject: subject,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (role == 'admin') {
+      final teacher = await _fetchAdminTeacherMap(peerUid);
+      if (teacher == null) {
+        messengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text('Could not load mail user.'),
+          ),
+        );
+        return;
+      }
+
+      nav.push(
+        MaterialPageRoute(
+          settings: RouteSettings(name: targetName),
+          builder: (_) => AdminTeacherMailThreadScreen(
+            teacherUid: peerUid,
+            teacher: teacher,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // Safe fallback only if role is missing/unknown
+    nav.push(
+      MaterialPageRoute(
+        settings: RouteSettings(name: targetName),
+        builder: (_) => MailThreadByIdScreen(
+          threadId: threadId,
+          peerUid: peerUid,
+        ),
+      ),
+    );
+  }
+
   void _handleNotificationTapPayload(String payload) {
     Map<String, dynamic> data;
     try {
@@ -527,41 +732,9 @@ class FCMService {
 
     // Mail
     if (type == 'mail' || type == 'email') {
-      final threadId = (data['threadId'] ?? '').toString().trim();
-      final peerUid = (data['peerUid'] ?? '').toString().trim();
-
-      if (threadId.isEmpty || peerUid.isEmpty) return;
-      if (RouteState.currentMailThreadId == threadId) return;
-
-      void go() {
-        final nav = appNavigatorKey.currentState;
-        if (nav == null) return;
-
-        final targetName = '/mail/thread/$threadId';
-
-        bool found = false;
-        nav.popUntil((route) {
-          if (route.settings.name == targetName) {
-            found = true;
-            return true;
-          }
-          return route.isFirst;
-        });
-
-        if (found) return;
-
-        nav.push(
-          MaterialPageRoute(
-            settings: RouteSettings(name: targetName),
-            builder: (_) => MailThreadByIdScreen(
-              threadId: threadId,
-              peerUid: peerUid,
-            ),
-          ),
-        );
-      }
-
-      WidgetsBinding.instance.addPostFrameCallback((_) => go());
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _openMailNotificationByRole(data);
+      });
       return;
     }
 

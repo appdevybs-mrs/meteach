@@ -56,14 +56,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   static Color _datePillBorder(BuildContext context) => _navy.withOpacity(0.15);
 
-  // Used only to fix relative/odd media URLs. Matches your upload endpoint domain.
   static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
 
-  /// Fixes:
-  /// - URLs like "//domain/path" (adds https:)
-  /// - relative URLs like "/uploads/a.jpg" or "uploads/a.jpg" (adds your origin)
-  /// - http:// (prefers https:// to avoid Android cleartext issues)
-  /// - spaces (encodes)
   static String _safeNetworkUrl(String raw) {
     var s = raw.trim();
     if (s.isEmpty) return '';
@@ -92,12 +86,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return u1.toString();
   }
 
-  // ------------------------------------------------
-
   final _db = FirebaseDatabase.instance;
   final _bodyC = TextEditingController();
 
-  // Search within thread (local only)
   final _searchC = TextEditingController();
   bool _searching = false;
 
@@ -123,37 +114,33 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   bool _sending = false;
 
-  // attachments in composer (not message history)
-  final List<Map<String, String>> _attachments = []; // {name,url}
+  final List<Map<String, String>> _attachments = [];
+  final List<_ComposerUploadItem> _uploadingItems = [];
 
-  // ---- learner role + courseKey (current course only) ----
   bool _peerIsLearner = false;
   bool _loadedPeerRole = false;
-  String? _threadCourseKey; // for current course report stats
+  String? _threadCourseKey;
   bool _loadedThreadMeta = false;
   String? _threadCourseTitle;
-  // ✅ learner courses cache (courseKey -> title)
   Map<String, String> _learnerCourseTitles = {};
   bool _loadingLearnerCourses = false;
   bool _loadedLearnerCourses = false;
-  // Camera
+
   final ImagePicker _picker = ImagePicker();
 
-  // Audio playback (inline)
   final AudioPlayer _audio = AudioPlayer();
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<void>? _completeSub;
-  String? _playingUrl; // normalized
+  String? _playingUrl;
   Duration _pos = Duration.zero;
   Duration _dur = Duration.zero;
   bool _isPlaying = false;
 
-  // Audio recording (WhatsApp-ish composer) — FIXED like learner
   final AudioRecorder _rec = AudioRecorder();
 
-  bool _recStarting = false; // fixes “release before start finishes”
+  bool _recStarting = false;
   bool _recRecording = false;
   bool _recUploading = false;
 
@@ -168,15 +155,20 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   Duration _recElapsed = Duration.zero;
   String? _recPath;
 
-  // Gesture tracking
   Offset? _pressStartGlobal;
 
-  // thresholds tuned to avoid accidental lock/cancel
-  static const double _cancelDxThreshold = 110; // swipe left to cancel
-  static const double _lockDyThreshold = 95; // slide up to lock
-  static const double _lockDeadzoneDx = 45; // don’t lock if also dragging sideways
+  static const double _cancelDxThreshold = 110;
+  static const double _lockDyThreshold = 95;
+  static const double _lockDeadzoneDx = 45;
+
+  bool get _hasPendingUploads => _uploadingItems.isNotEmpty;
 
   bool get _composerBusy => _sending || _recStarting || _recRecording || _recUploading;
+
+  bool get _disableTextInput => _recStarting || _recRecording || _recUploading;
+  bool get _disableAttachActions => _composerBusy || _hasPendingUploads;
+  bool get _disableSendAction => _sending || _recStarting || _recRecording || _recUploading || _hasPendingUploads;
+  bool get _disableMicAction => _composerBusy || _hasPendingUploads;
 
   @override
   void initState() {
@@ -187,22 +179,25 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     _markRead();
     _loadNames();
-
     _loadPeerRole();
     _loadThreadMeta();
-    _loadLearnerCoursesTitles(); // ✅ load learner courses titles for better report labels
+    _loadLearnerCoursesTitles();
+
     _posSub = _audio.onPositionChanged.listen((d) {
       if (!mounted) return;
       setState(() => _pos = d);
     });
+
     _durSub = _audio.onDurationChanged.listen((d) {
       if (!mounted) return;
       setState(() => _dur = d);
     });
+
     _stateSub = _audio.onPlayerStateChanged.listen((s) {
       if (!mounted) return;
       setState(() => _isPlaying = (s == PlayerState.playing));
     });
+
     _completeSub = _audio.onPlayerComplete.listen((_) {
       if (!mounted) return;
       setState(() {
@@ -285,14 +280,15 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       final tSnap = await _threadRef.get();
       Map<String, dynamic> t = {};
       String? ck;
+
       if (tSnap.exists && tSnap.value is Map) {
         t = Map<String, dynamic>.from(tSnap.value as Map);
+
         String pickKey(Map<String, dynamic> t) {
-          // try known variants (including your “courekey” typo)
           final candidates = [
             'courseKey',
             'coureKey',
-            'courekey', // ✅ add this
+            'courekey',
             'course_key',
             'courseId',
             'course_id',
@@ -304,7 +300,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             if (v.isNotEmpty) return v;
           }
 
-          // sometimes nested
           if (t['meta'] is Map) {
             final meta = Map<String, dynamic>.from(t['meta'] as Map);
             for (final k in candidates) {
@@ -319,7 +314,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         final raw = pickKey(t);
         if (raw.isNotEmpty) ck = _normalizeCourseKey(raw);
       }
-      // ✅ Fallback: if thread has no courseKey, try to get it from homeworkRef
+
       if (ck == null || ck.trim().isEmpty) {
         final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
 
@@ -340,7 +335,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               if (hwCk.isNotEmpty) ck = _normalizeCourseKey(hwCk);
             }
 
-            // Last resort: parse from path if it contains /courses/<key>/
             if (ck == null || ck.trim().isEmpty) {
               final m = RegExp(r'/courses/([^/]+)/').firstMatch(hwRefPath);
               if (m != null) ck = m.group(1);
@@ -348,12 +342,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           } catch (_) {}
         }
       }
+
       String? title;
 
       if (ck != null && ck.trim().isNotEmpty) {
         final key = ck.trim();
 
-        // Try exact key first
         final c1 = await _db.ref('courses/$key/title').get();
         title = (c1.value ?? '').toString().trim();
 
@@ -362,14 +356,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           title = (cName.value ?? '').toString().trim();
         }
 
-        // If empty, try common typo variants (optional)
         if (title.isEmpty) {
-          final fixed = key.replaceAll('coure_', 'course_'); // fixes "coure_01" -> "course_01"
+          final fixed = key.replaceAll('coure_', 'course_');
           if (fixed != key) {
             final c2 = await _db.ref('courses/$fixed/title').get();
             final t2 = (c2.value ?? '').toString().trim();
             if (t2.isNotEmpty) {
-              ck = fixed; // also fix stored key for display
+              ck = fixed;
               title = t2;
             }
           }
@@ -392,7 +385,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-
   Future<void> _loadLearnerCoursesTitles() async {
     if (_loadingLearnerCourses || _loadedLearnerCourses) return;
 
@@ -401,8 +393,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     });
 
     try {
-      // We load from learner node:
-      // users/<learnerUid>/courses/<courseKey>/...
       final snap = await _db.ref('users/${widget.peerUid}/courses').get();
 
       final Map<String, String> out = {};
@@ -416,13 +406,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
           String title = '';
 
-          // If the course object itself has title/name
           if (entry.value is Map) {
             final m = Map<String, dynamic>.from(entry.value as Map);
             title = (m['title'] ?? m['name'] ?? m['course_title'] ?? '').toString().trim();
           }
 
-          // Fallback to global courses/<key>
           if (title.isEmpty) {
             final t1 = await _db.ref('courses/$ck/title').get();
             title = (t1.value ?? '').toString().trim();
@@ -444,7 +432,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _loadedLearnerCourses = true;
         _loadingLearnerCourses = false;
 
-        // ✅ if threadCourseTitle is missing but we have it from learner courses, fill it
         final ck = _threadCourseKey?.trim() ?? '';
         if ((_threadCourseTitle == null || _threadCourseTitle!.trim().isEmpty) && ck.isNotEmpty) {
           final t = out[ck];
@@ -475,8 +462,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (_) {}
   }
 
-  // ---------------- Parsing ----------------
-
   List<_MailMsg> _parseMessages(dynamic data) {
     if (data is! Map) return [];
     final out = <_MailMsg>[];
@@ -491,7 +476,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       out.add(msg);
     });
 
-    // Newest first (works with ListView(reverse: true))
     out.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
     return out;
   }
@@ -512,14 +496,34 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return msgs.where((m) => m.body.toLowerCase().contains(q) || attMatch(m)).toList();
   }
 
-  // ---------------- Attachments ----------------
+  String _newUploadId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  void _addUploadPlaceholder(String id, String name) {
+    if (!mounted) return;
+    setState(() {
+      _uploadingItems.add(_ComposerUploadItem(id: id, name: name));
+    });
+  }
+
+  void _finishUploadPlaceholder(String id) {
+    if (!mounted) return;
+    setState(() {
+      _uploadingItems.removeWhere((e) => e.id == id);
+    });
+  }
+
   Future<void> _pickAndUploadAttachment() async {
+    if (_disableAttachActions) return;
+
     try {
       final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
       if (picked == null || picked.files.isEmpty) return;
 
       final f = picked.files.first;
       final name = (f.name.isNotEmpty) ? f.name : 'file_${DateTime.now().millisecondsSinceEpoch}';
+      final uploadId = _newUploadId();
+
+      _addUploadPlaceholder(uploadId, name);
 
       final client = MailUploadClient.defaultClient();
 
@@ -527,6 +531,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       if (kIsWeb) {
         final bytes = f.bytes;
         if (bytes == null || bytes.isEmpty) {
+          _finishUploadPlaceholder(uploadId);
           _snack('Upload failed: file bytes are empty (web).');
           return;
         }
@@ -534,6 +539,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       } else {
         final path = f.path;
         if (path == null || path.trim().isEmpty) {
+          _finishUploadPlaceholder(uploadId);
           _snack('Upload failed: no file path.');
           return;
         }
@@ -541,24 +547,39 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       }
 
       if (!mounted) return;
-      setState(() => _attachments.add({'name': name, 'url': url}));
+
+      setState(() {
+        _uploadingItems.removeWhere((e) => e.id == uploadId);
+        _attachments.add({'name': name, 'url': url});
+      });
     } catch (e) {
       _snack('Upload failed: $e');
+      if (mounted) {
+        setState(() {
+          _uploadingItems.clear();
+        });
+      }
     }
   }
 
   Future<void> _takePhotoAndAttach() async {
+    if (_disableAttachActions) return;
+
     try {
       final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
       if (x == null) return;
 
       final client = MailUploadClient.defaultClient();
       final name = x.name.isNotEmpty ? x.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final uploadId = _newUploadId();
+
+      _addUploadPlaceholder(uploadId, name);
 
       String url;
       if (kIsWeb) {
         final bytes = await x.readAsBytes();
         if (bytes.isEmpty) {
+          _finishUploadPlaceholder(uploadId);
           _snack('Camera upload failed: empty image bytes.');
           return;
         }
@@ -568,9 +589,17 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       }
 
       if (!mounted) return;
-      setState(() => _attachments.add({'name': name, 'url': url}));
+      setState(() {
+        _uploadingItems.removeWhere((e) => e.id == uploadId);
+        _attachments.add({'name': name, 'url': url});
+      });
     } catch (e) {
       _snack('Camera upload failed: $e');
+      if (mounted) {
+        setState(() {
+          _uploadingItems.clear();
+        });
+      }
     }
   }
 
@@ -586,10 +615,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (_) {}
   }
 
-  // ---------------- Send ----------------
-
   Future<void> _send() async {
-    if (_sending) return;
+    if (_disableSendAction) return;
 
     final body = _bodyC.text.trim();
     if (body.isEmpty && _attachments.isEmpty) {
@@ -656,7 +683,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       'attachments': attachments,
       'createdAt': now,
       'deletedFor': {},
-      'reactions': {}, // enable reactions (same schema as learner)
+      'reactions': {},
     };
 
     if (messageType != null && messageType.trim().isNotEmpty) {
@@ -724,8 +751,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-  // ---------------- Delete (for me) ----------------
-
   Future<void> _deleteMessageForMe(_MailMsg m) async {
     try {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
@@ -734,8 +759,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack('Delete failed: $e');
     }
   }
-
-  // ---------------- Reactions ----------------
 
   Future<void> _toggleReaction(_MailMsg m, String emoji) async {
     try {
@@ -756,7 +779,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       context: context,
       backgroundColor: Colors.white,
       showDragHandle: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
       builder: (_) {
         const emojis = ['👍', '❤️', '😂', '😮', '😢', '👏'];
         return Padding(
@@ -766,7 +791,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             children: [
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('React', style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9))),
+                child: Text(
+                  'React',
+                  style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9)),
+                ),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -785,7 +813,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       decoration: BoxDecoration(
                         color: selected ? _orange.withOpacity(0.18) : Colors.grey.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: selected ? _orange.withOpacity(0.55) : Colors.grey.withOpacity(0.18)),
+                        border: Border.all(
+                          color: selected ? _orange.withOpacity(0.55) : Colors.grey.withOpacity(0.18),
+                        ),
                       ),
                       child: Text(e, style: const TextStyle(fontSize: 18)),
                     ),
@@ -851,14 +881,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? _orange.withOpacity(0.18)
-                            : Colors.grey.withOpacity(0.08),
+                        color: selected ? _orange.withOpacity(0.18) : Colors.grey.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                          color: selected
-                              ? _orange.withOpacity(0.55)
-                              : Colors.grey.withOpacity(0.18),
+                          color: selected ? _orange.withOpacity(0.55) : Colors.grey.withOpacity(0.18),
                         ),
                       ),
                       child: Text(
@@ -876,7 +902,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     );
   }
 
-
   Widget _buildReactionsRow(_MailMsg m, {required bool mine}) {
     if (m.reactions.isEmpty) return const SizedBox.shrink();
 
@@ -892,70 +917,63 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     const maxVisible = 4;
     final show = entries.take(maxVisible).toList();
     final hiddenCount = entries.length - show.length;
+
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Align(
-        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-        child: Wrap(
-          spacing: 6,
-          children: [
-            ...show.map((e) {
-              final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
-              final bg = selected
-                  ? Colors.white.withOpacity(0.22)
-                  : Colors.white.withOpacity(0.16);
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        alignment: mine ? WrapAlignment.end : WrapAlignment.start,
+        children: [
+          ...show.map((e) {
+            final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
+            final bg = selected ? _orange.withOpacity(0.12) : Colors.grey.withOpacity(0.10);
 
-              return InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: () => _toggleReaction(m, e.key),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: mine ? bg : Colors.black.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: mine
-                          ? Colors.white.withOpacity(0.22)
-                          : _navy.withOpacity(0.12),
-                    ),
-                  ),
-                  child: Text(
-                    '${e.key} ${e.value}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                      color: mine ? Colors.white : _navy.withOpacity(0.92),
-                    ),
-                  ),
-                ),
-              );
-            }),
-
-            if (hiddenCount > 0)
-              Container(
+            return InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => _toggleReaction(m, e.key),
+              child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.15),
+                  color: bg,
                   borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: selected ? _orange.withOpacity(0.38) : _navy.withOpacity(0.10),
+                  ),
                 ),
                 child: Text(
-                  '+$hiddenCount',
-                  style: const TextStyle(
+                  '${e.key} ${e.value}',
+                  style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
+                    color: _navy.withOpacity(0.92),
                   ),
                 ),
               ),
-          ],
-        ),
+            );
+          }),
+          if (hiddenCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '+$hiddenCount',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  // ---------------- WhatsApp-style recording (FIXED) ----------------
-
   Future<void> _recStart(LongPressStartDetails d) async {
-    if (_composerBusy) return;
+    if (_disableMicAction) return;
 
     _pressStartGlobal = d.globalPosition;
     _recStarting = true;
@@ -1046,20 +1064,17 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-
   void _recMove(LongPressMoveUpdateDetails d) {
-    if (!_recRecording) return; // includes starting
+    if (!_recRecording) return;
     if (_recLocked) return;
 
     final start = _pressStartGlobal;
     if (start == null) return;
 
-    final dx = d.globalPosition.dx - start.dx; // left is negative
-    final dy = d.globalPosition.dy - start.dy; // up is negative
+    final dx = d.globalPosition.dx - start.dx;
+    final dy = d.globalPosition.dy - start.dy;
 
     final cancel = dx <= -_cancelDxThreshold;
-
-    // lock must be a clear upward slide (not diagonal)
     final lock = (dy <= -_lockDyThreshold) && (dx.abs() <= _lockDeadzoneDx);
 
     if (cancel != _recCancelling || lock != _recLocked) {
@@ -1073,7 +1088,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   Future<void> _recEnd(LongPressEndDetails d) async {
     if (!_recRecording) return;
 
-    // If still starting, defer decision until start finishes.
     if (_recStarting) {
       if (_recLocked) return;
       if (_recCancelling) {
@@ -1084,7 +1098,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       return;
     }
 
-    // Locked: ignore end (user stops manually)
     if (_recLocked) return;
 
     if (_recCancelling) {
@@ -1096,7 +1109,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   }
 
   Future<void> _recLongPressCancel() async {
-    // Safety: if system cancels the gesture, don't leave recording running.
     if (!_recRecording) return;
     await _recCancel();
   }
@@ -1122,7 +1134,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (mounted) setState(() {});
   }
 
-
   Future<void> _recCancel() async {
     try {
       _recTicker?.cancel();
@@ -1130,7 +1141,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
       await _rec.stop();
 
-      // ✅ Web has no dart:io File. Only delete temp file on non-web platforms.
       final p = _recPath;
       if (p != null && p.trim().isNotEmpty) {
         await deleteFileIfExists(p);
@@ -1162,8 +1172,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       final client = MailUploadClient.defaultClient();
 
       final ext =
-      (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav')) ? 'wav' :
-      (kIsWeb ? 'webm' : 'm4a');
+      (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav')) ? 'wav' : (kIsWeb ? 'webm' : 'm4a');
 
       final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
@@ -1185,11 +1194,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _recStarting = false;
         _recRecording = false;
         _recUploading = false;
-
         _recStartedAt = null;
         _recElapsed = Duration.zero;
         _recPath = null;
-
         _attachments.add({'name': name, 'url': url});
       });
 
@@ -1212,15 +1219,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-
   String _fmtRec(Duration d) {
     String two(int n) => n.toString().padLeft(2, '0');
     final mm = two(d.inMinutes.remainder(60));
     final ss = two(d.inSeconds.remainder(60));
     return '$mm:$ss';
   }
-
-  // ---------------- Inline media helpers ----------------
 
   static bool _looksLikeImage(String urlOrName) {
     final s = urlOrName.toLowerCase();
@@ -1238,7 +1242,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         s.endsWith('.aac') ||
         s.endsWith('.wav') ||
         s.endsWith('.ogg') ||
-        s.endsWith('.webm'); // ✅ web recordings
+        s.endsWith('.webm');
   }
 
   Future<void> _showImageViewer(String rawUrl, {String? title}) async {
@@ -1333,6 +1337,193 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     } catch (_) {}
   }
 
+  Widget _buildCompactAudioBubble({
+    required String name,
+    required String url,
+    required bool mine,
+  }) {
+    final active = (_playingUrl == url);
+    final dur = active ? _dur : Duration.zero;
+    final pos = active ? _pos : Duration.zero;
+
+    double progress() {
+      final msDur = dur.inMilliseconds;
+      if (msDur <= 0) return 0.0;
+      final v = pos.inMilliseconds / msDur;
+      if (v.isNaN || v.isInfinite) return 0.0;
+      return v.clamp(0.0, 1.0);
+    }
+
+    String fmt(Duration d) {
+      String two(int n) => n.toString().padLeft(2, '0');
+      final mm = two(d.inMinutes.remainder(60));
+      final ss = two(d.inSeconds.remainder(60));
+      return '$mm:$ss';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.34),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () => _toggleAudio(url),
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: mine ? Colors.white.withOpacity(0.16) : Colors.white.withOpacity(0.78),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    (active && _isPlaying) ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    color: mine ? Colors.white : _navy,
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                        color: mine ? Colors.white : _navy,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress(),
+                        minHeight: 4,
+                        backgroundColor:
+                        mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Text(
+                          active ? fmt(pos) : '00:00',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            color: mine ? Colors.white.withOpacity(0.82) : _navy.withOpacity(0.70),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          active && dur.inMilliseconds > 0 ? fmt(dur) : '--:--',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            color: mine ? Colors.white.withOpacity(0.82) : _navy.withOpacity(0.70),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (active && dur.inMilliseconds > 0) ...[
+                      const SizedBox(height: 2),
+                      SizedBox(
+                        height: 24,
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 2,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                          ),
+                          child: Slider(
+                            value: pos.inMilliseconds.clamp(0, dur.inMilliseconds).toDouble(),
+                            min: 0,
+                            max: dur.inMilliseconds.toDouble(),
+                            onChanged: (v) => _seekAudio(Duration(milliseconds: v.toInt())),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactFileBubble({
+    required String name,
+    required String url,
+    required bool mine,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        onTap: () => _openUrlExternal(url),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 230),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.30),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.insert_drive_file_rounded,
+                size: 18,
+                color: mine ? Colors.white : _navy,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: mine ? Colors.white : _navy,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 16,
+                color: mine ? Colors.white.withOpacity(0.90) : _navy.withOpacity(0.82),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAttachmentWidget({
     required _MailMsg m,
     required Map<String, String> a,
@@ -1347,38 +1538,43 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     if (isImg && url.isNotEmpty) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
           onTap: () => _showImageViewer(url, title: name),
           borderRadius: BorderRadius.circular(14),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: Container(
-              width: 240,
-              height: 160,
-              color: Colors.black.withOpacity(0.06),
-              child: Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) {
-                  return InkWell(
-                    onTap: () => _openUrlExternal(url),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        'Image failed to load\nTap to open',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: mine ? Colors.white : _navy,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 160),
+              child: Container(
+                color: Colors.black.withOpacity(0.06),
+                child: Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) {
+                    return InkWell(
+                      onTap: () => _openUrlExternal(url),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          'Image failed to load\nTap to open',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: mine ? Colors.white : _navy,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-                loadingBuilder: (ctx, child, prog) {
-                  if (prog == null) return child;
-                  return const Center(child: CircularProgressIndicator());
-                },
+                    );
+                  },
+                  loadingBuilder: (ctx, child, prog) {
+                    if (prog == null) return child;
+                    return const SizedBox(
+                      width: 220,
+                      height: 140,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -1387,148 +1583,28 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
 
     if (isAud && url.isNotEmpty) {
-      final active = (_playingUrl == url);
-      final dur = active ? _dur : Duration.zero;
-      final pos = active ? _pos : Duration.zero;
-
-      double progress() {
-        final msDur = dur.inMilliseconds;
-        if (msDur <= 0) return 0.0;
-        final v = pos.inMilliseconds / msDur;
-        if (v.isNaN || v.isInfinite) return 0.0;
-        return v.clamp(0.0, 1.0);
-      }
-
-      String fmt(Duration d) {
-        String two(int n) => n.toString().padLeft(2, '0');
-        final mm = two(d.inMinutes.remainder(60));
-        final ss = two(d.inSeconds.remainder(60));
-        return '$mm:$ss';
-      }
-
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Container(
-          width: 260,
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-          decoration: BoxDecoration(
-            color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.35),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: () => _toggleAudio(url),
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: mine ? Colors.white.withOpacity(0.18) : Colors.white.withOpacity(0.7),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        (active && _isPlaying) ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: mine ? Colors.white : _navy,
-                        size: 26,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.w900, color: mine ? Colors.white : _navy),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: progress(),
-                minHeight: 6,
-                backgroundColor: mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    active ? fmt(pos) : '00:00',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    active && dur.inMilliseconds > 0 ? fmt(dur) : '--:--',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                      color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.75),
-                    ),
-                  ),
-                ],
-              ),
-              if (active && dur.inMilliseconds > 0)
-                Slider(
-                  value: pos.inMilliseconds.clamp(0, dur.inMilliseconds).toDouble(),
-                  min: 0,
-                  max: dur.inMilliseconds.toDouble(),
-                  onChanged: (v) => _seekAudio(Duration(milliseconds: v.toInt())),
-                ),
-            ],
-          ),
-        ),
-      );
+      return _buildCompactAudioBubble(name: name, url: url, mine: mine);
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: InkWell(
-        onTap: () => _openUrlExternal(url),
-        child: Text(
-          '📎 $name',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            decoration: TextDecoration.underline,
-            color: mine ? Colors.white : _navy,
-          ),
-        ),
-      ),
-    );
+    return _buildCompactFileBubble(name: name, url: url, mine: mine);
   }
-
-  // ---------------- UI helpers (date separators like learner) ----------------
 
   String _normalizeCourseKey(String raw) {
     var s = raw.trim();
     if (s.isEmpty) return '';
 
-    // handles: "course: course_01"
     s = s.replaceFirst(RegExp(r'^\s*course\s*:\s*', caseSensitive: false), '');
-
-    // fixes: "coure_01" -> "course_01"
     s = s.replaceFirst(RegExp(r'^coure_', caseSensitive: false), 'course_');
 
-    // fixes: "course_01" -> "course_1"
     final m = RegExp(r'^(course_)(0+)(\d+)$', caseSensitive: false).firstMatch(s);
     if (m != null) {
-      final prefix = m.group(1)!; // "course_"
+      final prefix = m.group(1)!;
       final num = int.tryParse(m.group(3)!) ?? 0;
       if (num > 0) return '$prefix$num';
     }
 
     return s;
   }
-
 
   static String _dayKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -1558,7 +1634,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           ),
           child: Text(
             label,
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: _navy.withOpacity(0.85)),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: _navy.withOpacity(0.85),
+            ),
           ),
         ),
       ),
@@ -1582,7 +1662,149 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return '${two(d.hour)}:${two(d.minute)}';
   }
 
-  // ---------- Homework evaluation + report card (UNCHANGED) ----------
+  double _messageMaxWidth(_MailMsg m) {
+    final hasImage = m.attachments.any((a) {
+      final name = (a['name'] ?? '').toString();
+      final url = (a['url'] ?? '').toString();
+      return _looksLikeImage(name) || _looksLikeImage(url);
+    });
+
+    final hasAudio = m.attachments.any((a) {
+      final name = (a['name'] ?? '').toString();
+      final url = (a['url'] ?? '').toString();
+      return _looksLikeAudio(name) || _looksLikeAudio(url);
+    });
+
+    if (hasImage) return 230;
+    if (hasAudio) return 240;
+    if (m.attachments.isNotEmpty && m.body.trim().isEmpty) return 240;
+    return 290;
+  }
+
+  Widget _buildMessageBubble(_MailMsg m, {required bool mine}) {
+    final isReport = m.type == 'report';
+
+    final bubbleBg = mine
+        ? _mineBubbleBg(context, isReport: isReport)
+        : _theirsBubbleBg(context, isReport: isReport);
+
+    final textColor = mine ? _mineText(context) : _theirsText(context);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: bubbleBg,
+        borderRadius: _bubbleRadius(mine: mine),
+        border: Border.all(
+          color: isReport
+              ? (mine
+              ? Colors.white.withOpacity(0.18)
+              : Colors.deepPurple.withOpacity(0.20))
+              : (mine
+              ? Colors.white.withOpacity(0.08)
+              : _navy.withOpacity(0.06)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.04),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          if (isReport && !mine) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.20),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withOpacity(0.20)),
+              ),
+              child: const Text(
+                'REPORT',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 10,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (m.body.trim().isNotEmpty)
+            Text(
+              m.body,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 15,
+                height: 1.30,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          if (m.attachments.isNotEmpty) ...[
+            if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
+            ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageMeta(_MailMsg m, {required bool mine}) {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 4,
+        left: mine ? 0 : 6,
+        right: mine ? 6 : 0,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _fmtTime(m.createdAtMs),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: _navy.withOpacity(0.50),
+            ),
+          ),
+          const SizedBox(width: 2),
+          PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 130),
+            tooltip: 'Message actions',
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              size: 18,
+              color: _navy.withOpacity(0.50),
+            ),
+            onSelected: (v) async {
+              if (v == 'react') _openMessageActions(m);
+              if (v == 'delete_for_me') await _deleteMessageForMe(m);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'react', child: Text('React')),
+              PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _isSameSenderNearby(List<_MailMsg> msgs, int index) {
+    if (index == 0) return false;
+    final current = msgs[index];
+    final prev = msgs[index - 1];
+    if (current.fromUid != prev.fromUid) return false;
+
+    final diff = (prev.createdAtMs - current.createdAtMs).abs();
+    return diff <= const Duration(minutes: 10).inMilliseconds;
+  }
 
   Future<void> _reviewHomeworkFromThread() async {
     try {
@@ -1649,63 +1871,481 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             scoreC.removeListener(recalcGradeFromText);
             scoreC.addListener(recalcGradeFromText);
 
-            return AlertDialog(
-              title: const Text('Evaluate homework'),
-              content: SingleChildScrollView(
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              backgroundColor: Colors.transparent,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 560),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextField(
-                      controller: scoreC,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Score (0-100)',
-                        border: const OutlineInputBorder(),
-                        helperText: 'Grade: $liveGrade',
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                      decoration: BoxDecoration(
+                        color: _navy,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.14),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.fact_check_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Homework Review',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _peerNameShown,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.85),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 170,
-                      child: TextField(
-                        controller: noteC,
-                        expands: true,
-                        maxLines: null,
-                        minLines: null,
-                        textAlignVertical: TextAlignVertical.top,
-                        decoration: const InputDecoration(
-                          labelText: 'Comment',
-                          border: OutlineInputBorder(),
-                          alignLabelWithHint: true,
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: _orange.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: _orange.withOpacity(0.28)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${liveScore.clamp(0, 100)} / 100',
+                                    style: const TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.w900,
+                                      color: _navy,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                        decoration: BoxDecoration(
+                                          color: _navy.withOpacity(0.10),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          'Grade $liveGrade',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: _navy,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                        decoration: BoxDecoration(
+                                          color: status == 'redo'
+                                              ? Colors.red.withOpacity(0.12)
+                                              : Colors.green.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color: status == 'redo'
+                                                ? Colors.red.withOpacity(0.25)
+                                                : Colors.green.withOpacity(0.25),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          status == 'redo' ? 'Redo required' : 'Pass',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: status == 'redo'
+                                                ? Colors.red.shade700
+                                                : Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            TextField(
+                              controller: scoreC,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: 'Score (0-100)',
+                                hintText: 'Enter score',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: _orange.withOpacity(0.75),
+                                    width: 1.4,
+                                  ),
+                                ),
+                                prefixIcon: const Icon(Icons.percent_rounded),
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => setLocal(() {
+                                      status = 'pass';
+                                      needsRedo = false;
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 160),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: status == 'pass'
+                                            ? Colors.green.withOpacity(0.12)
+                                            : Colors.grey.withOpacity(0.06),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: status == 'pass'
+                                              ? Colors.green.withOpacity(0.45)
+                                              : Colors.black.withOpacity(0.08),
+                                          width: status == 'pass' ? 1.4 : 1,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle_rounded,
+                                            color: status == 'pass'
+                                                ? Colors.green.shade700
+                                                : Colors.black.withOpacity(0.45),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Pass',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: status == 'pass'
+                                                  ? Colors.green.shade700
+                                                  : Colors.black.withOpacity(0.72),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Homework accepted',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black.withOpacity(0.55),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => setLocal(() {
+                                      status = 'redo';
+                                      needsRedo = true;
+                                    }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 160),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: status == 'redo'
+                                            ? Colors.red.withOpacity(0.10)
+                                            : Colors.grey.withOpacity(0.06),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: status == 'redo'
+                                              ? Colors.red.withOpacity(0.40)
+                                              : Colors.black.withOpacity(0.08),
+                                          width: status == 'redo' ? 1.4 : 1,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Icon(
+                                            Icons.refresh_rounded,
+                                            color: status == 'redo'
+                                                ? Colors.red.shade700
+                                                : Colors.black.withOpacity(0.45),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Redo',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: status == 'redo'
+                                                  ? Colors.red.shade700
+                                                  : Colors.black.withOpacity(0.72),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Student should try again',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black.withOpacity(0.55),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Quick feedback',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.black.withOpacity(0.78),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  'Great effort.',
+                                  'Well done.',
+                                  'Nice improvement.',
+                                  'Please check spelling.',
+                                  'Please review grammar.',
+                                  'Complete all parts next time.',
+                                  'Please redo carefully.',
+                                ].map((text) {
+                                  return ActionChip(
+                                    label: Text(text),
+                                    onPressed: () {
+                                      final current = noteC.text.trim();
+                                      final next = current.isEmpty ? text : '$current $text';
+                                      noteC.text = next;
+                                      noteC.selection = TextSelection.fromPosition(
+                                        TextPosition(offset: noteC.text.length),
+                                      );
+                                      setLocal(() {});
+                                    },
+                                    backgroundColor: _navy.withOpacity(0.06),
+                                    side: BorderSide(color: _navy.withOpacity(0.10)),
+                                    labelStyle: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _navy.withOpacity(0.88),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            SizedBox(
+                              height: 150,
+                              child: TextField(
+                                controller: noteC,
+                                expands: true,
+                                maxLines: null,
+                                minLines: null,
+                                textAlignVertical: TextAlignVertical.top,
+                                decoration: InputDecoration(
+                                  labelText: 'Personal feedback',
+                                  hintText: 'Example: Great effort. Please review verb forms in exercise 2.',
+                                  alignLabelWithHint: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: _orange.withOpacity(0.75),
+                                      width: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Student preview',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.black.withOpacity(0.78),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.04),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(color: Colors.black.withOpacity(0.08)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    status == 'redo'
+                                        ? '🔁 Homework: REDO (do it again)'
+                                        : '✅ Homework: PASS',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: status == 'redo'
+                                          ? Colors.red.shade700
+                                          : Colors.green.shade700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Score: ${liveScore.clamp(0, 100)}/100',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _navy,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Grade: $liveGrade',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: _navy,
+                                    ),
+                                  ),
+                                  if (noteC.text.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Comment: ${noteC.text.trim()}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black.withOpacity(0.72),
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    RadioListTile<String>(
-                      value: 'pass',
-                      groupValue: status,
-                      onChanged: (v) => setLocal(() {
-                        status = v ?? 'pass';
-                        needsRedo = false;
-                      }),
-                      title: const Text('Pass ✅'),
-                    ),
-                    RadioListTile<String>(
-                      value: 'redo',
-                      groupValue: status,
-                      onChanged: (v) => setLocal(() {
-                        status = v ?? 'redo';
-                        needsRedo = true;
-                      }),
-                      title: const Text('Redo / Do it again 🔁'),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+                        border: Border(
+                          top: BorderSide(color: Colors.black.withOpacity(0.06)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                side: BorderSide(color: _navy.withOpacity(0.18)),
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _navy,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(52),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Save',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-              ],
             );
           },
         ),
@@ -1783,14 +2423,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-  // ---------- Report Card (Learner only) ----------
   Future<Map<String, dynamic>> _computeHomeworkStatsForCourse({
     required String learnerUid,
     required String courseKey,
   }) async {
     int doneCount = 0;
     int redoCount = 0;
-
     int reviewedCount = 0;
     int sumScore = 0;
 
@@ -1942,7 +2580,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     }
   }
 
-
   Future<String> _uploadPngBytes(Uint8List bytes) async {
     final client = MailUploadClient.defaultClient();
     final name = 'report_${DateTime.now().millisecondsSinceEpoch}.png';
@@ -1997,6 +2634,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       ),
     );
   }
+
   Future<void> _openReportCard() async {
     if (!_peerIsLearner) {
       _snack('Report Card is only for learners.');
@@ -2066,8 +2704,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     bool sending = false;
 
-    // ✅ FIX 1: barrierDismissible cannot depend on "sending" outside the dialog.
-    // We'll handle that inside WillPopScope and by disabling the Cancel button.
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -2190,7 +2826,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           ];
 
           return WillPopScope(
-            onWillPop: () async => !sending, // ✅ block back button while sending
+            onWillPop: () async => !sending,
             child: AlertDialog(
               title: const Text('Report Card'),
               content: SingleChildScrollView(
@@ -2557,18 +3193,166 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       ),
     );
 
-    // (optional) you can do something based on ok
     if (ok == true) {}
   }
-  // ---------------- Build ----------------
+
+  Widget _buildComposerUploads() {
+    if (_uploadingItems.isEmpty) return const SizedBox.shrink();
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: _uploadingItems.map((u) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: _navy.withOpacity(0.10)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 150),
+                  child: Text(
+                    'Uploading ${u.name}…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: _navy.withOpacity(0.85),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildRecordingBar() {
+    final showRecBar = _recStarting || _recRecording || _recLocked || _recUploading;
+    if (!showRecBar) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _navy.withOpacity(0.10)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.mic_rounded, color: _orange.withOpacity(0.95)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _recUploading
+                      ? 'Uploading audio…'
+                      : _recLocked
+                      ? 'Recording (locked)'
+                      : (_recCancelling
+                      ? 'Release to cancel'
+                      : (_recStarting ? 'Starting…' : 'Recording…')),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: _navy.withOpacity(0.9),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _fmtRec(_recElapsed),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _navy.withOpacity(0.65),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_recUploading)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          if (!_recUploading) ...[
+            IconButton(
+              tooltip: 'Cancel',
+              onPressed: _recCancel,
+              icon: Icon(Icons.close_rounded, color: Colors.red.withOpacity(0.85)),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: _navy,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: _recStopAndSend,
+              child: const Text('Send'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisabledMicButton() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: _navy.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: const Icon(
+        Icons.mic_off_rounded,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildActiveMicButton() {
+    return GestureDetector(
+      onLongPressStart: _recStart,
+      onLongPressMoveUpdate: _recMove,
+      onLongPressEnd: _recEnd,
+      onLongPressCancel: _recLongPressCancel,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: _navy,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Icon(
+          (_recRecording || _recStarting) ? Icons.mic_rounded : Icons.mic_none_rounded,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
     final subjectTrim = widget.subject.trim();
-
     final canReport = _peerIsLearner;
-    final showRecBar = _recStarting || _recRecording || _recLocked || _recUploading;
 
     return Scaffold(
       appBar: AppBar(
@@ -2583,7 +3367,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           decoration: InputDecoration(
             hintText: 'Search in this thread…',
             border: InputBorder.none,
-            hintStyle: TextStyle(color: _navy.withOpacity(0.45), fontWeight: FontWeight.w700),
+            hintStyle: TextStyle(
+              color: _navy.withOpacity(0.45),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           style: const TextStyle(color: _navy, fontWeight: FontWeight.w900),
           onChanged: (_) => setState(() {}),
@@ -2600,7 +3387,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-
             ],
           ),
         ),
@@ -2655,7 +3441,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                         subjectTrim,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.92)),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: _navy.withOpacity(0.92),
+                        ),
                       ),
                     ),
                   ],
@@ -2690,112 +3479,29 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     if (i + 1 < msgs.length) nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
                     final showDate = (i == msgs.length - 1) || (nextDateLabel != thisDateLabel);
 
-                    final isReport = m.type == 'report';
-
-                    final bubbleBg = mine
-                        ? _mineBubbleBg(context, isReport: isReport)
-                        : _theirsBubbleBg(context, isReport: isReport);
-
-                    final textColor = mine ? _mineText(context) : _theirsText(context);
+                    final grouped = _isSameSenderNearby(msgs, i);
 
                     return Column(
                       children: [
                         if (showDate) _dateSeparator(thisDateLabel),
-                        Align(
-                          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 340),
+                        Padding(
+                          padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
+                          child: Align(
+                            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                             child: GestureDetector(
                               onLongPress: () => _openQuickReactions(m),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: bubbleBg,
-                                  borderRadius: _bubbleRadius(mine: mine),
-                                  border: Border.all(
-                                    color: isReport
-                                        ? (mine ? Colors.white.withOpacity(0.25) : Colors.deepPurple.withOpacity(0.25))
-                                        : (mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08)),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment:
+                                mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                children: [
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(maxWidth: _messageMaxWidth(m)),
+                                    child: _buildMessageBubble(m, mine: mine),
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 6),
-                                      color: Colors.black.withOpacity(0.05),
-                                    ),
-                                  ],
-                                ),
-                                padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
-                                child: Column(
-                                  crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                                  children: [
-                                    if (isReport && !mine) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.20),
-                                          borderRadius: BorderRadius.circular(999),
-                                          border: Border.all(color: Colors.white.withOpacity(0.22)),
-                                        ),
-                                        child: const Text(
-                                          'REPORT',
-                                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Colors.white),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                    ],
-                                    if (m.body.trim().isNotEmpty)
-                                      Text(
-                                        m.body,
-                                        style: TextStyle(
-                                          color: textColor,
-                                          fontSize: 15,
-                                          height: 1.35,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    if (m.attachments.isNotEmpty) ...[
-                                      if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
-                                      ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
-                                    ],
-                                    _buildReactionsRow(m, mine: mine),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            _fmtTime(m.createdAtMs),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w800,
-                                              color: mine ? Colors.white.withOpacity(0.75) : _navy.withOpacity(0.55),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        PopupMenuButton<String>(
-                                          padding: EdgeInsets.zero,
-                                          tooltip: 'Message actions',
-                                          icon: Icon(
-                                            Icons.more_vert_rounded,
-                                            size: 18,
-                                            color: mine ? Colors.white.withOpacity(0.85) : _navy.withOpacity(0.65),
-                                          ),
-                                          onSelected: (v) async {
-                                            if (v == 'react') _openMessageActions(m);
-                                            if (v == 'delete_for_me') await _deleteMessageForMe(m);
-                                          },
-                                          itemBuilder: (_) => const [
-                                            PopupMenuItem(value: 'react', child: Text('React')),
-                                            PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
+                                  if (m.reactions.isNotEmpty) _buildReactionsRow(m, mine: mine),
+                                  _buildMessageMeta(m, mine: mine),
+                                ],
                               ),
                             ),
                           ),
@@ -2808,7 +3514,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             ),
           ),
 
-          // Composer
           SafeArea(
             top: false,
             child: Padding(
@@ -2830,95 +3535,42 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       ),
                     ),
 
-                  // Recording bar (fixed + clearer states)
-                  if (showRecBar)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.96),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: _navy.withOpacity(0.10)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.mic_rounded, color: _orange.withOpacity(0.95)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _recUploading
-                                      ? 'Uploading audio…'
-                                      : _recLocked
-                                      ? 'Recording (locked)'
-                                      : (_recCancelling ? 'Release to cancel' : (_recStarting ? 'Starting…' : 'Recording…')),
-                                  style: TextStyle(fontWeight: FontWeight.w900, color: _navy.withOpacity(0.9)),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _fmtRec(_recElapsed),
-                                  style: TextStyle(fontWeight: FontWeight.w800, color: _navy.withOpacity(0.65)),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (_recUploading)
-                            const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          if (!_recUploading) ...[
-                            IconButton(
-                              tooltip: 'Cancel',
-                              onPressed: _recCancel,
-                              icon: Icon(Icons.close_rounded, color: Colors.red.withOpacity(0.85)),
-                            ),
-                            // Always allow manual stop/send => prevents “stuck recording”
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _navy,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              ),
-                              onPressed: _recStopAndSend,
-                              child: const Text('Send'),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                  if (_uploadingItems.isNotEmpty) ...[
+                    _buildComposerUploads(),
+                    const SizedBox(height: 8),
+                  ],
+
+                  _buildRecordingBar(),
 
                   Row(
                     children: [
-                      // Camera
                       IconButton(
                         tooltip: 'Camera',
-                        onPressed: _composerBusy ? null : _takePhotoAndAttach,
+                        onPressed: _disableAttachActions ? null : _takePhotoAndAttach,
                         icon: Icon(Icons.photo_camera_rounded, color: _navy.withOpacity(0.9)),
                       ),
-
-                      // Attach
                       IconButton(
                         tooltip: 'Attach',
-                        onPressed: _composerBusy ? null : _pickAndUploadAttachment,
+                        onPressed: _disableAttachActions ? null : _pickAndUploadAttachment,
                         icon: Icon(Icons.attach_file, color: _navy.withOpacity(0.9)),
                       ),
-
                       Expanded(
                         child: TextField(
                           controller: _bodyC,
                           onChanged: (_) => setState(() {}),
                           minLines: 1,
                           maxLines: 4,
-                          enabled: !_recRecording && !_recStarting && !_recUploading,
+                          enabled: !_disableTextInput,
                           decoration: InputDecoration(
-                            hintText: (_recRecording || _recStarting || _recUploading) ? 'Recording…' : 'Message…',
+                            hintText: _hasPendingUploads
+                                ? 'Wait for upload to finish…'
+                                : ((_recRecording || _recStarting || _recUploading)
+                                ? 'Recording…'
+                                : 'Message…'),
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.92),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(18),
                               borderSide: BorderSide(color: _navy.withOpacity(0.15)),
@@ -2929,43 +3581,34 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(18),
-                              borderSide: BorderSide(color: _orange.withOpacity(0.65), width: 1.2),
+                              borderSide: BorderSide(
+                                color: _orange.withOpacity(0.65),
+                                width: 1.2,
+                              ),
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-
                       if (_bodyC.text.trim().isNotEmpty || _attachments.isNotEmpty)
                         FilledButton(
                           style: FilledButton.styleFrom(
                             backgroundColor: _navy,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                          ),
-                          onPressed: _sending ? null : _send,
-                          child: Text(_sending ? 'Sending…' : 'Send'),
-                        )
-                      else
-                        GestureDetector(
-                          onLongPressStart: _recStart,
-                          onLongPressMoveUpdate: _recMove,
-                          onLongPressEnd: _recEnd,
-                          onLongPressCancel: _recLongPressCancel,
-                          child: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: _navy,
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),
                             ),
-                            child: Icon(
-                              (_recRecording || _recStarting) ? Icons.mic_rounded : Icons.mic_none_rounded,
-                              color: Colors.white,
-                            ),
                           ),
-                        ),
+                          onPressed: _disableSendAction ? null : _send,
+                          child: Text(
+                            _sending
+                                ? 'Sending…'
+                                : (_hasPendingUploads ? 'Uploading…' : 'Send'),
+                          ),
+                        )
+                      else
+                        (_disableMicAction ? _buildDisabledMicButton() : _buildActiveMicButton()),
                     ],
                   ),
 
@@ -2974,7 +3617,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline_rounded, size: 16, color: _navy.withOpacity(0.55)),
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 16,
+                            color: _navy.withOpacity(0.55),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -3005,6 +3652,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     if (s >= 70) return 'C';
     return 'D';
   }
+}
+
+class _ComposerUploadItem {
+  const _ComposerUploadItem({
+    required this.id,
+    required this.name,
+  });
+
+  final String id;
+  final String name;
 }
 
 /// Watermark background used INSIDE RepaintBoundary so it appears in the PNG.

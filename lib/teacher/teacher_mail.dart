@@ -259,6 +259,12 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     return s;
   }
 
+  int _countGroupsForTab(List<_TopicRow> rows, _InboxTabRole tabRole) {
+    final roleRows = rows.where((r) => _matchesTab(tabRole, r)).toList();
+    final grouped = _groupByPeer(roleRows);
+    return grouped.length;
+  }
+
   String _previewFromMessage(String body) {
     final clean = body.trim();
     if (clean.isEmpty) return '(No messages yet)';
@@ -280,18 +286,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     final day = dt.day.toString().padLeft(2, '0');
     final month = dt.month.toString().padLeft(2, '0');
     return '$day/$month';
-  }
-
-  String _roleLabel(String role) {
-    if (role == 'admin') return 'Administration';
-    if (role == 'teacher') return 'Teacher';
-    return 'Learner';
-  }
-
-  IconData _roleIcon(String role) {
-    if (role == 'admin') return Icons.shield_rounded;
-    if (role == 'teacher') return Icons.school_rounded;
-    return Icons.person_rounded;
   }
 
   Color _avatarColor(String seed, BuildContext context) {
@@ -725,52 +719,6 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     );
   }
 
-  Widget _buildSummaryHeader(List<_TopicRow> rows) {
-    final learnersCount = rows.where((r) => _matchesTab(_InboxTabRole.learners, r)).length;
-    final teachersCount = rows.where((r) => _matchesTab(_InboxTabRole.teachers, r)).length;
-    final adminCount = rows.where((r) => _matchesTab(_InboxTabRole.admin, r)).length;
-    final totalUnread = rows.fold<int>(0, (sum, r) => sum + r.unreadCount);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: _MiniStatCard(
-              icon: Icons.mark_email_unread_rounded,
-              title: 'Unread',
-              value: '$totalUnread',
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _MiniStatCard(
-              icon: Icons.person_rounded,
-              title: 'Learners',
-              value: '$learnersCount',
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _MiniStatCard(
-              icon: Icons.school_rounded,
-              title: 'Teachers',
-              value: '$teachersCount',
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _MiniStatCard(
-              icon: Icons.shield_rounded,
-              title: 'Admin',
-              value: '$adminCount',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTab(_InboxTabRole tabRole, List<_TopicRow> allRows) {
     if (allRows.isEmpty) {
       return _buildEmptyState(
@@ -811,33 +759,20 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
       children: [
-        if (tabRole == _InboxTabRole.learners) _buildSummaryHeader(allRows),
         ...groupKeys.map((k) {
           final items = grouped[k]!;
           final top = items.first;
           final displayName = _bestName(top);
-          final role = _bestRole(top).isEmpty ? 'learner' : _bestRole(top);
           final unreadTotal = _sumUnread(items);
-          final latest = items.first;
-          final latestSubject =
-          latest.subject.trim().isEmpty ? '(No topic)' : latest.subject.trim();
-          final latestPreview = latest.lastMessage.trim().isEmpty
-              ? '(No messages yet)'
-              : latest.lastMessage.trim();
 
           return _InboxGroupCard(
             displayName: displayName,
-            role: _roleLabel(role),
-            roleIcon: _roleIcon(role),
             avatarColor: _avatarColor(
               top.peerUid.isEmpty ? displayName : top.peerUid,
               context,
             ),
-            latestSubject: latestSubject,
-            latestPreview: latestPreview,
-            latestTime: _timeLabel(latest.updatedAtMs),
+            latestTime: _timeLabel(top.updatedAtMs),
             unreadTotal: unreadTotal,
-            totalTopics: items.length,
             children: items.map((r) {
               return _ThreadTile(
                 row: r,
@@ -912,7 +847,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     );
   }
 
-  Widget _buildTabBarShell() {
+  Widget _buildTabBarShell({
+    required int learnersCount,
+    required int teachersCount,
+    required int adminCount,
+  }) {
     final scheme = Theme.of(context).colorScheme;
 
     return Container(
@@ -938,10 +877,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         indicatorSize: TabBarIndicatorSize.tab,
         labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        tabs: const [
-          Tab(text: 'Learners'),
-          Tab(text: 'Teachers'),
-          Tab(text: 'Admin'),
+        tabs: [
+          Tab(text: 'Learners ($learnersCount)'),
+          Tab(text: 'Teachers ($teachersCount)'),
+          Tab(text: 'Admin ($adminCount)'),
         ],
       ),
     );
@@ -983,35 +922,43 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           icon: const Icon(Icons.edit_rounded),
           label: const Text('New topic'),
         ),
-        body: Column(
-          children: [
-            _buildTopSearch(),
-            _buildTabBarShell(),
-            const SizedBox(height: 2),
-            Expanded(
-              child: StreamBuilder<DatabaseEvent>(
-                stream: _stream,
-                builder: (context, snap) {
-                  final allRows = _parse(snap.data?.snapshot.value);
+        body: StreamBuilder<DatabaseEvent>(
+          stream: _stream,
+          builder: (context, snap) {
+            final allRows = _parse(snap.data?.snapshot.value);
 
-                  for (final r in allRows) {
-                    final uid = r.peerUid.trim();
-                    if (uid.isNotEmpty) {
-                      _ensureUserCached(uid);
-                    }
-                  }
+            for (final r in allRows) {
+              final uid = r.peerUid.trim();
+              if (uid.isNotEmpty) {
+                _ensureUserCached(uid);
+              }
+            }
 
-                  return TabBarView(
+            final learnersCount = _countGroupsForTab(allRows, _InboxTabRole.learners);
+            final teachersCount = _countGroupsForTab(allRows, _InboxTabRole.teachers);
+            final adminCount = _countGroupsForTab(allRows, _InboxTabRole.admin);
+
+            return Column(
+              children: [
+                _buildTopSearch(),
+                _buildTabBarShell(
+                  learnersCount: learnersCount,
+                  teachersCount: teachersCount,
+                  adminCount: adminCount,
+                ),
+                const SizedBox(height: 2),
+                Expanded(
+                  child: TabBarView(
                     children: [
                       _buildTab(_InboxTabRole.learners, allRows),
                       _buildTab(_InboxTabRole.teachers, allRows),
                       _buildTab(_InboxTabRole.admin, allRows),
                     ],
-                  );
-                },
-              ),
-            ),
-          ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1021,26 +968,16 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 class _InboxGroupCard extends StatefulWidget {
   const _InboxGroupCard({
     required this.displayName,
-    required this.role,
-    required this.roleIcon,
     required this.avatarColor,
-    required this.latestSubject,
-    required this.latestPreview,
     required this.latestTime,
     required this.unreadTotal,
-    required this.totalTopics,
     required this.children,
   });
 
   final String displayName;
-  final String role;
-  final IconData roleIcon;
   final Color avatarColor;
-  final String latestSubject;
-  final String latestPreview;
   final String latestTime;
   final int unreadTotal;
-  final int totalTopics;
   final List<Widget> children;
 
   @override
@@ -1089,7 +1026,9 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
             radius: 24,
             backgroundColor: widget.avatarColor.withOpacity(0.14),
             child: Text(
-              widget.displayName.isEmpty ? '?' : widget.displayName.trim().characters.first.toUpperCase(),
+              widget.displayName.isEmpty
+                  ? '?'
+                  : widget.displayName.trim().characters.first.toUpperCase(),
               style: TextStyle(
                 color: widget.avatarColor,
                 fontWeight: FontWeight.w900,
@@ -1107,59 +1046,24 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
                   style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                widget.latestTime,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _SoftPill(
-                      icon: widget.roleIcon,
-                      text: widget.role,
-                    ),
-                    _SoftPill(
-                      icon: Icons.forum_rounded,
-                      text: '${widget.totalTopics} topic${widget.totalTopics == 1 ? '' : 's'}',
-                    ),
-                    if (widget.unreadTotal > 0)
-                      _UnreadPill(value: widget.unreadTotal),
-                  ],
-                ),
-                const SizedBox(height: 10),
+              if (widget.latestTime.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Text(
-                  widget.latestSubject,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.latestPreview,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  widget.latestTime,
                   style: TextStyle(
+                    fontSize: 12,
                     color: Colors.grey.shade700,
-                    height: 1.25,
-                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
-            ),
+              if (widget.unreadTotal > 0) ...[
+                const SizedBox(width: 10),
+                _UnreadPill(value: widget.unreadTotal),
+              ],
+            ],
           ),
+          subtitle: null,
           children: widget.children,
         ),
       ),
@@ -1182,171 +1086,183 @@ class _ThreadTile extends StatelessWidget {
   final VoidCallback onReview;
   final VoidCallback onOpen;
 
+  bool _isHomeworkSubject(String s) {
+    final t = s.trim().toUpperCase();
+    return t.startsWith('[HW]');
+  }
+
+  List<String> _hwParts(String subject) {
+    var s = subject.trim();
+    if (s.toUpperCase().startsWith('[HW]')) {
+      s = s.substring(4).trim();
+    }
+    return s
+        .split('•')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final subject = row.subject.trim().isEmpty ? '(No topic)' : row.subject.trim();
     final preview = row.lastMessage.trim().isEmpty ? '(No messages yet)' : row.lastMessage.trim();
 
+    final isHomework = _isHomeworkSubject(subject);
+    final parts = _hwParts(subject);
+    final hwCourse = parts.isNotEmpty ? parts.first : 'Homework';
+    final hwDate = parts.length >= 2 ? parts[1] : '';
+    final hwExtra = parts.length >= 3 ? parts[2] : '';
+
+    final bgColor = isHomework
+        ? Colors.orange.withOpacity(row.unreadCount > 0 ? 0.10 : 0.07)
+        : (row.unreadCount > 0
+        ? scheme.primary.withOpacity(0.05)
+        : scheme.surfaceContainerHighest.withOpacity(0.45));
+
+    final borderColor = isHomework
+        ? Colors.orange.withOpacity(0.28)
+        : (row.unreadCount > 0
+        ? scheme.primary.withOpacity(0.18)
+        : scheme.outline.withOpacity(0.10));
+
     return Container(
       margin: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
-        color: row.unreadCount > 0
-            ? scheme.primary.withOpacity(0.05)
-            : scheme.surfaceContainerHighest.withOpacity(0.45),
+        color: bgColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: row.unreadCount > 0
-              ? scheme.primary.withOpacity(0.18)
-              : scheme.outline.withOpacity(0.10),
-        ),
+        border: Border.all(color: borderColor),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                subject,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: row.unreadCount > 0 ? FontWeight.w900 : FontWeight.w800,
-                  fontSize: 14.5,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              timeLabel,
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            preview,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.grey.shade800, height: 1.25),
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (row.unreadCount > 0) ...[
-              _UnreadPill(value: row.unreadCount),
-              const SizedBox(width: 4),
-            ],
-            PopupMenuButton<String>(
-              tooltip: 'More',
-              onSelected: (v) {
-                if (v == 'delete') {
-                  onDelete();
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete (for me)'),
-                ),
-              ],
-            ),
-          ],
-        ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
         onLongPress: onReview,
         onTap: onOpen,
-      ),
-    );
-  }
-}
-
-class _MiniStatCard extends StatelessWidget {
-  const _MiniStatCard({
-    required this.icon,
-    required this.title,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String title;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outline.withOpacity(0.14)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 18),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (isHomework)
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.assignment_rounded,
+                    color: Colors.orange,
+                  ),
+                ),
+              if (isHomework) const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isHomework) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Homework',
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        hwCourse,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: row.unreadCount > 0 ? FontWeight.w900 : FontWeight.w800,
+                          fontSize: 15,
+                          color: Colors.black.withOpacity(0.88),
+                        ),
+                      ),
+                      if (hwDate.isNotEmpty || hwExtra.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          [hwDate, hwExtra].where((e) => e.isNotEmpty).join(' • '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ] else ...[
+                      Text(
+                        subject,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: row.unreadCount > 0 ? FontWeight.w900 : FontWeight.w800,
+                          fontSize: 14.5,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      preview,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        height: 1.25,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (timeLabel.isNotEmpty)
+                    Text(
+                      timeLabel,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  if (row.unreadCount > 0) ...[
+                    const SizedBox(height: 8),
+                    _UnreadPill(value: row.unreadCount),
+                  ],
+                  const SizedBox(height: 2),
+                  PopupMenuButton<String>(
+                    tooltip: 'More',
+                    onSelected: (v) {
+                      if (v == 'delete') {
+                        onDelete();
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete (for me)'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SoftPill extends StatelessWidget {
-  const _SoftPill({
-    required this.icon,
-    required this.text,
-  });
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: scheme.primary.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: scheme.primary),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: scheme.primary,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
