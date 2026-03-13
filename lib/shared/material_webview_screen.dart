@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -47,7 +49,7 @@ class MaterialWebViewScreen extends StatefulWidget {
 
 class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     with WidgetsBindingObserver {
-  late final WebViewController _controller;
+  WebViewController? _controller;
 
   int _progress = 0;
   bool _isLoading = true;
@@ -57,14 +59,24 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   bool _didApplyInitialEnhancements = false;
   bool _isPageReady = false;
   String? _lastJsMessage;
+  bool _openedWebUrl = false;
+
+  bool get _isWebRuntime => kIsWeb;
+  bool get _hasController => _controller != null;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _setupController();
+
+    if (!_isWebRuntime) {
+      _setupController();
+      unawaited(_loadInitialContent());
+    } else {
+      unawaited(_handleWebStartup());
+    }
+
     unawaited(_enterFullscreen());
-    unawaited(_loadInitialContent());
   }
 
   @override
@@ -103,7 +115,57 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<void> _enterFullscreen() async {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    try {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (_) {}
+  }
+
+  Future<void> _handleWebStartup() async {
+    try {
+      if (widget.isUrl) {
+        final Uri? uri = Uri.tryParse(widget.url!.trim());
+        if (uri == null) {
+          if (!mounted) return;
+          setState(() {
+            _lastError = 'Invalid URL.';
+            _isLoading = false;
+          });
+          return;
+        }
+
+        final bool launched = await launchUrl(
+          uri,
+          webOnlyWindowName: '_self',
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _openedWebUrl = launched;
+          _currentUrl = uri.toString();
+          _pageTitle = widget.title;
+          _isPageReady = launched;
+          _isLoading = false;
+          if (!launched) {
+            _lastError = 'Could not open this page in the browser.';
+          }
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _lastError = widget.isAsset || widget.isHtmlString
+            ? 'This content type is not supported on Flutter web in this screen yet.\nUse a URL for web, or keep using mobile WebView.'
+            : 'No content source was provided.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _lastError = 'Failed to open content.\n$e';
+        _isLoading = false;
+      });
+    }
   }
 
   void _setupController() {
@@ -207,6 +269,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<void> _loadInitialContent() async {
+    if (!_hasController) return;
+
     try {
       if (widget.isUrl) {
         final Uri? uri = Uri.tryParse(widget.url!.trim());
@@ -218,11 +282,11 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
           });
           return;
         }
-        await _controller.loadRequest(uri, headers: widget.headers);
+        await _controller!.loadRequest(uri, headers: widget.headers);
       } else if (widget.isAsset) {
-        await _controller.loadFlutterAsset(widget.assetPath!.trim());
+        await _controller!.loadFlutterAsset(widget.assetPath!.trim());
       } else if (widget.isHtmlString) {
-        await _controller.loadHtmlString(widget.htmlString!.trim());
+        await _controller!.loadHtmlString(widget.htmlString!.trim());
       } else {
         if (!mounted) return;
         setState(() {
@@ -240,8 +304,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<String?> _safeGetTitle() async {
+    if (!_hasController) return null;
+
     try {
-      return await _controller.getTitle();
+      return await _controller!.getTitle();
     } catch (_) {
       return null;
     }
@@ -249,6 +315,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
   Future<void> _reload() async {
     if (!mounted) return;
+
     setState(() {
       _lastError = null;
       _isLoading = true;
@@ -257,7 +324,21 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       _isPageReady = false;
     });
 
-    await _controller.reload();
+    if (_isWebRuntime) {
+      await _handleWebStartup();
+      return;
+    }
+
+    if (!_hasController) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _lastError = 'WebView controller is not available.';
+      });
+      return;
+    }
+
+    await _controller!.reload();
   }
 
   void _handleJsMessage(String message) {
@@ -280,7 +361,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<void> _applyGameEnhancementsIfNeeded() async {
+    if (_isWebRuntime || !_hasController) return;
     if (_didApplyInitialEnhancements) return;
+
     _didApplyInitialEnhancements = true;
 
     await _injectBaseGameSupport();
@@ -507,6 +590,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<void> _notifyGameLifecycle(String state) async {
+    if (_isWebRuntime || !_hasController) return;
+
     final String safeState = state.replaceAll("'", "\\'");
 
     final String script = '''
@@ -549,6 +634,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<void> _notifyViewportChanged() async {
+    if (_isWebRuntime || !_hasController) return;
+
     const String script = '''
 (function () {
   try {
@@ -588,9 +675,23 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Future<void> _runJavascriptSafely(String script) async {
+    if (_isWebRuntime || !_hasController) return;
+
     try {
-      await _controller.runJavaScript(script);
+      await _controller!.runJavaScript(script);
     } catch (_) {}
+  }
+
+  Future<void> _openUrlAgain() async {
+    if (!widget.isUrl) return;
+
+    final Uri? uri = Uri.tryParse(widget.url!.trim());
+    if (uri == null) return;
+
+    await launchUrl(
+      uri,
+      webOnlyWindowName: '_self',
+    );
   }
 
   Widget _buildErrorState() {
@@ -643,6 +744,68 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     );
   }
 
+  Widget _buildWebOpenedState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 560),
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.open_in_browser_rounded,
+                size: 44,
+                color: Colors.black87,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                widget.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'This page was opened directly in the browser for web support.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              if ((_currentUrl ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SelectableText(
+                  _currentUrl!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.blueGrey.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              ElevatedButton.icon(
+                onPressed: () => unawaited(_openUrlAgain()),
+                icon: const Icon(Icons.open_in_new_rounded),
+                label: const Text('Open again'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildOverlayLoading() {
     final double? progressValue =
     (_progress <= 0 || _progress > 100) ? null : _progress / 100;
@@ -659,7 +822,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               const CircularProgressIndicator(color: Colors.white),
               const SizedBox(height: 18),
               Text(
-                _pageTitle?.trim().isNotEmpty == true ? _pageTitle!.trim() : widget.title,
+                _pageTitle?.trim().isNotEmpty == true
+                    ? _pageTitle!.trim()
+                    : widget.title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -691,7 +856,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       child: IgnorePointer(
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
-          opacity: _lastError == null && _isPageReady && _lastJsMessage != null ? 0.14 : 0,
+          opacity:
+          _lastError == null && _isPageReady && _lastJsMessage != null
+              ? 0.14
+              : 0,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
@@ -712,6 +880,26 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     );
   }
 
+  Widget _buildBody() {
+    if (_lastError != null) {
+      return _buildErrorState();
+    }
+
+    if (_isWebRuntime) {
+      if (_openedWebUrl) {
+        return _buildWebOpenedState();
+      }
+
+      return _buildErrorState();
+    }
+
+    if (!_hasController) {
+      return _buildErrorState();
+    }
+
+    return WebViewWidget(controller: _controller!);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -729,11 +917,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
             right: false,
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: _lastError != null
-                      ? _buildErrorState()
-                      : WebViewWidget(controller: _controller),
-                ),
+                Positioned.fill(child: _buildBody()),
                 if (_isLoading) Positioned.fill(child: _buildOverlayLoading()),
                 _buildDebugCorner(),
               ],
