@@ -67,7 +67,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   String? _onlineError;
   List<_OnlineBooking> _onlineAll = [];
 
-  final Map<String, Map<String, String>> _nameCache = {};
+  final Map<String, Map<String, String>> _learnerMiniCache = {};
   final Map<String, String> _sessionTitleCache = {};
   final Map<String, String> _courseTitleCache = {};
 
@@ -170,25 +170,74 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok) _toast('Could not open the link.');
   }
+  Future<Map<String, String>> _loadLearnerMini(String uid) async {
+    if (uid.isEmpty) {
+      return {
+        'full': '',
+        'profilePhoto': '',
+      };
+    }
 
-  Future<Map<String, String>> _loadUserName(String uid) async {
-    if (uid.isEmpty) return {'full': ''};
-    if (_nameCache.containsKey(uid)) return _nameCache[uid]!;
+    if (_learnerMiniCache.containsKey(uid)) {
+      return _learnerMiniCache[uid]!;
+    }
+
     try {
       final snap = await _usersRef.child(uid).get();
       if (snap.exists && snap.value is Map) {
-        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final m =
+        (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
         final fn = _safeStr(m['first_name']);
         final ln = _safeStr(m['last_name']);
         final full = ('$fn $ln').trim();
-        final out = {'full': full};
-        _nameCache[uid] = out;
+        final profilePhoto = _safeStr(m['profile_photo']);
+
+        final out = {
+          'full': full,
+          'profilePhoto': profilePhoto,
+        };
+
+        _learnerMiniCache[uid] = out;
         return out;
       }
     } catch (_) {}
-    final out = {'full': ''};
-    _nameCache[uid] = out;
+
+    final out = {
+      'full': '',
+      'profilePhoto': '',
+    };
+    _learnerMiniCache[uid] = out;
     return out;
+  }
+
+  Widget _learnerAvatar({
+    required String profilePhotoUrl,
+    double size = 38,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: p.soft,
+        shape: BoxShape.circle,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: profilePhotoUrl.trim().isNotEmpty
+          ? Image.network(
+        profilePhotoUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.person_rounded,
+          size: size * 0.48,
+          color: p.primary,
+        ),
+      )
+          : Icon(
+        Icons.person_rounded,
+        size: size * 0.48,
+        color: p.primary,
+      ),
+    );
   }
 
   Future<void> _loadAll() async {
@@ -330,38 +379,100 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   int _learnersCount(Map<String, dynamic> classData) {
-    final learners = classData['learners'];
+    final learners =
+        classData['learners'] ??
+            classData['students'] ??
+            classData['enrolled_learners'] ??
+            classData['enrolledLearners'];
+
     if (learners is Map) return learners.length;
+
+    if (learners is List) {
+      return learners.where((e) => e != null).length;
+    }
+
     return 0;
   }
 
-  List<Map<String, String>> _inClassLearnersList(Map<String, dynamic> classData) {
-    final learners = classData['learners'];
-    if (learners is! Map) return [];
+  List<Map<String, String>> _inClassLearnersList(
+      Map<String, dynamic> classData,
+      ) {
+    final learners =
+        classData['learners'] ??
+            classData['students'] ??
+            classData['enrolled_learners'] ??
+            classData['enrolledLearners'];
 
-    final Map<dynamic, dynamic> raw = Map<dynamic, dynamic>.from(learners);
     final List<Map<String, String>> out = [];
 
-    for (final entry in raw.entries) {
-      final uid = entry.key.toString();
-      final value = entry.value;
+    if (learners is Map) {
+      final Map<dynamic, dynamic> raw = Map<dynamic, dynamic>.from(learners);
 
-      if (value is Map) {
-        final m = Map<String, dynamic>.from(value as Map);
-        final name = _safeStr(m['name']);
-        final serial = _safeStr(m['serial']);
+      for (final entry in raw.entries) {
+        final uid = entry.key.toString();
+        final value = entry.value;
 
-        out.add({
-          'uid': uid,
-          'name': name,
-          'serial': serial,
-        });
-      } else {
-        out.add({
-          'uid': uid,
-          'name': '',
-          'serial': '',
-        });
+        if (value is Map) {
+          final m = Map<String, dynamic>.from(value);
+
+          final name = _safeStr(
+            m['name'] ??
+                m['full_name'] ??
+                m['fullName'] ??
+                m['student_name'] ??
+                m['learner_name'],
+          );
+
+          final serial = _safeStr(m['serial']);
+
+          out.add({
+            'uid': uid,
+            'name': name,
+            'serial': serial,
+          });
+        } else if (value is String) {
+          out.add({
+            'uid': uid,
+            'name': value.trim(),
+            'serial': '',
+          });
+        } else {
+          out.add({
+            'uid': uid,
+            'name': '',
+            'serial': '',
+          });
+        }
+      }
+    } else if (learners is List) {
+      for (final item in learners) {
+        if (item == null) continue;
+
+        if (item is Map) {
+          final m = Map<String, dynamic>.from(item);
+
+          final uid = _safeStr(m['uid'] ?? m['learnerUid'] ?? m['studentUid']);
+          final name = _safeStr(
+            m['name'] ??
+                m['full_name'] ??
+                m['fullName'] ??
+                m['student_name'] ??
+                m['learner_name'],
+          );
+          final serial = _safeStr(m['serial']);
+
+          out.add({
+            'uid': uid,
+            'name': name,
+            'serial': serial,
+          });
+        } else if (item is String) {
+          out.add({
+            'uid': item.trim(),
+            'name': '',
+            'serial': '',
+          });
+        }
       }
     }
 
@@ -373,6 +484,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     return out;
   }
+
+
 
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
@@ -1407,19 +1520,20 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                         children: [
                           Row(
                             children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: p.soft,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.person_rounded,
-                                  size: 18,
-                                  color: p.primary,
-                                ),
+                              FutureBuilder<Map<String, String>>(
+                                future: _loadLearnerMini(learnerUid),
+                                builder: (context, snap) {
+                                  final profilePhotoUrl =
+                                  (snap.data?['profilePhoto'] ?? '').trim();
+
+                                  return _learnerAvatar(
+                                    profilePhotoUrl: profilePhotoUrl,
+                                    size: 38,
+                                  );
+
+                                },
                               ),
+
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -2163,22 +2277,38 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           const SizedBox(height: 8),
           ...show.map((uid) {
             return FutureBuilder<Map<String, String>>(
-              future: _loadUserName(uid),
+              future: _loadLearnerMini(uid),
               builder: (context, snap) {
                 final full = (snap.data?['full'] ?? '').trim();
+                final profilePhotoUrl =
+                (snap.data?['profilePhoto'] ?? '').trim();
+
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Text(
-                    '• ${full.isEmpty ? "Learner" : full}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: p.text.withOpacity(0.72),
-                    ),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      _learnerAvatar(
+                        profilePhotoUrl: profilePhotoUrl,
+                        size: 28,
+                      ),
+
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          full.isEmpty ? 'Learner' : full,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withOpacity(0.72),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
             );
           }).toList(),
+
           if (more > 0)
             Text(
               '… +$more more',
@@ -2334,7 +2464,8 @@ class _OnlineTakeAttendanceScreenState
   bool saving = false;
 
   final Map<String, bool> presentMap = {};
-  final Map<String, String> _localNameCache = {};
+
+  final Map<String, Map<String, String>> _localLearnerMiniCache = {};
 
   @override
   void initState() {
@@ -2370,22 +2501,70 @@ class _OnlineTakeAttendanceScreenState
     );
   }
 
-  Future<String> _loadLearnerFullName(String uid) async {
-    if (_localNameCache.containsKey(uid)) return _localNameCache[uid]!;
+
+  Future<Map<String, String>> _loadLearnerMini(String uid) async {
+    if (_localLearnerMiniCache.containsKey(uid)) {
+      return _localLearnerMiniCache[uid]!;
+    }
+
     try {
-      final snap = await _db.child('${_TeacherClassesScreenState.usersNode}/$uid').get();
+      final snap = await _db
+          .child('${_TeacherClassesScreenState.usersNode}/$uid')
+          .get();
+
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
         final fn = (m['first_name'] ?? '').toString().trim();
         final ln = (m['last_name'] ?? '').toString().trim();
         final full = ('$fn $ln').trim();
-        final out = full.isEmpty ? 'Learner' : full;
-        _localNameCache[uid] = out;
+        final profilePhoto = (m['profile_photo'] ?? '').toString().trim();
+
+        final out = {
+          'full': full.isEmpty ? 'Learner' : full,
+          'profilePhoto': profilePhoto,
+        };
+
+        _localLearnerMiniCache[uid] = out;
         return out;
       }
     } catch (_) {}
-    _localNameCache[uid] = 'Learner';
-    return 'Learner';
+
+    final out = {
+      'full': 'Learner',
+      'profilePhoto': '',
+    };
+    _localLearnerMiniCache[uid] = out;
+    return out;
+  }
+
+  Widget _learnerAvatar({
+    required String profilePhotoUrl,
+    double size = 36,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: p.soft,
+        shape: BoxShape.circle,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: profilePhotoUrl.trim().isNotEmpty
+          ? Image.network(
+        profilePhotoUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.person_rounded,
+          size: size * 0.48,
+          color: p.primary,
+        ),
+      )
+          : Icon(
+        Icons.person_rounded,
+        size: size * 0.48,
+        color: p.primary,
+      ),
+    );
   }
 
   DatabaseReference _teacherAttendanceRef() =>
@@ -2610,20 +2789,36 @@ class _OnlineTakeAttendanceScreenState
                       child: Row(
                         children: [
                           Expanded(
-                            child: FutureBuilder<String>(
-                              future: _loadLearnerFullName(uid),
+                            child: FutureBuilder<Map<String, String>>(
+                              future: _loadLearnerMini(uid),
                               builder: (context, snap) {
-                                final name = (snap.data ?? 'Learner').trim();
-                                return Text(
-                                  name.isEmpty ? 'Learner' : name,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: p.text,
-                                  ),
+                                final name =
+                                (snap.data?['full'] ?? 'Learner').trim();
+                                final profilePhotoUrl =
+                                (snap.data?['profilePhoto'] ?? '').trim();
+
+                                return Row(
+                                  children: [
+                                    _learnerAvatar(
+                                      profilePhotoUrl: profilePhotoUrl,
+                                      size: 36,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        name.isEmpty ? 'Learner' : name,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: p.text,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 );
                               },
                             ),
                           ),
+
                           const SizedBox(width: 10),
                           Switch(
                             value: v,
@@ -2778,15 +2973,22 @@ class _OnlineAttendanceHistoryScreenState
                                 .get(),
                             builder: (context, userSnap) {
                               String fullName = 'Learner';
+                              String profilePhotoUrl = '';
+
                               if (userSnap.hasData &&
                                   userSnap.data!.exists &&
                                   userSnap.data!.value is Map) {
                                 final um = (userSnap.data!.value as Map)
                                     .map((k, vv) => MapEntry(k.toString(), vv));
-                                final fn = (um['first_name'] ?? '').toString().trim();
-                                final ln = (um['last_name'] ?? '').toString().trim();
+                                final fn =
+                                (um['first_name'] ?? '').toString().trim();
+                                final ln =
+                                (um['last_name'] ?? '').toString().trim();
                                 final f = ('$fn $ln').trim();
                                 if (f.isNotEmpty) fullName = f;
+
+                                profilePhotoUrl =
+                                    (um['profile_photo'] ?? '').toString().trim();
                               }
 
                               return Container(
@@ -2794,19 +2996,55 @@ class _OnlineAttendanceHistoryScreenState
                                 decoration: BoxDecoration(
                                   color: p.soft.withOpacity(0.24),
                                   borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: p.border.withOpacity(0.8)),
-                                ),
-                                child: Text(
-                                  '$fullName  —  ${present ? "Present" : "Absent"}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    color: p.text,
+                                  border: Border.all(
+                                    color: p.border.withOpacity(0.8),
                                   ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: BoxDecoration(
+                                        color: p.soft,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: profilePhotoUrl.isNotEmpty
+                                          ? Image.network(
+                                        profilePhotoUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            Icon(
+                                              Icons.person_rounded,
+                                              size: 16,
+                                              color: p.primary,
+                                            ),
+                                      )
+                                          : Icon(
+                                        Icons.person_rounded,
+                                        size: 16,
+                                        color: p.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        '$fullName  —  ${present ? "Present" : "Absent"}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: p.text,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               );
                             },
                           ),
                         );
+
+
                       }).toList()
                     else
                       Text(

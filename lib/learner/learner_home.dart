@@ -34,12 +34,15 @@ class _LearnerHomeState extends State<LearnerHome> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<String>? _displayNameFuture;
+  Future<String>? _profilePhotoFuture;
 
   @override
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
     _displayNameFuture = _myDisplayName();
+    _profilePhotoFuture = _myProfilePhoto();
+
   }
 
   @override
@@ -76,9 +79,11 @@ class _LearnerHomeState extends State<LearnerHome> {
   Future<void> _refreshShell() async {
     setState(() {
       _displayNameFuture = _myDisplayName();
+      _profilePhotoFuture = _myProfilePhoto();
     });
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
+
 
   Future<void> _logout(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -149,6 +154,24 @@ class _LearnerHomeState extends State<LearnerHome> {
 
     return emailPrefix.isNotEmpty ? emailPrefix : 'Learner';
   }
+
+  Future<String> _myProfilePhoto() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return '';
+
+    try {
+      final snap = await _db.child('users/$uid').get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        return (m['profile_photo'] ?? '').toString().trim();
+      }
+    } catch (_) {}
+
+    return '';
+  }
+
+
 
   Future<List<_UserPick>> _loadAdmins() async {
     final out = <_UserPick>[];
@@ -710,6 +733,8 @@ class _LearnerHomeState extends State<LearnerHome> {
       backgroundColor: p.appBg,
       drawer: _LearnerDrawer(
         palette: p,
+        displayNameFuture: _displayNameFuture,
+        profilePhotoFuture: _profilePhotoFuture,
         onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
         onOpenMail: () => _pushScreen(LearnerMailScreen()),
         onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
@@ -719,6 +744,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenThemeSettings: _openThemeSheet,
         onLogout: () => _logout(context),
       ),
+
       appBar: AppBar(
         backgroundColor: p.cardBg,
         elevation: 0,
@@ -816,6 +842,39 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
+  Future<Map<String, String>> _loadLearnerHeaderData() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) {
+      return {
+        'name': 'Learner',
+        'profilePhoto': '',
+      };
+    }
+
+    try {
+      final snap = await _db.child('users/$uid').get();
+      final v = snap.value;
+
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final first = (m['first_name'] ?? '').toString().trim();
+        final last = (m['last_name'] ?? '').toString().trim();
+        final full = ('$first $last').trim();
+        final profilePhoto = (m['profile_photo'] ?? '').toString().trim();
+
+        return {
+          'name': full.isNotEmpty ? full : 'Learner',
+          'profilePhoto': profilePhoto,
+        };
+      }
+    } catch (_) {}
+
+    return {
+      'name': 'Learner',
+      'profilePhoto': '',
+    };
+  }
+
 
   String _courseTypeLabel(Map<String, dynamic> course) {
     final variant = (course['variantKey'] ?? course['variant'] ?? '')
@@ -1255,31 +1314,26 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           16 + (bottomPad > 0 ? bottomPad : 12),
         ),
         children: [
-          FutureBuilder<String>(
-            future: _db
-                .child('users/$uid')
-                .get()
-                .then((snap) {
-              final v = snap.value;
-              if (v is Map) {
-                final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-                final first = (m['first_name'] ?? '').toString().trim();
-                final last = (m['last_name'] ?? '').toString().trim();
-                final full = ('$first $last').trim();
-                if (full.isNotEmpty) return full;
-              }
-              return 'Learner';
-            })
-                .catchError((_) => 'Learner'),
+          FutureBuilder<Map<String, String>>(
+            future: _loadLearnerHeaderData(),
             builder: (context, snap) {
-              final name = (snap.data ?? 'Learner').trim();
+              final data = snap.data ?? const {
+                'name': 'Learner',
+                'profilePhoto': '',
+              };
+
+              final name = (data['name'] ?? 'Learner').trim();
+              final profilePhoto = (data['profilePhoto'] ?? '').trim();
+
               return _LearnerHeroCard(
                 palette: p,
                 learnerName: name.isEmpty ? 'Learner' : name,
+                profilePhotoUrl: profilePhoto,
                 onOpenCourses: _openCoursesScreen,
               );
             },
           ),
+
           const SizedBox(height: 16),
           FutureBuilder<bool>(
             future: _hasFlexibleBookableCourse(),
@@ -1404,12 +1458,15 @@ class _LearnerHeroCard extends StatelessWidget {
   const _LearnerHeroCard({
     required this.palette,
     required this.learnerName,
+    required this.profilePhotoUrl,
     required this.onOpenCourses,
   });
 
   final _HomePalette palette;
   final String learnerName;
+  final String profilePhotoUrl;
   final VoidCallback onOpenCourses;
+
 
   @override
   Widget build(BuildContext context) {
@@ -1440,15 +1497,27 @@ class _LearnerHeroCard extends StatelessWidget {
             height: 56,
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withOpacity(0.18)),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.35), width: 2),
             ),
-            child: const Icon(
-              Icons.school_rounded,
+            clipBehavior: Clip.antiAlias,
+            child: profilePhotoUrl.isNotEmpty
+                ? Image.network(
+              profilePhotoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.person_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            )
+                : const Icon(
+              Icons.person_rounded,
               color: Colors.white,
               size: 28,
             ),
           ),
+
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -3393,6 +3462,8 @@ class _StudyCoachHomeCard extends StatelessWidget {
 class _LearnerDrawer extends StatelessWidget {
   const _LearnerDrawer({
     required this.palette,
+    required this.displayNameFuture,
+    required this.profilePhotoFuture,
     required this.onOpenProfile,
     required this.onOpenMail,
     required this.onOpenCourses,
@@ -3403,6 +3474,8 @@ class _LearnerDrawer extends StatelessWidget {
   });
 
   final _HomePalette palette;
+  final Future<String>? displayNameFuture;
+  final Future<String>? profilePhotoFuture;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenCourses;
@@ -3410,6 +3483,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onLogout;
+
 
   @override
   Widget build(BuildContext context) {
@@ -3426,30 +3500,75 @@ class _LearnerDrawer extends StatelessWidget {
                 color: palette.primary,
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Colors.white24,
-                    child: Icon(
-                      Icons.school_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Learner Menu',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                    ),
-                  ),
-                ],
+              child: FutureBuilder<String>(
+                future: profilePhotoFuture,
+                builder: (context, photoSnap) {
+                  final profilePhotoUrl = (photoSnap.data ?? '').trim();
+
+                  return FutureBuilder<String>(
+                    future: displayNameFuture,
+                    builder: (context, nameSnap) {
+                      final displayName = (nameSnap.data ?? 'Learner').trim();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white24,
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.35),
+                                width: 2,
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: profilePhotoUrl.isNotEmpty
+                                ? Image.network(
+                              profilePhotoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            )
+                                : const Icon(
+                              Icons.person_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            displayName.isNotEmpty ? displayName : 'Learner',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Learner Menu',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.82),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
+
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
