@@ -12,7 +12,6 @@ class LearnerGamesScreen extends StatefulWidget {
 
 class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   final DatabaseReference _gamesRef = FirebaseDatabase.instance.ref('games');
-
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -111,10 +110,14 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final name = (game['name'] ?? '').toString().trim().toLowerCase();
     final description =
     (game['description'] ?? '').toString().trim().toLowerCase();
+    final category = (game['category'] ?? '').toString().trim().toLowerCase();
+    final level = (game['level'] ?? '').toString().trim().toLowerCase();
     final tags = _tagsFromGame(game).map((e) => e.toLowerCase()).toList();
 
     if (name.contains(q)) return true;
     if (description.contains(q)) return true;
+    if (category.contains(q)) return true;
+    if (level.contains(q)) return true;
     if (tags.any((tag) => tag.contains(q))) return true;
 
     return false;
@@ -209,10 +212,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     );
   }
 
-  Widget _buildSearchAndFilter(
-      BuildContext context,
-      List<String> tags,
-      ) {
+  Widget _buildSearchAndFilter(BuildContext context, List<String> tags) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
@@ -241,7 +241,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               });
             },
             decoration: InputDecoration(
-              hintText: 'Search by game name or tag...',
+              hintText: 'Search by name, tag, category, or level...',
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _searchQuery.trim().isEmpty
                   ? null
@@ -334,9 +334,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                filtered
-                    ? 'Try another name or tag.'
-                    : 'Please check again later.',
+                filtered ? 'Try another name or tag.' : 'Please check again later.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -351,6 +349,39 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     );
   }
 
+  Widget _buildMiniInfoChip({
+    required BuildContext context,
+    required IconData icon,
+    required String text,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: cs.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: cs.primary.withOpacity(0.10)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: cs.primary),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: theme.textTheme.bodyMedium?.color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGameCard(BuildContext context, Map<String, dynamic> game) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
@@ -360,6 +391,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final rules = (game['rules'] ?? '').toString().trim();
     final tags = _tagsFromGame(game);
     final ownerName = _teacherName(game);
+    final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+    final category = (game['category'] ?? '').toString().trim();
+    final level = (game['level'] ?? '').toString().trim();
+    final durationMinutes = _toInt(game['durationMinutes']);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -382,16 +417,27 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
           child: ExpansionTile(
             tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            leading: Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: 52,
+                height: 52,
                 color: cs.primary.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                Icons.sports_esports_rounded,
-                color: cs.primary,
+                child: thumbnail.isNotEmpty
+                    ? Image.network(
+                  thumbnail,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.sports_esports_rounded,
+                    color: cs.primary,
+                    size: 24,
+                  ),
+                )
+                    : Icon(
+                  Icons.sports_esports_rounded,
+                  color: cs.primary,
+                  size: 24,
+                ),
               ),
             ),
             title: Text(
@@ -416,31 +462,105 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       color: theme.textTheme.bodyMedium?.color?.withOpacity(0.70),
                     ),
                   ),
-                  if (description.isNotEmpty) ...[
-                    const SizedBox(height: 5),
-                    Text(
-                      description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: theme.textTheme.bodyMedium?.color?.withOpacity(0.78),
-                      ),
-                    ),
-                  ] else if (tags.isNotEmpty) ...[
-                    const SizedBox(height: 5),
-                    Text(
-                      tags.join(' • '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: theme.textTheme.bodyMedium?.color?.withOpacity(0.78),
-                      ),
+                  if (category.isNotEmpty || level.isNotEmpty || tags.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (category.isNotEmpty)
+                          _buildMiniInfoChip(
+                            context: context,
+                            icon: Icons.category_rounded,
+                            text: category,
+                          ),
+                        if (level.isNotEmpty)
+                          _buildMiniInfoChip(
+                            context: context,
+                            icon: Icons.bar_chart_rounded,
+                            text: level,
+                          ),
+                        ...tags.take(2).map(
+                              (tag) => _buildMiniInfoChip(
+                            context: context,
+                            icon: Icons.sell_rounded,
+                            text: tag,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],
               ),
             ),
             children: [
+              if (thumbnail.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.network(
+                    thumbnail,
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 180,
+                      alignment: Alignment.center,
+                      color: cs.primary.withOpacity(0.06),
+                      child: Icon(
+                        Icons.image_not_supported_rounded,
+                        color: cs.primary,
+                        size: 34,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (category.isNotEmpty || level.isNotEmpty || durationMinutes > 0) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (category.isNotEmpty)
+                        Chip(
+                          label: Text(category),
+                          avatar: Icon(
+                            Icons.category_rounded,
+                            size: 18,
+                            color: cs.primary,
+                          ),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                        ),
+                      if (level.isNotEmpty)
+                        Chip(
+                          label: Text(level),
+                          avatar: Icon(
+                            Icons.bar_chart_rounded,
+                            size: 18,
+                            color: cs.primary,
+                          ),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                        ),
+                      if (durationMinutes > 0)
+                        Chip(
+                          label: Text('$durationMinutes min'),
+                          avatar: Icon(
+                            Icons.schedule_rounded,
+                            size: 18,
+                            color: cs.primary,
+                          ),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               if (description.isNotEmpty) ...[
                 Align(
                   alignment: Alignment.centerLeft,
@@ -490,6 +610,17 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                 const SizedBox(height: 14),
               ],
               if (tags.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Tags',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Wrap(

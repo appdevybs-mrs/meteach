@@ -32,6 +32,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final _phone1Ctrl = TextEditingController();
   final _phone2Ctrl = TextEditingController();
   final _dobCtrl = TextEditingController();
+  final _googleMeetUrlCtrl = TextEditingController();
 
   bool _busy = false;
   bool _uploadingPhotos = false;
@@ -81,6 +82,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _phone2Ctrl.dispose();
     _dobCtrl.dispose();
     _disposeVideoController();
+    _googleMeetUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -127,6 +129,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       _phone1Ctrl.text = (data['phone1'] ?? '').toString();
       _phone2Ctrl.text = (data['phone2'] ?? '').toString();
       _dobCtrl.text = (data['dob'] ?? '').toString();
+      _googleMeetUrlCtrl.text = (data['google_meet_url'] ?? '').toString();
 
       _emailReadOnly = (data['email'] ?? user.email ?? '').toString();
       _roleReadOnly = (data['role'] ?? '').toString();
@@ -266,6 +269,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'dob': _dobCtrl.text.trim(),
         'profile_photos': _photoUrls,
         'intro_video_url': _introVideoUrl ?? '',
+        'google_meet_url': _googleMeetUrlCtrl.text.trim(),
         'updatedAt': ServerValue.timestamp,
       });
 
@@ -1320,6 +1324,31 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     if (value.isEmpty) return null;
                     final ok = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
                     if (!ok) return 'Use YYYY-MM-DD format';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _googleMeetUrlCtrl,
+                  keyboardType: TextInputType.url,
+                  decoration: _dec(
+                    'Google Meet URL',
+                    hintText: 'https://meet.google.com/xxx-xxxx-xxx',
+                  ),
+                  onChanged: (_) => _formKey.currentState?.validate(),
+                  validator: (v) {
+                    final value = (v ?? '').trim();
+                    if (value.isEmpty) return null;
+
+                    final uri = Uri.tryParse(value);
+                    if (uri == null || !uri.isAbsolute) {
+                      return 'Enter a valid URL';
+                    }
+
+                    if (uri.scheme != 'https' || uri.host != 'meet.google.com') {
+                      return 'Use a valid Google Meet link';
+                    }
+
                     return null;
                   },
                 ),

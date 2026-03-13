@@ -34,6 +34,29 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   static const String _uploadUrl =
       'https://www.yourbridgeschool.com/api/admin/upload_file.php';
 
+  static const List<String> _categoryOptions = [
+    'Vocabulary',
+    'Grammar',
+    'Reading',
+    'Writing',
+    'Listening',
+    'Speaking',
+    'Pronunciation',
+    'Spelling',
+    'Conversation',
+    'Mixed Skills',
+  ];
+
+  static const List<String> _levelOptions = [
+    'Beginner',
+    'Elementary',
+    'Pre-Intermediate',
+    'Intermediate',
+    'Upper-Intermediate',
+    'Advanced',
+    'All Levels',
+  ];
+
   DatabaseReference get _gamesRef => _db.child('games');
 
   @override
@@ -245,9 +268,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
           ],
         );
       },
-    );
+    ) ??
+        false;
 
-    if (ok != true) return;
+    if (!ok) return;
 
     try {
       await _gamesRef.child(gameId).remove();
@@ -461,7 +485,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Game file uploaded successfully.')),
+                    const SnackBar(
+                      content: Text('Game file uploaded successfully.'),
+                    ),
                   );
                 }
               } catch (e) {
@@ -489,7 +515,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               if (gameName.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Enter the game name before uploading thumbnail.'),
+                    content: Text(
+                      'Enter the game name before uploading thumbnail.',
+                    ),
                   ),
                 );
                 return;
@@ -514,7 +542,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Thumbnail uploaded successfully.')),
+                    const SnackBar(
+                      content: Text('Thumbnail uploaded successfully.'),
+                    ),
                   );
                 }
               } catch (e) {
@@ -604,7 +634,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               }
 
               try {
-                final ref = isEdit ? _gamesRef.child(gameId!) : _gamesRef.child(draftGameUid);
+                final ref =
+                isEdit ? _gamesRef.child(gameId!) : _gamesRef.child(draftGameUid);
 
                 final data = <String, dynamic>{
                   'gameUid': ref.key ?? draftGameUid,
@@ -714,22 +745,54 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: categoryController,
-                        textInputAction: TextInputAction.next,
+                      DropdownButtonFormField<String>(
+                        value: _categoryOptions.contains(
+                          categoryController.text.trim(),
+                        )
+                            ? categoryController.text.trim()
+                            : null,
                         decoration: const InputDecoration(
                           labelText: 'Category',
                           border: OutlineInputBorder(),
                         ),
+                        items: _categoryOptions
+                            .map(
+                              (item) => DropdownMenuItem<String>(
+                            value: item,
+                            child: Text(item),
+                          ),
+                        )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setLocalState(() {
+                            categoryController.text = value;
+                          });
+                        },
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: levelController,
-                        textInputAction: TextInputAction.next,
+                      DropdownButtonFormField<String>(
+                        value: _levelOptions.contains(levelController.text.trim())
+                            ? levelController.text.trim()
+                            : null,
                         decoration: const InputDecoration(
                           labelText: 'Level',
                           border: OutlineInputBorder(),
                         ),
+                        items: _levelOptions
+                            .map(
+                              (item) => DropdownMenuItem<String>(
+                            value: item,
+                            child: Text(item),
+                          ),
+                        )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setLocalState(() {
+                            levelController.text = value;
+                          });
+                        },
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -738,200 +801,6 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Duration in minutes',
                           border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: const ['draft', 'ready', 'hidden', 'archived']
-                            .contains(selectedStatus)
-                            ? selectedStatus
-                            : 'ready',
-                        decoration: const InputDecoration(
-                          labelText: 'Status',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
-                          DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-                          DropdownMenuItem(value: 'archived', child: Text('Archived')),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setLocalState(() {
-                            selectedStatus = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: teacherNotesController,
-                        minLines: 2,
-                        maxLines: 5,
-                        decoration: const InputDecoration(
-                          labelText: 'Teacher Notes',
-                          border: OutlineInputBorder(),
-                          alignLabelWithHint: true,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Game File',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (uploadedUrl.isNotEmpty) ...[
-                              Text(
-                                uploadedUrl,
-                                style: TextStyle(
-                                  color: Colors.blue.shade700,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () async {
-                                      await Clipboard.setData(
-                                        ClipboardData(text: uploadedUrl),
-                                      );
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Link copied')),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.link_rounded),
-                                    label: const Text('Copy Link'),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: localUploadingGame ? null : uploadGameFile,
-                                    icon: const Icon(Icons.sync_rounded),
-                                    label: const Text('Replace File'),
-                                  ),
-                                ],
-                              ),
-                            ] else ...[
-                              const Text(
-                                'No game file uploaded yet.',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 10),
-                              FilledButton.icon(
-                                onPressed: localUploadingGame ? null : uploadGameFile,
-                                icon: localUploadingGame
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                                    : const Icon(Icons.upload_file_rounded),
-                                label: Text(
-                                  localUploadingGame ? 'Uploading...' : 'Upload Game File',
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Thumbnail',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (uploadedThumbnail.isNotEmpty) ...[
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.network(
-                                  uploadedThumbnail,
-                                  height: 140,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    height: 140,
-                                    alignment: Alignment.center,
-                                    color: Colors.grey.shade100,
-                                    child: const Text('Could not load thumbnail'),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () async {
-                                      await Clipboard.setData(
-                                        ClipboardData(text: uploadedThumbnail),
-                                      );
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Thumbnail link copied')),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.link_rounded),
-                                    label: const Text('Copy Link'),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: localUploadingThumb ? null : uploadThumbnail,
-                                    icon: const Icon(Icons.image_rounded),
-                                    label: const Text('Replace Thumbnail'),
-                                  ),
-                                ],
-                              ),
-                            ] else ...[
-                              const Text(
-                                'No thumbnail uploaded yet.',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 10),
-                              FilledButton.icon(
-                                onPressed: localUploadingThumb ? null : uploadThumbnail,
-                                icon: localUploadingThumb
-                                    ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                                    : const Icon(Icons.upload_rounded),
-                                label: Text(
-                                  localUploadingThumb
-                                      ? 'Uploading...'
-                                      : 'Upload Thumbnail',
-                                ),
-                              ),
-                            ],
-                          ],
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -1002,6 +871,218 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                           'No tags yet. Add the first one.',
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: const ['draft', 'ready', 'hidden', 'archived']
+                            .contains(selectedStatus)
+                            ? selectedStatus
+                            : 'ready',
+                        decoration: const InputDecoration(
+                          labelText: 'Status',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
+                          DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                          DropdownMenuItem(
+                            value: 'archived',
+                            child: Text('Archived'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setLocalState(() {
+                            selectedStatus = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: teacherNotesController,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Teacher Notes',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Game File',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (uploadedUrl.isNotEmpty) ...[
+                              Text(
+                                uploadedUrl,
+                                style: TextStyle(
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: uploadedUrl),
+                                      );
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Link copied'),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.link_rounded),
+                                    label: const Text('Copy Link'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed:
+                                    localUploadingGame ? null : uploadGameFile,
+                                    icon: const Icon(Icons.sync_rounded),
+                                    label: const Text('Replace File'),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              const Text(
+                                'No game file uploaded yet.',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed:
+                                localUploadingGame ? null : uploadGameFile,
+                                icon: localUploadingGame
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                    : const Icon(Icons.upload_file_rounded),
+                                label: Text(
+                                  localUploadingGame
+                                      ? 'Uploading...'
+                                      : 'Upload Game File',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Thumbnail',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (uploadedThumbnail.isNotEmpty) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  uploadedThumbnail,
+                                  height: 140,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    height: 140,
+                                    alignment: Alignment.center,
+                                    color: Colors.grey.shade100,
+                                    child: const Text('Could not load thumbnail'),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: uploadedThumbnail),
+                                      );
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content:
+                                          Text('Thumbnail link copied'),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.link_rounded),
+                                    label: const Text('Copy Link'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed:
+                                    localUploadingThumb ? null : uploadThumbnail,
+                                    icon: const Icon(Icons.image_rounded),
+                                    label: const Text('Replace Thumbnail'),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              const Text(
+                                'No thumbnail uploaded yet.',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed:
+                                localUploadingThumb ? null : uploadThumbnail,
+                                icon: localUploadingThumb
+                                    ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                    : const Icon(Icons.upload_rounded),
+                                label: Text(
+                                  localUploadingThumb
+                                      ? 'Uploading...'
+                                      : 'Upload Thumbnail',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 18),
                       Row(
                         children: [
@@ -1083,11 +1164,57 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     }
   }
 
+  Widget _buildMiniInfoChip({
+    required BuildContext context,
+    required IconData icon,
+    required String text,
+    Color? backgroundColor,
+    Color? borderColor,
+    Color? iconColor,
+    Color? textColor,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? cs.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: borderColor ?? cs.primary.withOpacity(0.12),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: iconColor ?? cs.primary,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: textColor ?? theme.textTheme.bodyMedium?.color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGameCard({
     required String gameId,
     required Map<String, dynamic> game,
     required List<String> knownTags,
   }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     final canEdit = _canEditGame(game);
     final tags = _tagsFromGame(game);
     final name = (game['name'] ?? '').toString().trim();
@@ -1102,187 +1229,367 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final teacherNotes = (game['teacherNotes'] ?? '').toString().trim();
     final durationMinutes = _toInt(game['durationMinutes']);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (thumbnail.isNotEmpty) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: cs.outline.withOpacity(0.22)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: 52,
+                height: 52,
+                color: cs.primary.withOpacity(0.10),
+                child: thumbnail.isNotEmpty
+                    ? Image.network(
                   thumbnail,
-                  height: 160,
-                  width: double.infinity,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: Colors.grey.shade100,
-                    alignment: Alignment.center,
-                    child: const Text('Thumbnail failed to load'),
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.sports_esports_rounded,
+                    color: cs.primary,
+                    size: 24,
                   ),
+                )
+                    : Icon(
+                  Icons.sports_esports_rounded,
+                  color: cs.primary,
+                  size: 24,
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    name.isEmpty ? 'Untitled Game' : name,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
+            ),
+            title: Text(
+              name.isEmpty ? 'Untitled Game' : name,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                color: cs.primary,
+              ),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'By: $ownerName',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.70),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildMiniInfoChip(
+                        context: context,
+                        icon: Icons.verified_rounded,
+                        text: status,
+                        backgroundColor: _statusColor(status).withOpacity(0.12),
+                        borderColor: _statusColor(status).withOpacity(0.35),
+                        iconColor: _statusColor(status),
+                        textColor: _statusColor(status),
+                      ),
+                      if (category.isNotEmpty)
+                        _buildMiniInfoChip(
+                          context: context,
+                          icon: Icons.category_rounded,
+                          text: category,
+                        ),
+                      if (level.isNotEmpty)
+                        _buildMiniInfoChip(
+                          context: context,
+                          icon: Icons.bar_chart_rounded,
+                          text: level,
+                        ),
+                      ...tags.take(2).map(
+                            (tag) => _buildMiniInfoChip(
+                          context: context,
+                          icon: Icons.sell_rounded,
+                          text: tag,
+                          backgroundColor: cs.secondary.withOpacity(0.08),
+                          borderColor: cs.secondary.withOpacity(0.14),
+                          iconColor: cs.secondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            children: [
+              if (thumbnail.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.network(
+                    thumbnail,
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 180,
+                      alignment: Alignment.center,
+                      color: cs.primary.withOpacity(0.06),
+                      child: Icon(
+                        Icons.image_not_supported_rounded,
+                        color: cs.primary,
+                        size: 34,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Chip(
-                  label: Text(status),
-                  backgroundColor: _statusColor(status).withOpacity(0.12),
-                  side: BorderSide(color: _statusColor(status)),
-                  labelStyle: TextStyle(
-                    color: _statusColor(status),
-                    fontWeight: FontWeight.w800,
+                const SizedBox(height: 14),
+              ],
+              if (category.isNotEmpty || level.isNotEmpty || durationMinutes > 0)
+                ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (category.isNotEmpty)
+                          Chip(
+                            label: Text(category),
+                            avatar: Icon(
+                              Icons.category_rounded,
+                              size: 18,
+                              color: cs.primary,
+                            ),
+                            backgroundColor: cs.primary.withOpacity(0.08),
+                            side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          ),
+                        if (level.isNotEmpty)
+                          Chip(
+                            label: Text(level),
+                            avatar: Icon(
+                              Icons.bar_chart_rounded,
+                              size: 18,
+                              color: cs.primary,
+                            ),
+                            backgroundColor: cs.primary.withOpacity(0.08),
+                            side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          ),
+                        if (durationMinutes > 0)
+                          Chip(
+                            label: Text('$durationMinutes min'),
+                            avatar: Icon(
+                              Icons.schedule_rounded,
+                              size: 18,
+                              color: cs.primary,
+                            ),
+                            backgroundColor: cs.primary.withOpacity(0.08),
+                            side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+              if (tags.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Tags',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: tags
+                        .map(
+                          (tag) => Chip(
+                        label: Text(tag),
+                        backgroundColor: cs.secondary.withOpacity(0.08),
+                        side: BorderSide(
+                          color: cs.secondary.withOpacity(0.14),
+                        ),
+                      ),
+                    )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 14),
               ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'By: $ownerName',
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (category.isNotEmpty) Chip(label: Text(category)),
-                if (level.isNotEmpty) Chip(label: Text(level)),
-                if (durationMinutes > 0) Chip(label: Text('$durationMinutes min')),
+              if (description.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Description',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    description,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
               ],
-            ),
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
+              if (rules.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Rules',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-            if (rules.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Rules',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                rules,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    rules,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-            if (teacherNotes.isNotEmpty && canEdit) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Teacher Notes',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                teacherNotes,
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
+                const SizedBox(height: 14),
+              ],
+              if (teacherNotes.isNotEmpty && canEdit) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Teacher Notes',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-            if (link.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                link,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.blue.shade700,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    teacherNotes,
+                    style: TextStyle(
+                      color:
+                      theme.textTheme.bodyMedium?.color?.withOpacity(0.78),
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-            if (tags.isNotEmpty) ...[
-              const SizedBox(height: 10),
+                const SizedBox(height: 14),
+              ],
+              if (link.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Game Link',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    link,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: tags.map((tag) => Chip(label: Text(tag))).toList(),
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => _openGame(game),
+                    icon: const Icon(Icons.open_in_browser_rounded),
+                    label: const Text('Open'),
+                  ),
+                  if (canEdit)
+                    OutlinedButton.icon(
+                      onPressed: () => _showGameForm(
+                        gameId: gameId,
+                        existingGame: game,
+                        knownTags: knownTags,
+                      ),
+                      icon: const Icon(Icons.edit_rounded),
+                      label: const Text('Edit'),
+                    ),
+                  if (canEdit)
+                    OutlinedButton.icon(
+                      onPressed: () => _duplicateGame(
+                        gameId: gameId,
+                        existingGame: game,
+                      ),
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('Duplicate'),
+                    ),
+                  if (canEdit)
+                    OutlinedButton.icon(
+                      onPressed: () => _toggleArchive(
+                        gameId: gameId,
+                        game: game,
+                      ),
+                      icon: Icon(
+                        status == 'archived'
+                            ? Icons.unarchive_rounded
+                            : Icons.archive_rounded,
+                      ),
+                      label: Text(
+                        status == 'archived' ? 'Restore' : 'Archive',
+                      ),
+                    ),
+                  if (canEdit)
+                    OutlinedButton.icon(
+                      onPressed: () => _deleteGame(gameId),
+                      icon: const Icon(Icons.delete_rounded),
+                      label: const Text('Delete'),
+                    ),
+                ],
               ),
             ],
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: () => _openGame(game),
-                  icon: const Icon(Icons.open_in_browser_rounded),
-                  label: const Text('Open'),
-                ),
-                if (canEdit)
-                  OutlinedButton.icon(
-                    onPressed: () => _showGameForm(
-                      gameId: gameId,
-                      existingGame: game,
-                      knownTags: knownTags,
-                    ),
-                    icon: const Icon(Icons.edit_rounded),
-                    label: const Text('Edit'),
-                  ),
-                if (canEdit)
-                  OutlinedButton.icon(
-                    onPressed: () => _duplicateGame(
-                      gameId: gameId,
-                      existingGame: game,
-                    ),
-                    icon: const Icon(Icons.copy_rounded),
-                    label: const Text('Duplicate'),
-                  ),
-                if (canEdit)
-                  OutlinedButton.icon(
-                    onPressed: () => _toggleArchive(
-                      gameId: gameId,
-                      game: game,
-                    ),
-                    icon: Icon(
-                      status == 'archived'
-                          ? Icons.unarchive_rounded
-                          : Icons.archive_rounded,
-                    ),
-                    label: Text(
-                      status == 'archived' ? 'Restore' : 'Archive',
-                    ),
-                  ),
-                if (canEdit)
-                  OutlinedButton.icon(
-                    onPressed: () => _deleteGame(gameId),
-                    icon: const Icon(Icons.delete_rounded),
-                    label: const Text('Delete'),
-                  ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1331,14 +1638,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               .toLowerCase()
               .compareTo((a.value['name'] ?? '').toString().toLowerCase());
         case 'created_desc':
-          return _toInt(b.value['createdAt']).compareTo(_toInt(a.value['createdAt']));
+          return _toInt(b.value['createdAt'])
+              .compareTo(_toInt(a.value['createdAt']));
         case 'created_asc':
-          return _toInt(a.value['createdAt']).compareTo(_toInt(b.value['createdAt']));
+          return _toInt(a.value['createdAt'])
+              .compareTo(_toInt(b.value['createdAt']));
         case 'updated_asc':
-          return _toInt(a.value['updatedAt']).compareTo(_toInt(b.value['updatedAt']));
+          return _toInt(a.value['updatedAt'])
+              .compareTo(_toInt(b.value['updatedAt']));
         case 'updated_desc':
         default:
-          return _toInt(b.value['updatedAt']).compareTo(_toInt(a.value['updatedAt']));
+          return _toInt(b.value['updatedAt'])
+              .compareTo(_toInt(a.value['updatedAt']));
       }
     });
 
@@ -1347,109 +1658,151 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
   Widget _buildFilterBar(List<String> categories) {
     final categoryItems = ['all', ...categories];
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Column(
-        children: [
-          TextField(
-            controller: _searchController,
-            onChanged: (value) {
-              setState(() {
-                _searchQuery = value.trim().toLowerCase();
-              });
-            },
-            decoration: InputDecoration(
-              hintText: 'Search games...',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _searchController.text.isEmpty
-                  ? null
-                  : IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() {
-                    _searchQuery = '';
-                  });
-                },
-                icon: const Icon(Icons.clear_rounded),
-              ),
-              border: const OutlineInputBorder(),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: cs.outline.withOpacity(0.22)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _statusFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Status',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'all', child: Text('All')),
-                    DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                    DropdownMenuItem(value: 'ready', child: Text('Ready')),
-                    DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-                    DropdownMenuItem(value: 'archived', child: Text('Archived')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
+          ],
+        ),
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.trim().toLowerCase();
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Search games...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                  onPressed: () {
+                    _searchController.clear();
                     setState(() {
-                      _statusFilter = value;
+                      _searchQuery = '';
                     });
                   },
+                  icon: const Icon(Icons.clear_rounded),
+                ),
+                filled: true,
+                fillColor: cs.surfaceVariant.withOpacity(0.35),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: cs.primary, width: 1.4),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _categoryFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Category',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: categoryItems
-                      .map(
-                        (e) => DropdownMenuItem(
-                      value: e,
-                      child: Text(e == 'all' ? 'All' : e),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _statusFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      border: OutlineInputBorder(),
                     ),
-                  )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() {
-                      _categoryFilter = value;
-                    });
-                  },
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All')),
+                      DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                      DropdownMenuItem(value: 'ready', child: Text('Ready')),
+                      DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                      DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _statusFilter = value;
+                      });
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            value: _sortBy,
-            decoration: const InputDecoration(
-              labelText: 'Sort by',
-              border: OutlineInputBorder(),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _categoryFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: categoryItems
+                        .map(
+                          (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e == 'all' ? 'All' : e),
+                      ),
+                    )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _categoryFilter = value;
+                      });
+                    },
+                  ),
+                ),
+              ],
             ),
-            items: const [
-              DropdownMenuItem(value: 'updated_desc', child: Text('Recently updated')),
-              DropdownMenuItem(value: 'updated_asc', child: Text('Oldest updated')),
-              DropdownMenuItem(value: 'created_desc', child: Text('Newest created')),
-              DropdownMenuItem(value: 'created_asc', child: Text('Oldest created')),
-              DropdownMenuItem(value: 'name_asc', child: Text('Name A-Z')),
-              DropdownMenuItem(value: 'name_desc', child: Text('Name Z-A')),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() {
-                _sortBy = value;
-              });
-            },
-          ),
-        ],
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: _sortBy,
+              decoration: const InputDecoration(
+                labelText: 'Sort by',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'updated_desc',
+                  child: Text('Recently updated'),
+                ),
+                DropdownMenuItem(
+                  value: 'updated_asc',
+                  child: Text('Oldest updated'),
+                ),
+                DropdownMenuItem(
+                  value: 'created_desc',
+                  child: Text('Newest created'),
+                ),
+                DropdownMenuItem(
+                  value: 'created_asc',
+                  child: Text('Oldest created'),
+                ),
+                DropdownMenuItem(value: 'name_asc', child: Text('Name A-Z')),
+                DropdownMenuItem(value: 'name_desc', child: Text('Name Z-A')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _sortBy = value;
+                });
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1460,6 +1813,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Games'),
@@ -1489,36 +1845,47 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.sports_esports_rounded,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'No games added yet.',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
+                child: Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: theme.cardColor,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: cs.outline.withOpacity(0.22)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.sports_esports_rounded,
+                        size: 48,
+                        color: cs.primary,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Tap "Add Game" to create the first game.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _saving
-                          ? null
-                          : () => _showGameForm(knownTags: knownTags),
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('Add Game'),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      const Text(
+                        'No games added yet.',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Tap "Add Game" to create the first game.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: _saving
+                            ? null
+                            : () => _showGameForm(knownTags: knownTags),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add Game'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -1566,13 +1933,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                       ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                    children: const [
+                    children: [
                       Center(
                         child: Text(
                           'No games match your filters.',
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: Colors.black54,
+                            color: theme.textTheme.bodyMedium?.color
+                                ?.withOpacity(0.65),
                           ),
                         ),
                       ),

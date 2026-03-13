@@ -265,6 +265,14 @@
 
       return _variantLabel(v);
     }
+    bool _isScheduledClassType(String variantKey) {
+      final v = _normalizeVariantKey(variantKey);
+      return v == 'inclass' || v == 'private';
+    }
+
+    bool _isNonScheduledClassType(String variantKey) {
+      return !_isScheduledClassType(variantKey);
+    }
     // Short Class ID: exactly 5 chars (human-friendly)
     String _makeShortClassId() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid 0/O/1/I
@@ -532,6 +540,7 @@
       required String courseId,
       required String variantKey,
       required String studyMode,
+      String? currentClassId,
     }) {
       final wantedVariant = _normalizeVariantKey(variantKey);
       final wantedStudyMode = _normalizeStudyMode(studyMode);
@@ -553,8 +562,24 @@
           final enrolledCourseId = (m["id"] ?? "").toString().trim();
           if (enrolledCourseId != courseId) continue;
 
+// ✅ Migration fallback:
+// if this learner course is already linked to the same class,
+// treat it as enrolled even if the old class node has old/missing variant data.
+          final linkedClassMap = (m["class"] is Map)
+              ? Map<String, dynamic>.from(m["class"] as Map)
+              : <String, dynamic>{};
+
+          final linkedClassId = (linkedClassMap["class_id"] ?? "").toString().trim();
+
+          if (currentClassId != null &&
+              currentClassId.trim().isNotEmpty &&
+              linkedClassId == currentClassId.trim()) {
+            hasMatch = true;
+            break;
+          }
+
           final enrolledVariant = _normalizeVariantKey(
-            (m["variantKey"] ?? m["deliveryKey"] ?? "").toString(),
+            (m["variantKey"] ?? m["variant"] ?? m["deliveryKey"] ?? "").toString(),
           );
 
           final enrolledStudyMode = _normalizeStudyMode(
@@ -784,11 +809,25 @@
     }
   
     // Cleaner schedule line: "Sat 10:00 (90m) • Tue 18:00 (60m)"
+
     String _prettySessions(Map<String, dynamic> cls) {
-      final sched = (cls["schedule"] is Map) ? Map<String, dynamic>.from(cls["schedule"]) : <String, dynamic>{};
-      final sessions = (sched["sessions"] is List) ? List<dynamic>.from(sched["sessions"]) : <dynamic>[];
-      if (sessions.isEmpty) return "No schedule";
-  
+      final variantKey = (cls["variantKey"] ?? "").toString();
+      final sched = (cls["schedule"] is Map)
+          ? Map<String, dynamic>.from(cls["schedule"])
+          : <String, dynamic>{};
+      final sessions = (sched["sessions"] is List)
+          ? List<dynamic>.from(sched["sessions"])
+          : <dynamic>[];
+
+      if (sessions.isEmpty) {
+        final v = _normalizeVariantKey(variantKey);
+
+        if (v == 'flexible') return "Flexible schedule";
+        if (v == 'recorded') return "On-demand access";
+
+        return "No schedule";
+      }
+
       final parts = sessions.map((s) {
         final m = (s is Map) ? Map<String, dynamic>.from(s) : <String, dynamic>{};
         final day = (m["day"] ?? "").toString().trim();
@@ -799,7 +838,7 @@
         final du = dur.isEmpty ? "?" : dur;
         return "$dd $tt (${du}m)";
       }).toList();
-  
+
       return parts.join(" • ");
     }
   
@@ -828,14 +867,18 @@
     Color _openColor(bool isOpen) => isOpen ? Colors.blue : Colors.grey;
   
     // -------------------- Learner Picker (STRICT ENROLLMENT) --------------------
-
     Future<void> _openLearnersPickerStrict({
+      required String currentClassId,
       required String selectedCourseId,
       required String selectedVariantKey,
       required String selectedStudyMode,
       required Map<String, dynamic> selectedLearnersByUid,
       required StateSetter setModalState,
     }) async {
+      // ✅ Always refresh learners before opening the picker,
+      // so recently changed enrollments are detected.
+      await _loadAllLearners();
+
       if (_loadingLearners) {
         _notify("Learners are still loading...");
         return;
@@ -845,8 +888,8 @@
         courseId: selectedCourseId,
         variantKey: selectedVariantKey,
         studyMode: selectedStudyMode,
+        currentClassId: currentClassId,
       );
-      final TextEditingController searchCtrl = TextEditingController();
       String q = "";
   
       await showDialog(
@@ -889,7 +932,6 @@
                 child: Column(
                   children: [
                     TextField(
-                      controller: searchCtrl,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search),
                         hintText: "Search by name or serial",
@@ -982,7 +1024,6 @@
         },
       );
   
-      searchCtrl.dispose();
     }
   
     // -------------------- Full Create/Edit Bottom Sheet --------------------
@@ -1052,11 +1093,11 @@
       }
   
       final String status = isEdit ? (existingClass!["status"] ?? "active").toString() : "active";
-  
+
       final schedule = (isEdit && existingClass!["schedule"] is Map)
           ? Map<String, dynamic>.from(existingClass!["schedule"])
           : <String, dynamic>{};
-  
+
       final sessionsCountCtrl = TextEditingController(
         text: isEdit ? (schedule["sessions_count"] ?? "12").toString() : "12",
       );
@@ -1137,7 +1178,7 @@
               saving = v;
               setModalState(() {});
             }
-  
+            final bool requiresFixedSchedule = _isScheduledClassType(selectedVariantKey);
             final learnersCount = selectedLearnersByUid.length;
             final courseId = selectedCourse["id"].toString();
   
@@ -1361,27 +1402,29 @@
                         ),
                         enabled: !saving,
                       ),
-  
+
                       const SizedBox(height: 12),
 
-                      OutlinedButton.icon(
-                        onPressed: saving ? null : () => pickDate(setModalState),
-                        icon: const Icon(Icons.event),
-                        label: Text(
-                          firstSessionDate == null ? "Pick first session date" : "First session: ${_formatDate(firstSessionDate!)}",
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      if (requiresFixedSchedule) ...[
+                        OutlinedButton.icon(
+                          onPressed: saving ? null : () => pickDate(setModalState),
+                          icon: const Icon(Icons.event),
+                          label: Text(
+                            firstSessionDate == null ? "Pick first session date" : "First session: ${_formatDate(firstSessionDate!)}",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-  
-                      const SizedBox(height: 12),
-  
+                        const SizedBox(height: 12),
+                      ],
+
                       OutlinedButton.icon(
                         onPressed: saving
                             ? null
                             : (!isOpen
                             ? null
                             : () => _openLearnersPickerStrict(
+                          currentClassId: classId,
                           selectedCourseId: courseId,
                           selectedVariantKey: selectedVariantKey,
                           selectedStudyMode: selectedStudyMode,
@@ -1397,99 +1440,101 @@
                               : (learnersCount == 0 ? "Learners (Closed)" : "Learners: $learnersCount (Closed)"),
                         ),
                       ),
-  
-                      const SizedBox(height: 16),
-                      const Text(
-                        "Weekly schedule",
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 8),
-  
-                      ...scheduleRows.map((row) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 110,
-                                child: InputDecorator(
-                                  decoration: const InputDecoration(
-                                    labelText: "Day",
-                                    border: OutlineInputBorder(),
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      value: _weekDays.contains(row.day) ? row.day : "Mon",
-                                      isExpanded: true,
-                                      items: _weekDays
-                                          .map((d) => DropdownMenuItem<String>(
-                                        value: d,
-                                        child: Text(
-                                          d,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(fontWeight: FontWeight.w800),
-                                        ),
-                                      ))
-                                          .toList(),
-                                      onChanged: saving
-                                          ? null
-                                          : (v) {
-                                        if (v == null) return;
-                                        setModalState(() => row.day = v);
-                                      },
+
+                      if (requiresFixedSchedule) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          "Weekly schedule",
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+
+                        ...scheduleRows.map((row) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 110,
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: "Day",
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: _weekDays.contains(row.day) ? row.day : "Mon",
+                                        isExpanded: true,
+                                        items: _weekDays
+                                            .map((d) => DropdownMenuItem<String>(
+                                          value: d,
+                                          child: Text(
+                                            d,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontWeight: FontWeight.w800),
+                                          ),
+                                        ))
+                                            .toList(),
+                                        onChanged: saving
+                                            ? null
+                                            : (v) {
+                                          if (v == null) return;
+                                          setModalState(() => row.day = v);
+                                        },
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: saving ? null : () => pickTime(setModalState, row),
-                                  child: Text(
-                                    row.startTime == null ? "Start time" : row.startTime!,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: saving ? null : () => pickTime(setModalState, row),
+                                    child: Text(
+                                      row.startTime == null ? "Start time" : row.startTime!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 120,
-                                child: TextField(
-                                  controller: row.durationCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: "Minutes",
-                                    border: OutlineInputBorder(),
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 120,
+                                  child: TextField(
+                                    controller: row.durationCtrl,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: "Minutes",
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    ),
+                                    enabled: !saving,
                                   ),
-                                  enabled: !saving,
                                 ),
-                              ),
-                              IconButton(
-                                tooltip: "Remove",
-                                onPressed: saving
-                                    ? null
-                                    : () {
-                                  if (scheduleRows.length <= 1) return;
-                                  setModalState(() => scheduleRows.remove(row));
-                                },
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-  
-                      OutlinedButton.icon(
-                        onPressed: saving ? null : () => setModalState(() => scheduleRows.add(_ScheduleRow(day: "Mon"))),
-                        icon: const Icon(Icons.add),
-                        label: const Text("Add another day"),
-                      ),
+                                IconButton(
+                                  tooltip: "Remove",
+                                  onPressed: saving
+                                      ? null
+                                      : () {
+                                    if (scheduleRows.length <= 1) return;
+                                    setModalState(() => scheduleRows.remove(row));
+                                  },
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+
+                        OutlinedButton.icon(
+                          onPressed: saving ? null : () => setModalState(() => scheduleRows.add(_ScheduleRow(day: "Mon"))),
+                          icon: const Icon(Icons.add),
+                          label: const Text("Add another day"),
+                        ),
+                      ],
   
                       const SizedBox(height: 18),
   
@@ -1510,21 +1555,28 @@
                             if (sessionsCount == null || sessionsCount <= 0) {
                               return _notify("Sessions count invalid.", error: true);
                             }
-  
-                            if (firstSessionDate == null) {
+
+                            if (requiresFixedSchedule && firstSessionDate == null) {
                               return _notify("Pick the first session date.", error: true);
                             }
-  
+
                             final sessions = <Map<String, dynamic>>[];
-                            for (final row in scheduleRows) {
-                              if (row.startTime == null) {
-                                return _notify("Pick start time for ${row.day}.", error: true);
+
+                            if (requiresFixedSchedule) {
+                              for (final row in scheduleRows) {
+                                if (row.startTime == null) {
+                                  return _notify("Pick start time for ${row.day}.", error: true);
+                                }
+                                final dur = int.tryParse(row.durationCtrl.text.trim());
+                                if (dur == null || dur <= 0) {
+                                  return _notify("Duration invalid for ${row.day}.", error: true);
+                                }
+                                sessions.add({
+                                  "day": row.day,
+                                  "start_time": row.startTime,
+                                  "duration_min": dur,
+                                });
                               }
-                              final dur = int.tryParse(row.durationCtrl.text.trim());
-                              if (dur == null || dur <= 0) {
-                                return _notify("Duration invalid for ${row.day}.", error: true);
-                              }
-                              sessions.add({"day": row.day, "start_time": row.startTime, "duration_min": dur});
                             }
   
                             final courseId = selectedCourse["id"].toString();
@@ -1592,9 +1644,11 @@
   
                               "instructor": pickedName,
                               "instructor_current": newCurrent,
-  
+
                               "schedule": {
-                                "first_session_date": _formatDate(firstSessionDate!),
+                                "first_session_date": requiresFixedSchedule && firstSessionDate != null
+                                    ? _formatDate(firstSessionDate!)
+                                    : "",
                                 "sessions_count": sessionsCount,
                                 "sessions": sessions,
                               },

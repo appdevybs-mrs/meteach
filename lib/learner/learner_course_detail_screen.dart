@@ -162,8 +162,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 // syllabi key (courseId)
   String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString();
 
-  String get _deliveryKey =>
-      (_course['deliveryKey'] ?? '').toString().trim().toLowerCase();
+  String get _deliveryKey {
+    final rootVariant =
+    (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
+    if (rootVariant.isNotEmpty) return rootVariant;
+
+    final classMap =
+    (_course['class'] is Map) ? Map<String, dynamic>.from(_course['class'] as Map) : <String, dynamic>{};
+
+    final classVariant =
+    (classMap['variantKey'] ?? classMap['variant'] ?? '').toString().trim().toLowerCase();
+    if (classVariant.isNotEmpty) return classVariant;
+
+    return (_course['deliveryKey'] ?? '').toString().trim().toLowerCase();
+  }
 
   String get _studyMode =>
       (_course['studyMode'] ?? '').toString().trim().toLowerCase();
@@ -171,25 +183,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   String get _legacyVariantKey =>
       (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
 
+
   String get _syllabusVariantKey {
     final delivery = _deliveryKey;
-    final studyMode = _studyMode;
     final legacy = _legacyVariantKey;
 
     if (delivery == 'recorded') return 'recorded';
-    if (delivery == 'inclass') return 'in_class';
-    if (delivery == 'flexible') return 'online';
-    if (delivery == 'private') {
-      if (studyMode == 'online') return 'online';
-      if (studyMode == 'inclass') return 'in_class';
-    }
+    if (delivery == 'inclass') return 'inclass';
+    if (delivery == 'flexible') return 'flexible';
+    if (delivery == 'private') return 'private';
 
-    if (legacy == 'in_class' ||
-        legacy == 'online' ||
-        legacy == 'live' ||
-        legacy == 'recorded') {
-      return legacy == 'live' ? 'online' : legacy;
-    }
+    if (legacy == 'recorded') return 'recorded';
+    if (legacy == 'inclass' || legacy == 'in_class') return 'inclass';
+    if (legacy == 'flexible' || legacy == 'online') return 'flexible';
+    if (legacy == 'private' || legacy == 'live') return 'private';
 
     return '';
   }
@@ -199,9 +206,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final studyMode = _studyMode;
 
     if (delivery == 'private') {
-      if (studyMode == 'online') return 'VIP Online';
-      if (studyMode == 'inclass') return 'VIP In-Class';
-      return 'VIP';
+      if (studyMode == 'online') return 'Private Online';
+      if (studyMode == 'inclass') return 'Private In-Class';
+      return 'Private';
     }
 
     if (delivery == 'inclass') return 'In-Class';
@@ -210,7 +217,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
     return '';
   }
-
   DatabaseReference get _paymentSummaryRef =>
       _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
 
@@ -310,14 +316,70 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       // Load syllabi flat list FIRST (so we can map sessionNo -> sessionId for online)
       // --------------------
       if (_courseId.isNotEmpty) {
-        DatabaseReference syllabusRef = _syllabiRef.child(_courseId);
+        final rootSyllabusRef = _syllabiRef.child(_courseId);
 
-        // ✅ Prefer learner variant branch: syllabi/<courseId>/<variantKey>
-        if (_syllabusVariantKey.isNotEmpty) {
-          syllabusRef = syllabusRef.child(_syllabusVariantKey);
+        final List<String> variantCandidates = [];
+
+        void addCandidate(String v) {
+          final x = v.trim();
+          if (x.isEmpty) return;
+          if (!variantCandidates.contains(x)) variantCandidates.add(x);
         }
 
-        final sSnap = await syllabusRef.get();
+        final rootVariant =
+        (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
+
+        final classMap =
+        (_course['class'] is Map) ? Map<String, dynamic>.from(_course['class'] as Map) : <String, dynamic>{};
+
+        final classVariant =
+        (classMap['variantKey'] ?? classMap['variant'] ?? '').toString().trim().toLowerCase();
+
+        addCandidate(rootVariant);
+        addCandidate(classVariant);
+        addCandidate(_deliveryKey);
+        addCandidate(_syllabusVariantKey);
+
+        if (_deliveryKey == 'private') {
+          if (_studyMode == 'online') {
+            addCandidate('private');
+            addCandidate('online');
+          } else if (_studyMode == 'inclass') {
+            addCandidate('private');
+            addCandidate('inclass');
+            addCandidate('in_class');
+          } else {
+            addCandidate('private');
+            addCandidate('online');
+          }
+        }
+
+        if (_deliveryKey == 'flexible') {
+          addCandidate('flexible');
+          addCandidate('online');
+        }
+
+        if (_deliveryKey == 'inclass') {
+          addCandidate('inclass');
+          addCandidate('in_class');
+        }
+
+        if (_deliveryKey == 'recorded') {
+          addCandidate('recorded');
+        }
+
+        DataSnapshot? sSnap;
+
+        for (final key in variantCandidates) {
+          final testSnap = await rootSyllabusRef.child(key).get();
+          if (testSnap.exists && testSnap.value != null && testSnap.value is Map) {
+            sSnap = testSnap;
+            break;
+          }
+        }
+
+        sSnap ??= await rootSyllabusRef.get();
+
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'];
@@ -368,13 +430,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
           _syllabiFlat = flat;
 
-          // ✅ build sessionNumber -> sessionId map
           _sessionIdByNumber = {};
           _sessionTitleByNumber = {};
           for (final s in _syllabiFlat) {
             final sn = _asInt(s['sessionNumber']);
             final sid = (s['sessionId'] ?? '').toString().trim();
             final title = (s['title'] ?? '').toString().trim();
+
             if (sn > 0) {
               if (sid.isNotEmpty) _sessionIdByNumber[sn] = sid;
               if (title.isNotEmpty) _sessionTitleByNumber[sn] = title;
@@ -382,7 +444,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           }
         }
       }
-
       // --------------------
       // Attendance list (IN-CLASS) - your existing logic (kept)
       // --------------------
