@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
+import 'teacher_public_gallery_screen.dart';
 import '../calls/audio_call_screen.dart';
 import '../calls/call_logs_screen.dart';
 import '../shared/app_theme.dart';
@@ -1050,6 +1050,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             _pushScreen(const TeacherOnlineBookingScreen()),
         onOpenMail: () => _pushScreen(const TeacherMailScreen()),
         onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
+        onOpenGallery: () => _pushScreen(const TeacherPublicGalleryScreen()),
         onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
         onOpenRegulations: () =>
             _pushScreen(const TeacherRegulationsScreen()),
@@ -1331,6 +1332,7 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenProfile,
     required this.onOpenSchedule,
     required this.onOpenClasses,
+    required this.onOpenGallery,
     required this.onOpenOnlineBooking,
     required this.onOpenMail,
     required this.onOpenReminders,
@@ -1347,6 +1349,7 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenSchedule;
   final VoidCallback onOpenClasses;
+  final VoidCallback onOpenGallery;
   final VoidCallback onOpenOnlineBooking;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenReminders;
@@ -1435,6 +1438,16 @@ class _TeacherDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenClasses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.collections_rounded,
+                    title: 'Gallery',
+                    subtitle: 'My learners and teachers',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGallery();
                     },
                   ),
                   _DrawerTile(

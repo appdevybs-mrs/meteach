@@ -408,17 +408,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         final id =
         (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '').toString().trim();
 
+        final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
         final deliveryKey = (m['deliveryKey'] ?? '')
             .toString()
             .trim()
             .toLowerCase();
 
-        final studyMode = (m['studyMode'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
-
-        final isBookingCourse = deliveryKey == 'flexible';
+        final isBookingCourse =
+            variantKey == 'flexible' || deliveryKey == 'flexible';
 
         if (id.isNotEmpty && isBookingCourse) {
           return id;

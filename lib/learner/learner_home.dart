@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'learner_gallery_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
 import '../shared/watermark_background.dart';
@@ -1063,7 +1063,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       try {
         final snap = await _db
             .child(
-          'booking_progress/$learnerUid/$courseId/online_attendance',
+          'booking_progress/$learnerUid/$courseId/flexible_attendance',
         )
             .get();
 
@@ -1179,6 +1179,48 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     }
   }
 
+  Future<bool> _hasFlexibleBookableCourse() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return false;
+
+    try {
+      final snap = await _db.child('users/$uid/courses').get();
+      final v = snap.value;
+      if (v is! Map) return false;
+
+      final raw = Map<dynamic, dynamic>.from(v);
+
+      for (final e in raw.entries) {
+        final key = e.key.toString();
+        final val = e.value;
+        if (val is! Map) continue;
+
+        final m = Map<String, dynamic>.from(val);
+
+        final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
+        final courseId = realCourseId.isNotEmpty ? realCourseId : key;
+
+        final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+        if (variantKey != 'flexible') continue;
+
+        final flexibleSyllabusSnap =
+        await _db.child('syllabi/$courseId/flexible').get();
+
+        if (flexibleSyllabusSnap.exists) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _openCoursesScreen() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const LearnerCoursesScreen()),
@@ -1239,12 +1281,34 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             },
           ),
           const SizedBox(height: 16),
-          _SectionTitle(
-            palette: p,
-            title: 'Course Progress',
-            actionLabel: 'My Courses',
-            onActionTap: _openCoursesScreen,
+          FutureBuilder<bool>(
+            future: _hasFlexibleBookableCourse(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const SizedBox.shrink();
+              }
+
+              final hasFlexible = snap.data ?? false;
+              if (!hasFlexible) {
+                return const SizedBox.shrink();
+              }
+
+              return Column(
+                children: [
+                  _SectionTitle(
+                    palette: p,
+                    title: 'Booking',
+                  ),
+                  const SizedBox(height: 10),
+                  const _BookingTopCard(),
+                  const SizedBox(height: 16),
+                ],
+              );
+            },
           ),
+
+          const SizedBox(height: 10),
+          _StudyCoachHomeCard(),
           const SizedBox(height: 10),
           FutureBuilder<List<_CourseProgressItem>>(
             future: _loadProgressItems(),
@@ -1278,14 +1342,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               );
             },
           ),
-          const SizedBox(height: 16),
-          _SectionTitle(
-            palette: p,
-            title: 'Booking',
-          ),
-          const SizedBox(height: 10),
-          _BookingTopCard(),
-          const SizedBox(height: 16),
+
           _SectionTitle(
             palette: p,
             title: 'Homework & Reminders',
@@ -1298,13 +1355,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               Expanded(child: _RemindersHomeCard()),
             ],
           ),
-          const SizedBox(height: 16),
-          _SectionTitle(
-            palette: p,
-            title: 'Study Coach',
-          ),
-          const SizedBox(height: 10),
-          _StudyCoachHomeCard(),
+
         ],
       ),
     );
@@ -1822,7 +1873,7 @@ class _BookingTopCardState extends State<_BookingTopCard> {
           .toString()
           .trim()
           .toLowerCase();
-      if (variantKey != 'online') continue;
+      if (variantKey != 'flexible') continue;
 
       final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
 
@@ -1831,9 +1882,9 @@ class _BookingTopCardState extends State<_BookingTopCard> {
 
       final assignedAt = numVal(m['assignedAt']);
 
-      final onlineSyllabusSnap =
-      await _db.child('syllabi/$courseId/online').get();
-      if (!onlineSyllabusSnap.exists) continue;
+      final flexibleSyllabusSnap =
+      await _db.child('syllabi/$courseId/flexible').get();
+      if (!flexibleSyllabusSnap.exists) continue;
 
       temp.add({
         'courseId': courseId,
@@ -2051,7 +2102,7 @@ class _BookingTopCardState extends State<_BookingTopCard> {
       final String bKey = _bookingKey(next.courseId, next.dayKey, next.time);
 
       final ref = _db.child(
-        'booking_progress/$learnerUid/${next.courseId}/online_attendance/$bKey',
+        'booking_progress/$learnerUid/${next.courseId}/flexible_attendance/$bKey',
       );
 
       final existing = await ref.get();
@@ -2410,7 +2461,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
             .trim()
             .toLowerCase();
 
-        if (variantKey != 'online') continue;
+        if (variantKey != 'flexible') continue;
 
         final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
         final code = (m['course_code'] ?? '').toString();
@@ -2420,9 +2471,9 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
         final assignedAt = numVal(m['assignedAt']);
 
-        final onlineSyllabusSnap =
-        await db.child('syllabi/$courseId/online').get();
-        if (!onlineSyllabusSnap.exists) continue;
+        final flexibleSyllabusSnap =
+        await db.child('syllabi/$courseId/flexible').get();
+        if (!flexibleSyllabusSnap.exists) continue;
 
         courses.add({
           'courseKey': courseId,
@@ -3156,6 +3207,97 @@ class _RemindersHomeCard extends StatelessWidget {
   }
 }
 
+class _GalleryHomeCard extends StatelessWidget {
+  const _GalleryHomeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _paletteFromTheme();
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const LearnerGalleryScreen(),
+          ),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: p.cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: p.border.withOpacity(0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 7),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: p.soft,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: p.border.withOpacity(0.85)),
+              ),
+              child: Icon(
+                Icons.photo_library_rounded,
+                color: p.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Gallery',
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Open your photos and videos',
+                    style: TextStyle(
+                      color: p.text.withOpacity(0.62),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: p.soft,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Icon(
+                Icons.chevron_right_rounded,
+                color: p.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 class _StudyCoachHomeCard extends StatelessWidget {
   const _StudyCoachHomeCard();
 

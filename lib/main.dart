@@ -15,6 +15,7 @@ import 'services/fcm_service.dart';
 import 'learner/learner_gallery_screen.dart';
 import 'learner/learner_gallery_screen.dart';
 import 'firebase_options.dart';
+import 'learner/learner_games_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
 // Keeping your imports (even if not used yet) so nothing breaks in your project
@@ -87,7 +88,7 @@ class DreamEnglishAcademyApp extends StatelessWidget {
   }
 }
 
-enum AppMode { assistant, classroom, stories }
+enum AppMode { assistant, classroom, stories, games }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -103,6 +104,7 @@ class _HomeShellState extends State<HomeShell> {
     AssistantHome(),
     ClassroomHome(),
     StoriesHome(),
+    LearnerGamesScreen(),
   ];
 
   @override
@@ -130,6 +132,10 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.photo_library_rounded),
             label: 'Gallery',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.sports_esports_rounded),
+            label: 'Games',
           ),
         ],
       ),

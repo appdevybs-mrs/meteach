@@ -537,7 +537,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                           fit: StackFit.expand,
                           children: [
                             if (type == 'video')
-                              const _AdminVideoTile()
+                              _AdminVideoTile(url: url)
                             else
                               Image.network(
                                 url,
@@ -1559,7 +1559,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                     fit: StackFit.expand,
                                     children: [
                                       if (type == 'video')
-                                        const _AdminVideoTile()
+                                        _AdminVideoTile(url: url)
                                       else
                                         Image.network(
                                           url,
@@ -1699,22 +1699,97 @@ class _AdminCountPill extends StatelessWidget {
   }
 }
 
-class _AdminVideoTile extends StatelessWidget {
-  const _AdminVideoTile();
+class _AdminVideoTile extends StatefulWidget {
+  const _AdminVideoTile({required this.url});
+
+  final String url;
+
+  @override
+  State<_AdminVideoTile> createState() => _AdminVideoTileState();
+}
+
+class _AdminVideoTileState extends State<_AdminVideoTile> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
+
+      await controller.initialize();
+      await controller.setLooping(false);
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _controller = controller;
+        _ready = true;
+        _failed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _ready = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    final c = _controller;
+    _controller = null;
+    c?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_failed) {
+      return Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white,
+          size: 34,
+        ),
+      );
+    }
+
+    if (!_ready || _controller == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(
-          color: Colors.black,
-          child: const Center(
-            child: Icon(
-              Icons.videocam_rounded,
-              color: Colors.white70,
-              size: 42,
-            ),
+        FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: _controller!.value.size.width,
+            height: _controller!.value.size.height,
+            child: VideoPlayer(_controller!),
           ),
         ),
         Container(
@@ -1745,6 +1820,7 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _failed = false;
+  double _speed = 1.0;
 
   @override
   void initState() {
@@ -1759,8 +1835,11 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
       );
       await controller.initialize();
       await controller.setLooping(false);
+      await controller.setPlaybackSpeed(_speed);
+      controller.addListener(_videoListener);
 
       if (!mounted) {
+        controller.removeListener(_videoListener);
         await controller.dispose();
         return;
       }
@@ -1779,9 +1858,45 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
     }
   }
 
+  void _videoListener() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  String _fmtDuration(Duration d) {
+    final totalSeconds = d.inSeconds;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Future<void> _togglePlayPause() async {
+    if (_controller == null) return;
+
+    if (_controller!.value.isPlaying) {
+      await _controller!.pause();
+    } else {
+      await _controller!.play();
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleSpeed() async {
+    if (_controller == null) return;
+
+    _speed = _speed == 1.0 ? 2.0 : 1.0;
+    await _controller!.setPlaybackSpeed(_speed);
+
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     final c = _controller;
+    if (c != null) {
+      c.removeListener(_videoListener);
+    }
     _controller = null;
     c?.dispose();
     super.dispose();
@@ -1818,6 +1933,10 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
       );
     }
 
+    final value = _controller!.value;
+    final duration = value.duration;
+    final position = value.position > duration ? duration : value.position;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,
@@ -1825,33 +1944,109 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: AspectRatio(
-          aspectRatio: _controller!.value.aspectRatio == 0
-              ? 16 / 9
-              : _controller!.value.aspectRatio,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              VideoPlayer(_controller!),
-              IconButton(
-                onPressed: () {
-                  if (_controller!.value.isPlaying) {
-                    _controller!.pause();
-                  } else {
-                    _controller!.play();
-                  }
-                  setState(() {});
-                },
-                iconSize: 54,
-                color: Colors.white,
-                icon: Icon(
-                  _controller!.value.isPlaying
-                      ? Icons.pause_circle_filled_rounded
-                      : Icons.play_circle_fill_rounded,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: value.aspectRatio == 0 ? 16 / 9 : value.aspectRatio,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  VideoPlayer(_controller!),
+                  IconButton(
+                    onPressed: _togglePlayPause,
+                    iconSize: 54,
+                    color: Colors.white,
+                    icon: Icon(
+                      value.isPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+              color: Colors.black.withOpacity(0.88),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3,
+                      thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: duration.inMilliseconds <= 0
+                          ? 1
+                          : duration.inMilliseconds.toDouble(),
+                      value: position.inMilliseconds
+                          .clamp(
+                        0,
+                        duration.inMilliseconds <= 0
+                            ? 1
+                            : duration.inMilliseconds,
+                      )
+                          .toDouble(),
+                      activeColor: Colors.white,
+                      inactiveColor: Colors.white24,
+                      onChanged: (value) async {
+                        await _controller!.seekTo(
+                          Duration(milliseconds: value.toInt()),
+                        );
+                      },
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        _fmtDuration(position),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: _toggleSpeed,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          _speed == 1.0 ? '1x' : '2x',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _fmtDuration(duration),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1912,68 +2107,94 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: isVideo
-                  ? _AdminVideoPreviewCard(url: url)
-                  : InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white,
-                    size: 44,
-                  ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: isVideo
+                          ? _AdminVideoPreviewCard(url: url)
+                          : InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 4,
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                            height: 260,
+                            child: Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white,
+                                size: 44,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.white.withOpacity(0.12),
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isVideo ? 'Video' : 'Photo',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Uploaded by: $displayUploader',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Added: $createdAt',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                              height: 1.15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              border: Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.12)),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isVideo ? 'Video' : 'Photo',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Uploaded by: $displayUploader',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Added: $createdAt',
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -2035,76 +2256,106 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: isVideo
-                  ? _AdminVideoPreviewCard(url: url)
-                  : InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white,
-                    size: 44,
-                  ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: isVideo
+                          ? _AdminVideoPreviewCard(url: url)
+                          : InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 4,
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                            height: 260,
+                            child: Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white,
+                                size: 44,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.white.withOpacity(0.12),
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isVideo ? 'Video' : 'Photo',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Learner: $learnerName',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Uploaded by: $displayUploader',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Added: $createdAt',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                              height: 1.15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              border: Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.12)),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isVideo ? 'Video' : 'Photo',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Learner: $learnerName',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Uploaded by: $displayUploader',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Added: $createdAt',
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }

@@ -769,6 +769,8 @@ class _TeacherLearnerGalleryScreenState
                       (item['type'] ?? '').toString().trim().toLowerCase();
                       final url = (item['url'] ?? '').toString().trim();
                       final createdAt = _fmtDate(item['createdAt']);
+                      final itemTeacherName =
+                      (item['teacherName'] ?? '').toString().trim();
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(18),
@@ -777,8 +779,7 @@ class _TeacherLearnerGalleryScreenState
                           decoration: BoxDecoration(
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
-                            border:
-                            Border.all(color: p.border.withOpacity(0.85)),
+                            border: Border.all(color: p.border.withOpacity(0.85)),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.03),
@@ -798,20 +799,19 @@ class _TeacherLearnerGalleryScreenState
                                     fit: StackFit.expand,
                                     children: [
                                       if (type == 'video')
-                                        const _TeacherVideoTile()
+                                        _TeacherVideoTile(url: url)
                                       else
                                         Image.network(
                                           url,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              Container(
-                                                color: p.soft,
-                                                alignment: Alignment.center,
-                                                child: Icon(
-                                                  Icons.broken_image_outlined,
-                                                  color: p.primary.withOpacity(0.55),
-                                                ),
-                                              ),
+                                          errorBuilder: (_, __, ___) => Container(
+                                            color: p.soft,
+                                            alignment: Alignment.center,
+                                            child: Icon(
+                                              Icons.broken_image_outlined,
+                                              color: p.primary.withOpacity(0.55),
+                                            ),
+                                          ),
                                         ),
                                       Positioned(
                                         top: 8,
@@ -822,8 +822,7 @@ class _TeacherLearnerGalleryScreenState
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color:
-                                            Colors.black.withOpacity(0.58),
+                                            color: Colors.black.withOpacity(0.58),
                                             borderRadius:
                                             BorderRadius.circular(12),
                                           ),
@@ -839,9 +838,7 @@ class _TeacherLearnerGalleryScreenState
                                               ),
                                               const SizedBox(width: 6),
                                               Text(
-                                                type == 'video'
-                                                    ? 'Video'
-                                                    : 'Photo',
+                                                type == 'video' ? 'Video' : 'Photo',
                                                 style: const TextStyle(
                                                   color: Colors.white,
                                                   fontWeight: FontWeight.w900,
@@ -882,7 +879,9 @@ class _TeacherLearnerGalleryScreenState
                                         const SizedBox(width: 6),
                                         Expanded(
                                           child: Text(
-                                            _teacherName,
+                                            itemTeacherName.isEmpty
+                                                ? _teacherName
+                                                : itemTeacherName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
@@ -912,24 +911,99 @@ class _TeacherLearnerGalleryScreenState
   }
 }
 
-class _TeacherVideoTile extends StatelessWidget {
-  const _TeacherVideoTile();
+class _TeacherVideoTile extends StatefulWidget {
+  const _TeacherVideoTile({required this.url});
+
+  final String url;
+
+  @override
+  State<_TeacherVideoTile> createState() => _TeacherVideoTileState();
+}
+
+class _TeacherVideoTileState extends State<_TeacherVideoTile> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
+
+      await controller.initialize();
+      await controller.setLooping(false);
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _controller = controller;
+        _ready = true;
+        _failed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _ready = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    final c = _controller;
+    _controller = null;
+    c?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = appThemeController.palette;
 
+    if (_failed) {
+      return Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white,
+          size: 34,
+        ),
+      );
+    }
+
+    if (!_ready || _controller == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(
-          color: Colors.black,
-          child: const Center(
-            child: Icon(
-              Icons.videocam_rounded,
-              color: Colors.white70,
-              size: 42,
-            ),
+        FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: _controller!.value.size.width,
+            height: _controller!.value.size.height,
+            child: VideoPlayer(_controller!),
           ),
         ),
         Container(
@@ -978,6 +1052,7 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _failed = false;
+  double _speed = 1.0;
 
   @override
   void initState() {
@@ -991,9 +1066,12 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
         Uri.parse(widget.url),
       );
       await controller.initialize();
-      controller.setLooping(false);
+      await controller.setLooping(false);
+      await controller.setPlaybackSpeed(_speed);
+      controller.addListener(_videoListener);
 
       if (!mounted) {
+        controller.removeListener(_videoListener);
         await controller.dispose();
         return;
       }
@@ -1012,9 +1090,45 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
     }
   }
 
+  void _videoListener() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  String _fmtDuration(Duration d) {
+    final totalSeconds = d.inSeconds;
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Future<void> _togglePlayPause() async {
+    if (_controller == null) return;
+
+    if (_controller!.value.isPlaying) {
+      await _controller!.pause();
+    } else {
+      await _controller!.play();
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleSpeed() async {
+    if (_controller == null) return;
+
+    _speed = _speed == 1.0 ? 2.0 : 1.0;
+    await _controller!.setPlaybackSpeed(_speed);
+
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     final c = _controller;
+    if (c != null) {
+      c.removeListener(_videoListener);
+    }
     _controller = null;
     c?.dispose();
     super.dispose();
@@ -1053,6 +1167,10 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
       );
     }
 
+    final value = _controller!.value;
+    final duration = value.duration;
+    final position = value.position > duration ? duration : value.position;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,
@@ -1060,57 +1178,121 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: AspectRatio(
-          aspectRatio: _controller!.value.aspectRatio,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              VideoPlayer(_controller!),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: value.aspectRatio == 0 ? 16 / 9 : value.aspectRatio,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  VideoPlayer(_controller!),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.20),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _togglePlayPause,
+                    iconSize: 62,
+                    color: Colors.white,
+                    icon: Icon(
+                      value.isPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+              color: Colors.black.withOpacity(0.88),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3,
+                      thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: duration.inMilliseconds <= 0
+                          ? 1
+                          : duration.inMilliseconds.toDouble(),
+                      value: position.inMilliseconds
+                          .clamp(
+                        0,
+                        duration.inMilliseconds <= 0
+                            ? 1
+                            : duration.inMilliseconds,
+                      )
+                          .toDouble(),
+                      activeColor: p.accent,
+                      inactiveColor: Colors.white24,
+                      onChanged: (value) async {
+                        await _controller!.seekTo(
+                          Duration(milliseconds: value.toInt()),
+                        );
+                      },
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        _fmtDuration(position),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: _toggleSpeed,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          _speed == 1.0 ? '1x' : '2x',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _fmtDuration(duration),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
                   ),
-                ),
+                ],
               ),
-              IconButton(
-                onPressed: () {
-                  if (_controller!.value.isPlaying) {
-                    _controller!.pause();
-                  } else {
-                    _controller!.play();
-                  }
-                  setState(() {});
-                },
-                iconSize: 62,
-                color: Colors.white,
-                icon: Icon(
-                  _controller!.value.isPlaying
-                      ? Icons.pause_circle_filled_rounded
-                      : Icons.play_circle_fill_rounded,
-                ),
-              ),
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 12,
-                child: VideoProgressIndicator(
-                  _controller!,
-                  allowScrubbing: true,
-                  colors: VideoProgressColors(
-                    playedColor: p.accent,
-                    bufferedColor: Colors.white38,
-                    backgroundColor: Colors.white24,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1176,97 +1358,122 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: isVideo
-                  ? _TeacherVideoPreviewCard(url: url)
-                  : InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white,
-                    size: 44,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              border: Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.12)),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isVideo ? 'Video' : 'Photo',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  runSpacing: 6,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Uploaded by: $displayTeacher',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w700,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: isVideo
+                          ? _TeacherVideoPreviewCard(url: url)
+                          : InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 4,
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                            height: 260,
+                            child: Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white,
+                                size: 44,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                    if (learnerName.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Learner: $learnerName',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700,
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.white.withOpacity(0.12),
                           ),
                         ),
                       ),
-                    if (classTitle.trim().isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Class: $classTitle',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isVideo ? 'Video' : 'Photo',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                            ),
                           ),
-                        ),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'Added: $createdAt',
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Uploaded by: $displayTeacher',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                              height: 1.2,
+                            ),
+                          ),
+                          if (learnerName.trim().isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              'Learner: $learnerName',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
+                          if (classTitle.trim().isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              'Class: $classTitle',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 3),
+                          Text(
+                            'Added: $createdAt',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                              height: 1.15,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-        ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

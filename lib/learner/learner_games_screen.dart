@@ -17,6 +17,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   String _searchQuery = '';
   String _selectedTag = 'All';
 
+  static const Color _funOrange = Color(0xFFF98D28);
+  static const Color _funOrangeDark = Color(0xFFE67612);
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -42,6 +45,198 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
           url: link,
         ),
       ),
+    );
+  }
+
+  void _showGameDetails(BuildContext context, Map<String, dynamic> game) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final name = (game['name'] ?? '').toString().trim();
+    final description = (game['description'] ?? '').toString().trim();
+    final rules = (game['rules'] ?? '').toString().trim();
+    final tags = _tagsFromGame(game);
+    final ownerName = _teacherName(game);
+    final thumbnail = (game['thumbnail'] ?? '').toString().trim();
+    final category = (game['category'] ?? '').toString().trim();
+    final level = (game['level'] ?? '').toString().trim();
+    final durationMinutes = _toInt(game['durationMinutes']);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (thumbnail.isNotEmpty) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.network(
+                        thumbnail,
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 200,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: cs.primary.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Icon(
+                            Icons.sports_esports_rounded,
+                            size: 42,
+                            color: cs.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                    name.isEmpty ? 'Untitled Game' : name,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'By: $ownerName',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.72),
+                    ),
+                  ),
+                  if (category.isNotEmpty || level.isNotEmpty || durationMinutes > 0) ...[
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (category.isNotEmpty)
+                          _buildDetailChip(
+                            context: context,
+                            icon: Icons.category_rounded,
+                            label: category,
+                          ),
+                        if (level.isNotEmpty)
+                          _buildDetailChip(
+                            context: context,
+                            icon: Icons.bar_chart_rounded,
+                            label: level,
+                          ),
+                        if (durationMinutes > 0)
+                          _buildDetailChip(
+                            context: context,
+                            icon: Icons.schedule_rounded,
+                            label: '$durationMinutes min',
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      'Description',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: cs.primary,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                  if (rules.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      'Rules',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: cs.primary,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      rules,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                  if (tags.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      'Tags',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: cs.primary,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: tags
+                          .map(
+                            (tag) => Chip(
+                          label: Text(tag),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(
+                            color: cs.primary.withOpacity(0.14),
+                          ),
+                        ),
+                      )
+                          .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _openGame(game);
+                      },
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text('Play Game'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _funOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -79,6 +274,12 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     }
 
     return out;
+  }
+
+  String _categoryFromGame(Map<String, dynamic> game) {
+    final category = (game['category'] ?? '').toString().trim();
+    if (category.isEmpty) return 'Other';
+    return category;
   }
 
   List<String> _allTags(List<MapEntry<String, Map<String, dynamic>>> items) {
@@ -141,75 +342,30 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  Widget _buildTopHeader(BuildContext context, int totalCount, int shownCount) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+  Map<String, List<Map<String, dynamic>>> _groupByCategory(
+      List<MapEntry<String, Map<String, dynamic>>> items,
+      ) {
+    final grouped = <String, List<Map<String, dynamic>>>{};
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            cs.primary,
-            cs.primary.withOpacity(0.82),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: cs.primary.withOpacity(0.20),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withOpacity(0.20)),
-            ),
-            child: const Icon(
-              Icons.sports_esports_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Games Library',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 22,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$shownCount of $totalCount game${totalCount == 1 ? '' : 's'}',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.88),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    for (final item in items) {
+      final game = item.value;
+      final category = _categoryFromGame(game);
+      grouped.putIfAbsent(category, () => <Map<String, dynamic>>[]);
+      grouped[category]!.add(game);
+    }
+
+    final sortedKeys = grouped.keys.toList()
+      ..sort((a, b) {
+        if (a.toLowerCase() == 'other') return 1;
+        if (b.toLowerCase() == 'other') return -1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+
+    final sorted = <String, List<Map<String, dynamic>>>{};
+    for (final key in sortedKeys) {
+      sorted[key] = grouped[key]!;
+    }
+    return sorted;
   }
 
   Widget _buildSearchAndFilter(BuildContext context, List<String> tags) {
@@ -217,17 +373,17 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     final cs = theme.colorScheme;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
         color: theme.cardColor,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outline.withOpacity(0.25)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: cs.outline.withOpacity(0.20)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -241,8 +397,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               });
             },
             decoration: InputDecoration(
-              hintText: 'Search by name, tag, category, or level...',
-              prefixIcon: const Icon(Icons.search_rounded),
+              isDense: true,
+              hintText: 'Search games...',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
               suffixIcon: _searchQuery.trim().isEmpty
                   ? null
                   : IconButton(
@@ -252,25 +409,29 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     _searchQuery = '';
                   });
                 },
-                icon: const Icon(Icons.close_rounded),
+                icon: const Icon(Icons.close_rounded, size: 20),
               ),
               filled: true,
-              fillColor: cs.surfaceVariant.withOpacity(0.35),
+              fillColor: cs.surfaceVariant.withOpacity(0.28),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: cs.outline.withOpacity(0.15)),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: cs.outline.withOpacity(0.15)),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: cs.primary, width: 1.4),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: _funOrange, width: 1.4),
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
             child: SingleChildScrollView(
@@ -280,10 +441,20 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                   final selected = _selectedTag == tag;
 
                   return Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
                       label: Text(tag),
                       selected: selected,
+                      selectedColor: _funOrange.withOpacity(0.18),
+                      side: BorderSide(
+                        color: selected
+                            ? _funOrange.withOpacity(0.40)
+                            : cs.outline.withOpacity(0.18),
+                      ),
+                      labelStyle: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: selected ? _funOrangeDark : null,
+                      ),
                       onSelected: (_) {
                         setState(() {
                           _selectedTag = tag;
@@ -321,11 +492,13 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               Icon(
                 Icons.sports_esports_rounded,
                 size: 46,
-                color: cs.primary,
+                color: _funOrange,
               ),
               const SizedBox(height: 14),
               Text(
-                filtered ? 'No games match your search.' : 'No games available yet.',
+                filtered
+                    ? 'No games match your search.'
+                    : 'No games available yet.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 18,
@@ -349,20 +522,19 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     );
   }
 
-  Widget _buildMiniInfoChip({
+  Widget _buildDetailChip({
     required BuildContext context,
     required IconData icon,
-    required String text,
+    required String label,
   }) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: cs.primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: cs.primary.withOpacity(0.10)),
+        border: Border.all(color: cs.primary.withOpacity(0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -370,11 +542,11 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
           Icon(icon, size: 15, color: cs.primary),
           const SizedBox(width: 6),
           Text(
-            text,
+            label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
-              color: theme.textTheme.bodyMedium?.color,
+              color: cs.primary,
             ),
           ),
         ],
@@ -382,282 +554,195 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     );
   }
 
-  Widget _buildGameCard(BuildContext context, Map<String, dynamic> game) {
+  Widget _buildConsoleGameCard(
+      BuildContext context,
+      Map<String, dynamic> game,
+      ) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
     final name = (game['name'] ?? '').toString().trim();
-    final description = (game['description'] ?? '').toString().trim();
-    final rules = (game['rules'] ?? '').toString().trim();
-    final tags = _tagsFromGame(game);
-    final ownerName = _teacherName(game);
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
-    final category = (game['category'] ?? '').toString().trim();
-    final level = (game['level'] ?? '').toString().trim();
-    final durationMinutes = _toInt(game['durationMinutes']);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      width: 220,
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outline.withOpacity(0.22)),
+        border: Border.all(color: cs.outline.withOpacity(0.18)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 7),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Theme(
-          data: theme.copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                width: 52,
-                height: 52,
-                color: cs.primary.withOpacity(0.10),
-                child: thumbnail.isNotEmpty
-                    ? Image.network(
-                  thumbnail,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.sports_esports_rounded,
-                    color: cs.primary,
-                    size: 24,
-                  ),
-                )
-                    : Icon(
-                  Icons.sports_esports_rounded,
-                  color: cs.primary,
-                  size: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: InkWell(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
+              ),
+              onTap: () => _openGame(game),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(22),
                 ),
-              ),
-            ),
-            title: Text(
-              name.isEmpty ? 'Untitled Game' : name,
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-                color: cs.primary,
-              ),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'By: $ownerName',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.70),
-                    ),
-                  ),
-                  if (category.isNotEmpty || level.isNotEmpty || tags.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (category.isNotEmpty)
-                          _buildMiniInfoChip(
-                            context: context,
-                            icon: Icons.category_rounded,
-                            text: category,
-                          ),
-                        if (level.isNotEmpty)
-                          _buildMiniInfoChip(
-                            context: context,
-                            icon: Icons.bar_chart_rounded,
-                            text: level,
-                          ),
-                        ...tags.take(2).map(
-                              (tag) => _buildMiniInfoChip(
-                            context: context,
-                            icon: Icons.sell_rounded,
-                            text: tag,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            children: [
-              if (thumbnail.isNotEmpty) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
+                child: Container(
+                  color: cs.primary.withOpacity(0.08),
+                  child: thumbnail.isNotEmpty
+                      ? Image.network(
                     thumbnail,
-                    height: 180,
-                    width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 180,
-                      alignment: Alignment.center,
-                      color: cs.primary.withOpacity(0.06),
+                    errorBuilder: (_, __, ___) => Center(
                       child: Icon(
-                        Icons.image_not_supported_rounded,
+                        Icons.sports_esports_rounded,
                         color: cs.primary,
                         size: 34,
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (category.isNotEmpty || level.isNotEmpty || durationMinutes > 0) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (category.isNotEmpty)
-                        Chip(
-                          label: Text(category),
-                          avatar: Icon(
-                            Icons.category_rounded,
-                            size: 18,
-                            color: cs.primary,
-                          ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
-                        ),
-                      if (level.isNotEmpty)
-                        Chip(
-                          label: Text(level),
-                          avatar: Icon(
-                            Icons.bar_chart_rounded,
-                            size: 18,
-                            color: cs.primary,
-                          ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
-                        ),
-                      if (durationMinutes > 0)
-                        Chip(
-                          label: Text('$durationMinutes min'),
-                          avatar: Icon(
-                            Icons.schedule_rounded,
-                            size: 18,
-                            color: cs.primary,
-                          ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (description.isNotEmpty) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Description',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
+                  )
+                      : Center(
+                    child: Icon(
+                      Icons.sports_esports_rounded,
                       color: cs.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    description,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (rules.isNotEmpty) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Rules',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: cs.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    rules,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (tags.isNotEmpty) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Tags',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: cs.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: tags
-                        .map(
-                          (tag) => Chip(
-                        label: Text(tag),
-                        backgroundColor: cs.primary.withOpacity(0.08),
-                        side: BorderSide(
-                          color: cs.primary.withOpacity(0.12),
-                        ),
-                      ),
-                    )
-                        .toList(),
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => _openGame(game),
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('Play Game'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      size: 34,
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isEmpty ? 'Untitled Game' : name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: cs.primary,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => _openGame(game),
+                        icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                        label: const Text('Play'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _funOrange,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 42,
+                      width: 42,
+                      child: FilledButton(
+                        onPressed: () => _showGameDetails(context, game),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _funOrange.withOpacity(0.15),
+                          foregroundColor: _funOrangeDark,
+                          elevation: 0,
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          '!',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryRow({
+    required BuildContext context,
+    required String title,
+    required List<Map<String, dynamic>> games,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _funOrange.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${games.length}',
+                    style: const TextStyle(
+                      color: _funOrangeDark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 280,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: games.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                return _buildConsoleGameCard(context, games[index]);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -685,14 +770,13 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
           final raw = Map<dynamic, dynamic>.from(value);
 
           final items = raw.entries.map((entry) {
-            final gameId = entry.key.toString();
             final gameValue = entry.value;
 
             final game = gameValue is Map
                 ? Map<String, dynamic>.from(gameValue as Map)
                 : <String, dynamic>{};
 
-            return MapEntry(gameId, game);
+            return MapEntry(entry.key.toString(), game);
           }).toList();
 
           items.sort((a, b) {
@@ -713,21 +797,26 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                 _matchesTag(game: game, selectedTag: _selectedTag);
           }).toList();
 
+          final grouped = _groupByCategory(filteredItems);
+
           return RefreshIndicator(
             onRefresh: () async {
               await _gamesRef.get();
             },
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
               children: [
-                _buildTopHeader(context, items.length, filteredItems.length),
                 _buildSearchAndFilter(context, tags),
                 if (filteredItems.isEmpty)
                   _buildEmptyState(context, filtered: true)
                 else
-                  ...filteredItems.map(
-                        (item) => _buildGameCard(context, item.value),
+                  ...grouped.entries.map(
+                        (entry) => _buildCategoryRow(
+                      context: context,
+                      title: entry.key,
+                      games: entry.value,
+                    ),
                   ),
               ],
             ),

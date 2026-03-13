@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,50 +6,12 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
-class MaterialIssueReport {
-  const MaterialIssueReport({
-    required this.title,
-    required this.originalSource,
-    required this.currentUrl,
-    required this.note,
-    required this.pageTitle,
-    required this.lastError,
-    required this.createdAt,
-  });
-
-  final String title;
-  final String originalSource;
-  final String currentUrl;
-  final String note;
-  final String? pageTitle;
-  final String? lastError;
-  final DateTime createdAt;
-
-  String toMessage() {
-    final lines = <String>[
-      'Material issue report',
-      'Title: $title',
-      'Original source: $originalSource',
-      'Current URL: $currentUrl',
-      if ((pageTitle ?? '').trim().isNotEmpty) 'Page title: ${pageTitle!.trim()}',
-      if ((lastError ?? '').trim().isNotEmpty) 'Last error: ${lastError!.trim()}',
-      'Time: ${createdAt.toIso8601String()}',
-      '',
-      'Teacher note:',
-      note.trim().isEmpty ? '(No note added)' : note.trim(),
-    ];
-    return lines.join('\n');
-  }
-}
-
 class MaterialWebViewScreen extends StatefulWidget {
   const MaterialWebViewScreen.fromUrl({
     super.key,
     required this.title,
     required this.url,
     this.headers = const <String, String>{},
-    this.allowReporting = true,
-    this.onReportIssue,
   })  : htmlString = null,
         assetPath = null;
 
@@ -58,8 +19,6 @@ class MaterialWebViewScreen extends StatefulWidget {
     super.key,
     required this.title,
     required this.assetPath,
-    this.allowReporting = true,
-    this.onReportIssue,
   })  : url = null,
         htmlString = null,
         headers = const <String, String>{};
@@ -68,8 +27,6 @@ class MaterialWebViewScreen extends StatefulWidget {
     super.key,
     required this.title,
     required this.htmlString,
-    this.allowReporting = true,
-    this.onReportIssue,
   })  : url = null,
         assetPath = null,
         headers = const <String, String>{};
@@ -80,9 +37,6 @@ class MaterialWebViewScreen extends StatefulWidget {
   final String? htmlString;
   final Map<String, String> headers;
 
-  final bool allowReporting;
-  final Future<void> Function(MaterialIssueReport report)? onReportIssue;
-
   bool get isUrl => url != null && url!.trim().isNotEmpty;
   bool get isAsset => assetPath != null && assetPath!.trim().isNotEmpty;
   bool get isHtmlString => htmlString != null && htmlString!.trim().isNotEmpty;
@@ -91,34 +45,65 @@ class MaterialWebViewScreen extends StatefulWidget {
   State<MaterialWebViewScreen> createState() => _MaterialWebViewScreenState();
 }
 
-class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
+class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
 
   int _progress = 0;
   bool _isLoading = true;
-  bool _canGoBack = false;
-  bool _canGoForward = false;
   String? _currentUrl;
   String? _pageTitle;
   String? _lastError;
-
-  bool _isFullscreen = false;
-  int _fontScalePercent = 100;
   bool _didApplyInitialEnhancements = false;
-
-  static const List<int> _fontScaleSteps = <int>[90, 100, 110, 125, 140];
+  bool _isPageReady = false;
+  String? _lastJsMessage;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setupController();
+    unawaited(_enterFullscreen());
     unawaited(_loadInitialContent());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_enterFullscreen());
+        unawaited(_notifyGameLifecycle('resumed'));
+        break;
+      case AppLifecycleState.inactive:
+        unawaited(_notifyGameLifecycle('inactive'));
+        break;
+      case AppLifecycleState.paused:
+        unawaited(_notifyGameLifecycle('paused'));
+        break;
+      case AppLifecycleState.detached:
+        unawaited(_notifyGameLifecycle('detached'));
+        break;
+      case AppLifecycleState.hidden:
+        unawaited(_notifyGameLifecycle('hidden'));
+        break;
+    }
+  }
+
+  Future<void> _enterFullscreen() async {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   void _setupController() {
@@ -135,40 +120,49 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
 
     final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..enableZoom(true)
-      ..setBackgroundColor(const Color(0xFFFFFFFF))
+      ..enableZoom(false)
+      ..setBackgroundColor(const Color(0xFF000000))
+      ..addJavaScriptChannel(
+        'GameHost',
+        onMessageReceived: (JavaScriptMessage message) {
+          _handleJsMessage(message.message);
+        },
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (url) {
+          onPageStarted: (String url) {
             if (!mounted) return;
             setState(() {
               _isLoading = true;
               _lastError = null;
               _currentUrl = url;
               _didApplyInitialEnhancements = false;
+              _isPageReady = false;
             });
-            unawaited(_refreshNavState());
           },
-          onProgress: (progress) {
+          onProgress: (int progress) {
             if (!mounted) return;
             setState(() {
               _progress = progress.clamp(0, 100);
             });
           },
-          onPageFinished: (url) async {
-            final title = await _safeGetTitle();
+          onPageFinished: (String url) async {
+            final String? title = await _safeGetTitle();
+
             if (!mounted) return;
             setState(() {
               _isLoading = false;
               _progress = 100;
               _currentUrl = url;
               _pageTitle = title;
+              _isPageReady = true;
             });
 
-            await _applyViewerEnhancementsIfNeeded();
-            unawaited(_refreshNavState());
+            await _applyGameEnhancementsIfNeeded();
+            await _notifyViewportChanged();
+            await _notifyGameLifecycle('resumed');
           },
-          onWebResourceError: (error) {
+          onWebResourceError: (WebResourceError error) {
             if (!mounted) return;
             setState(() {
               _isLoading = false;
@@ -177,21 +171,22 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
                   : 'Failed to load content.\n${error.description}';
             });
           },
-          onNavigationRequest: (request) {
-            final url = request.url.trim();
-            final uri = Uri.tryParse(url);
+          onNavigationRequest: (NavigationRequest request) {
+            final String url = request.url.trim();
+            final Uri? uri = Uri.tryParse(url);
 
             if (uri == null) {
               return NavigationDecision.navigate;
             }
 
-            final scheme = uri.scheme.toLowerCase();
+            final String scheme = uri.scheme.toLowerCase();
 
             if (scheme == 'http' ||
                 scheme == 'https' ||
                 scheme == 'file' ||
                 scheme == 'about' ||
-                scheme == 'data') {
+                scheme == 'data' ||
+                scheme == 'blob') {
               return NavigationDecision.navigate;
             }
 
@@ -201,8 +196,11 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
       );
 
     if (controller.platform is AndroidWebViewController) {
-      (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
+      final AndroidWebViewController androidController =
+      controller.platform as AndroidWebViewController;
+
+      AndroidWebViewController.enableDebugging(true);
+      androidController.setMediaPlaybackRequiresUserGesture(false);
     }
 
     _controller = controller;
@@ -211,8 +209,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
   Future<void> _loadInitialContent() async {
     try {
       if (widget.isUrl) {
-        final uri = Uri.tryParse(widget.url!.trim());
+        final Uri? uri = Uri.tryParse(widget.url!.trim());
         if (uri == null) {
+          if (!mounted) return;
           setState(() {
             _lastError = 'Invalid URL.';
             _isLoading = false;
@@ -225,6 +224,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
       } else if (widget.isHtmlString) {
         await _controller.loadHtmlString(widget.htmlString!.trim());
       } else {
+        if (!mounted) return;
         setState(() {
           _lastError = 'No content source was provided.';
           _isLoading = false;
@@ -247,142 +247,63 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     }
   }
 
-  Future<void> _refreshNavState() async {
-    try {
-      final canBack = await _controller.canGoBack();
-      final canForward = await _controller.canGoForward();
-      final url = await _controller.currentUrl();
-
-      if (!mounted) return;
-      setState(() {
-        _canGoBack = canBack;
-        _canGoForward = canForward;
-        _currentUrl = url;
-      });
-    } catch (_) {}
-  }
-
   Future<void> _reload() async {
+    if (!mounted) return;
     setState(() {
       _lastError = null;
       _isLoading = true;
       _progress = 0;
       _didApplyInitialEnhancements = false;
+      _isPageReady = false;
     });
+
     await _controller.reload();
   }
 
-  String _sourceLabel() {
-    if (widget.isUrl) return widget.url!.trim();
-    if (widget.isAsset) return widget.assetPath!.trim();
-    if (widget.isHtmlString) return 'inline_html_string';
-    return 'unknown_source';
-  }
+  void _handleJsMessage(String message) {
+    if (!mounted) return;
 
-  Future<void> _showReportDialog() async {
-    final noteController = TextEditingController();
+    setState(() {
+      _lastJsMessage = message;
+    });
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        bool sending = false;
+    if (message == 'requestFullscreen') {
+      unawaited(_enterFullscreen());
+      unawaited(_notifyViewportChanged());
+      return;
+    }
 
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return AlertDialog(
-              title: const Text('Report material issue'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.title,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Use this to report a broken lesson, missing media, bad layout, or interaction problem.',
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteController,
-                    minLines: 4,
-                    maxLines: 7,
-                    decoration: const InputDecoration(
-                      labelText: 'What is wrong?',
-                      hintText: 'Example: audio does not play, buttons are hidden, slides are too small...',
-                      border: OutlineInputBorder(),
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: sending ? null : () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: sending
-                      ? null
-                      : () async {
-                    setLocal(() => sending = true);
-
-                    try {
-                      final report = MaterialIssueReport(
-                        title: widget.title,
-                        originalSource: _sourceLabel(),
-                        currentUrl: (_currentUrl ?? widget.url ?? '').trim(),
-                        note: noteController.text,
-                        pageTitle: _pageTitle,
-                        lastError: _lastError,
-                        createdAt: DateTime.now(),
-                      );
-
-                      if (widget.onReportIssue != null) {
-                        await widget.onReportIssue!(report);
-                      }
-
-                      if (!mounted) return;
-                      Navigator.pop(ctx, true);
-                    } catch (_) {
-                      if (!mounted) return;
-                      setLocal(() => sending = false);
-                    }
-                  },
-                  child: Text(sending ? 'Sending...' : 'Send report'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (ok == true && mounted) {
-      FocusScope.of(context).unfocus();
+    if (message == 'reload') {
+      unawaited(_reload());
+      return;
     }
   }
 
-  Future<void> _applyViewerEnhancementsIfNeeded() async {
+  Future<void> _applyGameEnhancementsIfNeeded() async {
     if (_didApplyInitialEnhancements) return;
     _didApplyInitialEnhancements = true;
 
-    await _injectBaseLessonSupport();
-    await _applyFontScale(_fontScalePercent);
-    await _forceLessonFit();
+    await _injectBaseGameSupport();
+    await _injectRevealAndViewportHooks();
+    await _notifyViewportChanged();
   }
 
-  Future<void> _injectBaseLessonSupport() async {
-    final script = '''
+  Future<void> _injectBaseGameSupport() async {
+    const String script = '''
 (function () {
   try {
-    var styleId = 'dea_viewer_support_style';
+    var existingViewport = document.querySelector('meta[name="viewport"]');
+    if (!existingViewport) {
+      existingViewport = document.createElement('meta');
+      existingViewport.name = 'viewport';
+      document.head.appendChild(existingViewport);
+    }
+    existingViewport.setAttribute(
+      'content',
+      'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
+    );
+
+    var styleId = 'dea_game_host_style';
     var style = document.getElementById(styleId);
     if (!style) {
       style = document.createElement('style');
@@ -394,77 +315,58 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
       html, body {
         margin: 0 !important;
         padding: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-width: 100% !important;
         min-height: 100% !important;
-        max-width: 100% !important;
-        overflow-x: hidden !important;
+        background: #000 !important;
+        overflow: hidden !important;
+        overscroll-behavior: none !important;
         -webkit-text-size-adjust: 100% !important;
         text-size-adjust: 100% !important;
+        -webkit-user-select: none !important;
+        user-select: none !important;
+        -webkit-touch-callout: none !important;
+        touch-action: manipulation !important;
       }
 
-      body {
-        overscroll-behavior: contain !important;
+      * {
+        -webkit-tap-highlight-color: transparent !important;
+        box-sizing: border-box !important;
       }
 
-      img, video, iframe, canvas, svg {
-        max-width: 100% !important;
-        height: auto !important;
+      iframe, video {
+        border: 0 !important;
       }
 
-      audio {
+      video {
+        playsinline: true;
+      }
+
+      .reveal,
+      .reveal .slides {
         width: 100% !important;
+        height: 100% !important;
         max-width: 100% !important;
-      }
-
-      table {
-        max-width: 100% !important;
-        display: block !important;
-        overflow-x: auto !important;
-      }
-
-      input, textarea, select, button {
-        font-size: inherit !important;
-      }
-
-      .reveal, .reveal .slides {
-        max-width: 100% !important;
+        max-height: 100% !important;
       }
 
       .reveal .slides section {
-        box-sizing: border-box !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+
+      canvas,
+      [data-game-canvas],
+      .game-surface,
+      .draw-surface,
+      .drag-surface {
+        touch-action: none !important;
       }
     `;
 
-    document.documentElement.style.backgroundColor = '#ffffff';
-    document.body.style.backgroundColor = '#ffffff';
-
-    var metas = document.querySelectorAll('meta[name="viewport"]');
-    if (!metas || metas.length === 0) {
-      var meta = document.createElement('meta');
-      meta.name = 'viewport';
-      meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
-      document.head.appendChild(meta);
-    }
-
-    return true;
-  } catch (e) {
-    return false;
-  }
-})();
-''';
-
-    await _runJavascriptSafely(script);
-  }
-
-  Future<void> _forceLessonFit() async {
-    final script = '''
-(function () {
-  try {
-    if (window.Reveal && typeof window.Reveal.layout === 'function') {
-      window.Reveal.layout();
-      if (typeof window.dispatchEvent === 'function') {
-        window.dispatchEvent(new Event('resize'));
-      }
-    }
+    document.documentElement.style.backgroundColor = '#000000';
+    document.body.style.backgroundColor = '#000000';
 
     var videos = document.querySelectorAll('video');
     for (var i = 0; i < videos.length; i++) {
@@ -473,8 +375,27 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
       videos[i].controls = true;
     }
 
+    var notifyReady = function () {
+      try {
+        if (window.GameHost && typeof window.GameHost.postMessage === 'function') {
+          window.GameHost.postMessage('gameReady');
+        }
+      } catch (_) {}
+    };
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      notifyReady();
+    } else {
+      document.addEventListener('DOMContentLoaded', notifyReady, { once: true });
+    }
+
     return true;
   } catch (e) {
+    try {
+      if (window.GameHost && typeof window.GameHost.postMessage === 'function') {
+        window.GameHost.postMessage('injectBaseGameSupportError:' + String(e));
+      }
+    } catch (_) {}
     return false;
   }
 })();
@@ -483,55 +404,138 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     await _runJavascriptSafely(script);
   }
 
-  Future<void> _applyFontScale(int percent) async {
-    final safe = percent.clamp(_fontScaleSteps.first, _fontScaleSteps.last);
-    final scale = safe / 100.0;
-
-    final script = '''
+  Future<void> _injectRevealAndViewportHooks() async {
+    const String script = '''
 (function () {
   try {
-    var styleId = 'dea_font_scale_style';
-    var style = document.getElementById(styleId);
-    if (!style) {
-      style = document.createElement('style');
-      style.id = styleId;
-      document.head.appendChild(style);
+    if (window.__deaGameHostHooksInstalled) {
+      return true;
+    }
+    window.__deaGameHostHooksInstalled = true;
+
+    var sendMessage = function (value) {
+      try {
+        if (window.GameHost && typeof window.GameHost.postMessage === 'function') {
+          window.GameHost.postMessage(value);
+        }
+      } catch (_) {}
+    };
+
+    var emitViewport = function () {
+      try {
+        var payload = JSON.stringify({
+          type: 'viewport',
+          width: window.innerWidth || 0,
+          height: window.innerHeight || 0,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          pageTitle: document.title || ''
+        });
+        sendMessage(payload);
+      } catch (_) {}
+    };
+
+    var relayoutReveal = function () {
+      try {
+        if (window.Reveal) {
+          if (typeof window.Reveal.layout === 'function') {
+            window.Reveal.layout();
+          }
+          if (typeof window.Reveal.sync === 'function') {
+            window.Reveal.sync();
+          }
+        }
+      } catch (_) {}
+    };
+
+    window.addEventListener('resize', function () {
+      relayoutReveal();
+      emitViewport();
+    }, { passive: true });
+
+    window.addEventListener('orientationchange', function () {
+      setTimeout(function () {
+        relayoutReveal();
+        emitViewport();
+      }, 100);
+    }, { passive: true });
+
+    document.addEventListener('fullscreenchange', function () {
+      relayoutReveal();
+      emitViewport();
+      sendMessage('fullscreenChanged');
+    });
+
+    if (window.Reveal && typeof window.Reveal.on === 'function') {
+      window.Reveal.on('slidechanged', function () {
+        relayoutReveal();
+        sendMessage('slideChanged');
+      });
+
+      window.Reveal.on('fragmentshown', function () {
+        sendMessage('fragmentShown');
+      });
+
+      window.Reveal.on('fragmenthidden', function () {
+        sendMessage('fragmentHidden');
+      });
+
+      window.Reveal.on('ready', function () {
+        relayoutReveal();
+        emitViewport();
+        sendMessage('revealReady');
+      });
     }
 
-    style.textContent = `
-      html {
-        -webkit-text-size-adjust: ${safe}% !important;
-        text-size-adjust: ${safe}% !important;
-      }
+    setTimeout(function () {
+      relayoutReveal();
+      emitViewport();
+    }, 50);
 
-      body {
-        zoom: ${scale.toStringAsFixed(2)} !important;
+    return true;
+  } catch (e) {
+    try {
+      if (window.GameHost && typeof window.GameHost.postMessage === 'function') {
+        window.GameHost.postMessage('injectRevealAndViewportHooksError:' + String(e));
       }
+    } catch (_) {}
+    return false;
+  }
+})();
+''';
 
-      .reveal {
-        font-size: calc(28px * ${scale.toStringAsFixed(2)}) !important;
+    await _runJavascriptSafely(script);
+  }
+
+  Future<void> _notifyGameLifecycle(String state) async {
+    final String safeState = state.replaceAll("'", "\\'");
+
+    final String script = '''
+(function () {
+  try {
+    var eventName = 'flutter-game-lifecycle';
+    var detail = { state: '$safeState' };
+
+    if (typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
+    }
+
+    if (window.GameApp && typeof window.GameApp.onLifecycleChange === 'function') {
+      window.GameApp.onLifecycleChange(detail);
+    }
+
+    if (window.Reveal) {
+      if ('$safeState' === 'paused' || '$safeState' === 'hidden' || '$safeState' === 'inactive') {
+        if (typeof window.Reveal.pause === 'function') {
+          window.Reveal.pause();
+        }
+      } else if ('$safeState' === 'resumed') {
+        if (typeof window.Reveal.resume === 'function') {
+          window.Reveal.resume();
+        }
+        if (typeof window.Reveal.layout === 'function') {
+          window.Reveal.layout();
+        }
       }
-
-      .reveal .hero-title { font-size: calc(66px * ${scale.toStringAsFixed(2)}) !important; }
-      .reveal .title { font-size: calc(46px * ${scale.toStringAsFixed(2)}) !important; }
-      .reveal .hero-subtitle,
-      .reveal .subtitle-line,
-      .reveal .card p,
-      .reveal .card li,
-      .reveal .sentence-card,
-      .reveal .choice-card,
-      .reveal .listen-box,
-      .reveal .match-item,
-      .reveal .drop-zone,
-      .reveal .teacher-note,
-      .reveal .checklist-item,
-      .reveal button {
-        font-size: calc(1em * ${scale.toStringAsFixed(2)}) !important;
-      }
-    `;
-
-    if (window.Reveal && typeof window.Reveal.layout === 'function') {
-      window.Reveal.layout();
     }
 
     return true;
@@ -542,45 +546,45 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
 ''';
 
     await _runJavascriptSafely(script);
-
-    if (!mounted) return;
-    setState(() {
-      _fontScalePercent = safe;
-    });
   }
 
-  Future<void> _cycleFontScale() async {
-    final currentIndex = _fontScaleSteps.indexOf(_fontScalePercent);
-    final safeIndex = currentIndex < 0 ? 0 : currentIndex;
-    final nextIndex = (safeIndex + 1) % _fontScaleSteps.length;
-    await _applyFontScale(_fontScaleSteps[nextIndex]);
-  }
+  Future<void> _notifyViewportChanged() async {
+    const String script = '''
+(function () {
+  try {
+    var detail = {
+      width: window.innerWidth || 0,
+      height: window.innerHeight || 0,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      title: document.title || ''
+    };
 
-  Future<void> _toggleFullscreen() async {
-    final next = !_isFullscreen;
-
-    if (next) {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    } else {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('flutter-game-viewport', { detail: detail }));
+      window.dispatchEvent(new Event('resize'));
     }
 
-    if (!mounted) return;
-    setState(() {
-      _isFullscreen = next;
-    });
-  }
+    if (window.GameApp && typeof window.GameApp.onViewportChanged === 'function') {
+      window.GameApp.onViewportChanged(detail);
+    }
 
-  Future<void> _goBack() async {
-    if (!_canGoBack) return;
-    await _controller.goBack();
-    unawaited(_refreshNavState());
-  }
+    if (window.Reveal) {
+      if (typeof window.Reveal.layout === 'function') {
+        window.Reveal.layout();
+      }
+      if (typeof window.Reveal.sync === 'function') {
+        window.Reveal.sync();
+      }
+    }
 
-  Future<void> _goForward() async {
-    if (!_canGoForward) return;
-    await _controller.goForward();
-    unawaited(_refreshNavState());
+    return true;
+  } catch (e) {
+    return false;
+  }
+})();
+''';
+
+    await _runJavascriptSafely(script);
   }
 
   Future<void> _runJavascriptSafely(String script) async {
@@ -611,7 +615,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Could not open material',
+                'Could not open game',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
@@ -627,23 +631,10 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                alignment: WrapAlignment.center,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => unawaited(_reload()),
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Try again'),
-                  ),
-                  if (widget.allowReporting)
-                    OutlinedButton.icon(
-                      onPressed: () => unawaited(_showReportDialog()),
-                      icon: const Icon(Icons.flag_outlined),
-                      label: const Text('Report issue'),
-                    ),
-                ],
+              ElevatedButton.icon(
+                onPressed: () => unawaited(_reload()),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Try again'),
               ),
             ],
           ),
@@ -652,210 +643,102 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen> {
     );
   }
 
-  Widget _buildTopLessonBar() {
-    final shownUrl = _currentUrl ?? widget.url ?? '';
+  Widget _buildOverlayLoading() {
+    final double? progressValue =
+    (_progress <= 0 || _progress > 100) ? null : _progress / 100;
 
-    return SafeArea(
-      bottom: false,
+    return IgnorePointer(
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            bottom: BorderSide(color: Colors.grey.shade300),
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.white),
+              const SizedBox(height: 18),
+              Text(
+                _pageTitle?.trim().isNotEmpty == true ? _pageTitle!.trim() : widget.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progressValue,
+                  minHeight: 8,
+                  backgroundColor: Colors.white24,
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ],
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _screenTitle(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                if (widget.allowReporting)
-                  IconButton(
-                    tooltip: 'Report issue',
-                    onPressed: () => unawaited(_showReportDialog()),
-                    icon: const Icon(Icons.flag_outlined),
-                  ),
-                IconButton(
-                  tooltip: _isFullscreen ? 'Exit full screen' : 'Full screen',
-                  onPressed: () => unawaited(_toggleFullscreen()),
-                  icon: Icon(
-                    _isFullscreen
-                        ? Icons.fullscreen_exit_rounded
-                        : Icons.fullscreen_rounded,
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    shownUrl,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Text ${_fontScalePercent}%',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildBottomBar() {
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.grey.shade300),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
+  Widget _buildDebugCorner() {
+    return Positioned(
+      right: 10,
+      bottom: 10,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: _lastError == null && _isPageReady && _lastJsMessage != null ? 0.14 : 0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(10),
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            _BottomControlButton(
-              tooltip: 'Back',
-              icon: Icons.arrow_back_ios_new_rounded,
-              enabled: _canGoBack,
-              onTap: _goBack,
-            ),
-            const SizedBox(width: 6),
-            _BottomControlButton(
-              tooltip: 'Forward',
-              icon: Icons.arrow_forward_ios_rounded,
-              enabled: _canGoForward,
-              onTap: _goForward,
-            ),
-            const SizedBox(width: 6),
-            _BottomControlButton(
-              tooltip: 'Reload',
-              icon: Icons.refresh_rounded,
-              enabled: true,
-              onTap: _reload,
-            ),
-            const SizedBox(width: 6),
-            _BottomControlButton(
-              tooltip: 'Change text size',
-              icon: Icons.text_fields_rounded,
-              enabled: true,
-              onTap: _cycleFontScale,
-            ),
-            const Spacer(),
-            if (widget.allowReporting)
-              _BottomControlButton(
-                tooltip: 'Report issue',
-                icon: Icons.flag_outlined,
-                enabled: true,
-                onTap: _showReportDialog,
+            child: Text(
+              _lastJsMessage ?? '',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
               ),
-          ],
+            ),
+          ),
         ),
       ),
     );
-  }
-
-  String _screenTitle() {
-    final value = (_pageTitle ?? widget.title).trim();
-    if (value.isNotEmpty) return value;
-    return 'Material Viewer';
   }
 
   @override
   Widget build(BuildContext context) {
-    final progressValue = (_progress <= 0 || _progress > 100) ? null : _progress / 100;
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            if (!_isFullscreen) _buildTopLessonBar(),
-            if (_isLoading) LinearProgressIndicator(value: progressValue),
-            Expanded(
-              child: _lastError != null
-                  ? _buildErrorState()
-                  : Stack(
-                children: [
-                  Positioned.fill(
-                    child: WebViewWidget(controller: _controller),
-                  ),
-                  if (_isLoading && _progress < 15)
-                    const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                ],
-              ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => unawaited(_enterFullscreen()),
+          onDoubleTap: () => unawaited(_notifyViewportChanged()),
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            left: false,
+            right: false,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: _lastError != null
+                      ? _buildErrorState()
+                      : WebViewWidget(controller: _controller),
+                ),
+                if (_isLoading) Positioned.fill(child: _buildOverlayLoading()),
+                _buildDebugCorner(),
+              ],
             ),
-            if (!_isFullscreen) _buildBottomBar(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomControlButton extends StatelessWidget {
-  const _BottomControlButton({
-    required this.tooltip,
-    required this.icon,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final String tooltip;
-  final IconData icon;
-  final bool enabled;
-  final Future<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: enabled ? () => unawaited(onTap()) : null,
-      icon: Icon(icon),
-      style: IconButton.styleFrom(
-        backgroundColor: enabled ? Colors.grey.shade100 : Colors.grey.shade50,
-        foregroundColor: enabled ? Colors.black87 : Colors.black38,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
     );
