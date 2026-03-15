@@ -12,13 +12,11 @@ import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
 import 'teacher/teacher_home.dart';
 import 'services/fcm_service.dart';
-import 'learner/learner_gallery_screen.dart';
-import 'learner/learner_gallery_screen.dart';
 import 'firebase_options.dart';
 import 'learner/learner_games_screen.dart';
+import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
-// Keeping your imports (even if not used yet) so nothing breaks in your project
 import 'learner/learner_home.dart';
 import 'auth/auth_gate.dart';
 import 'package:video_player/video_player.dart';
@@ -34,38 +32,34 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await appThemeController.loadSavedTheme();
-  // ✅ 1) Catch Flutter UI errors
+
   FlutterError.onError = (FlutterErrorDetails details) {
     FirebaseCrashlytics.instance.recordFlutterFatalError(details);
   };
 
-  // ✅ 2) Catch async errors (background errors)
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
 
-  // ✅ FAST START: show first screen immediately
-  runApp(const DreamEnglishAcademyApp());
+  runApp(const YourBridgeSchoolApp());
 
-  // ✅ Heavy work AFTER first frame (do not block startup)
   WidgetsBinding.instance.addPostFrameCallback((_) {
     FCMService.I.init();
   });
 }
 
-/// ===== Brand Colors =====
 class Brand {
-  static const primaryBlue = Color(0xFF1A2B48); // #1A2B48
-  static const actionOrange = Color(0xFFF98D28); // #F98D28
-  static const accentCyan = Color(0xFF00D4FF); // #00D4FF
-  static const mainText = Color(0xFF2D2D2D); // #2D2D2D
-  static const appBg = Color(0xFFF4F7F9); // #F4F7F9
-  static const uiBorder = Color(0xFFD1D9E0); // #D1D9E0
+  static const primaryBlue = Color(0xFF1A2B48);
+  static const actionOrange = Color(0xFFF98D28);
+  static const accentCyan = Color(0xFF00D4FF);
+  static const mainText = Color(0xFF2D2D2D);
+  static const appBg = Color(0xFFF4F7F9);
+  static const uiBorder = Color(0xFFD1D9E0);
 }
 
-class DreamEnglishAcademyApp extends StatelessWidget {
-  const DreamEnglishAcademyApp({super.key});
+class YourBridgeSchoolApp extends StatelessWidget {
+  const YourBridgeSchoolApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +82,7 @@ class DreamEnglishAcademyApp extends StatelessWidget {
   }
 }
 
-enum AppMode { assistant, classroom, stories, games }
+enum AppMode { home, stories, games, gallery }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -98,14 +92,22 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  AppMode mode = AppMode.assistant;
+  AppMode mode = AppMode.home;
 
   late final List<Widget> _pages = const [
     AssistantHome(),
-    ClassroomHome(),
     StoriesHome(),
-    LearnerGamesScreen(),
+    GamesHome(),
+    GalleryHome(),
   ];
+
+  Future<void> _openLogin(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,33 +119,38 @@ class _HomeShellState extends State<HomeShell> {
           children: _pages,
         ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openLogin(context),
+        backgroundColor: Brand.primaryBlue,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.login_rounded),
+        label: const Text('Login'),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: mode.index,
         onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.graphic_eq_rounded),
-            label: 'Courses',
+            icon: Icon(Icons.home_rounded),
+            label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.school_rounded),
-            label: 'Classroom',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.photo_library_rounded),
-            label: 'Gallery',
+            icon: Icon(Icons.auto_stories_rounded),
+            label: 'Stories',
           ),
           NavigationDestination(
             icon: Icon(Icons.sports_esports_rounded),
             label: 'Games',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.photo_library_rounded),
+            label: 'Gallery',
           ),
         ],
       ),
     );
   }
 }
-
-/// ===== Shared UI =====
 
 class SoftBackground extends StatelessWidget {
   final Widget child;
@@ -153,14 +160,11 @@ class SoftBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Soft pearl base
         Container(
           decoration: const BoxDecoration(
             color: Brand.appBg,
           ),
         ),
-
-        // Gentle gradient wash
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -174,8 +178,6 @@ class SoftBackground extends StatelessWidget {
             ),
           ),
         ),
-
-        // Watermark logo (very light)
         Positioned.fill(
           child: IgnorePointer(
             child: Opacity(
@@ -197,7 +199,6 @@ class SoftBackground extends StatelessWidget {
             ),
           ),
         ),
-
         child,
       ],
     );
@@ -222,6 +223,32 @@ class SimpleTopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
       child: Row(
         children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.94),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Brand.uiBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(6),
+            child: Image.asset(
+              'assets/images/ybs_logo.png',
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.school_rounded,
+                color: Brand.primaryBlue,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               title,
@@ -231,7 +258,10 @@ class SimpleTopBar extends StatelessWidget {
               ),
             ),
           ),
-          if (right != null) right!,
+          if (right != null) ...[
+            const SizedBox(width: 8),
+            right!,
+          ],
         ],
       ),
     );
@@ -265,26 +295,55 @@ class CardShell extends StatelessWidget {
   }
 }
 
-/// =============================================================
-/// ✅ AssistantHome (AI + Speech removed)
-/// - No STT / TTS / permissions / voice UI
-/// - Keeps the same layout and the course list logic
-/// =============================================================
 class AssistantHome extends StatelessWidget {
   const AssistantHome({super.key});
 
-  static final Uri _webPlayStoreUrl = Uri.parse(
+  @override
+  Widget build(BuildContext context) {
+    return SoftBackground(
+      child: Column(
+        children: [
+          const SimpleTopBar(title: 'Your Bridge School'),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _LevelTestCard(),
+                  const SizedBox(height: 18),
+                  const SizedBox(height: 10),
+                  const _JoinOnlineCircleEntryButton(),
+                  const SizedBox(height: 18),
+                  const _SectionHeader(
+                    title: 'Courses',
+                    subtitle: 'Browse all available courses here.',
+                  ),
+                  const SizedBox(height: 10),
+                  const _CoursesByCategory(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LevelTestCard extends StatelessWidget {
+  _LevelTestCard({super.key});
+
+  final Uri _webPlayStoreUrl = Uri.parse(
     'https://play.google.com/store/apps/details?id=com.appdevybs.mycertenglish&pcampaignid=web_share',
   );
 
-  // ✅ This opens Play Store app directly (best on Android)
-  static final Uri _marketUrl = Uri.parse(
+  final Uri _marketUrl = Uri.parse(
     'market://details?id=com.appdevybs.mycertenglish',
   );
 
   Future<void> _openPlayStore(BuildContext context) async {
     try {
-      // 1) Try Play Store app (market://)
       final okMarket = await launchUrl(
         _marketUrl,
         mode: LaunchMode.externalApplication,
@@ -292,20 +351,17 @@ class AssistantHome extends StatelessWidget {
 
       if (okMarket) return;
 
-      // 2) Fallback to https Play Store page
       final okWeb = await launchUrl(
         _webPlayStoreUrl,
         mode: LaunchMode.externalApplication,
       );
 
       if (!okWeb) {
-        // 3) Show message if both fail
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not open Play Store')),
         );
       }
     } catch (e) {
-      // show error to help debugging
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Open failed: $e')),
       );
@@ -314,76 +370,199 @@ class AssistantHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftBackground(
-      child: Column(
-        children: [
-          const SimpleTopBar(title: 'Your Brigde School'),
-          const SizedBox(height: 6),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ✅ use InkWell to guarantee tap feedback
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => _openPlayStore(context),
-                      child: CardShell(
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: Brand.actionOrange.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Brand.uiBorder),
-                              ),
-                              child: const Icon(
-                                Icons.workspace_premium_rounded,
-                                color: Brand.actionOrange,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
-                                  Text(
-                                    'Test Your Level & Get Certified',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Tap here to open My Cert English.',
-                                    style:
-                                    TextStyle(fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(
-                              Icons.open_in_new_rounded,
-                              color: Brand.primaryBlue,
-                            ),
-                          ],
-                        ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _openPlayStore(context),
+        child: CardShell(
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Brand.actionOrange.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Brand.uiBorder),
+                ),
+                child: const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Brand.actionOrange,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Test Your Level & Get Certified',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: Brand.primaryBlue,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  const _CoursesByCategory(),
-                ],
+                    SizedBox(height: 4),
+                    Text(
+                      'Tap here to open My Cert English.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Brand.mainText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.open_in_new_rounded,
+                color: Brand.primaryBlue,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoriesHome extends StatelessWidget {
+  const StoriesHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftBackground(
+      child: const LearnerStoriesScreen(),
+    );
+  }
+}
+
+class GamesHome extends StatelessWidget {
+  const GamesHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftBackground(
+      child: const LearnerGamesScreen(),
+    );
+  }
+}
+
+class GalleryHome extends StatelessWidget {
+  const GalleryHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _PublicGalleryShowcase();
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+    this.trailingText,
+  });
+
+  final String title;
+  final String subtitle;
+  final String? trailingText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Brand.mainText.withOpacity(0.72),
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (trailingText != null) ...[
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Brand.actionOrange.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Brand.actionOrange.withOpacity(0.28)),
+            ),
+            child: Text(
+              trailingText!,
+              style: const TextStyle(
+                color: Brand.actionOrange,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
               ),
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: SoftBackground(
+          child: Column(
+            children: [
+              SimpleTopBar(
+                title: 'Login',
+                right: IconButton(
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                        ),
+                        child: CardShell(
+                          child: ClassroomLoginSection(
+                            onLoggedInAdmin: () {},
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -411,7 +590,6 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                 constraints: const BoxConstraints(maxWidth: 560),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                  // ✅ Keyboard-safe, overflow-proof
                   child: SingleChildScrollView(
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.of(context).viewInsets.bottom + 16,
@@ -422,9 +600,7 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                         child: showLogin
                             ? ClassroomLoginSection(
                           key: const ValueKey('login'),
-                          onLoggedInAdmin: () {
-                            // keep your logic (AuthGate later)
-                          },
+                          onLoggedInAdmin: () {},
                         )
                             : Column(
                           key: const ValueKey('classroomInfo'),
@@ -436,10 +612,13 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                               decoration: BoxDecoration(
                                 color: Brand.accentCyan.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Brand.uiBorder),
+                                border:
+                                Border.all(color: Brand.uiBorder),
                               ),
-                              child: const Icon(Icons.school_rounded,
-                                  color: Brand.primaryBlue),
+                              child: const Icon(
+                                Icons.school_rounded,
+                                color: Brand.primaryBlue,
+                              ),
                             ),
                             const SizedBox(height: 12),
                             Text(
@@ -472,10 +651,13 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                                 backgroundColor: Brand.primaryBlue,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius:
+                                  BorderRadius.circular(14),
                                 ),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                               ),
                               child: const Text('Open Login'),
                             ),
@@ -493,7 +675,6 @@ class _ClassroomHomeState extends State<ClassroomHome> {
     );
   }
 }
-
 class ClassroomLoginSection extends StatefulWidget {
   final VoidCallback onLoggedInAdmin;
 
@@ -507,33 +688,25 @@ class ClassroomLoginSection extends StatefulWidget {
 }
 
 class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
-  // ========= Support config (fill these, otherwise buttons stay hidden) =========
-  // ⚠️ Put YOUR real values here:
-  // - WhatsApp format: "2136xxxxxxx" (countrycode+number, no +, no spaces) OR "0668472488"
-  static const String supportWhatsAppNumber = ''; // e.g. "213668472488"
-  static const String supportPhoneNumber = ''; // e.g. "0668472488"
-  static const String supportEmail = ''; // e.g. "support@yourschool.com"
+  static const String supportWhatsAppNumber = '';
+  static const String supportPhoneNumber = '';
+  static const String supportEmail = '';
 
-  // ========= Controllers =========
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
   final captchaCtrl = TextEditingController();
 
   bool loading = false;
   bool showPass = false;
-
   String error = '';
 
-  // ========= Captcha (progressive) =========
-  bool showCaptcha = true; // ✅ ALWAYS required
+  bool showCaptcha = true;
   int a = 2, b = 3;
 
-  // ========= Security / abuse resistance =========
   int failedAttempts = 0;
   DateTime? cooldownUntil;
   Timer? _cooldownTicker;
 
-  // forgot-password throttle
   DateTime? _lastResetRequestAt;
 
   @override
@@ -553,8 +726,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
   void _refreshCaptcha() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    a = (now % 8) + 1; // 1..9
-    b = ((now ~/ 7) % 8) + 1; // 1..9
+    a = (now % 8) + 1;
+    b = ((now ~/ 7) % 8) + 1;
     captchaCtrl.clear();
   }
 
@@ -579,7 +752,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     cooldownUntil = DateTime.now().add(Duration(seconds: seconds));
     _cooldownTicker?.cancel();
 
-    // update UI every second while cooling down
     _cooldownTicker = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       if (!_isCoolingDown) {
@@ -604,7 +776,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       case 'wrong-password':
       case 'user-not-found':
       case 'invalid-credential':
-      // ✅ Security: do not reveal whether the user exists
         return 'Email or password is incorrect.';
       default:
         return 'Login failed. Please try again.';
@@ -652,12 +823,24 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         password: pass,
       );
 
-      // ✅ IMPORTANT: no Navigator here (AuthGate will route)
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+        failedAttempts = 0;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Welcome back!')),
+      );
+
+// ✅ CLOSE LOGIN SCREEN
+      Navigator.of(context).pop();
+
       if (!mounted) return;
       setState(() {
         loading = false;
         failedAttempts = 0;
-        // keep captcha hidden after success
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -665,12 +848,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       );
     } on FirebaseAuthException catch (e) {
       failedAttempts += 1;
-
-      // ✅ Progressive captcha: show after first failure
       showCaptcha = true;
       _refreshCaptcha();
 
-      // ✅ Cooldown after 3 failures
       if (failedAttempts >= 3) {
         _startCooldown(seconds: 20);
       }
@@ -701,19 +881,14 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     FocusScope.of(context).unfocus();
     if (loading) return;
 
-    // cooldown check
     if (_isCoolingDown) {
       setState(() =>
       error = 'Please wait $_cooldownSecondsLeft seconds and try again.');
       return;
     }
 
-    // Progressive captcha rule:
-    // - before any failures, no captcha required
-    // - after first failure, captcha required
-    final requireCaptchaNow = true;
+    const requireCaptchaNow = true;
 
-    // validate (captcha only if required)
     if (!_validateInputs(enforceCaptcha: requireCaptchaNow)) return;
 
     final email = emailCtrl.text.trim().toLowerCase();
@@ -725,7 +900,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
   Future<void> _forgotPassword() async {
     if (loading) return;
 
-    // light throttle: 1 request per 10 seconds
     final now = DateTime.now();
     if (_lastResetRequestAt != null &&
         now.difference(_lastResetRequestAt!).inSeconds < 10) {
@@ -787,7 +961,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     try {
       _lastResetRequestAt = DateTime.now();
 
-      // ✅ Security: never reveal if account exists
       await FirebaseAuth.instance.sendPasswordResetEmail(email: normalized);
 
       if (!mounted) return;
@@ -796,18 +969,19 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'If an account exists for that email, a reset link has been sent.'),
+            'If an account exists for that email, a reset link has been sent.',
+          ),
         ),
       );
     } on FirebaseAuthException catch (_) {
       if (!mounted) return;
       setState(() => loading = false);
 
-      // ✅ same message always
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'If an account exists for that email, a reset link has been sent.'),
+            'If an account exists for that email, a reset link has been sent.',
+          ),
         ),
       );
     } catch (_) {
@@ -817,7 +991,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'If an account exists for that email, a reset link has been sent.'),
+            'If an account exists for that email, a reset link has been sent.',
+          ),
         ),
       );
     }
@@ -827,7 +1002,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     if (supportWhatsAppNumber.trim().isEmpty) return;
 
     final n = supportWhatsAppNumber.trim();
-    // wa.me works widely
     final uri = Uri.parse('https://wa.me/$n');
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
@@ -850,8 +1024,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
   Future<void> _emailSupport() async {
     if (supportEmail.trim().isEmpty) return;
-    final uri = Uri.parse(
-        'mailto:${supportEmail.trim()}?subject=Support%20Request');
+    final uri =
+    Uri.parse('mailto:${supportEmail.trim()}?subject=Support%20Request');
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -865,7 +1039,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     final hasPhone = supportPhoneNumber.trim().isNotEmpty;
     final hasEmail = supportEmail.trim().isNotEmpty;
 
-    if (!hasWhatsApp && !hasPhone && !hasEmail) return const SizedBox.shrink();
+    if (!hasWhatsApp && !hasPhone && !hasEmail) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -917,7 +1093,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ✅ Brand header (logo + title + subtitle)
         Center(
           child: Column(
             children: [
@@ -960,8 +1135,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           ),
         ),
         const SizedBox(height: 18),
-
-        // ✅ Email
         TextField(
           controller: emailCtrl,
           enabled: !loading,
@@ -973,8 +1146,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           ),
         ),
         const SizedBox(height: 12),
-
-        // ✅ Password (show/hide)
         TextField(
           controller: passCtrl,
           enabled: !loading,
@@ -992,10 +1163,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           ),
           onSubmitted: (_) => loading ? null : _manualLogin(),
         ),
-
         const SizedBox(height: 6),
-
-        // ✅ Forgot password (secure)
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
@@ -1003,17 +1171,15 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             child: const Text('Forgot password?'),
           ),
         ),
-
         const SizedBox(height: 6),
-
-        // ✅ Cooldown banner (after 3 fails)
         if (_isCoolingDown) ...[
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Brand.actionOrange.withOpacity(0.10),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.actionOrange.withOpacity(0.35)),
+              border:
+              Border.all(color: Brand.actionOrange.withOpacity(0.35)),
             ),
             child: Row(
               children: [
@@ -1033,7 +1199,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           ),
           const SizedBox(height: 10),
         ],
-
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
@@ -1092,8 +1257,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             ],
           ),
         ),
-
-        // ✅ Sign in button
+        const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: (loading || _isCoolingDown) ? null : _manualLogin,
           style: FilledButton.styleFrom(
@@ -1116,11 +1280,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
               : const Icon(Icons.login_rounded),
           label: Text(loading ? 'Signing in...' : 'Sign in'),
         ),
-
-        // ✅ Support links row (only if configured)
         _supportRow(),
-
-        // ✅ Error box
         if (error.isNotEmpty) ...[
           const SizedBox(height: 12),
           Container(
@@ -1152,12 +1312,764 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
   }
 }
 
-class StoriesHome extends StatelessWidget {
-  const StoriesHome({super.key});
+class _JoinOnlineCircleEntryButton extends StatefulWidget {
+  const _JoinOnlineCircleEntryButton();
+
+  @override
+  State<_JoinOnlineCircleEntryButton> createState() =>
+      _JoinOnlineCircleEntryButtonState();
+}
+
+class _JoinOnlineCircleEntryButtonState
+    extends State<_JoinOnlineCircleEntryButton>
+    with SingleTickerProviderStateMixin {
+  static const String circlesPath = 'circle';
+  late final AnimationController _pulseController;
+  late final Animation<double> _scaleAnimation;
+  @override
+  void initState() {
+    super.initState();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
+      CurvedAnimation(
+        parent: _pulseController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _pulseController.repeat(reverse: true);
+  }
+  DatabaseReference get _circlesRef =>
+      FirebaseDatabase.instance.ref(circlesPath);
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static String _safe(dynamic v) => (v ?? '').toString().trim();
+
+  List<_OnlineCircle> _parseCircles(dynamic value) {
+    if (value is! Map) return [];
+
+    final raw = Map<dynamic, dynamic>.from(value);
+    final out = <_OnlineCircle>[];
+
+    raw.forEach((key, val) {
+      if (val is! Map) return;
+      final m = val.map((k, v) => MapEntry(k.toString(), v));
+
+      final circle = _OnlineCircle(
+        id: _safe(m['circle_id']).isNotEmpty
+            ? _safe(m['circle_id'])
+            : key.toString(),
+        topic: _safe(m['topic']).isNotEmpty
+            ? _safe(m['topic'])
+            : 'Untitled Circle',
+        description: _safe(m['description']),
+        meetingUrl: _safe(m['meeting_url']),
+        teacherUid: _safe(m['teacher_uid']),
+        status: _safe(m['status']).toLowerCase(),
+        timeMs: _toInt(m['time']),
+        durationMinutes: _toInt(m['duration']),
+        createdAtMs: _toInt(m['createdAt']),
+        updatedAtMs: _toInt(m['updatedAt']),
+      );
+
+      if (circle.timeMs > 0 && circle.meetingUrl.isNotEmpty) {
+        out.add(circle);
+      }
+    });
+
+    out.sort((a, b) => a.timeMs.compareTo(b.timeMs));
+    return out;
+  }
+
+  String _two(int n) => n < 10 ? '0$n' : '$n';
+
+  String _formatDateTime(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
+  }
+
+  String _formatTimeOnly(int ms) {
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${_two(d.hour)}:${_two(d.minute)}';
+  }
+
+  Future<void> _showCircleDetails(_OnlineCircle circle) async {
+    final joinState = circle.joinStateAt(DateTime.now());
+
+    await showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Brand.uiBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.10),
+                blurRadius: 30,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: Brand.primaryBlue,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: const Icon(
+                  Icons.groups_rounded,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                circle.topic,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  _PrettyChip(
+                    icon: Icons.schedule_rounded,
+                    label: _formatTimeOnly(circle.timeMs),
+                  ),
+                  _PrettyChip(
+                    icon: Icons.timer_outlined,
+                    label: '${circle.durationMinutes} min',
+                  ),
+                  _PrettyChip(
+                    icon: Icons.info_outline_rounded,
+                    label: circle.status.isEmpty ? 'open' : circle.status,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Brand.appBg,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Brand.uiBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DetailRow(
+                      icon: Icons.calendar_today_rounded,
+                      label: 'Date & time',
+                      value: _formatDateTime(circle.timeMs),
+                    ),
+                    const SizedBox(height: 10),
+                    const _DetailRow(
+                      icon: Icons.access_time_filled_rounded,
+                      label: 'Join rule',
+                      value:
+                      'Users can join from 5 minutes before start until the circle duration ends.',
+                    ),
+                    if (circle.description.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _DetailRow(
+                        icon: Icons.notes_rounded,
+                        label: 'Description',
+                        value: circle.description,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _CircleJoinStatusBanner(
+                state: joinState,
+                circle: circle,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text('Close'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: joinState.canJoin
+                          ? () async {
+                        Navigator.of(context).pop();
+                        await _joinCircle(circle);
+                      }
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Brand.primaryBlue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: const Icon(Icons.video_call_rounded),
+                      label: const Text('Join'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _joinCircle(_OnlineCircle circle) async {
+    final state = circle.joinStateAt(DateTime.now());
+
+    if (!state.canJoin) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(state.message)),
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(circle.meetingUrl);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid meeting link.')),
+      );
+      return;
+    }
+
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Meet.')),
+      );
+    }
+  }
+
+  Future<void> _openCirclesSheet() async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+            child: StreamBuilder<DatabaseEvent>(
+              stream: _circlesRef.onValue,
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return const SizedBox(
+                    height: 260,
+                    child: Center(
+                      child: Text('Could not load circles.'),
+                    ),
+                  );
+                }
+
+                if (!snap.hasData) {
+                  return const SizedBox(
+                    height: 260,
+                    child: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                final circles = _parseCircles(snap.data?.snapshot.value)
+                    .where((c) {
+                  final status = c.status.toLowerCase();
+                  return status == 'open' || status.isEmpty;
+                }).toList();
+
+                if (circles.isEmpty) {
+                  return SizedBox(
+                    height: 300,
+                    child: Center(
+                      child: CardShell(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 58,
+                              height: 58,
+                              decoration: BoxDecoration(
+                                color: Brand.primaryBlue.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: const Icon(
+                                Icons.event_busy_rounded,
+                                color: Brand.primaryBlue,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              'No Available Classes',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: Brand.primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'There are no online classes to show right now.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                color:
+                                Brand.mainText.withOpacity(0.75),
+                                height: 1.45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Brand.primaryBlue.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(
+                            Icons.groups_rounded,
+                            color: Brand.primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Online Classes',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: Brand.primaryBlue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Tap any class to see details',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Brand.mainText.withOpacity(0.75),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: circles.length,
+                        separatorBuilder: (_, __) =>
+                        const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final circle = circles[index];
+                          final state = circle.joinStateAt(DateTime.now());
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(22),
+                            onTap: () => _showCircleDetails(circle),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(color: Brand.uiBorder),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.04),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      color: state.canJoin
+                                          ? Brand.actionOrange
+                                          .withOpacity(0.12)
+                                          : Brand.primaryBlue
+                                          .withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Icon(
+                                      state.canJoin
+                                          ? Icons.video_call_rounded
+                                          : Icons.schedule_rounded,
+                                      color: state.canJoin
+                                          ? Brand.actionOrange
+                                          : Brand.primaryBlue,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          circle.topic,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 15,
+                                            color: Brand.primaryBlue,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _formatDateTime(circle.timeMs),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: Brand.mainText
+                                                .withOpacity(0.75),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    size: 18,
+                                    color: Brand.primaryBlue,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return const _PublicGalleryShowcase();
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: _openCirclesSheet,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFD54F),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: const Color(0xFFFFC107),
+                width: 1.4,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFC107).withOpacity(0.35),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Icon(
+                    Icons.groups_rounded,
+                    color: Brand.primaryBlue,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Join Online Class',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
+                          color: Brand.primaryBlue,
+                        ),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        'Tap to view upcoming classes and join at the right time.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Brand.primaryBlue,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Brand.primaryBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineCircle {
+  final String id;
+  final String topic;
+  final String description;
+  final String meetingUrl;
+  final String teacherUid;
+  final String status;
+  final int timeMs;
+  final int durationMinutes;
+  final int createdAtMs;
+  final int updatedAtMs;
+
+  const _OnlineCircle({
+    required this.id,
+    required this.topic,
+    required this.description,
+    required this.meetingUrl,
+    required this.teacherUid,
+    required this.status,
+    required this.timeMs,
+    required this.durationMinutes,
+    required this.createdAtMs,
+    required this.updatedAtMs,
+  });
+
+  _CircleJoinState joinStateAt(DateTime now) {
+    final start = DateTime.fromMillisecondsSinceEpoch(timeMs);
+    final openFrom = start.subtract(const Duration(minutes: 5));
+    final end = start.add(
+      Duration(minutes: durationMinutes <= 0 ? 60 : durationMinutes),
+    );
+
+    if (now.isBefore(openFrom)) {
+      return const _CircleJoinState(
+        canJoin: false,
+        message: 'This class is not open yet.',
+      );
+    }
+
+    if (now.isAfter(end)) {
+      return const _CircleJoinState(
+        canJoin: false,
+        message: 'This class has already ended.',
+      );
+    }
+
+    return const _CircleJoinState(
+      canJoin: true,
+      message: 'You can join this class now.',
+    );
+  }
+}
+
+class _CircleJoinState {
+  final bool canJoin;
+  final String message;
+
+  const _CircleJoinState({
+    required this.canJoin,
+    required this.message,
+  });
+}
+
+class _CircleJoinStatusBanner extends StatelessWidget {
+  final _CircleJoinState state;
+  final _OnlineCircle circle;
+
+  const _CircleJoinStatusBanner({
+    required this.state,
+    required this.circle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isOpen = state.canJoin;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isOpen
+            ? Brand.actionOrange.withOpacity(0.10)
+            : Brand.primaryBlue.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isOpen ? Brand.actionOrange : Brand.uiBorder,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isOpen ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+            color: isOpen ? Brand.actionOrange : Brand.primaryBlue,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              state.message,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: isOpen ? Brand.actionOrange : Brand.primaryBlue,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Brand.primaryBlue),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Brand.mainText.withOpacity(0.65),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Brand.primaryBlue,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 class _PublicGalleryShowcase extends StatefulWidget {
@@ -1249,7 +2161,10 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                             const SizedBox(height: 12),
                             Text(
                               'Gallery Coming Soon',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
@@ -1257,8 +2172,12 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                             Text(
                               'Public gallery teaser media will appear here.',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Brand.mainText.withOpacity(0.75),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                color:
+                                Brand.mainText.withOpacity(0.75),
                                 height: 1.4,
                               ),
                             ),
@@ -1271,7 +2190,8 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
 
                 return GridView.builder(
                   padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
@@ -1280,7 +2200,8 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
-                    final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                    final type =
+                    (item['type'] ?? '').toString().trim().toLowerCase();
                     final url = (item['url'] ?? '').toString().trim();
                     final uploadedByName =
                     (item['uploadedByName'] ?? '').toString().trim();
@@ -1329,7 +2250,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                   errorBuilder: (_, __, ___) => Container(
                                     color: Colors.grey.shade200,
                                     alignment: Alignment.center,
-                                    child: const Icon(Icons.broken_image_outlined),
+                                    child: const Icon(
+                                      Icons.broken_image_outlined,
+                                    ),
                                   ),
                                 ),
                               Positioned(
@@ -1543,7 +2466,8 @@ class _PublicGalleryViewerVideoState extends State<_PublicGalleryViewerVideo> {
 
   Future<void> _init() async {
     try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      final controller =
+      VideoPlayerController.networkUrl(Uri.parse(widget.url));
       await controller.initialize();
       controller.setLooping(false);
 
@@ -1631,7 +2555,6 @@ class _CourseLite {
     required this.duration,
     required this.level,
     required this.language,
-
     required this.deliveryOptions,
     required this.deliveryOptionRaw,
     required this.deliveryConfigs,
@@ -1648,24 +2571,18 @@ class _CourseLite {
   final String category;
   final String title;
   final String thumb;
-
   final String shortDesc;
   final String longDesc;
   final String content;
-
   final String duration;
   final String level;
   final String language;
-
-  final List<String> deliveryOptions; // delivery_options (array)
-  final String deliveryOptionRaw; // delivery_option (string)
-
+  final List<String> deliveryOptions;
+  final String deliveryOptionRaw;
   final Map<String, _DeliveryConfigLite> deliveryConfigs;
-
   final List<_InstructorLite> instructors;
   final String requirements;
   final List<String> tags;
-
   final String status;
   final int? updatedAt;
 
@@ -1712,12 +2629,11 @@ class _CourseLite {
       final name = (mm['name'] ?? '').toString().trim();
       addInstructor(uid, name);
     }
+
     void addInstructorFromString(String raw) {
       final s = raw.trim();
       if (s.isEmpty) return;
 
-      // Case 1: stringified map like:
-      // "{uid: abc123, name: John Doe}"
       final mapLike = RegExp(r'^\{\s*uid:\s*(.+?),\s*name:\s*(.+?)\s*\}$');
       final match = mapLike.firstMatch(s);
       if (match != null) {
@@ -1727,7 +2643,6 @@ class _CourseLite {
         return;
       }
 
-      // Case 2: plain teacher name
       addInstructor('', s);
     }
 
@@ -1745,13 +2660,11 @@ class _CourseLite {
     if (v is Map) {
       final vm = v.map((k, vv) => MapEntry(k.toString(), vv));
 
-      // Single instructor object
       if (vm.containsKey('uid') || vm.containsKey('name')) {
         addInstructorFromMap(vm);
         return out;
       }
 
-      // Firebase keyed structure
       final entries = vm.entries.toList()
         ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
 
@@ -1771,13 +2684,13 @@ class _CourseLite {
     if (v is String) {
       final s = v.trim();
 
-      // whole value itself is one stringified map
       if (s.startsWith('{') && s.contains('uid:') && s.contains('name:')) {
         addInstructorFromString(s);
         return out;
       }
 
-      final parts = s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
+      final parts =
+      s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
       for (final name in parts) {
         addInstructor('', name);
       }
@@ -1785,6 +2698,7 @@ class _CourseLite {
 
     return out;
   }
+
   static Map<String, _DeliveryConfigLite> _parseDeliveryConfigs(dynamic v) {
     if (v is! Map) return {};
 
@@ -1806,7 +2720,8 @@ class _CourseLite {
         fee = double.tryParse(rawFee.toString());
       }
 
-      final accessMode = (m['access_mode'] ?? 'lifetime').toString().trim().toLowerCase();
+      final accessMode =
+      (m['access_mode'] ?? 'lifetime').toString().trim().toLowerCase();
 
       int? durationMonths;
       final rawDuration = m['access_duration_months'];
@@ -1917,7 +2832,6 @@ class _CourseLite {
   }
 
   factory _CourseLite.fromMap(String id, Map<dynamic, dynamic> raw) {
-    // ✅ Normalize keys to String (critical)
     final m = raw.map((k, v) => MapEntry(k.toString(), v));
 
     String pickString(List<String> keys) {
@@ -1930,26 +2844,20 @@ class _CourseLite {
 
     return _CourseLite(
       id: id,
-
-      // ✅ include more variants just in case
       title: pickString(['title']),
       thumb: _fixUrl(
         pickString(['thumbnail', 'thumb', 'image', 'thumbnailUrl']),
       ),
-
       shortDesc: pickString(['short_description', 'shortDesc']),
       longDesc: pickString(['long_description', 'longDesc']),
       content: pickString(['content', 'what_you_will_learn']),
-
       duration: pickString(['duration']),
       level: pickString(['level']),
       language: pickString(['language']),
-
-
-      deliveryOptions: _parseList(m['delivery_options'] ?? m['deliveryOptions']),
+      deliveryOptions:
+      _parseList(m['delivery_options'] ?? m['deliveryOptions']),
       deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
       deliveryConfigs: _parseDeliveryConfigs(m['delivery_configs']),
-
       instructors: _parseInstructors(
         m['instructors_map'] ??
             m['instructors'] ??
@@ -1957,14 +2865,14 @@ class _CourseLite {
             m['teachers'],
       ),
       requirements: pickString(['requirement', 'requirements']),
-
       tags: _parseList(m['tags']),
       status: pickString(['status']),
       category: pickString(['category']).trim().isEmpty
           ? 'Other'
           : pickString(['category']).trim(),
-
-      updatedAt: _parseInt(m['updatedAt'] ?? m['updated_at'] ?? m['updatedAtMs']),
+      updatedAt: _parseInt(
+        m['updatedAt'] ?? m['updated_at'] ?? m['updatedAtMs'],
+      ),
     );
   }
 }
@@ -1982,7 +2890,6 @@ List<_CourseLite> _parseCoursesLite(dynamic data) {
     }
   });
 
-  // optional: newest first
   out.sort((a, b) => (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0));
 
   return out;
@@ -2003,6 +2910,7 @@ class _DeliveryConfigLite {
   final String accessMode;
   final int? accessDurationMonths;
 }
+
 class _InstructorLite {
   const _InstructorLite({
     required this.uid,
@@ -2082,7 +2990,6 @@ class _CategoryRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ✅ Category title (NOT "Courses")
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
@@ -2095,14 +3002,14 @@ class _CategoryRow extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 230, // ✅ smaller cards height overall
+          height: 230,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: courses.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, i) {
               return SizedBox(
-                width: 260, // ✅ card width
+                width: 260,
                 child: _CourseCardMini(course: courses[i]),
               );
             },
@@ -2133,9 +3040,8 @@ class _CourseCardMini extends StatelessWidget {
       child: CardShell(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min, // ✅ important
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Thumbnail
             ClipRRect(
               borderRadius: BorderRadius.circular(18),
               child: SizedBox(
@@ -2145,13 +3051,13 @@ class _CourseCardMini extends StatelessWidget {
                     ? Image.network(
                   course.thumb,
                   fit: BoxFit.cover,
-                  // ✅ stable while loading
                   loadingBuilder: (context, child, progress) {
                     if (progress == null) return child;
                     return Container(color: Brand.appBg);
                   },
-                  errorBuilder: (_, __, ___) =>
-                  const Center(child: Icon(Icons.image_not_supported)),
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.image_not_supported),
+                  ),
                 )
                     : Container(
                   color: Brand.appBg,
@@ -2160,8 +3066,6 @@ class _CourseCardMini extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-
-            // Title
             Text(
               course.title.isEmpty ? '(Untitled course)' : course.title,
               maxLines: 2,
@@ -2171,10 +3075,7 @@ class _CourseCardMini extends StatelessWidget {
                 color: Brand.primaryBlue,
               ),
             ),
-
             const SizedBox(height: 8),
-
-            // Duration only
             if (course.duration.trim().isNotEmpty)
               Row(
                 children: [
@@ -2273,7 +3174,7 @@ class _InfoTile extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, // ✅
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
             icon,
@@ -2281,13 +3182,11 @@ class _InfoTile extends StatelessWidget {
             color: highlight ? Brand.actionOrange : Brand.primaryBlue,
           ),
           const SizedBox(width: 8),
-
-          // ✅ IMPORTANT FIX
           Flexible(
             child: Text(
               text,
-              maxLines: 2, // ✅ change to 3 if you want
-              overflow: TextOverflow.ellipsis, // ✅ prevents overflow
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 color: highlight ? Brand.actionOrange : Brand.primaryBlue,
@@ -2331,8 +3230,6 @@ class _Section extends StatelessWidget {
 class _CourseDetailsSheet extends StatelessWidget {
   const _CourseDetailsSheet({required this.course});
   final _CourseLite course;
-
-
 
   Widget _hero() {
     if (course.thumb.trim().isEmpty) {
@@ -2390,39 +3287,46 @@ class _CourseDetailsSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
               _hero(),
               const SizedBox(height: 16),
-
-              // ✅ Chips row (level / language / delivery)
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   if (course.level.trim().isNotEmpty)
-                    _PrettyChip(icon: Icons.bar_chart_rounded, label: course.level),
+                    _PrettyChip(
+                      icon: Icons.bar_chart_rounded,
+                      label: course.level,
+                    ),
                   if (course.language.trim().isNotEmpty)
-                    _PrettyChip(icon: Icons.language_rounded, label: course.language),
+                    _PrettyChip(
+                      icon: Icons.language_rounded,
+                      label: course.language,
+                    ),
                   if (deliveryText.isNotEmpty)
-                    _PrettyChip(icon: Icons.videocam_rounded, label: deliveryText),
+                    _PrettyChip(
+                      icon: Icons.videocam_rounded,
+                      label: deliveryText,
+                    ),
                   if (course.duration.trim().isNotEmpty)
-                    _PrettyChip(icon: Icons.schedule_rounded, label: course.duration),
+                    _PrettyChip(
+                      icon: Icons.schedule_rounded,
+                      label: course.duration,
+                    ),
                 ],
               ),
-
               const SizedBox(height: 18),
-
-              // ✅ Info tiles (category / access)
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: [
                   if (course.category.trim().isNotEmpty)
-                    _InfoTile(icon: Icons.category_rounded, text: course.category),
+                    _InfoTile(
+                      icon: Icons.category_rounded,
+                      text: course.category,
+                    ),
                 ],
               ),
-
-              // ✅ Instructors as chips (separate, cleaner)
               if (course.instructors.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -2445,10 +3349,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                       .toList(),
                 ),
               ],
-
               const SizedBox(height: 18),
-
-              // ✅ What you will learn
               if (course.content.trim().isNotEmpty)
                 _Section(
                   title: 'What you will learn',
@@ -2460,11 +3361,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-
               const SizedBox(height: 18),
-
-
-
               if (course.longDesc.trim().isNotEmpty)
                 _Section(
                   title: 'About this course',
@@ -2476,8 +3373,8 @@ class _CourseDetailsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-
-              if (course.longDesc.trim().isEmpty && course.shortDesc.trim().isNotEmpty)
+              if (course.longDesc.trim().isEmpty &&
+                  course.shortDesc.trim().isNotEmpty)
                 _Section(
                   title: 'Overview',
                   child: Text(
@@ -2488,7 +3385,6 @@ class _CourseDetailsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-
               if (course.requirements.trim().isNotEmpty)
                 _Section(
                   title: 'Requirements',
@@ -2499,19 +3395,17 @@ class _CourseDetailsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-
               if (course.tags.isNotEmpty)
                 _Section(
                   title: 'Tags',
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: course.tags.map((t) => _PrettyChip(label: t)).toList(),
+                    children:
+                    course.tags.map((t) => _PrettyChip(label: t)).toList(),
                   ),
                 ),
-
               const SizedBox(height: 8),
-
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -2571,7 +3465,6 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
     super.initState();
     _loadBuildAndAdmin();
 
-    // ✅ if user logs in/out later, re-check admin + version/build
     _authSub = FirebaseAuth.instance.authStateChanges().listen((_) {
       _loadBuildAndAdmin();
     });
@@ -2584,16 +3477,16 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
   }
 
   Future<void> _loadBuildAndAdmin() async {
-    // ✅ FAST START: if this is slow on some devices, it runs after first screen already.
     final info = await PackageInfo.fromPlatform();
-    final version = info.version.trim(); // "2.0.0"
+    final version = info.version.trim();
     final build = int.tryParse(info.buildNumber) ?? 0;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     bool isAdmin = false;
 
     if (uid != null && uid.isNotEmpty) {
-      final adminSnap = await FirebaseDatabase.instance.ref('admins/$uid').get();
+      final adminSnap =
+      await FirebaseDatabase.instance.ref('admins/$uid').get();
       isAdmin = adminSnap.value == true;
     }
 
@@ -2617,7 +3510,7 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
         ? 'web'
         : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
     return StreamBuilder<DatabaseEvent>(
-      stream: _ref.onValue, // ✅ listen to whole node so we can read allowAdminBypass
+      stream: _ref.onValue,
       builder: (context, snap) {
         if (snap.hasError) return widget.child;
         if (!snap.hasData) return widget.child;
@@ -2649,7 +3542,6 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
           minBuild: minBuild,
         );
 
-        // ✅ BYPASS RULE (admin only)
         if (mustUpdate && allowAdminBypass && _isAdmin) {
           return widget.child;
         }
@@ -2681,34 +3573,34 @@ bool isOlderThan({
   required String minVersion,
   required int minBuild,
 }) {
-  // If build is below minBuild -> must update
-  if (currentBuild < minBuild) return true;
-
-  // Compare semantic versions like 2.1.0
   List<int> parse(String v) {
     return v.split('.').map((e) => int.tryParse(e.trim()) ?? 0).toList();
   }
 
+  if (currentBuild < minBuild) return true;
+
   final c = parse(currentVersion);
   final m = parse(minVersion);
 
-  // normalize length to 3 parts
-  while (c.length < 3) c.add(0);
-  while (m.length < 3) m.add(0);
+  while (c.length < 3) {
+    c.add(0);
+  }
+  while (m.length < 3) {
+    m.add(0);
+  }
 
   for (int i = 0; i < 3; i++) {
     if (c[i] < m[i]) return true;
     if (c[i] > m[i]) return false;
   }
 
-  // same version -> build already checked above
   return false;
 }
 
 class UpdateRequiredScreen extends StatelessWidget {
   final String message;
-  final String storeUrl; // market:// or ios scheme
-  final String storeWebUrl; // https:// link fallback
+  final String storeUrl;
+  final String storeWebUrl;
 
   const UpdateRequiredScreen({
     super.key,
@@ -2725,11 +3617,9 @@ class UpdateRequiredScreen extends StatelessWidget {
       return launchUrl(uri, mode: LaunchMode.externalApplication);
     }
 
-    // 1) Try storeUrl first (best)
     final ok1 = await tryLaunch(storeUrl);
     if (ok1) return;
 
-    // 2) fallback to web
     final ok2 = await tryLaunch(storeWebUrl);
     if (ok2) return;
 
@@ -2800,6 +3690,7 @@ class UpdateRequiredScreen extends StatelessWidget {
     );
   }
 }
+
 class _TeacherChip extends StatelessWidget {
   const _TeacherChip({
     required this.teacher,

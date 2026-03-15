@@ -34,6 +34,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   static const String _uploadUrl =
       'https://www.yourbridgeschool.com/api/admin/upload_file.php';
 
+  static const String _deleteUrl =
+      'https://www.yourbridgeschool.com/api/admin/delete_file.php';
+
   static const List<String> _categoryOptions = [
     'Vocabulary',
     'Grammar',
@@ -78,6 +81,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
     if (cleaned.isEmpty) return 'game';
     return cleaned;
+  }
+
+  String _serverFolderPath({
+    required String teacherUid,
+    required String gameUid,
+    required String gameName,
+  }) {
+    return 'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
   }
 
   Future<String?> _uploadToServer({
@@ -149,6 +160,49 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     }
 
     throw Exception((data['message'] ?? 'Upload failed').toString());
+  }
+
+  Future<void> _deleteFromServer({
+    required String teacherUid,
+    required String gameUid,
+    required String gameName,
+  }) async {
+    final response = await http.post(
+      Uri.parse(_deleteUrl),
+      body: {
+        'key': _sha1(_secret),
+        'root': 'games',
+        'path': _serverFolderPath(
+          teacherUid: teacherUid,
+          gameUid: gameUid,
+          gameName: gameName,
+        ),
+      },
+    );
+
+    final raw = response.body.trim();
+
+    if (!raw.startsWith('{')) {
+      throw Exception('Server did not return JSON.\n$raw');
+    }
+
+    final data = json.decode(raw);
+
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid delete response');
+    }
+
+    if (data['success'] == true) {
+      return;
+    }
+
+    final message = (data['message'] ?? 'Delete failed').toString();
+
+    if (message.toLowerCase() == 'item not found') {
+      return;
+    }
+
+    throw Exception(message);
   }
 
   Future<Map<String, dynamic>?> _loadMyTeacherData() async {
@@ -249,13 +303,15 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     );
   }
 
-  Future<void> _deleteGame(String gameId) async {
+  Future<void> _deleteGame(String gameId, Map<String, dynamic> game) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           title: const Text('Delete game'),
-          content: const Text('Are you sure you want to delete this game?'),
+          content: const Text(
+            'Are you sure you want to delete this game and its uploaded files?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -273,8 +329,21 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
     if (!ok) return;
 
+    final teacherUid = (game['teacherUid'] ?? '').toString().trim();
+    final gameUid = (game['gameUid'] ?? gameId).toString().trim();
+    final gameName = (game['name'] ?? '').toString().trim();
+
     try {
+      if (teacherUid.isNotEmpty && gameUid.isNotEmpty && gameName.isNotEmpty) {
+        await _deleteFromServer(
+          teacherUid: teacherUid,
+          gameUid: gameUid,
+          gameName: gameName,
+        );
+      }
+
       await _gamesRef.child(gameId).remove();
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Game deleted successfully.')),
@@ -1582,7 +1651,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     ),
                   if (canEdit)
                     OutlinedButton.icon(
-                      onPressed: () => _deleteGame(gameId),
+                      onPressed: () => _deleteGame(gameId, game),
                       icon: const Icon(Icons.delete_rounded),
                       label: const Text('Delete'),
                     ),

@@ -9,7 +9,7 @@ import 'learner_gallery_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
 import '../shared/watermark_background.dart';
-
+import 'learner_stories_screen.dart';
 import 'learner_study_coach_screen.dart';
 import 'learner_regulations_screen.dart';
 import 'learner_mail_screen.dart';
@@ -19,7 +19,7 @@ import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
-
+import '../calls/call_logs_screen.dart';
 import '../calls/audio_call_screen.dart';
 
 class LearnerHome extends StatefulWidget {
@@ -73,6 +73,14 @@ class _LearnerHomeState extends State<LearnerHome> {
   void _pushScreen(Widget screen) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => screen),
+    );
+  }
+
+  void _openStoriesScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const LearnerStoriesScreen(),
+      ),
     );
   }
 
@@ -738,6 +746,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
         onOpenMail: () => _pushScreen(LearnerMailScreen()),
         onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
+        onOpenStories: _openStoriesScreen,
         onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
         onOpenRegulations: () =>
             _pushScreen(const LearnerRegulationsScreen()),
@@ -787,9 +796,15 @@ class _LearnerHomeState extends State<LearnerHome> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Theme',
-            icon: Icon(Icons.palette_rounded, color: p.accent),
-            onPressed: _openThemeSheet,
+            tooltip: 'Call Log',
+            icon: Icon(Icons.history_rounded, color: p.accent),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CallLogsScreen(),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -1333,6 +1348,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               );
             },
           ),
+
+          const SizedBox(height: 10),
+
 
           const SizedBox(height: 16),
           FutureBuilder<bool>(
@@ -2996,7 +3014,9 @@ class _ClassesAndPeers {
 }
 
 class _LearnerHomeworkHomeCard extends StatelessWidget {
-  const _LearnerHomeworkHomeCard();
+  const _LearnerHomeworkHomeCard({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -3082,7 +3102,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                 ),
               ],
             ),
-            padding: const EdgeInsets.all(14),
+            padding: EdgeInsets.all(compact ? 12 : 14),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3091,8 +3111,8 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      width: 46,
-                      height: 46,
+                      width: compact ? 40 : 46,
+                      height: compact ? 40 : 46,
                       decoration: BoxDecoration(
                         color: p.soft,
                         borderRadius: BorderRadius.circular(15),
@@ -3467,6 +3487,7 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenProfile,
     required this.onOpenMail,
     required this.onOpenCourses,
+    required this.onOpenStories,
     required this.onOpenGames,
     required this.onOpenRegulations,
     required this.onOpenThemeSettings,
@@ -3479,6 +3500,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenCourses;
+  final VoidCallback onOpenStories;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
@@ -3580,6 +3602,34 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenCourses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.sports_esports_rounded,
+                    title: 'Games',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGames();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.menu_book_rounded,
+                    title: 'My Courses',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenCourses();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.auto_stories_rounded,
+                    title: 'Stories',
+                    subtitle: 'Read, listen, and watch stories',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenStories();
                     },
                   ),
                   _DrawerTile(

@@ -7,8 +7,10 @@ import 'package:intl/intl.dart';
 import 'teacher_public_gallery_screen.dart';
 import '../calls/audio_call_screen.dart';
 import '../calls/call_logs_screen.dart';
+import 'teacher_online_circle_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
+import 'TeacherStoriesScreen.dart';
 import 'teacher_classes.dart';
 import 'teacher_games_screen.dart';
 import 'teacher_mail.dart';
@@ -19,7 +21,6 @@ import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
-
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
 
@@ -1046,8 +1047,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         onOpenSchedule: () => _pushScreen(const TeacherSchedule()),
         onOpenClasses: () => _pushScreen(const TeacherClassesScreen()),
         onOpenGames: () => _pushScreen(const TeacherGamesScreen()),
+        onOpenStories: () => _pushScreen(TeacherStoriesScreen()),
         onOpenOnlineBooking: () =>
             _pushScreen(const TeacherOnlineBookingScreen()),
+
+        onOpenOnlineCircle: () => _pushScreen(TeacherOnlineCircleScreen()),
         onOpenMail: () => _pushScreen(const TeacherMailScreen()),
         onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
         onOpenGallery: () => _pushScreen(const TeacherPublicGalleryScreen()),
@@ -1327,6 +1331,7 @@ class _UserPick {
 }
 
 class _TeacherDrawer extends StatelessWidget {
+
   const _TeacherDrawer({
     required this.palette,
     required this.onOpenProfile,
@@ -1334,6 +1339,7 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenClasses,
     required this.onOpenGallery,
     required this.onOpenOnlineBooking,
+    required this.onOpenOnlineCircle,
     required this.onOpenMail,
     required this.onOpenReminders,
     required this.onOpenWages,
@@ -1343,7 +1349,9 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenThemeSettings,
     required this.onLogout,
     required this.onOpenGames,
+    required this.onOpenStories,
   });
+
 
   final _HomePalette palette;
   final VoidCallback onOpenProfile;
@@ -1351,6 +1359,7 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenClasses;
   final VoidCallback onOpenGallery;
   final VoidCallback onOpenOnlineBooking;
+  final VoidCallback onOpenOnlineCircle;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenReminders;
   final VoidCallback onOpenWages;
@@ -1359,6 +1368,7 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenCallLogs;
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onOpenGames;
+  final VoidCallback onOpenStories;
   final VoidCallback onLogout;
 
   @override
@@ -1461,11 +1471,29 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
+                    icon: Icons.menu_book_rounded,
+                    title: 'Stories',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenStories();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
                     icon: Icons.event_available_rounded,
                     title: 'Online Availability',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenOnlineBooking();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.video_call_rounded,
+                    title: 'Online Circle',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenOnlineCircle();
                     },
                   ),
                   _DrawerTile(

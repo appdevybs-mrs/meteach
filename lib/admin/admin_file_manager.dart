@@ -1824,186 +1824,163 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     required Map<String, dynamic> game,
     required List<String> knownTags,
   }) {
-    final tags = _tagsFromGame(game);
     final name = (game['name'] ?? '').toString().trim();
     final description = (game['description'] ?? '').toString().trim();
-    final rules = (game['rules'] ?? '').toString().trim();
-    final link = (game['link'] ?? '').toString().trim();
     final thumbnail = (game['thumbnail'] ?? '').toString().trim();
-    final ownerName = _ownerName(game);
     final category = (game['category'] ?? '').toString().trim();
     final level = (game['level'] ?? '').toString().trim();
     final status = (game['status'] ?? 'ready').toString().trim();
-    final notes = (game['teacherNotes'] ?? '').toString().trim();
     final durationMinutes = _toInt(game['durationMinutes']);
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        onTap: () => _openGame(game),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (thumbnail.isNotEmpty) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  thumbnail,
-                  height: 160,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: Colors.grey.shade100,
-                    alignment: Alignment.center,
-                    child: const Text('Thumbnail failed to load'),
-                  ),
+            if (thumbnail.isNotEmpty)
+              Image.network(
+                thumbnail,
+                height: 110,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 110,
+                  color: Colors.grey.shade100,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.image_not_supported_rounded),
+                ),
+              )
+            else
+              Container(
+                height: 110,
+                width: double.infinity,
+                color: Colors.grey.shade100,
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.sports_esports_rounded,
+                  size: 36,
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    name.isEmpty ? 'Untitled Game' : name,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'Untitled Game' : name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Text(
+                      description.isEmpty ? 'No description' : description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _statusColor(status).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            status,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _statusColor(status),
+                            ),
+                          ),
+                        ),
+                        if (category.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              category,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        if (level.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              level,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const Spacer(),
+                    if (durationMinutes > 0)
+                      Text(
+                        '$durationMinutes min',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _showGameForm(
+                              gameId: gameId,
+                              existingGame: game,
+                              knownTags: knownTags,
+                            ),
+                            child: const Text('Edit'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => _deleteGame(gameId),
+                          icon: const Icon(Icons.delete_rounded),
+                          tooltip: 'Delete',
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Chip(
-                  label: Text(status),
-                  backgroundColor: _statusColor(status).withOpacity(0.12),
-                  side: BorderSide(color: _statusColor(status)),
-                  labelStyle: TextStyle(
-                    color: _statusColor(status),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Owner: $ownerName',
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w700,
               ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (category.isNotEmpty) Chip(label: Text(category)),
-                if (level.isNotEmpty) Chip(label: Text(level)),
-                if (durationMinutes > 0) Chip(label: Text('$durationMinutes min')),
-              ],
-            ),
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                ),
-              ),
-            ],
-            if (rules.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Rules',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                rules,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                ),
-              ),
-            ],
-            if (notes.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Notes',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                notes,
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                ),
-              ),
-            ],
-            if (link.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                link,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.blue.shade700,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-            if (tags.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: tags.map((tag) => Chip(label: Text(tag))).toList(),
-              ),
-            ],
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: () => _openGame(game),
-                  icon: const Icon(Icons.open_in_browser_rounded),
-                  label: const Text('Open'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _showGameForm(
-                    gameId: gameId,
-                    existingGame: game,
-                    knownTags: knownTags,
-                  ),
-                  icon: const Icon(Icons.edit_rounded),
-                  label: const Text('Edit'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _duplicateGame(existingGame: game),
-                  icon: const Icon(Icons.copy_rounded),
-                  label: const Text('Duplicate'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _toggleArchive(gameId: gameId, game: game),
-                  icon: Icon(
-                    status == 'archived'
-                        ? Icons.unarchive_rounded
-                        : Icons.archive_rounded,
-                  ),
-                  label: Text(status == 'archived' ? 'Restore' : 'Archive'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _deleteGame(gameId),
-                  icon: const Icon(Icons.delete_rounded),
-                  label: const Text('Delete'),
-                ),
-              ],
             ),
           ],
         ),
@@ -2054,20 +2031,23 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               .toLowerCase()
               .compareTo((a.value['name'] ?? '').toString().toLowerCase());
         case 'created_desc':
-          return _toInt(b.value['createdAt']).compareTo(_toInt(a.value['createdAt']));
+          return _toInt(b.value['createdAt'])
+              .compareTo(_toInt(a.value['createdAt']));
         case 'created_asc':
-          return _toInt(a.value['createdAt']).compareTo(_toInt(b.value['createdAt']));
+          return _toInt(a.value['createdAt'])
+              .compareTo(_toInt(b.value['createdAt']));
         case 'updated_asc':
-          return _toInt(a.value['updatedAt']).compareTo(_toInt(b.value['updatedAt']));
+          return _toInt(a.value['updatedAt'])
+              .compareTo(_toInt(b.value['updatedAt']));
         case 'updated_desc':
         default:
-          return _toInt(b.value['updatedAt']).compareTo(_toInt(a.value['updatedAt']));
+          return _toInt(b.value['updatedAt'])
+              .compareTo(_toInt(a.value['updatedAt']));
       }
     });
 
     return filtered;
   }
-
   Widget _buildFilterBar(List<String> categories) {
     final categoryItems = ['all', ...categories];
 
@@ -2307,10 +2287,18 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                       ),
                     ],
                   )
-                      : ListView.builder(
+                      : GridView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.56,
+                    ),
                     itemCount: visibleItems.length,
+
+
                     itemBuilder: (context, index) {
                       final item = visibleItems[index];
                       return _buildGameCard(
