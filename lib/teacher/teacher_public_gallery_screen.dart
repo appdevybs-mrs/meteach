@@ -25,13 +25,24 @@ class _TeacherPublicGalleryScreenState
   late final Stream<DatabaseEvent> _classesStream;
   late final Stream<DatabaseEvent> _learnerGalleryStream;
 
+  final TextEditingController _myGallerySearchController =
+  TextEditingController();
+  final TextEditingController _teachersSearchController =
+  TextEditingController();
+
   String _teacherUid = '';
 
   dynamic _classesCache;
   dynamic _learnerGalleryCache;
 
-  int _visibleLearnersCount = _pageSize;
+  int _visibleMyGalleryCount = _pageSize;
   int _visibleTeachersCount = _pageSize;
+
+  String _myGallerySearch = '';
+  String _teachersSearch = '';
+
+  String _myGalleryTypeFilter = 'all';
+  String _teachersTypeFilter = 'all';
 
   AppPalette get palette => appThemeController.palette;
 
@@ -51,6 +62,8 @@ class _TeacherPublicGalleryScreenState
   @override
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
+    _myGallerySearchController.dispose();
+    _teachersSearchController.dispose();
     _tab.dispose();
     super.dispose();
   }
@@ -115,7 +128,7 @@ class _TeacherPublicGalleryScreenState
     return out.toList();
   }
 
-  List<Map<String, dynamic>> _allMyLearnersGalleryItems({
+  List<Map<String, dynamic>> _allMyUploadedGalleryItems({
     required dynamic classesValue,
     required dynamic learnerGalleryValue,
   }) {
@@ -137,6 +150,15 @@ class _TeacherPublicGalleryScreenState
         if (itemVal is! Map) return;
 
         final m = itemVal.map((k, vv) => MapEntry(k.toString(), vv));
+
+        final teacherUid = (m['teacherUid'] ?? '').toString().trim();
+        final uploadedByRole =
+        (m['uploadedByRole'] ?? '').toString().trim().toLowerCase();
+
+        if (teacherUid.isEmpty) return;
+        if (teacherUid != _teacherUid) return;
+        if (uploadedByRole == 'admin') return;
+
         out.add({
           'id': itemId.toString(),
           'learnerUid': uid,
@@ -195,6 +217,29 @@ class _TeacherPublicGalleryScreenState
     });
 
     return out;
+  }
+
+  List<Map<String, dynamic>> _applySearchAndFilter({
+    required List<Map<String, dynamic>> items,
+    required String search,
+    required String typeFilter,
+  }) {
+    final q = search.trim().toLowerCase();
+
+    return items.where((item) {
+      final type = (item['type'] ?? '').toString().trim().toLowerCase();
+      final learnerName = (item['learnerName'] ?? '').toString().toLowerCase();
+      final teacherName = (item['teacherName'] ?? '').toString().toLowerCase();
+      final classTitle = (item['classTitle'] ?? '').toString().toLowerCase();
+
+      final matchesType = typeFilter == 'all' || type == typeFilter;
+      final matchesSearch = q.isEmpty ||
+          learnerName.contains(q) ||
+          teacherName.contains(q) ||
+          classTitle.contains(q);
+
+      return matchesType && matchesSearch;
+    }).toList();
   }
 
   List<Map<String, dynamic>> _visibleItems(
@@ -279,7 +324,98 @@ class _TeacherPublicGalleryScreenState
     );
   }
 
-  Widget _buildLearnersTab() {
+  Widget _buildSearchFilterBar({
+    required TextEditingController controller,
+    required String hintText,
+    required String selectedType,
+    required ValueChanged<String> onSearchChanged,
+    required ValueChanged<String?> onTypeChanged,
+  }) {
+    final p = palette;
+
+    return Column(
+      children: [
+        TextField(
+          controller: controller,
+          onChanged: onSearchChanged,
+          decoration: InputDecoration(
+            hintText: hintText,
+            prefixIcon: Icon(Icons.search_rounded, color: p.primary),
+            filled: true,
+            fillColor: p.cardBg,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 14,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: p.border.withOpacity(0.9)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: p.border.withOpacity(0.9)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: p.primary, width: 1.3),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text(
+              'Filter:',
+              style: TextStyle(
+                color: p.primary,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: p.cardBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: p.border.withOpacity(0.9)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedType,
+                    isExpanded: true,
+                    dropdownColor: p.cardBg,
+                    style: TextStyle(
+                      color: p.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'photo',
+                        child: Text('Photos'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'video',
+                        child: Text('Videos'),
+                      ),
+                    ],
+                    onChanged: onTypeChanged,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMyGalleryTab() {
     final p = palette;
 
     return StreamBuilder<DatabaseEvent>(
@@ -298,19 +434,31 @@ class _TeacherPublicGalleryScreenState
               _learnerGalleryCache = learnerGalleryValue;
             }
 
-            final allItems = _allMyLearnersGalleryItems(
+            final allItems = _allMyUploadedGalleryItems(
               classesValue: classesValue ?? _classesCache,
               learnerGalleryValue: learnerGalleryValue ?? _learnerGalleryCache,
             );
 
-            final visibleItems = _visibleItems(allItems, _visibleLearnersCount);
-            final photoCount = allItems
-                .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'photo')
+            final filteredItems = _applySearchAndFilter(
+              items: allItems,
+              search: _myGallerySearch,
+              typeFilter: _myGalleryTypeFilter,
+            );
+
+            final visibleItems =
+            _visibleItems(filteredItems, _visibleMyGalleryCount);
+
+            final photoCount = filteredItems
+                .where((e) =>
+            (e['type'] ?? '').toString().toLowerCase() == 'photo')
                 .length;
-            final videoCount = allItems
-                .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'video')
+
+            final videoCount = filteredItems
+                .where((e) =>
+            (e['type'] ?? '').toString().toLowerCase() == 'video')
                 .length;
-            final canLoadMore = visibleItems.length < allItems.length;
+
+            final canLoadMore = visibleItems.length < filteredItems.length;
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -339,20 +487,11 @@ class _TeacherPublicGalleryScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'My Learners Gallery',
+                        'My Gallery',
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
                           fontSize: 20,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Shows first $_pageSize items, then load more when you want.',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.84),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -361,7 +500,7 @@ class _TeacherPublicGalleryScreenState
                         runSpacing: 8,
                         children: [
                           _TeacherGalleryStatChip(
-                            text: '${allItems.length} total',
+                            text: '${filteredItems.length} total',
                             icon: Icons.grid_view_rounded,
                           ),
                           _TeacherGalleryStatChip(
@@ -378,11 +517,30 @@ class _TeacherPublicGalleryScreenState
                   ),
                 ),
                 const SizedBox(height: 14),
-                if (allItems.isEmpty)
+                _buildSearchFilterBar(
+                  controller: _myGallerySearchController,
+                  hintText: 'Search learner or class',
+                  selectedType: _myGalleryTypeFilter,
+                  onSearchChanged: (value) {
+                    setState(() {
+                      _myGallerySearch = value;
+                      _visibleMyGalleryCount = _pageSize;
+                    });
+                  },
+                  onTypeChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _myGalleryTypeFilter = value;
+                      _visibleMyGalleryCount = _pageSize;
+                    });
+                  },
+                ),
+                const SizedBox(height: 14),
+                if (filteredItems.isEmpty)
                   const _TeacherGalleryEmptyBox(
-                    title: 'No learner gallery items yet.',
+                    title: 'No gallery items found.',
                     subtitle:
-                    'When learners in your classes get gallery items, they will appear here.',
+                    'Your uploaded learner gallery items will appear here.',
                   )
                 else ...[
                   GridView.builder(
@@ -471,7 +629,9 @@ class _TeacherPublicGalleryScreenState
                                               ),
                                               const SizedBox(width: 6),
                                               Text(
-                                                type == 'video' ? 'Video' : 'Photo',
+                                                type == 'video'
+                                                    ? 'Video'
+                                                    : 'Photo',
                                                 style: const TextStyle(
                                                   color: Colors.white,
                                                   fontWeight: FontWeight.w900,
@@ -525,7 +685,7 @@ class _TeacherPublicGalleryScreenState
                     canLoadMore: canLoadMore,
                     onTap: () {
                       setState(() {
-                        _visibleLearnersCount += _pageSize;
+                        _visibleMyGalleryCount += _pageSize;
                       });
                     },
                   ),
@@ -552,14 +712,23 @@ class _TeacherPublicGalleryScreenState
         final allItems =
         _allOtherTeachersGalleryItems(learnerGalleryValue ?? _learnerGalleryCache);
 
-        final visibleItems = _visibleItems(allItems, _visibleTeachersCount);
-        final photoCount = allItems
+        final filteredItems = _applySearchAndFilter(
+          items: allItems,
+          search: _teachersSearch,
+          typeFilter: _teachersTypeFilter,
+        );
+
+        final visibleItems = _visibleItems(filteredItems, _visibleTeachersCount);
+
+        final photoCount = filteredItems
             .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'photo')
             .length;
-        final videoCount = allItems
+
+        final videoCount = filteredItems
             .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'video')
             .length;
-        final canLoadMore = visibleItems.length < allItems.length;
+
+        final canLoadMore = visibleItems.length < filteredItems.length;
 
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -595,22 +764,13 @@ class _TeacherPublicGalleryScreenState
                       fontSize: 20,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Gallery items uploaded by other teachers. Shows first $_pageSize, then load more.',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.84),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       _TeacherGalleryStatChip(
-                        text: '${allItems.length} total',
+                        text: '${filteredItems.length} total',
                         icon: Icons.grid_view_rounded,
                       ),
                       _TeacherGalleryStatChip(
@@ -627,9 +787,28 @@ class _TeacherPublicGalleryScreenState
               ),
             ),
             const SizedBox(height: 14),
-            if (allItems.isEmpty)
+            _buildSearchFilterBar(
+              controller: _teachersSearchController,
+              hintText: 'Search teacher, learner or class',
+              selectedType: _teachersTypeFilter,
+              onSearchChanged: (value) {
+                setState(() {
+                  _teachersSearch = value;
+                  _visibleTeachersCount = _pageSize;
+                });
+              },
+              onTypeChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _teachersTypeFilter = value;
+                  _visibleTeachersCount = _pageSize;
+                });
+              },
+            ),
+            const SizedBox(height: 14),
+            if (filteredItems.isEmpty)
               const _TeacherGalleryEmptyBox(
-                title: 'No other teachers gallery items yet.',
+                title: 'No other teachers gallery items found.',
                 subtitle:
                 'When other teachers upload learner gallery items, they will appear here.',
               )
@@ -822,7 +1001,7 @@ class _TeacherPublicGalleryScreenState
           unselectedLabelColor: p.primary.withOpacity(0.55),
           indicatorColor: p.primary,
           tabs: const [
-            Tab(text: 'My Learners'),
+            Tab(text: 'My Gallery'),
             Tab(text: 'Teachers'),
           ],
         ),
@@ -831,7 +1010,7 @@ class _TeacherPublicGalleryScreenState
         child: TabBarView(
           controller: _tab,
           children: [
-            _buildLearnersTab(),
+            _buildMyGalleryTab(),
             _buildTeachersTab(),
           ],
         ),

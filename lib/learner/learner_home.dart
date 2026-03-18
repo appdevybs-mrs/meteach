@@ -748,6 +748,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
         onOpenStories: _openStoriesScreen,
         onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
+        onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
         onOpenRegulations: () =>
             _pushScreen(const LearnerRegulationsScreen()),
         onOpenThemeSettings: _openThemeSheet,
@@ -760,7 +761,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         centerTitle: false,
         surfaceTintColor: p.cardBg,
         leading: IconButton(
-          tooltip: 'Menu',
           icon: Icon(Icons.menu_rounded, color: p.primary),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
@@ -796,7 +796,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Call Log',
             icon: Icon(Icons.history_rounded, color: p.accent),
             onPressed: () {
               Navigator.of(context).push(
@@ -805,6 +804,10 @@ class _LearnerHomeState extends State<LearnerHome> {
                 ),
               );
             },
+          ),
+          IconButton(
+            icon: Icon(Icons.logout_rounded, color: p.accent),
+            onPressed: () => _logout(context),
           ),
         ],
       ),
@@ -1380,8 +1383,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           ),
 
           const SizedBox(height: 10),
-          _StudyCoachHomeCard(),
-          const SizedBox(height: 10),
           FutureBuilder<List<_CourseProgressItem>>(
             future: _loadProgressItems(),
             builder: (context, snap) {
@@ -1918,8 +1919,49 @@ class _BookingTopCard extends StatefulWidget {
   State<_BookingTopCard> createState() => _BookingTopCardState();
 }
 
-class _BookingTopCardState extends State<_BookingTopCard> {
+class _BookingTopCardState extends State<_BookingTopCard>
+    with SingleTickerProviderStateMixin {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  Future<_NextBooking?>? _nextBookingFuture;
+  Future<_MeetInfo?>? _meetInfoFuture;
+  String? _meetInfoKey;
+
+  Timer? _ticker;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseScale;
+
+  @override
+  void initState() {
+    super.initState();
+    _nextBookingFuture = _findMyNextBookingAcrossCourses();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
+
+    _pulseScale = Tween<double>(
+      begin: 1.0,
+      end: 1.035,
+    ).animate(
+      CurvedAnimation(
+        parent: _pulseController,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   _HomePalette get palette => _toHomePalette(appThemeController.palette);
 
@@ -1980,11 +2022,14 @@ class _BookingTopCardState extends State<_BookingTopCard> {
       });
     }
 
-    temp.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
+    temp.sort(
+          (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
+    );
     return temp;
   }
 
   String _two(int n) => n < 10 ? '0$n' : '$n';
+
   String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
 
   DateTime? _parseSlotStart(String dayKey, String hhmm) {
@@ -2046,7 +2091,8 @@ class _BookingTopCardState extends State<_BookingTopCard> {
       if (cid.isEmpty) continue;
 
       for (int i = 0; i < daysAhead; i++) {
-        final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day =
+        DateTime(now.year, now.month, now.day).add(Duration(days: i));
         final dk = _dateKey(day);
 
         final snap = await _db.child('booking_reservations/$cid/$dk').get();
@@ -2073,7 +2119,8 @@ class _BookingTopCardState extends State<_BookingTopCard> {
           if (joinWindowEnds.isBefore(now)) continue;
 
           final teacherId = (sm['teacherId'] ?? '').toString().trim();
-          final teacherName = (sm['teacherName'] ?? 'Teacher').toString().trim();
+          final teacherName =
+          (sm['teacherName'] ?? 'Teacher').toString().trim();
 
           final candidate = _NextBooking(
             courseId: cid,
@@ -2138,7 +2185,111 @@ class _BookingTopCardState extends State<_BookingTopCard> {
     final now = DateTime.now();
     final openFrom = start.subtract(const Duration(minutes: 5));
     final openUntil = start.add(const Duration(minutes: 10));
-    return now.isAfter(openFrom) && now.isBefore(openUntil);
+    return !now.isBefore(openFrom) && now.isBefore(openUntil);
+  }
+
+  Duration _untilJoinOpens(DateTime start) {
+    final openFrom = start.subtract(const Duration(minutes: 5));
+    return openFrom.difference(DateTime.now());
+  }
+
+  Duration _untilJoinCloses(DateTime start) {
+    final openUntil = start.add(const Duration(minutes: 10));
+    return openUntil.difference(DateTime.now());
+  }
+
+  String _formatCountdown(Duration d) {
+    int total = d.inSeconds;
+    if (total < 0) total = 0;
+
+    final days = total ~/ 86400;
+    final hours = (total % 86400) ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final seconds = total % 60;
+
+    String two(int n) => n < 10 ? '0$n' : '$n';
+
+    if (days > 0) {
+      return '${days}d ${two(hours)}h ${two(minutes)}m';
+    }
+    if (hours > 0) {
+      return '${hours}h ${two(minutes)}m ${two(seconds)}s';
+    }
+    return '${minutes}m ${two(seconds)}s';
+  }
+
+  double _joinWindowProgress(DateTime start) {
+    final now = DateTime.now();
+    final openFrom = start.subtract(const Duration(minutes: 5));
+    final openUntil = start.add(const Duration(minutes: 10));
+
+    final totalMs = openUntil.difference(openFrom).inMilliseconds;
+    if (totalMs <= 0) return 0;
+
+    final remainingMs = openUntil.difference(now).inMilliseconds;
+    final value = remainingMs / totalMs;
+
+    if (value < 0) return 0;
+    if (value > 1) return 1;
+    return value;
+  }
+
+  double _preJoinProgress(DateTime start) {
+    final now = DateTime.now();
+    final openFrom = start.subtract(const Duration(minutes: 5));
+
+    final totalMs = openFrom.difference(now).inMilliseconds;
+    final fullSpanMs = openFrom
+        .difference(DateTime(now.year, now.month, now.day))
+        .inMilliseconds;
+
+    if (fullSpanMs <= 0) return 0;
+
+    final value = 1 - (totalMs / fullSpanMs);
+    if (value < 0) return 0;
+    if (value > 1) return 1;
+    return value;
+  }
+
+  double _sessionUrgencyProgress(DateTime start) {
+    final now = DateTime.now();
+    final diff = start.difference(now);
+
+    const totalWindow = Duration(hours: 24);
+    final remainingMs = diff.inMilliseconds;
+    final totalMs = totalWindow.inMilliseconds;
+
+    if (remainingMs <= 0) return 1;
+    if (remainingMs >= totalMs) return 0;
+
+    final value = 1 - (remainingMs / totalMs);
+    if (value < 0) return 0;
+    if (value > 1) return 1;
+    return value;
+  }
+
+  Color _deepRedByUrgency(double urgency) {
+    if (urgency >= 0.92) return const Color(0xFF7F0000);
+    if (urgency >= 0.80) return const Color(0xFFB71C1C);
+    if (urgency >= 0.60) return const Color(0xFFC62828);
+    if (urgency >= 0.40) return const Color(0xFFD32F2F);
+    if (urgency >= 0.20) return const Color(0xFFE53935);
+    return const Color(0xFFEF5350);
+  }
+  Color _statusColor({
+    required bool canJoin,
+    required bool beforeOpen,
+    required Duration closesIn,
+    required _HomePalette p,
+  }) {
+    if (canJoin) {
+      if (closesIn.inSeconds <= 120) return const Color(0xFFB71C1C);
+      if (closesIn.inSeconds <= 300) return const Color(0xFFC62828);
+      return const Color(0xFFD32F2F);
+    }
+
+    if (beforeOpen) return const Color(0xFFD32F2F);
+    return const Color(0xFFB71C1C);
   }
 
   Future<void> _openExternalUrl(BuildContext context, String url) async {
@@ -2329,9 +2480,10 @@ class _BookingTopCardState extends State<_BookingTopCard> {
         ),
         const SizedBox(height: 12),
         FutureBuilder<_NextBooking?>(
-          future: _findMyNextBookingAcrossCourses(),
+          future: _nextBookingFuture,
           builder: (context, snap) {
             final next = snap.data;
+
             if (snap.connectionState == ConnectionState.waiting) {
               return _LoadingCard(
                 palette: p,
@@ -2346,31 +2498,157 @@ class _BookingTopCardState extends State<_BookingTopCard> {
               );
             }
 
-            return FutureBuilder<_MeetInfo?>(
-              future: _loadMeetInfo(
+            final currentMeetInfoKey = '${next.teacherId}|${next.courseId}';
+            if (_meetInfoKey != currentMeetInfoKey || _meetInfoFuture == null) {
+              _meetInfoKey = currentMeetInfoKey;
+              _meetInfoFuture = _loadMeetInfo(
                 teacherId: next.teacherId,
                 courseId: next.courseId,
-              ),
+              );
+            }
+
+            return FutureBuilder<_MeetInfo?>(
+              future: _meetInfoFuture,
               builder: (context, ms) {
                 final meet = ms.data;
-                final canJoin =
-                    (meet != null) &&
-                        _canJoinNow(next.start, meet.durationMinutes);
-
                 final timeStr = '${_friendlyDate(next.start)} • ${next.time}';
                 final teacherStr = next.teacherName;
+
+                final now = DateTime.now();
+                final openFrom = next.start.subtract(const Duration(minutes: 5));
+                final openUntil = next.start.add(const Duration(minutes: 10));
+
+                final beforeOpen = now.isBefore(openFrom);
+                final afterClose = now.isAfter(openUntil);
+
+                final opensIn = _untilJoinOpens(next.start);
+                final closesIn = _untilJoinCloses(next.start);
+
+                final opensInText = _formatCountdown(opensIn);
+                final closesInText = _formatCountdown(closesIn);
+
+                final canJoin = _canJoinNow(next.start, meet?.durationMinutes ?? 60);
+
+                final statusColor = _statusColor(
+                  canJoin: canJoin,
+                  beforeOpen: beforeOpen,
+                  closesIn: closesIn,
+                  p: p,
+                );
+
+                final urgency = _sessionUrgencyProgress(next.start);
+                final urgentRed = _deepRedByUrgency(urgency);
+
+                if (meet == null) {
+                  _pulseController.stop();
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: urgentRed.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: urgentRed.withOpacity(0.95),
+                        width: 2.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: urgentRed.withOpacity(0.18),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.upcoming_rounded,
+                              size: 18,
+                              color: p.accent,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Upcoming reserved class',
+                              style: TextStyle(
+                                color: p.text,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: p.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Teacher: $teacherStr',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: p.text.withOpacity(0.70),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: p.soft.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
+                          ),
+                          child: Text(
+                            'Meet link not set for this course yet.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: p.text,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+
+
+
+                if (canJoin) {
+                  if (!_pulseController.isAnimating) {
+                    _pulseController.repeat(reverse: true);
+                  }
+                } else {
+                  if (_pulseController.isAnimating) {
+                    _pulseController.stop();
+                    _pulseController.value = 0;
+                  }
+                }
 
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: p.cardBg,
+                    color: canJoin
+                        ? statusColor.withOpacity(0.16)
+                        : urgentRed.withOpacity(0.08 + (urgency * 0.14)),
                     borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: p.border.withOpacity(0.85)),
+                    border: Border.all(
+                      color: canJoin ? statusColor : urgentRed,
+                      width: canJoin ? 2.8 : (1.8 + (urgency * 1.8)),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 14,
+                        color: (canJoin ? statusColor : urgentRed).withOpacity(0.18 + (urgency * 0.20)),
+                        blurRadius: 14 + (urgency * 10),
                         offset: const Offset(0, 8),
                       ),
                     ],
@@ -2381,15 +2659,21 @@ class _BookingTopCardState extends State<_BookingTopCard> {
                       Row(
                         children: [
                           Icon(
-                            Icons.upcoming_rounded,
+                            canJoin
+                                ? Icons.video_call_rounded
+                                : Icons.upcoming_rounded,
                             size: 18,
-                            color: p.accent,
+                            color: canJoin ? statusColor : urgentRed,
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Next reserved class',
+                            canJoin
+                                ? 'Join available now'
+                                : beforeOpen
+                                ? 'Upcoming reserved class'
+                                : 'Join window closed',
                             style: TextStyle(
-                              color: p.text,
+                              color: canJoin ? statusColor : urgentRed,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -2412,28 +2696,75 @@ class _BookingTopCardState extends State<_BookingTopCard> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (meet == null) ...[
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: p.soft.withOpacity(0.6),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: p.border.withOpacity(0.85),
-                            ),
-                          ),
-                          child: Text(
-                            'Meet link not set for this course yet.',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: p.text,
-                            ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: canJoin
+                              ? statusColor.withOpacity(0.12)
+                              : urgentRed.withOpacity(0.06 + (urgency * 0.10)),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: canJoin
+                                ? statusColor.withOpacity(0.45)
+                                : urgentRed.withOpacity(0.60),
                           ),
                         ),
-                      ] else ...[
-                        FilledButton(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              canJoin
+                                  ? 'Join closes in $closesInText'
+                                  : beforeOpen
+                                  ? 'Join opens in $opensInText'
+                                  : 'This join window has ended',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: canJoin ? statusColor : urgentRed,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                minHeight: 8,
+                                value: canJoin
+                                    ? _joinWindowProgress(next.start)
+                                    : beforeOpen
+                                    ? _preJoinProgress(next.start)
+                                    : 1,
+                                backgroundColor: p.soft.withOpacity(0.85),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  canJoin ? statusColor : urgentRed,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              canJoin
+                                  ? 'Join is open now. It stays available until 10 minutes after start.'
+                                  : beforeOpen
+                                  ? 'Your session is booked. Join becomes available 5 minutes before start.'
+                                  : 'Wait for your next reserved class to appear here.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: p.text.withOpacity(0.64),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ScaleTransition(
+                        scale: canJoin
+                            ? _pulseScale
+                            : const AlwaysStoppedAnimation<double>(1.0),
+                        child: FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor: p.accent,
+                            backgroundColor:
+                            canJoin ? statusColor : p.accent.withOpacity(0.55),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -2460,20 +2791,17 @@ class _BookingTopCardState extends State<_BookingTopCard> {
                           child: Text(
                             canJoin
                                 ? 'Join Google Meet'
-                                : 'Join available near session time',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                                : beforeOpen
+                                ? 'Session booked'
+                                : afterClose
+                                ? 'Join window closed'
+                                : 'Join unavailable',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Join opens 5 min before start and stays available until 10 min after start.',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: p.text.withOpacity(0.60),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                      ),
                     ],
                   ),
                 );
@@ -3489,6 +3817,7 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenCourses,
     required this.onOpenStories,
     required this.onOpenGames,
+    required this.onOpenStudyCoach,
     required this.onOpenRegulations,
     required this.onOpenThemeSettings,
     required this.onLogout,
@@ -3502,6 +3831,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenCourses;
   final VoidCallback onOpenStories;
   final VoidCallback onOpenGames;
+  final VoidCallback onOpenStudyCoach;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onLogout;
@@ -3615,13 +3945,15 @@ class _LearnerDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.menu_book_rounded,
-                    title: 'My Courses',
+                    icon: Icons.psychology_alt_rounded,
+                    title: 'Study Coach',
+                    subtitle: 'Set goals, reminders, and track progress',
                     onTap: () {
                       Navigator.of(context).pop();
-                      onOpenCourses();
+                      onOpenStudyCoach();
                     },
                   ),
+
                   _DrawerTile(
                     palette: palette,
                     icon: Icons.auto_stories_rounded,
@@ -3632,15 +3964,7 @@ class _LearnerDrawer extends StatelessWidget {
                       onOpenStories();
                     },
                   ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: Icons.sports_esports_rounded,
-                    title: 'Games',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenGames();
-                    },
-                  ),
+
                   _DrawerTile(
                     palette: palette,
                     icon: Icons.person_rounded,

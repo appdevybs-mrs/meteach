@@ -5,7 +5,7 @@ import '../shared/app_theme.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
-
+import 'package:url_launcher/url_launcher.dart';
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
 
@@ -223,20 +223,30 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return result;
   }
 
-  void _openWatch(Map<String, dynamic> story) {
+  Future<void> _openWatch(Map<String, dynamic> story) async {
     final url = (story['link'] ?? '').toString().trim();
-    final title = (story['name'] ?? 'Story').toString().trim();
 
     if (url.isEmpty) return;
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MaterialWebViewScreen.fromUrl(
-          title: title.isEmpty ? 'Story' : title,
-          url: url,
-        ),
-      ),
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid story link.')),
+      );
+      return;
+    }
+
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
     );
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open browser.')),
+      );
+    }
   }
 
   void _openListen(Map<String, dynamic> story) {
