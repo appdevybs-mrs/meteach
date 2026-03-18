@@ -10,6 +10,7 @@ import 'admin_courses.dart';
 import 'admin_learners.dart';
 import 'admin_staff.dart';
 import 'admin_file_manager.dart';
+import 'admin_teacher_reminders_screen.dart';
 import 'admin_classes.dart';
 import 'admin_public_gallery_screen.dart';
 import 'admin_public_preview.dart';
@@ -207,6 +208,18 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       _DashCard(
+        title: 'Reminders',
+        subtitle: 'Send & manage reminders',
+        icon: Icons.notifications_active_rounded,
+        color: AdminHome.accentPurple,
+        isReceptionistStyle: !_isAdminMode,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const AdminTeacherRemindersScreen(),
+          ),
+        ),
+      ),
+      _DashCard(
         title: 'Staff',
         subtitle: 'Teachers & staff',
         icon: Icons.badge_rounded,
@@ -318,6 +331,18 @@ class _AdminHomeState extends State<AdminHome> {
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => const AdminPublicGalleryScreen(),
+          ),
+        ),
+      ),
+      _DashCard(
+        title: 'Reminders',
+        subtitle: 'Send reminders',
+        icon: Icons.notifications_active_rounded,
+        color: AdminHome.accentPurple,
+        isReceptionistStyle: true,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const AdminTeacherRemindersScreen(),
           ),
         ),
       ),
