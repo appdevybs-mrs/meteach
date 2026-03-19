@@ -484,282 +484,127 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return done;
   }
 
-  Widget _buildExpiryCard() {
-    final style = _expiryStyle;
-
-    String subtitle;
+  String _expirySubtitle() {
     if (_expiresAt <= 0) {
-      subtitle = 'Recorded access information was not found for this course.';
+      return 'Recorded access information was not found for this course.';
     } else if (_daysLeft < 0) {
-      subtitle =
-      'Your recorded access expired on ${_formatDateMs(_expiresAt)}.';
+      return 'Expired on ${_formatDateMs(_expiresAt)}.';
     } else if (_daysLeft == 0) {
-      subtitle =
-      'Your recorded access expires today (${_formatDateMs(_expiresAt)}).';
+      return 'Expires today (${_formatDateMs(_expiresAt)}).';
     } else if (_daysLeft == 1) {
-      subtitle =
-      'Your recorded access expires tomorrow (${_formatDateMs(_expiresAt)}).';
+      return 'Expires tomorrow (${_formatDateMs(_expiresAt)}).';
     } else {
-      subtitle =
-      'Your recorded access expires on ${_formatDateMs(_expiresAt)} • $_daysLeft days left.';
+      return 'Expires on ${_formatDateMs(_expiresAt)} • $_daysLeft days left.';
     }
+  }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: style.bg,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: style.border),
+  Future<void> _showCourseInfoSheet() async {
+    final style = _expiryStyle;
+    final progressPct = (_progressValue * 100).round();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFFF8FAFC),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.88),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(style.icon, color: style.fg),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  style.label,
-                  style: TextStyle(
-                    color: style.fg,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: style.fg,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-                if (_durationMonths > 0) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Access duration: $_durationMonths month${_durationMonths == 1 ? '' : 's'}',
-                    style: TextStyle(
-                      color: style.fg.withOpacity(0.92),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
+      builder: (_) {
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.72,
+            minChildSize: 0.45,
+            maxChildSize: 0.92,
+            builder: (context, scrollController) {
+              return SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1D5DB),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopSummaryCard() {
-    final pct = (_progressValue * 100).round();
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF111827), Color(0xFF1E293B)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Track progress and continue session by session.',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.78),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricTile(
-                  title: 'Completed',
-                  value: '$_completedSessions/$_totalSessions',
-                  icon: Icons.check_circle_outline_rounded,
+                    Text(
+                      _title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _InfoTile(
+                      icon: Icons.trending_up_rounded,
+                      title: 'Progress',
+                      value: '$progressPct% ($_completedSessions/$_totalSessions)',
+                    ),
+                    _InfoTile(
+                      icon: style.icon,
+                      title: style.label,
+                      value: _expirySubtitle(),
+                      iconColor: style.fg,
+                    ),
+                    _InfoTile(
+                      icon: _courseCompleted
+                          ? Icons.workspace_premium_rounded
+                          : Icons.lock_outline_rounded,
+                      title: 'Certificate',
+                      value: _courseCompleted
+                          ? 'Unlocked'
+                          : 'Locked until all sessions are completed',
+                      iconColor: _courseCompleted
+                          ? const Color(0xFF15803D)
+                          : const Color(0xFF64748B),
+                    ),
+                    _InfoTile(
+                      icon: Icons.rule_folder_outlined,
+                      title: 'Session rule',
+                      value:
+                      'Finish either the Video or the Read content to mark the session as completed and unlock the next session.',
+                      iconColor: const Color(0xFF4F46E5),
+                    ),
+                    if (_durationMonths > 0)
+                      _InfoTile(
+                        icon: Icons.calendar_month_rounded,
+                        title: 'Access duration',
+                        value:
+                        '$_durationMonths month${_durationMonths == 1 ? '' : 's'}',
+                      ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _courseCompleted ? _onCertificateTap : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF111827),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: const Color(0xFFE5E7EB),
+                          disabledForegroundColor: const Color(0xFF9CA3AF),
+                          minimumSize: const Size.fromHeight(46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: const Icon(Icons.download_rounded),
+                        label: const Text('Certificate'),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _MetricTile(
-                  title: 'Progress',
-                  value: '$pct%',
-                  icon: Icons.trending_up_rounded,
-                ),
-              ),
-            ],
+              );
+            },
           ),
-          const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: _progressValue.clamp(0, 1),
-              minHeight: 9,
-              backgroundColor: Colors.white.withOpacity(0.14),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFA78BFA)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCertificateCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _courseCompleted
-            ? const Color(0xFFF0FDF4)
-            : const Color(0xFFFFFFFF),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: _courseCompleted
-              ? const Color(0xFFBBF7D0)
-              : const Color(0xFFE5E7EB),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: _courseCompleted
-                  ? const Color(0xFFDCFCE7)
-                  : const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(
-              _courseCompleted
-                  ? Icons.workspace_premium_rounded
-                  : Icons.lock_outline_rounded,
-              color: _courseCompleted
-                  ? const Color(0xFF15803D)
-                  : const Color(0xFF6B7280),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _courseCompleted
-                      ? 'Certificate unlocked'
-                      : 'Certificate locked',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                    color: _courseCompleted
-                        ? const Color(0xFF15803D)
-                        : const Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _courseCompleted
-                      ? 'All sessions are completed. Your certificate is now available.'
-                      : 'Complete all sessions to unlock your certificate.',
-                  style: TextStyle(
-                    color: Colors.black.withOpacity(0.68),
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          FilledButton.icon(
-            onPressed: _courseCompleted ? _onCertificateTap : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF111827),
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: const Color(0xFFE5E7EB),
-              disabledForegroundColor: const Color(0xFF9CA3AF),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: const Icon(Icons.download_rounded),
-            label: const Text('Certificate'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRuleCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.rule_folder_outlined,
-              color: Color(0xFF4F46E5),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Session rule: finish either the Video or the Read content to mark the session as completed and unlock the next session.',
-              style: TextStyle(
-                color: const Color(0xFF334155),
-                fontWeight: FontWeight.w700,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -792,16 +637,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     final Color border = isCompleted
         ? const Color(0xFFBBF7D0)
-        : isUnlocked
-        ? const Color(0xFFE5E7EB)
         : const Color(0xFFE5E7EB);
 
     return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: border),
       ),
       child: Column(
@@ -810,15 +653,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: isCompleted
                       ? const Color(0xFFDCFCE7)
                       : isUnlocked
                       ? const Color(0xFFEEF2FF)
                       : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -826,6 +669,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     color: accent,
                     fontWeight: FontWeight.w900,
+                    fontSize: 12.5,
                   ),
                 ),
               ),
@@ -836,14 +680,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     color: Color(0xFF0F172A),
-                    fontSize: 14.5,
+                    fontSize: 14,
                   ),
                 ),
               ),
               _SessionBadge(
                 label: isCompleted
-                    ? 'Completed'
-                    : (isUnlocked ? 'Unlocked' : 'Locked'),
+                    ? 'Done'
+                    : (isUnlocked ? 'Open' : 'Locked'),
                 fg: accent,
                 bg: isCompleted
                     ? const Color(0xFFDCFCE7)
@@ -854,20 +698,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             ],
           ),
           if (session.objective.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               session.objective.trim(),
               style: TextStyle(
-                color: Colors.black.withOpacity(0.68),
+                color: Colors.black.withOpacity(0.67),
                 fontWeight: FontWeight.w600,
-                height: 1.35,
+                height: 1.3,
+                fontSize: 12.5,
               ),
             ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               _StatusMiniPill(
                 label: requiresVideo
@@ -899,14 +744,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           if (!isUnlocked)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: const Text(
@@ -914,6 +759,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF64748B),
+                  fontSize: 12.5,
                 ),
               ),
             )
@@ -925,7 +771,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     onPressed: requiresVideo
                         ? () => _openVideoPlaceholder(session)
                         : null,
-                    icon: const Icon(Icons.ondemand_video_rounded),
+                    icon: const Icon(Icons.ondemand_video_rounded, size: 18),
                     label: Text(
                       progress.videoCompleted ? 'Video done' : 'Video',
                     ),
@@ -934,19 +780,23 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       side: const BorderSide(color: Color(0xFFE2E8F0)),
                       backgroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: requiresMaterials
                         ? () => _openMaterials(session)
                         : null,
-                    icon: const Icon(Icons.menu_book_rounded),
+                    icon: const Icon(Icons.menu_book_rounded, size: 18),
                     label: Text(
                       progress.materialsCompleted ? 'Read done' : 'Read',
                     ),
@@ -956,9 +806,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       disabledBackgroundColor: const Color(0xFFE5E7EB),
                       disabledForegroundColor: const Color(0xFF9CA3AF),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ),
                 ),
@@ -973,10 +827,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (_units.isEmpty) {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFFE5E7EB)),
         ),
         child: const Text(
@@ -1017,23 +871,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
               return Container(
                 width: double.infinity,
-                margin: EdgeInsets.only(top: ui == 0 ? 0 : 12),
+                margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: const Color(0xFFE5E7EB)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
                 ),
                 child: Column(
                   children: [
                     InkWell(
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(18),
                       onTap: () {
                         setState(() {
                           if (isExpanded) {
@@ -1044,17 +891,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         });
                       },
                       child: Padding(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 13,
+                        ),
                         child: Row(
                           children: [
                             Container(
-                              width: 42,
-                              height: 42,
+                              width: 36,
+                              height: 36,
                               decoration: BoxDecoration(
                                 color: isUnitDone
                                     ? const Color(0xFFDCFCE7)
                                     : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(11),
                               ),
                               child: Icon(
                                 isUnitDone
@@ -1063,9 +913,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 color: isUnitDone
                                     ? const Color(0xFF15803D)
                                     : const Color(0xFF475569),
+                                size: 20,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1074,54 +925,27 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                     unit.displayTitle,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w900,
-                                      fontSize: 15.5,
+                                      fontSize: 14.5,
                                       color: Color(0xFF0F172A),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 3),
                                   Text(
                                     '$completedInUnit of $totalInUnit completed',
                                     style: const TextStyle(
                                       color: Color(0xFF64748B),
                                       fontWeight: FontWeight.w700,
-                                      fontSize: 12.5,
+                                      fontSize: 12,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: const Color(0xFFE2E8F0),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    isExpanded ? 'Collapse' : 'Expand',
-                                    style: const TextStyle(
-                                      color: Color(0xFF475569),
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 11.5,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    isExpanded
-                                        ? Icons.expand_less_rounded
-                                        : Icons.expand_more_rounded,
-                                    size: 18,
-                                    color: const Color(0xFF475569),
-                                  ),
-                                ],
-                              ),
+                            Icon(
+                              isExpanded
+                                  ? Icons.expand_less_rounded
+                                  : Icons.expand_more_rounded,
+                              color: const Color(0xFF64748B),
                             ),
                           ],
                         ),
@@ -1129,17 +953,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     ),
                     if (isExpanded)
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (unit.description.trim().isNotEmpty) ...[
                               Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: const Color(0xFFE2E8F0),
                                   ),
@@ -1147,13 +971,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 child: Text(
                                   unit.description.trim(),
                                   style: TextStyle(
-                                    color: Colors.black.withOpacity(0.7),
+                                    color: Colors.black.withOpacity(0.70),
                                     fontWeight: FontWeight.w600,
-                                    height: 1.35,
+                                    height: 1.3,
+                                    fontSize: 12.5,
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 8),
                             ],
                             ...sessionWidgets,
                           ],
@@ -1169,31 +994,79 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  PopupMenuButton<String> _buildMenuButton() {
+    return PopupMenuButton<String>(
+      tooltip: 'More',
+      onSelected: (value) async {
+        if (value == 'refresh') {
+          await _loadAll();
+        } else if (value == 'info') {
+          await _showCourseInfoSheet();
+        } else if (value == 'certificate') {
+          if (_courseCompleted) {
+            _onCertificateTap();
+          } else {
+            _snack('Complete all sessions to unlock your certificate.');
+          }
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem<String>(
+          value: 'info',
+          child: Row(
+            children: [
+              Icon(Icons.info_outline_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Course info'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'refresh',
+          child: Row(
+            children: [
+              Icon(Icons.refresh_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Refresh'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'certificate',
+          child: Row(
+            children: [
+              Icon(Icons.workspace_premium_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Certificate'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFFF3F6FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF1F5F9),
-        surfaceTintColor: const Color(0xFFF1F5F9),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
         titleSpacing: 0,
-        title: const Text(
-          'Recorded Course',
-          style: TextStyle(
+        title: Text(
+          _title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
             color: Color(0xFF0F172A),
             fontWeight: FontWeight.w900,
             fontSize: 17,
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _busy ? null : _loadAll,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
+        actions: [_buildMenuButton()],
       ),
       body: _busy
           ? const Center(child: CircularProgressIndicator())
@@ -1206,7 +1079,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(color: const Color(0xFFFECACA)),
             ),
             child: Text(
@@ -1223,16 +1096,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           : RefreshIndicator(
         onRefresh: _loadAll,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
           children: [
-            _buildTopSummaryCard(),
-            const SizedBox(height: 14),
-            _buildExpiryCard(),
-            const SizedBox(height: 14),
-            _buildCertificateCard(),
-            const SizedBox(height: 14),
-            _buildRuleCard(),
-            const SizedBox(height: 14),
             _buildUnitsList(),
           ],
         ),
@@ -1241,29 +1106,37 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 }
 
-class _MetricTile extends StatelessWidget {
-  const _MetricTile({
+class _InfoTile extends StatelessWidget {
+  const _InfoTile({
+    required this.icon,
     required this.title,
     required this.value,
-    required this.icon,
+    this.iconColor,
   });
 
+  final IconData icon;
   final String title;
   final String value;
-  final IconData icon;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(13),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.white70, size: 20),
+          Icon(
+            icon,
+            size: 18,
+            color: iconColor ?? const Color(0xFF4F46E5),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1271,19 +1144,20 @@ class _MetricTile extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.72),
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w800,
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   value,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    height: 1.3,
                   ),
                 ),
               ],
@@ -1309,7 +1183,7 @@ class _SessionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
@@ -1319,7 +1193,7 @@ class _SessionBadge extends StatelessWidget {
         style: TextStyle(
           color: fg,
           fontWeight: FontWeight.w900,
-          fontSize: 11,
+          fontSize: 10.5,
         ),
       ),
     );
@@ -1342,7 +1216,7 @@ class _StatusMiniPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
@@ -1353,7 +1227,7 @@ class _StatusMiniPill extends StatelessWidget {
         style: TextStyle(
           color: fg,
           fontWeight: FontWeight.w800,
-          fontSize: 11.5,
+          fontSize: 10.5,
         ),
       ),
     );
