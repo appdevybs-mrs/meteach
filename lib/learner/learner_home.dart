@@ -893,17 +893,24 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     };
   }
 
-
   String _courseTypeLabel(Map<String, dynamic> course) {
     final variant = (course['variantKey'] ?? course['variant'] ?? '')
         .toString()
         .trim()
         .toLowerCase();
 
-    if (variant == 'online') return 'Online class';
-    if (variant == 'offline') return 'Offline class';
+    if (variant == 'recorded') return 'Recorded course';
+    if (variant == 'flexible' || variant == 'online') return 'Flexible course';
+    if (variant == 'private' || variant == 'live') return 'Private course';
+    if (variant == 'inclass' ||
+        variant == 'in_class' ||
+        variant == 'in-class' ||
+        variant == 'in class') {
+      return 'In-class course';
+    }
+
     if (variant.isNotEmpty) {
-      return '${variant[0].toUpperCase()}${variant.substring(1)} class';
+      return '${variant[0].toUpperCase()}${variant.substring(1)} course';
     }
 
     final cls = (course['class'] is Map)
@@ -916,13 +923,62 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         .toLowerCase();
 
     if (classType.isNotEmpty) {
-      return '${classType[0].toUpperCase()}${classType.substring(1)} class';
+      return '${classType[0].toUpperCase()}${classType.substring(1)} course';
     }
 
     return 'Course details';
   }
 
+
   String _courseDetailsLine(Map<String, dynamic> course) {
+    final variant = (course['variantKey'] ?? course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    if (variant == 'recorded') {
+      final recordedAccess = (course['recorded_access'] is Map)
+          ? Map<String, dynamic>.from(course['recorded_access'] as Map)
+          : <String, dynamic>{};
+
+      int asInt(dynamic v) {
+        if (v == null) return 0;
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+        return int.tryParse(v.toString()) ?? 0;
+      }
+
+      String formatDateMs(int ms) {
+        if (ms <= 0) return '';
+        final d = DateTime.fromMillisecondsSinceEpoch(ms);
+        String two(int n) => n.toString().padLeft(2, '0');
+        return '${d.year}-${two(d.month)}-${two(d.day)}';
+      }
+
+      final expiresAt = asInt(recordedAccess['expiresAt']);
+      final durationMonths = asInt(recordedAccess['durationMonths']);
+      final code = (course['course_code'] ?? '').toString().trim();
+
+      final parts = <String>[];
+
+      if (durationMonths > 0) {
+        parts.add(
+          '$durationMonths month${durationMonths == 1 ? '' : 's'} access',
+        );
+      }
+
+      if (expiresAt > 0) {
+        parts.add('Expires ${formatDateMs(expiresAt)}');
+      }
+
+      if (code.isNotEmpty) {
+        parts.add('Code $code');
+      }
+
+      if (parts.isEmpty) return 'Tap to open recorded course';
+      return parts.join(' • ');
+    }
+
     final cls = (course['class'] is Map)
         ? Map<String, dynamic>.from(course['class'] as Map)
         : <String, dynamic>{};
@@ -963,6 +1019,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         .toString()
         .trim()
         .toLowerCase();
+    final isRecorded = variantKey == 'recorded';
 
     int? planned;
     final schedule = cls['schedule'];
@@ -1006,12 +1063,29 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'];
+
           if (units is List) {
             for (final u in units) {
               if (u is! Map) continue;
               final unit = Map<String, dynamic>.from(u);
               final sessions = unit['sessions'];
-              if (sessions is List) totalLessons += sessions.length;
+              if (sessions is List) {
+                totalLessons += sessions.length;
+              }
+            }
+          } else if (units is Map) {
+            final mapUnits = Map<dynamic, dynamic>.from(units);
+            for (final entry in mapUnits.entries) {
+              final unitVal = entry.value;
+              if (unitVal is! Map) continue;
+              final unit = Map<String, dynamic>.from(unitVal);
+              final sessions = unit['sessions'];
+              if (sessions is List) {
+                totalLessons += sessions.length;
+              } else if (sessions is Map) {
+                totalLessons +=
+                    Map<dynamic, dynamic>.from(sessions).length;
+              }
             }
           }
         }
@@ -1037,8 +1111,115 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         .toString()
         .trim()
         .toLowerCase();
+    final courseKey = (course['courseKey'] ?? '').toString().trim();
 
     final Map<int, String> sessionIdByNumber = {};
+
+    if (variantKey == 'recorded') {
+      if (courseId.isEmpty || courseKey.isEmpty || learnerUid.isEmpty) {
+        return covered;
+      }
+
+      try {
+        final syllabusSnap =
+        await _db.child('syllabi/$courseId/recorded').get();
+        final Map<String, Map<String, dynamic>> sessionMetaById = {};
+
+        List<Map<String, dynamic>> asListOfMaps(dynamic node) {
+          final out = <Map<String, dynamic>>[];
+
+          if (node is List) {
+            for (final item in node) {
+              if (item is Map) {
+                out.add(Map<String, dynamic>.from(item));
+              }
+            }
+            return out;
+          }
+
+          if (node is Map) {
+            final map = Map<dynamic, dynamic>.from(node);
+            for (final entry in map.entries) {
+              if (entry.value is Map) {
+                out.add(Map<String, dynamic>.from(entry.value as Map));
+              }
+            }
+          }
+
+          return out;
+        }
+
+        bool asBool(dynamic v) {
+          if (v is bool) return v;
+          final s = (v ?? '').toString().trim().toLowerCase();
+          return s == 'true' || s == '1';
+        }
+
+        if (syllabusSnap.exists && syllabusSnap.value is Map) {
+          final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
+          final rawUnits = asListOfMaps(root['units']);
+
+          for (final unit in rawUnits) {
+            final rawSessions = asListOfMaps(unit['sessions']);
+
+            for (final session in rawSessions) {
+              final sessionId = (session['id'] ?? '').toString().trim();
+              final videoUrl = (session['videoUrl'] ?? '').toString().trim();
+              final materialsUrl =
+              (session['materialsUrl'] ?? '').toString().trim();
+
+              if (sessionId.isNotEmpty) {
+                sessionMetaById[sessionId] = {
+                  'hasVideo': videoUrl.isNotEmpty,
+                  'hasMaterials': materialsUrl.isNotEmpty,
+                };
+              }
+            }
+          }
+        }
+
+        final progressSnap = await _db
+            .child('users/$learnerUid/courses/$courseKey/recorded_progress')
+            .get();
+
+        if (progressSnap.exists && progressSnap.value is Map) {
+          final rawProgress =
+          Map<String, dynamic>.from(progressSnap.value as Map);
+
+          for (final entry in rawProgress.entries) {
+            final sessionId = entry.key.toString().trim();
+            final value = entry.value;
+            if (sessionId.isEmpty || value is! Map) continue;
+
+            final progress = Map<String, dynamic>.from(value as Map);
+            final meta =
+                sessionMetaById[sessionId] ?? const <String, dynamic>{};
+
+            final hasVideo = meta['hasVideo'] == true;
+            final hasMaterials = meta['hasMaterials'] == true;
+
+            final videoCompleted = asBool(progress['videoCompleted']);
+            final materialsCompleted = asBool(progress['materialsCompleted']);
+
+            bool isCompleted = false;
+
+            if (hasVideo && hasMaterials) {
+              isCompleted = videoCompleted || materialsCompleted;
+            } else if (hasVideo) {
+              isCompleted = videoCompleted;
+            } else if (hasMaterials) {
+              isCompleted = materialsCompleted;
+            }
+
+            if (isCompleted) {
+              covered.add(sessionId);
+            }
+          }
+        }
+      } catch (_) {}
+
+      return covered;
+    }
 
     if (courseId.isNotEmpty) {
       try {
@@ -1195,6 +1376,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     return covered;
   }
 
+
   Future<List<_CourseProgressItem>> _loadProgressItems() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return [];
@@ -1212,6 +1394,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         if (e.value is! Map) continue;
 
         final course = Map<String, dynamic>.from(e.value as Map);
+        course['courseKey'] = key;
         final title = (course['title'] ?? course['course_title'] ?? 'Course')
             .toString()
             .trim();

@@ -467,7 +467,6 @@ class _LearnersList extends StatefulWidget {
 
 class _LearnersListState extends State<_LearnersList>
     with AutomaticKeepAliveClientMixin {
-  // ✅ Required by AutomaticKeepAliveClientMixin
   @override
   bool get wantKeepAlive => true;
 
@@ -488,58 +487,58 @@ class _LearnersListState extends State<_LearnersList>
   String? _expandedUid;
 
   Future<void> _showSmsTemplateSheet({
-  required String phone,
-  required Learner learner,
+    required String phone,
+    required Learner learner,
   }) async {
-  if (!mounted) return;
+    if (!mounted) return;
 
-  final picked = await showModalBottomSheet<_QuickSmsTemplate>(
-  context: context,
-  showDragHandle: true,
-  builder: (ctx) => SafeArea(
-  child: Column(
-  mainAxisSize: MainAxisSize.min,
-  children: [
-  const SizedBox(height: 6),
-  ListTile(
-  leading: const Icon(Icons.sms_rounded),
-  title: const Text('Empty'),
-  onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
-  ),
-  ListTile(
-  leading: const Icon(Icons.waving_hand_rounded),
-  title: const Text('Welcome'),
-  onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.welcome),
-  ),
-  const SizedBox(height: 10),
-  ],
-  ),
-  ),
-  );
+    final picked = await showModalBottomSheet<_QuickSmsTemplate>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.sms_rounded),
+              title: const Text('Empty'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.empty),
+            ),
+            ListTile(
+              leading: const Icon(Icons.waving_hand_rounded),
+              title: const Text('Welcome'),
+              onTap: () => Navigator.pop(ctx, _QuickSmsTemplate.welcome),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
 
-  if (picked == null) return;
+    if (picked == null) return;
 
-  String body = '';
-  switch (picked) {
-    case _QuickSmsTemplate.empty:
-      body = '';
-      break;
+    String body = '';
+    switch (picked) {
+      case _QuickSmsTemplate.empty:
+        body = '';
+        break;
 
-    case _QuickSmsTemplate.welcome:
-      final email = learner.email.trim();
+      case _QuickSmsTemplate.welcome:
+        final email = learner.email.trim();
+        body = [
+          'Peace be upon You',
+          'Download the app "Your Bridge School"',
+          'Login using',
+          if (email.isNotEmpty) 'Email: $email',
+          'Password: 12345678',
+        ].join('\n');
+        break;
+    }
 
-      body = [
-        'Peace be upon You',
-        'Download the app "Your Bridge School"',
-        'Login using',
-        if (email.isNotEmpty) 'Email: $email',
-        'Password: 12345678',
-      ].join('\n');
-      break;
+    await _launchSms(phone: phone, body: body);
   }
 
-  await _launchSms(phone: phone, body: body);
-  }
   Future<void> _launchSms({
     required String phone,
     required String body,
@@ -549,17 +548,14 @@ class _LearnersListState extends State<_LearnersList>
 
     if (p.isEmpty) return;
 
-    // 1) Always copy message first (your requirement)
     if (text.isNotEmpty) {
       await Clipboard.setData(ClipboardData(text: text));
       if (mounted) _toast('Message copied ✅');
     }
 
-    // 2) Try to open SMS composer (if device supports it)
     final uri = Uri(
       scheme: 'sms',
       path: p,
-      // body is optional; even if it doesn't auto-fill, we already copied it
       queryParameters: text.isEmpty ? null : {'body': text},
     );
 
@@ -570,7 +566,6 @@ class _LearnersListState extends State<_LearnersList>
       );
 
       if (!ok && mounted) {
-        // This is what you're hitting now (no SMS handler)
         _toast('SMS app not available. Text is copied ✅');
       }
     } catch (_) {
@@ -642,9 +637,6 @@ class _LearnersListState extends State<_LearnersList>
     );
   }
 
-
-
-
   Future<void> _sendLearnerQuickReminder({
     required String uid,
     required Learner learner,
@@ -667,7 +659,6 @@ class _LearnersListState extends State<_LearnersList>
     }
 
     final admin = FirebaseAuth.instance.currentUser;
-
     final reminderRef = FirebaseDatabase.instance.ref('reminders/$uid').push();
 
     try {
@@ -802,7 +793,64 @@ class _LearnersListState extends State<_LearnersList>
   final _db = FirebaseDatabase.instance;
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
 
-  _PayFlag _paymentFlag({
+  static String _normalizeVariantKey(String key) {
+    final v = key.trim().toLowerCase();
+    switch (v) {
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+      case 'inclass':
+        return 'inclass';
+      case 'online':
+      case 'flexible':
+        return 'flexible';
+      case 'live':
+      case 'private':
+        return 'private';
+      case 'recorded':
+        return 'recorded';
+      default:
+        return v;
+    }
+  }
+
+  bool _variantUsesSessions(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  bool _variantUsesReminder(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
+  bool _variantUsesExpiry(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'flexible' || v == 'recorded';
+  }
+
+  bool _variantIsRecorded(String variantKey) {
+    return _normalizeVariantKey(variantKey) == 'recorded';
+  }
+
+  bool _variantIsFlexible(String variantKey) {
+    return _normalizeVariantKey(variantKey) == 'flexible';
+  }
+
+  bool _isExpiredMs(int expiresAt) {
+    if (expiresAt <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= expiresAt;
+  }
+
+  bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
+    if (expiresAt <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = expiresAt - now;
+    if (diff < 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
+  }
+
+  _PayFlag _sessionPaymentFlag({
     required int sessionsPaidTotal,
     required int sessionsDone,
     required int remindBeforeSession,
@@ -817,13 +865,67 @@ class _LearnersListState extends State<_LearnersList>
 
     final warnAt = dueAt - 1;
 
-    // ✅ RED if due OR overdue
     if (currentSession >= dueAt) return _PayFlag.red;
-
-// ✅ YELLOW only one session before due
     if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
 
     return _PayFlag.ok;
+  }
+
+  _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
+    final variantKey = _normalizeVariantKey(
+      (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
+    );
+
+    final paymentSummary = courseMap['payment_summary'];
+    final summaryMap = paymentSummary is Map
+        ? paymentSummary.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    final attendance = courseMap['attendance'];
+    final sessionsDone = _LearnerExpandedTabsState._countUniqueAttendance(attendance);
+
+    final sessionsPaidTotal =
+    _LearnerExpandedTabsState._asInt(summaryMap['sessionsPaidTotal']);
+    final remindBeforeSession =
+    _LearnerExpandedTabsState._asInt(summaryMap['remindBeforeSession']);
+
+    if (_variantIsRecorded(variantKey)) {
+      final access = courseMap['recorded_access'];
+      final accessMap = access is Map
+          ? access.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+
+      final expiresAt = _LearnerExpandedTabsState._asInt(accessMap['expiresAt']);
+      if (expiresAt <= 0) return _PayFlag.black;
+      if (_isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (_isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      return _PayFlag.ok;
+    }
+
+    if (_variantIsFlexible(variantKey)) {
+      final access = courseMap['flexible_access'];
+      final accessMap = access is Map
+          ? access.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+
+      final expiresAt = _LearnerExpandedTabsState._asInt(accessMap['expiresAt']);
+
+      if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
+      if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal) return _PayFlag.red;
+      if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      if (sessionsPaidTotal > 0) {
+        final left = sessionsPaidTotal - sessionsDone;
+        if (left <= 1) return _PayFlag.yellow;
+      }
+      return _PayFlag.ok;
+    }
+
+    return _sessionPaymentFlag(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsDone: sessionsDone,
+      remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
+    );
   }
 
   Widget _withLearnerDueFlag({
@@ -836,7 +938,6 @@ class _LearnersListState extends State<_LearnersList>
       stream: coursesRef.onValue,
       builder: (context, snap) {
         final v = snap.data?.snapshot.value;
-
         if (v is! Map) return builder(_PayFlag.noCourse);
 
         final courseMaps = <Map<String, dynamic>>[];
@@ -848,48 +949,27 @@ class _LearnersListState extends State<_LearnersList>
         });
 
         if (courseMaps.isEmpty) return builder(_PayFlag.noCourse);
+
         _PayFlag best = _PayFlag.ok;
 
         int rank(_PayFlag f) {
           switch (f) {
             case _PayFlag.black:
-              return 3;
+              return 4;
             case _PayFlag.red:
-              return 2;
+              return 3;
             case _PayFlag.yellow:
-              return 1;
+              return 2;
             case _PayFlag.ok:
+              return 1;
+            case _PayFlag.noCourse:
             default:
               return 0;
           }
         }
 
         for (final courseMap in courseMaps) {
-          final sum = courseMap['payment_summary'];
-
-          if (sum is! Map) {
-            best = _PayFlag.black;
-            break;
-          }
-
-          final sumMap = sum.map((k, vv) => MapEntry(k.toString(), vv));
-
-          final sessionsPaidTotal =
-          _LearnerExpandedTabsState._asInt(sumMap['sessionsPaidTotal']);
-
-          final remindBeforeSession =
-          _LearnerExpandedTabsState._asInt(sumMap['remindBeforeSession']);
-
-          final attendance = courseMap['attendance'];
-          final sessionsDone =
-          _LearnerExpandedTabsState._countUniqueAttendance(attendance);
-
-          final flag = _paymentFlag(
-            sessionsPaidTotal: sessionsPaidTotal,
-            sessionsDone: sessionsDone,
-            remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
-          );
-
+          final flag = _variantPaymentFlag(courseMap);
           if (rank(flag) > rank(best)) best = flag;
           if (best == _PayFlag.black) break;
         }
@@ -901,7 +981,7 @@ class _LearnersListState extends State<_LearnersList>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // ✅ Required for keep-alive
+    super.build(context);
 
     return Column(
       children: [
@@ -1060,7 +1140,9 @@ class _LearnersListState extends State<_LearnersList>
                                           context: context,
                                           builder: (_) => AlertDialog(
                                             title: const Text('Call learner?'),
-                                            content: Text('Call ${l.fullName.isEmpty ? 'this learner' : l.fullName}?'),
+                                            content: Text(
+                                              'Call ${l.fullName.isEmpty ? 'this learner' : l.fullName}?',
+                                            ),
                                             actions: [
                                               TextButton(
                                                 onPressed: () => Navigator.pop(context, false),
@@ -1081,7 +1163,8 @@ class _LearnersListState extends State<_LearnersList>
                                           MaterialPageRoute(
                                             builder: (_) => AudioCallScreen(
                                               peerUid: row.uid,
-                                              peerName: l.fullName.isEmpty ? 'Learner' : l.fullName,
+                                              peerName:
+                                              l.fullName.isEmpty ? 'Learner' : l.fullName,
                                               isCaller: true,
                                               callerName: 'Admin',
                                               startWithVideo: false,
@@ -1141,7 +1224,6 @@ class _LearnersListState extends State<_LearnersList>
                                                 ),
                                               ),
                                               const SizedBox(width: 10),
-
                                               if (l.status == LearnerStatus.paused)
                                                 const _Pill(
                                                   label: 'Inactive',
@@ -1165,14 +1247,18 @@ class _LearnersListState extends State<_LearnersList>
                                                     }
                                                   },
                                                   onLongPress: () async {
-                                                    await _showSmsTemplateSheet(phone: l.phone1.trim(), learner: l);
+                                                    await _showSmsTemplateSheet(
+                                                      phone: l.phone1.trim(),
+                                                      learner: l,
+                                                    );
                                                   },
                                                   child: Text(
                                                     '📞 ${l.phone1}',
                                                     style: TextStyle(
                                                       fontSize: 12,
                                                       fontWeight: FontWeight.w800,
-                                                      color: AdminLearnersScreen.primaryBlue.withOpacity(0.9),
+                                                      color: AdminLearnersScreen.primaryBlue
+                                                          .withOpacity(0.9),
                                                       decoration: TextDecoration.underline,
                                                     ),
                                                   ),
@@ -1220,7 +1306,9 @@ class _LearnersListState extends State<_LearnersList>
                                     ),
                                     const SizedBox(width: 8),
                                     Icon(
-                                      isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                      isExpanded
+                                          ? Icons.expand_less_rounded
+                                          : Icons.expand_more_rounded,
                                       color: AdminLearnersScreen.primaryBlue.withOpacity(0.7),
                                     ),
                                     const SizedBox(width: 4),
@@ -1283,6 +1371,8 @@ class _LearnersListState extends State<_LearnersList>
     );
   }
 }
+
+
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.hint,
@@ -2273,16 +2363,16 @@ class _LearnerExpandedTabs extends StatefulWidget {
   State<_LearnerExpandedTabs> createState() => _LearnerExpandedTabsState();
 }
 
-class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleTickerProviderStateMixin {
+class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
+    with SingleTickerProviderStateMixin {
   late final TabController _tab;
 
-  String? _selectedCourseKey; // like "course_1"
-  Map<String, dynamic> _userCourses = {}; // courseKey -> node data
+  String? _selectedCourseKey;
+  Map<String, dynamic> _userCourses = {};
 
-  // for Assign Courses dialog
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
-  // ✅ Normalized learner course products
+
   static const List<String> _variantKeys = [
     'inclass',
     'flexible',
@@ -2290,27 +2380,40 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     'recorded',
   ];
 
+  static const List<String> _studyModeKeys = ['online', 'inclass'];
+
+  DatabaseReference get _userCoursesRef => widget.db.ref('users/${widget.uid}/courses');
+  DatabaseReference get _coursesRef => widget.db.ref('courses');
+  DatabaseReference get _paymentsRef => widget.db.ref('payments');
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
   static String _normalizeVariantKey(String key) {
     final v = key.trim().toLowerCase();
-
     switch (v) {
       case 'in_class':
       case 'in-class':
       case 'in class':
       case 'inclass':
         return 'inclass';
-
       case 'online':
       case 'flexible':
         return 'flexible';
-
       case 'live':
       case 'private':
         return 'private';
-
       case 'recorded':
         return 'recorded';
-
       default:
         return v;
     }
@@ -2331,8 +2434,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     }
   }
 
-  static const List<String> _studyModeKeys = ['online', 'inclass'];
-
   static String _studyModeLabel(String key) {
     switch (key.trim().toLowerCase()) {
       case 'online':
@@ -2347,34 +2448,54 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     }
   }
 
-
-  // ------------------------------------------------------------
-  // Optional but smarter long-term design (best practice)
-  //
-  // Instead of storing learner courses as course_1, course_2,
-  // store them by courseId:
-  //
-  // users/{uid}/courses/{courseId}/...
-  //
-  // That completely eliminates this class of bugs forever.
-  // But the patch below fixes your current structure with minimal changes.
-  // ------------------------------------------------------------
-
-  DatabaseReference get _userCoursesRef => widget.db.ref('users/${widget.uid}/courses');
-
-  DatabaseReference get _coursesRef => widget.db.ref('courses');
-  DatabaseReference get _paymentsRef => widget.db.ref('payments');
-
-  @override
-  void initState() {
-    super.initState();
-    _tab = TabController(length: 3, vsync: this);
+  static bool _variantUsesTeacher(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private';
   }
 
-  @override
-  void dispose() {
-    _tab.dispose();
-    super.dispose();
+  static bool _variantUsesSessions(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  static bool _variantUsesReminder(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
+  static bool _variantUsesExpiry(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'flexible' || v == 'recorded';
+  }
+
+  static bool _variantUsesStartDate(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  static bool _variantIsRecorded(String variantKey) {
+    return _normalizeVariantKey(variantKey) == 'recorded';
+  }
+
+  static bool _variantIsFlexible(String variantKey) {
+    return _normalizeVariantKey(variantKey) == 'flexible';
+  }
+
+  static bool _variantUsesAttendance(String variantKey) {
+    return !_variantIsRecorded(variantKey);
+  }
+
+  static bool _isExpiredMs(int expiresAt) {
+    if (expiresAt <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= expiresAt;
+  }
+
+  static bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
+    if (expiresAt <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = expiresAt - now;
+    if (diff < 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
   }
 
   int _maxCourseIndexFromExisting(dynamic v) {
@@ -2421,7 +2542,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     _userCourses.forEach((_, nodeRaw) {
       final node = nodeRaw is Map ? nodeRaw : <dynamic, dynamic>{};
-
       final courseId = (node['id'] ?? '').toString().trim();
       if (courseId.isEmpty) return;
 
@@ -2437,7 +2557,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     _userCourses.forEach((_, nodeRaw) {
       final node = nodeRaw is Map ? nodeRaw : <dynamic, dynamic>{};
-
       final courseId = (node['id'] ?? '').toString().trim();
       if (courseId.isEmpty) return;
 
@@ -2515,10 +2634,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     final classRef = widget.db.ref('classes/$classId');
     final learnerRef = classRef.child('learners/${widget.uid}');
 
-    // Remove learner from class
     await learnerRef.remove();
 
-    // If class has no learners left, delete the whole class
     final learnersSnap = await classRef.child('learners').get();
 
     bool hasLearnersLeft = false;
@@ -2539,7 +2656,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       ) async {
     final coursesRef = _userCoursesRef;
 
-    // Build mapping existingId -> existingCourseKey (course_1, course_2, ...)
     final existingSnap = await coursesRef.get();
     final existingVal = existingSnap.value;
 
@@ -2560,8 +2676,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     int nextIndex = _maxCourseIndexFromExisting(existingVal) + 1;
     final Map<String, dynamic> updates = {};
-
-    // Collect removed courses first, so we can confirm before deleting anything
     final List<Map<String, dynamic>> removedCourses = [];
 
     if (existingVal is Map) {
@@ -2569,7 +2683,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         if (k == null) return;
         final key = k.toString();
         if (!key.startsWith('course_')) return;
-
         if (v is! Map) return;
 
         final mm = v.map((kk, vv) => MapEntry(kk.toString(), vv));
@@ -2587,7 +2700,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       });
     }
 
-    // Confirm removals
     final ok = await _confirmRemoveAssignedCourses(
       removedCourses
           .map((e) => {
@@ -2598,7 +2710,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     );
     if (!ok) return;
 
-    // Clean class side first, then delete learner course node
     for (final removed in removedCourses) {
       final courseKey = (removed['courseKey'] ?? '').toString();
       final node = (removed['node'] is Map<String, dynamic>)
@@ -2609,8 +2720,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       updates[courseKey] = null;
     }
 
-    // Add / keep selected
-    // Build mapping existingCourseKey -> existingId (so we can detect key reuse)
     final Map<String, String> keyToExistingId = {};
     if (existingVal is Map) {
       existingVal.forEach((k, v) {
@@ -2625,13 +2734,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     for (final courseId in selectedIds) {
       final key = idToKey[courseId] ?? 'course_${nextIndex++}';
-
       final existingIdOnKey = (keyToExistingId[key] ?? '').trim();
 
-      // If this courseKey previously belonged to a different course, wipe old children
       if (existingIdOnKey.isNotEmpty && existingIdOnKey != courseId) {
         updates['$key/payment_summary'] = null;
         updates['$key/attendance'] = null;
+        updates['$key/flexible_access'] = null;
+        updates['$key/recorded_access'] = null;
       }
 
       final c = _allCourses[courseId];
@@ -2671,16 +2780,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     await coursesRef.update(updates);
   }
 
-
   Future<void> _openAssignCoursesDialog() async {
     await _ensureAllCoursesLoaded();
-
-    // ✅ pre-tick already assigned (by id)
 
     final temp = Set<String>.from(_currentlyAssignedCourseIds());
     final variantByCourseId = _currentlyAssignedVariantsByCourseId();
     final studyModeByCourseId = _currentlyAssignedStudyModesByCourseId();
-    // compute duplicate titles across ALL courses (so show code only when needed)
+
     String titleOf(String id) {
       final c = _allCourses[id] ?? {};
       return (c['title'] ?? c['name'] ?? '').toString().trim();
@@ -2757,7 +2863,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                               borderRadius: BorderRadius.circular(14),
                               borderSide: BorderSide.none,
                             ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
                           ),
                           items: _variantKeys
                               .map((k) => DropdownMenuItem(
@@ -2771,7 +2880,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                               variantByCourseId[id] = next;
 
                               if (next == 'private') {
-                                studyModeByCourseId[id] = studyModeByCourseId[id] ?? 'online';
+                                studyModeByCourseId[id] =
+                                    studyModeByCourseId[id] ?? 'online';
                               } else {
                                 studyModeByCourseId[id] = '';
                               }
@@ -2781,7 +2891,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                         if ((variantByCourseId[id] ?? 'inclass') == 'private') ...[
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String>(
-                            value: (studyModeByCourseId[id] == 'inclass' || studyModeByCourseId[id] == 'online')
+                            value: (studyModeByCourseId[id] == 'inclass' ||
+                                studyModeByCourseId[id] == 'online')
                                 ? studyModeByCourseId[id]
                                 : 'online',
                             decoration: InputDecoration(
@@ -2792,7 +2903,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                                 borderRadius: BorderRadius.circular(14),
                                 borderSide: BorderSide.none,
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
                             ),
                             items: _studyModeKeys
                                 .map((k) => DropdownMenuItem(
@@ -2802,7 +2916,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                                 .toList(),
                             onChanged: (val) {
                               setDialogState(() {
-                                studyModeByCourseId[id] = (val == 'inclass' || val == 'online')
+                                studyModeByCourseId[id] =
+                                (val == 'inclass' || val == 'online')
                                     ? val!
                                     : 'online';
                               });
@@ -2812,7 +2927,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                       ],
                     ),
                   )
-
                       : null,
                 );
               }).toList(),
@@ -2826,7 +2940,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
             FilledButton(
               onPressed: () async {
                 await _saveAssignedCourses(temp, variantByCourseId, studyModeByCourseId);
-                if (mounted) setState(() {}); // refresh picker + panels
+                if (mounted) setState(() {});
                 if (mounted) Navigator.pop(dialogContext);
               },
               child: const Text('Save'),
@@ -2841,7 +2955,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // ✅ Assign courses button moved here (not in editor)
         Align(
           alignment: Alignment.centerLeft,
           child: FilledButton.tonalIcon(
@@ -2875,13 +2988,16 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                 v.forEach((k, val) {
                   if (k == null || val == null) return;
                   if (val is Map) {
-                    _userCourses[k.toString()] = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+                    _userCourses[k.toString()] =
+                        val.map((kk, vv) => MapEntry(kk.toString(), vv));
                   }
                 });
               }
 
               final keys = _userCourses.keys.toList()..sort();
-              if ((_selectedCourseKey == null || !_userCourses.containsKey(_selectedCourseKey)) && keys.isNotEmpty) {
+              if ((_selectedCourseKey == null ||
+                  !_userCourses.containsKey(_selectedCourseKey)) &&
+                  keys.isNotEmpty) {
                 _selectedCourseKey = keys.first;
               }
 
@@ -2905,7 +3021,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       return const _MiniState(text: 'No courses assigned to this learner.');
     }
 
-    // ✅ show title only; show code only if duplicate titles
     final titleCount = <String, int>{};
     for (final k in keys) {
       final m = (_userCourses[k] ?? {}) as Map;
@@ -2913,7 +3028,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       if (t.isEmpty) continue;
       titleCount[t] = (titleCount[t] ?? 0) + 1;
     }
-
 
     String labelFor(String courseKey) {
       final m = (_userCourses[courseKey] ?? {}) as Map;
@@ -2926,8 +3040,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       final vLabel = _variantLabel(variant);
 
       final studyMode = (m['studyMode'] ?? '').toString().trim().toLowerCase();
-      final studyModeLabel =
-      studyMode.isEmpty ? '' : _studyModeLabel(studyMode);
+      final studyModeLabel = studyMode.isEmpty ? '' : _studyModeLabel(studyMode);
 
       final suffix =
       (variant == 'private' && studyModeLabel.isNotEmpty)
@@ -2955,12 +3068,14 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       ),
-      items: keys.map((k) => DropdownMenuItem(value: k, child: Text(labelFor(k)))).toList(),
+      items: keys
+          .map((k) => DropdownMenuItem(value: k, child: Text(labelFor(k))))
+          .toList(),
       onChanged: (v) => setState(() => _selectedCourseKey = v),
     );
   }
-  // ✅ Due helper (used in Payment tab)
-  bool _isDue({
+
+  bool _isSessionDue({
     required int sessionsPaidTotal,
     required int sessionsDone,
     required int remindBeforeSession,
@@ -2969,7 +3084,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     final left = sessionsPaidTotal - sessionsDone;
     return left <= remindBeforeSession;
   }
-  // ---------------- PAYMENT TAB ----------------
 
   Widget _paymentTab(BuildContext context, List<String> keys) {
     return ListView(
@@ -2993,34 +3107,36 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     final courseKey = _selectedCourseKey!;
     final courseNode = (_userCourses[courseKey] ?? {}) as Map;
     final courseId = (courseNode['id'] ?? '').toString().trim();
-    final classId = (courseNode['class'] is Map)
-        ? ((courseNode['class'] as Map)['class_id'] ?? '').toString().trim()
-        : '';
+
     if (courseId.isEmpty) {
       return const _MiniState(text: 'This course has no "id" saved on learner node.');
     }
 
+    final variantKey = _normalizeVariantKey(
+      (courseNode['variantKey'] ?? courseNode['variant'] ?? 'inclass').toString(),
+    );
+
+    final studyMode = (courseNode['studyMode'] ?? '').toString().trim().toLowerCase();
+    final variantText =
+    variantKey == 'private' && studyMode.isNotEmpty
+        ? '${_variantLabel(variantKey)} • ${_studyModeLabel(studyMode)}'
+        : _variantLabel(variantKey);
+
     final attendance = courseNode['attendance'];
-    final attendanceDates = <String>[];
-    if (attendance is Map) {
-      attendance.forEach((_, val) {
-        if (val is Map) {
-          final m = val.map((k, v) => MapEntry(k.toString(), v));
-          final d = (m['date'] ?? '').toString().trim();
-          if (d.isNotEmpty) attendanceDates.add(d);
-        }
-      });
-    }
-    attendanceDates.sort();
-    // ✅ sessionsDone = number of UNIQUE attended sessions (by date) saved under this course
     final sessionsDone = _countUniqueAttendance(attendance);
-    int usedSince(String startDate) {
-      if (startDate.trim().isEmpty) return 0;
-      return attendanceDates.where((d) => d.compareTo(startDate) >= 0).length;
-    }
+
+    final flexibleAccessRaw = courseNode['flexible_access'];
+    final flexibleAccess = flexibleAccessRaw is Map
+        ? flexibleAccessRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    final recordedAccessRaw = courseNode['recorded_access'];
+    final recordedAccess = recordedAccessRaw is Map
+        ? recordedAccessRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
 
     return FutureBuilder<DataSnapshot>(
-      key: ValueKey('payment-course-$courseId'), // ✅ force reload when course changes
+      key: ValueKey('payment-course-$courseId'),
       future: _coursesRef.child(courseId).get(),
       builder: (context, snap) {
         if (!snap.hasData) {
@@ -3031,30 +3147,54 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         }
 
         final courseMapRaw = snap.data!.value;
-        final courseMap =
-        courseMapRaw is Map ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+        final courseMap = courseMapRaw is Map
+            ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
 
         final totalSessions = _parseTotalSessions(courseMap['duration']?.toString() ?? '');
         final pricePerLevel = _asInt(courseMap['price_per_level']);
         final pricePerMonth = _asInt(courseMap['price_per_month']);
 
-
         return FutureBuilder<DataSnapshot>(
-          key: ValueKey('payment-sum-$courseKey'), // ✅ force reload when course changes
+          key: ValueKey('payment-sum-$courseKey'),
           future: widget.db.ref('users/${widget.uid}/courses/$courseKey/payment_summary').get(),
           builder: (context, sumSnap) {
             final sumRaw = sumSnap.data?.value;
-            final sum = sumRaw is Map ? sumRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+            final sum = sumRaw is Map
+                ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
+                : <String, dynamic>{};
 
             final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
             final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+            final totalPaid = _asInt(sum['totalPaid']);
 
-            final bool due = _isDue(
+            final flexibleExpiresAt = _asInt(flexibleAccess['expiresAt']);
+            final flexibleExpiryMonths = _asInt(flexibleAccess['expiryMonths']);
+
+            final recordedExpiresAt = _asInt(recordedAccess['expiresAt']);
+            final recordedDurationMonths = _asInt(recordedAccess['durationMonths']);
+
+            final usesSessions = _variantUsesSessions(variantKey);
+            final usesReminder = _variantUsesReminder(variantKey);
+            final usesExpiry = _variantUsesExpiry(variantKey);
+
+            final due = usesReminder
+                ? _isSessionDue(
               sessionsPaidTotal: sessionsPaidTotal,
               sessionsDone: sessionsDone,
               remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
-            );
-            final sessionsLabel = totalSessions > 0 ? '$sessionsDone / $totalSessions' : '$sessionsDone';
+            )
+                : false;
+
+            final sessionsLeft =
+            (sessionsPaidTotal - sessionsDone) < 0 ? 0 : (sessionsPaidTotal - sessionsDone);
+
+            final expiresAt = _variantIsRecorded(variantKey) ? recordedExpiresAt : flexibleExpiresAt;
+            final monthsValue =
+            _variantIsRecorded(variantKey) ? recordedDurationMonths : flexibleExpiryMonths;
+            final expiryText = expiresAt > 0 ? _fmtDateMs(expiresAt) : '—';
+            final expired = usesExpiry ? _isExpiredMs(expiresAt) : false;
+            final nearExpiry = usesExpiry ? _isNearExpiryMs(expiresAt) : false;
 
             return _miniCard(
               bg: Colors.white,
@@ -3066,9 +3206,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _miniPill('Sessions: $sessionsLabel'),
+                      _miniPill('Type: $variantText'),
+                      if (usesSessions)
+                        _miniPill(
+                          totalSessions > 0
+                              ? 'Sessions: $sessionsDone / $totalSessions'
+                              : 'Sessions done: $sessionsDone',
+                        ),
+                      if (!usesSessions && _variantIsRecorded(variantKey))
+                        _miniPill('Recorded access'),
                       if (pricePerMonth > 0) _miniPill('Month fee: $pricePerMonth'),
                       if (pricePerLevel > 0) _miniPill('Level fee: $pricePerLevel'),
+                      if (totalPaid > 0) _miniPill('Total paid: $totalPaid'),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -3105,19 +3254,70 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Payment summary', style: TextStyle(fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Reminder When left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
-                          style: TextStyle(
-                            color: Colors.black.withOpacity(0.75),
-                            fontWeight: FontWeight.w700,
-                          ),
+                        const Text(
+                          'Payment summary',
+                          style: TextStyle(fontWeight: FontWeight.w900),
                         ),
+                        const SizedBox(height: 6),
+                        if (usesSessions)
+                          Text(
+                            'Sessions paid total: $sessionsPaidTotal',
+                            style: TextStyle(
+                              color: Colors.black.withOpacity(0.75),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (usesSessions)
+                          Text(
+                            'Sessions left: $sessionsLeft',
+                            style: TextStyle(
+                              color: Colors.black.withOpacity(0.75),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (usesReminder)
+                          Text(
+                            'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
+                            style: TextStyle(
+                              color: Colors.black.withOpacity(0.75),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (usesExpiry)
+                          Text(
+                            _variantIsRecorded(variantKey)
+                                ? 'Duration: ${monthsValue > 0 ? monthsValue : 0} month(s)'
+                                : 'Expiry window: ${monthsValue > 0 ? monthsValue : 0} month(s)',
+                            style: TextStyle(
+                              color: Colors.black.withOpacity(0.75),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (usesExpiry)
+                          Text(
+                            'Expires on: $expiryText',
+                            style: TextStyle(
+                              color: Colors.black.withOpacity(0.75),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         if (due) ...[
                           const SizedBox(height: 8),
                           const Text(
                             '⚠️ Payment is due (near last paid session).',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ],
+                        if (expired) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            '⛔ Access expired.',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ] else if (nearExpiry) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            '⚠️ Access is near expiry.',
                             style: TextStyle(fontWeight: FontWeight.w900),
                           ),
                         ],
@@ -3155,13 +3355,27 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                           itemBuilder: (context, i) {
                             final p = items[i];
                             final fee = _asInt(p['amount']);
-                            final sp = _asInt(p['sessionsPaid']);
                             final method = (p['method'] ?? '').toString();
                             final notes = (p['notes'] ?? '').toString();
 
+                            final payVariant = _normalizeVariantKey(
+                              (p['variantKey'] ?? variantKey).toString(),
+                            );
+                            final payStudyMode = (p['studyMode'] ?? '').toString();
                             final paidAt = _fmtDateMs(_asInt(p['paidAt']));
                             final startDate = (p['startDate'] ?? '').toString().trim();
-                            final left = (sessionsPaidTotal - sessionsDone) < 0 ? 0 : (sessionsPaidTotal - sessionsDone);
+                            final expiresAt = _fmtDateMs(_asInt(p['expiresAt']));
+                            final sp = _asInt(p['sessionsPaid']);
+                            final durationMonths = _asInt(p['durationMonths']);
+                            final expiryMonths = _asInt(p['expiryMonths']);
+
+                            final variantBadge =
+                            payVariant == 'private' && payStudyMode.trim().isNotEmpty
+                                ? '${_variantLabel(payVariant)} • ${_studyModeLabel(payStudyMode)}'
+                                : _variantLabel(payVariant);
+
+                            final left =
+                            (sessionsPaidTotal - sessionsDone) < 0 ? 0 : (sessionsPaidTotal - sessionsDone);
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 6),
@@ -3175,10 +3389,27 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                                       spacing: 8,
                                       runSpacing: 8,
                                       children: [
+                                        _miniPill('Type: $variantBadge'),
                                         _miniPill('Fee: $fee'),
                                         _miniPill('Paid: ${paidAt.isEmpty ? '-' : paidAt}'),
-                                        _miniPill('Start: ${startDate.isEmpty ? '-' : startDate}'),
-                                        _miniPill('Left: $left'),
+                                        if (_variantUsesSessions(payVariant))
+                                          _miniPill('Sessions: $sp'),
+                                        if (_variantUsesReminder(payVariant))
+                                          _miniPill('Left: $left'),
+                                        if (_variantUsesStartDate(payVariant))
+                                          _miniPill('Start: ${startDate.isEmpty ? '-' : startDate}'),
+                                        if (_variantIsFlexible(payVariant))
+                                          _miniPill('Expires: ${expiresAt.isEmpty ? '-' : expiresAt}'),
+                                        if (_variantIsFlexible(payVariant))
+                                          _miniPill(
+                                            'Window: ${expiryMonths > 0 ? expiryMonths : 0} month(s)',
+                                          ),
+                                        if (_variantIsRecorded(payVariant))
+                                          _miniPill(
+                                            'Duration: ${durationMonths > 0 ? durationMonths : 0} month(s)',
+                                          ),
+                                        if (_variantIsRecorded(payVariant))
+                                          _miniPill('Expires: ${expiresAt.isEmpty ? '-' : expiresAt}'),
                                       ],
                                     ),
                                     if (method.trim().isNotEmpty || notes.trim().isNotEmpty) ...[
@@ -3186,7 +3417,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                                       Text(
                                         [
                                           if (method.trim().isNotEmpty) method,
-                                          if (notes.trim().isNotEmpty) notes
+                                          if (notes.trim().isNotEmpty) notes,
                                         ].join(' • '),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -3215,8 +3446,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     );
   }
 
-  // ---------------- ATTENDANCE TAB ----------------
-
   Widget _attendanceTab(BuildContext context, List<String> keys) {
     if (keys.isEmpty) return const _MiniState(text: 'No courses.');
 
@@ -3225,8 +3454,21 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
 
     final courseNode = (_userCourses[courseKey] ?? {}) as Map;
     final courseId = (courseNode['id'] ?? '').toString().trim();
+    final variantKey = _normalizeVariantKey(
+      (courseNode['variantKey'] ?? courseNode['variant'] ?? 'inclass').toString(),
+    );
 
-    // ✅ get classId from learner course node (teacher stamps this)
+    if (_variantIsRecorded(variantKey)) {
+      return ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _coursePicker(keys),
+          const SizedBox(height: 8),
+          const _MiniState(text: 'Recorded courses do not use attendance.'),
+        ],
+      );
+    }
+
     final classId = (courseNode['class'] is Map)
         ? ((courseNode['class'] as Map)['class_id'] ?? '').toString().trim()
         : '';
@@ -3242,6 +3484,138 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
       );
     }
 
+    final learnerAttendance = courseNode['attendance'];
+    final learnerBySid = _attendanceBySessionId(learnerAttendance);
+
+    if (classId.isEmpty && _variantIsFlexible(variantKey)) {
+      final learnerSessions = _mapToList(learnerAttendance);
+
+      return FutureBuilder<DataSnapshot>(
+        key: ValueKey('attendance-course-$courseId'),
+        future: _coursesRef.child(courseId).get(),
+        builder: (context, cs) {
+          if (!cs.hasData) {
+            return ListView(
+              padding: EdgeInsets.zero,
+              children: const [
+                SizedBox(height: 8),
+                Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            );
+          }
+
+          final cRaw = cs.data?.value;
+          final cMap = cRaw is Map
+              ? cRaw.map((k, v) => MapEntry(k.toString(), v))
+              : <String, dynamic>{};
+          final totalSessions = _parseTotalSessions(cMap['duration']?.toString() ?? '');
+
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _coursePicker(keys),
+              const SizedBox(height: 8),
+              _miniCard(
+                child: Text(
+                  totalSessions > 0
+                      ? 'Flexible attendance: ${learnerSessions.length} / $totalSessions'
+                      : 'Flexible attendance: ${learnerSessions.length}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (learnerSessions.isEmpty)
+                const _MiniState(text: 'No attendance recorded yet.')
+              else
+                ...learnerSessions.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final m = entry.value;
+                  final date = (m['date'] ?? '').toString();
+                  final statusRaw = (m['status'] ?? '').toString().trim();
+                  final status = statusRaw.toLowerCase();
+                  final teacher = (m['teacherName'] ?? '').toString();
+                  final taught = m['taught'] is Map ? (m['taught'] as Map) : null;
+                  final taughtTitle = taught == null ? '' : (taught['title'] ?? '').toString();
+
+                  Color bar;
+                  Color tint;
+
+                  if (status == 'present') {
+                    bar = const Color(0xFF157A3D);
+                    tint = const Color(0xFF157A3D).withOpacity(0.08);
+                  } else if (status == 'absent') {
+                    bar = Colors.red;
+                    tint = Colors.red.withOpacity(0.08);
+                  } else {
+                    bar = const Color(0xFF64748B);
+                    tint = const Color(0xFF64748B).withOpacity(0.08);
+                  }
+
+                  final shownStatus = statusRaw.isEmpty ? 'not registered' : statusRaw;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: tint,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AdminLearnersScreen.uiBorders),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 58,
+                            decoration: BoxDecoration(
+                              color: bar,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(16),
+                                bottomLeft: Radius.circular(16),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '#${i + 1}  $date — $shownStatus',
+                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    [
+                                      if (taughtTitle.trim().isNotEmpty) taughtTitle,
+                                      if (teacher.trim().isNotEmpty) teacher,
+                                    ].join(' • '),
+                                    style: TextStyle(
+                                      color: Colors.black.withOpacity(0.65),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+            ],
+          );
+        },
+      );
+    }
+
     if (classId.isEmpty) {
       return ListView(
         padding: EdgeInsets.zero,
@@ -3252,10 +3626,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         ],
       );
     }
-
-    // learner-side attendance (may be partial, used only to show status per session)
-    final learnerAttendance = courseNode['attendance'];
-    final learnerBySid = _attendanceBySessionId(learnerAttendance);
 
     return FutureBuilder<DataSnapshot>(
       key: ValueKey('attendance-course-$courseId'),
@@ -3272,10 +3642,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
         }
 
         final cRaw = cs.data?.value;
-        final cMap = cRaw is Map ? cRaw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+        final cMap = cRaw is Map
+            ? cRaw.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
         final totalSessions = _parseTotalSessions(cMap['duration']?.toString() ?? '');
 
-        // ✅ canonical sessions taught = classes/{classId}/attendance
         return FutureBuilder<DataSnapshot>(
           key: ValueKey('class-att-$classId'),
           future: widget.db.ref('classes/$classId/attendance').get(),
@@ -3308,7 +3679,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                     final sid = (classRec['sessionId'] ?? '').toString().trim();
                     final date = (classRec['date'] ?? '').toString();
 
-                    // learner status if exists, else not registered (your rule: absent may not be written)
                     final learnerRec = sid.isEmpty ? null : learnerBySid[sid];
                     final statusRaw = (learnerRec?['status'] ?? '').toString().trim();
                     final status = statusRaw.toLowerCase();
@@ -3327,7 +3697,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
                       bar = Colors.red;
                       tint = Colors.red.withOpacity(0.08);
                     } else {
-                      // not registered for this learner
                       bar = const Color(0xFF64748B);
                       tint = const Color(0xFF64748B).withOpacity(0.08);
                     }
@@ -3399,13 +3768,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     );
   }
 
-  // ---------------- REPORT TAB (later) ----------------
-
   Widget _reportTab(BuildContext context) {
     return const _MiniState(text: 'Report tab is ready (we will build it later).');
   }
-
-  // ---------------- UI helpers ----------------
 
   static Widget _miniCard({
     required Widget child,
@@ -3446,7 +3811,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
   static List<Map<String, dynamic>> _uniqueAttendanceByDate(dynamic attendance) {
     if (attendance is! Map) return [];
 
-    // date -> best session (latest updatedAt/createdAt)
     final Map<String, Map<String, dynamic>> best = {};
 
     attendance.forEach((_, v) {
@@ -3505,6 +3869,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs> with SingleT
     }
     return out;
   }
+
   static int _asInt(dynamic v) {
     if (v == null) return 0;
     if (v is int) return v;

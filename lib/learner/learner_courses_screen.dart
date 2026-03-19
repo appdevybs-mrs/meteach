@@ -271,16 +271,139 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
     return {'total': total, 'present': present};
   }
-
   Future<Map<String, int>> _progressCounts(Map<String, dynamic> course) async {
     final courseId = _courseIdOf(course);
     final variantKey = _variantKeyOf(course);
+    final courseKey = (course['courseKey'] ?? '').toString().trim();
 
     if (courseId.isEmpty) return {'total': 0, 'covered': 0};
 
     final Set<String> covered = {};
     final Map<int, String> sessionIdByNumber = {};
     int totalSyllabiSessions = 0;
+
+    if (variantKey == 'recorded') {
+      try {
+        final syllabusSnap =
+        await _syllabiRef.child(courseId).child('recorded').get();
+
+        final Map<String, Map<String, dynamic>> sessionMetaById = {};
+
+        List<Map<String, dynamic>> asListOfMaps(dynamic node) {
+          final out = <Map<String, dynamic>>[];
+
+          if (node is List) {
+            for (final item in node) {
+              if (item is Map) {
+                out.add(Map<String, dynamic>.from(item));
+              }
+            }
+            return out;
+          }
+
+          if (node is Map) {
+            final map = Map<dynamic, dynamic>.from(node);
+            for (final entry in map.entries) {
+              if (entry.value is Map) {
+                out.add(Map<String, dynamic>.from(entry.value as Map));
+              }
+            }
+          }
+
+          return out;
+        }
+
+        bool asBool(dynamic v) {
+          if (v is bool) return v;
+          final s = (v ?? '').toString().trim().toLowerCase();
+          return s == 'true' || s == '1';
+        }
+
+        if (syllabusSnap.exists && syllabusSnap.value is Map) {
+          final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
+          final rawUnits = asListOfMaps(root['units']);
+
+          for (final unit in rawUnits) {
+            final rawSessions = asListOfMaps(unit['sessions']);
+
+            for (final session in rawSessions) {
+              final sessionId = (session['id'] ?? '').toString().trim();
+              final sessionNumber = _asInt(session['sessionNumber']);
+              final videoUrl = (session['videoUrl'] ?? '').toString().trim();
+              final materialsUrl =
+              (session['materialsUrl'] ?? '').toString().trim();
+
+              final hasVideo = videoUrl.isNotEmpty;
+              final hasMaterials = materialsUrl.isNotEmpty;
+
+              totalSyllabiSessions += 1;
+
+              if (sessionId.isNotEmpty) {
+                sessionMetaById[sessionId] = {
+                  'hasVideo': hasVideo,
+                  'hasMaterials': hasMaterials,
+                };
+              }
+
+              if (sessionNumber > 0 && sessionId.isNotEmpty) {
+                sessionIdByNumber[sessionNumber] = sessionId;
+              }
+            }
+          }
+        }
+
+        if (courseKey.isEmpty) {
+          return {'total': totalSyllabiSessions, 'covered': 0};
+        }
+
+        final progressSnap = await _usersRef
+            .child(_uid)
+            .child('courses')
+            .child(courseKey)
+            .child('recorded_progress')
+            .get();
+
+        if (progressSnap.exists && progressSnap.value is Map) {
+          final rawProgress =
+          Map<String, dynamic>.from(progressSnap.value as Map);
+
+          for (final entry in rawProgress.entries) {
+            final sessionId = entry.key.toString().trim();
+            final value = entry.value;
+
+            if (sessionId.isEmpty || value is! Map) continue;
+
+            final progress = Map<String, dynamic>.from(value as Map);
+            final meta =
+                sessionMetaById[sessionId] ?? const <String, dynamic>{};
+
+            final hasVideo = meta['hasVideo'] == true;
+            final hasMaterials = meta['hasMaterials'] == true;
+
+            final videoCompleted = asBool(progress['videoCompleted']);
+            final materialsCompleted = asBool(progress['materialsCompleted']);
+
+            bool isCompleted = false;
+
+            if (hasVideo && hasMaterials) {
+              isCompleted = videoCompleted || materialsCompleted;
+            } else if (hasVideo) {
+              isCompleted = videoCompleted;
+            } else if (hasMaterials) {
+              isCompleted = materialsCompleted;
+            }
+
+            if (isCompleted) {
+              covered.add(sessionId);
+            }
+          }
+        }
+
+        return {'total': totalSyllabiSessions, 'covered': covered.length};
+      } catch (_) {
+        return {'total': totalSyllabiSessions, 'covered': covered.length};
+      }
+    }
 
     try {
       DatabaseReference syllabusRef = _syllabiRef.child(courseId);
@@ -525,6 +648,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
     final variantKey = _variantKeyOf(course);
     final isOnline = _isOnlineCourse(course);
+    final isRecorded = variantKey == 'recorded';
     final variantStyle = _variantStyle(variantKey);
 
     final attCounts = _attendanceCounts(course);
@@ -621,54 +745,55 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                     icon: Icons.info_outline_rounded,
                     label: status,
                   ),
-                StreamBuilder<DatabaseEvent>(
-                  stream: _usersRef
-                      .child(_uid)
-                      .child('courses')
-                      .child(courseKey)
-                      .child('payment_summary')
-                      .onValue,
-                  builder: (context, snap) {
-                    final raw = snap.data?.snapshot.value;
-                    final sum = raw is Map
-                        ? raw.map((k, v) => MapEntry(k.toString(), v))
-                        : <String, dynamic>{};
+                if (!isRecorded)
+                  StreamBuilder<DatabaseEvent>(
+                    stream: _usersRef
+                        .child(_uid)
+                        .child('courses')
+                        .child(courseKey)
+                        .child('payment_summary')
+                        .onValue,
+                    builder: (context, snap) {
+                      final raw = snap.data?.snapshot.value;
+                      final sum = raw is Map
+                          ? raw.map((k, v) => MapEntry(k.toString(), v))
+                          : <String, dynamic>{};
 
-                    final attCounts = _attendanceCounts(course);
-                    final sessionsDone = attCounts['total'] ?? 0;
+                      final attCounts = _attendanceCounts(course);
+                      final sessionsDone = attCounts['total'] ?? 0;
 
-                    final state = _paymentStateFromSummary(
-                      sessionsDone: sessionsDone,
-                      summary: sum,
-                    );
+                      final state = _paymentStateFromSummary(
+                        sessionsDone: sessionsDone,
+                        summary: sum,
+                      );
 
-                    if (state.isEmpty) return const SizedBox.shrink();
+                      if (state.isEmpty) return const SizedBox.shrink();
 
-                    final bool isDue = state == 'PAYMENT NEEDED';
+                      final bool isDue = state == 'PAYMENT NEEDED';
 
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: (isDue ? Colors.red : p.accent).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: (isDue ? Colors.red : p.accent).withOpacity(0.28),
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
                         ),
-                      ),
-                      child: Text(
-                        state,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                          color: isDue ? Colors.red : p.accent,
+                        decoration: BoxDecoration(
+                          color: (isDue ? Colors.red : p.accent).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: (isDue ? Colors.red : p.accent).withOpacity(0.28),
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        child: Text(
+                          state,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            color: isDue ? Colors.red : p.accent,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
               ],
             ),
             const SizedBox(height: 14),
@@ -678,39 +803,58 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
               text: instructor.isEmpty ? 'Teacher: -' : 'Teacher: $instructor',
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _kpiTile(
-                    icon: Icons.how_to_reg_rounded,
-                    label: 'Attendance',
-                    value: '$attPct%',
+            if (isRecorded)
+              FutureBuilder<Map<String, int>>(
+                future: _progressCounts(course),
+                builder: (_, snap) {
+                  final data = snap.data ?? {'total': 0, 'covered': 0};
+                  final t = data['total'] ?? 0;
+                  final c = data['covered'] ?? 0;
+                  final pct = t == 0 ? 0 : ((c / t) * 100).round();
+
+                  return _kpiTile(
+                    icon: Icons.insights_rounded,
+                    label: 'Progress',
+                    value: '$pct%',
                     accent: variantStyle.fg,
                     tint: variantStyle.bg,
+                  );
+                },
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: _kpiTile(
+                      icon: Icons.how_to_reg_rounded,
+                      label: 'Attendance',
+                      value: '$attPct%',
+                      accent: variantStyle.fg,
+                      tint: variantStyle.bg,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FutureBuilder<Map<String, int>>(
-                    future: _progressCounts(course),
-                    builder: (_, snap) {
-                      final data = snap.data ?? {'total': 0, 'covered': 0};
-                      final t = data['total'] ?? 0;
-                      final c = data['covered'] ?? 0;
-                      final pct = t == 0 ? 0 : ((c / t) * 100).round();
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FutureBuilder<Map<String, int>>(
+                      future: _progressCounts(course),
+                      builder: (_, snap) {
+                        final data = snap.data ?? {'total': 0, 'covered': 0};
+                        final t = data['total'] ?? 0;
+                        final c = data['covered'] ?? 0;
+                        final pct = t == 0 ? 0 : ((c / t) * 100).round();
 
-                      return _kpiTile(
-                        icon: Icons.insights_rounded,
-                        label: 'Progress',
-                        value: '$pct%',
-                        accent: variantStyle.fg,
-                        tint: variantStyle.bg,
-                      );
-                    },
+                        return _kpiTile(
+                          icon: Icons.insights_rounded,
+                          label: 'Progress',
+                          value: '$pct%',
+                          accent: variantStyle.fg,
+                          tint: variantStyle.bg,
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
