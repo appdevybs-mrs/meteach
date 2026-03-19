@@ -2953,6 +2953,18 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   @override
   Widget build(BuildContext context) {
+    String middleTabText() {
+      final courseKey = _selectedCourseKey;
+      if (courseKey == null) return 'Attendance';
+
+      final courseNode = (_userCourses[courseKey] ?? {}) as Map;
+      final variantKey = _normalizeVariantKey(
+        (courseNode['variantKey'] ?? courseNode['variant'] ?? 'inclass').toString(),
+      );
+
+      return _variantIsRecorded(variantKey) ? 'Progress' : 'Attendance';
+    }
+
     return Column(
       children: [
         Align(
@@ -2969,10 +2981,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
           labelColor: AdminLearnersScreen.primaryBlue,
           unselectedLabelColor: AdminLearnersScreen.primaryBlue.withOpacity(0.55),
           indicatorColor: AdminLearnersScreen.primaryBlue,
-          tabs: const [
-            Tab(text: 'Payment'),
-            Tab(text: 'Attendance'),
-            Tab(text: 'Report'),
+          tabs: [
+            const Tab(text: 'Payment'),
+            Tab(text: middleTabText()),
+            const Tab(text: 'Report'),
           ],
         ),
         const SizedBox(height: 8),
@@ -3459,13 +3471,240 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     );
 
     if (_variantIsRecorded(variantKey)) {
-      return ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          _coursePicker(keys),
-          const SizedBox(height: 8),
-          const _MiniState(text: 'Recorded courses do not use attendance.'),
-        ],
+      final recordedProgressRaw = courseNode['recorded_progress'];
+      final recordedProgress = recordedProgressRaw is Map
+          ? recordedProgressRaw.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+
+      if (courseId.isEmpty) {
+        return ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            _coursePicker(keys),
+            const SizedBox(height: 8),
+            const _MiniState(text: 'This course is missing an id.'),
+          ],
+        );
+      }
+
+      return FutureBuilder<DataSnapshot>(
+        key: ValueKey('recorded-progress-$courseId'),
+        future: widget.db.ref('syllabi/$courseId/recorded').get(),
+        builder: (context, syllabusSnap) {
+          if (!syllabusSnap.hasData) {
+            return ListView(
+              padding: EdgeInsets.zero,
+              children: const [
+                SizedBox(height: 8),
+                Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            );
+          }
+
+          final syllabusRaw = syllabusSnap.data?.value;
+          final root = syllabusRaw is Map
+              ? syllabusRaw.map((k, v) => MapEntry(k.toString(), v))
+              : <String, dynamic>{};
+
+          final rawUnits = _asListOfMaps(root['units']);
+
+          final sessionItems = <Map<String, dynamic>>[];
+          for (final unit in rawUnits) {
+            final unitTitle = (unit['title'] ?? '').toString().trim();
+            final rawSessions = _asListOfMaps(unit['sessions']);
+
+            for (final session in rawSessions) {
+              sessionItems.add({
+                'unitTitle': unitTitle,
+                ...session,
+              });
+            }
+          }
+
+          int orderOf(Map<String, dynamic> s) {
+            final sessionNumber = _asInt(s['sessionNumber']);
+            if (sessionNumber > 0) return sessionNumber;
+            return _asInt(s['order']);
+          }
+
+          sessionItems.sort((a, b) => orderOf(a).compareTo(orderOf(b)));
+
+          bool asBool(dynamic v) {
+            if (v is bool) return v;
+            final s = (v ?? '').toString().trim().toLowerCase();
+            return s == 'true' || s == '1';
+          }
+
+          bool isCompleted(Map<String, dynamic> sessionMap) {
+            final sessionId = (sessionMap['id'] ?? '').toString().trim();
+            if (sessionId.isEmpty) return false;
+
+            final progressRaw = recordedProgress[sessionId];
+            final progress = progressRaw is Map
+                ? progressRaw.map((k, v) => MapEntry(k.toString(), v))
+                : <String, dynamic>{};
+
+            final hasVideo =
+                (sessionMap['videoUrl'] ?? '').toString().trim().isNotEmpty;
+            final hasRead =
+                (sessionMap['materialsUrl'] ?? '').toString().trim().isNotEmpty;
+
+            final videoDone = asBool(progress['videoCompleted']);
+            final readDone = asBool(progress['materialsCompleted']);
+
+            if (!hasVideo && !hasRead) return false;
+            if (hasVideo && hasRead) return videoDone || readDone;
+            if (hasVideo) return videoDone;
+            if (hasRead) return readDone;
+            return false;
+          }
+
+          final totalSessions = sessionItems.length;
+          final completedSessions =
+              sessionItems.where((s) => isCompleted(s)).length;
+          final progressPct = totalSessions > 0
+              ? ((completedSessions / totalSessions) * 100).round()
+              : 0;
+
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _coursePicker(keys),
+              const SizedBox(height: 8),
+              _miniCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Recorded progress: $completedSessions / $totalSessions',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Progress: $progressPct%',
+                      style: TextStyle(
+                        color: Colors.black.withOpacity(0.75),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: totalSessions > 0
+                            ? completedSessions / totalSessions
+                            : 0,
+                        minHeight: 10,
+                        backgroundColor: AdminLearnersScreen.appBg,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (sessionItems.isEmpty)
+                const _MiniState(text: 'No recorded sessions found yet.')
+              else
+                ...sessionItems.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final session = entry.value;
+
+                  final sessionId = (session['id'] ?? '').toString().trim();
+                  final title =
+                  (session['title'] ?? '').toString().trim().isEmpty
+                      ? 'Untitled Session'
+                      : (session['title'] ?? '').toString().trim();
+                  final unitTitle = (session['unitTitle'] ?? '').toString().trim();
+
+                  final progressRaw = recordedProgress[sessionId];
+                  final progress = progressRaw is Map
+                      ? progressRaw.map((k, v) => MapEntry(k.toString(), v))
+                      : <String, dynamic>{};
+
+                  final hasVideo =
+                      (session['videoUrl'] ?? '').toString().trim().isNotEmpty;
+                  final hasRead = (session['materialsUrl'] ?? '')
+                      .toString()
+                      .trim()
+                      .isNotEmpty;
+
+                  final videoDone = asBool(progress['videoCompleted']);
+                  final readDone = asBool(progress['materialsCompleted']);
+                  final done = isCompleted(session);
+
+                  final bar = done
+                      ? const Color(0xFF157A3D)
+                      : const Color(0xFF64748B);
+                  final tint = done
+                      ? const Color(0xFF157A3D).withOpacity(0.08)
+                      : const Color(0xFF64748B).withOpacity(0.08);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: tint,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AdminLearnersScreen.uiBorders),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: bar,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(16),
+                                bottomLeft: Radius.circular(16),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                                horizontal: 6,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '#${i + 1}  $title — ${done ? 'done' : 'pending'}',
+                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    [
+                                      if (unitTitle.isNotEmpty) unitTitle,
+                                      if (hasVideo)
+                                        'Video: ${videoDone ? 'done' : 'pending'}',
+                                      if (hasRead)
+                                        'Read: ${readDone ? 'done' : 'pending'}',
+                                    ].join(' • '),
+                                    style: TextStyle(
+                                      color: Colors.black.withOpacity(0.65),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+            ],
+          );
+        },
       );
     }
 
@@ -3856,6 +4095,29 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       }
     });
     out.sort((a, b) => (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()));
+    return out;
+  }
+  static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
+    final out = <Map<String, dynamic>>[];
+
+    if (node is List) {
+      for (final item in node) {
+        if (item is Map) {
+          out.add(item.map((k, v) => MapEntry(k.toString(), v)).cast<String, dynamic>());
+        }
+      }
+      return out;
+    }
+
+    if (node is Map) {
+      node.forEach((_, value) {
+        if (value is Map) {
+          out.add(value.map((k, v) => MapEntry(k.toString(), v)).cast<String, dynamic>());
+        }
+      });
+      return out;
+    }
+
     return out;
   }
 
