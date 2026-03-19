@@ -776,13 +776,19 @@ class PaymentDialogShared {
           final usesStartDate = _variantUsesStartDate(variantKey);
           final isRecorded = _variantIsRecorded(variantKey);
 
+          final expiryPreviewBaseMs = _variantIsFlexible(variantKey)
+              ? _ymdToMs(startDateYmd)
+              : _ymdToMs(paidDateYmd);
+
           final expiryPreviewMs = usesExpiry
               ? _addMonthsToMs(
-            _ymdToMs(paidDateYmd),
+            expiryPreviewBaseMs,
             isRecorded ? durationMonths : expiryMonths,
           )
               : 0;
-          final expiryPreviewYmd = usesExpiry ? _fmtDateFromMs(expiryPreviewMs) : '';
+
+          final expiryPreviewYmd =
+          usesExpiry ? _fmtDateFromMs(expiryPreviewMs) : '';
 
           return AlertDialog(
             title: const Text('Edit payment'),
@@ -969,10 +975,12 @@ class PaymentDialogShared {
                   final usesExpiry = _variantUsesExpiry(variantKey);
                   final usesStartDate = _variantUsesStartDate(variantKey);
 
-                  final monthsForExpiry = _variantIsRecorded(variantKey) ? durationMonths : expiryMonths;
-                  final nextExpiresAt = usesExpiry
-                      ? _addMonthsToMs(paidAtMs, monthsForExpiry)
-                      : 0;
+          final startDateMs = _ymdToMs(startDateYmd);
+          final monthsForExpiry = _variantIsRecorded(variantKey) ? durationMonths : expiryMonths;
+          final expiryBaseMs = _variantIsFlexible(variantKey) ? startDateMs : paidAtMs;
+          final nextExpiresAt = usesExpiry
+          ? _addMonthsToMs(expiryBaseMs, monthsForExpiry)
+              : 0;
 
                   if (usesExpiry && nextExpiresAt <= 0) {
                     _snack(context, 'Invalid expiry months.');
@@ -1188,9 +1196,13 @@ class PaymentDialogShared {
             studyInfoText = deliveryLabel;
           }
 
+          final previewBaseMs = isFlexible
+              ? _ymdToMs(startDateYmd)
+              : _ymdToMs(paidDateYmd);
+
           final previewExpiresAt = usesExpiry
               ? _addMonthsToMs(
-            _ymdToMs(paidDateYmd),
+            previewBaseMs,
             isRecorded ? durationMonths : expiryMonths,
           )
               : 0;
@@ -1604,10 +1616,13 @@ class PaymentDialogShared {
                   final usesExpiry = _variantUsesExpiry(normalizedVariantKey);
                   final usesStartDate = _variantUsesStartDate(normalizedVariantKey);
 
+                  final startDateMs = _ymdToMs(startDateYmd);
                   final monthsForExpiry =
                   _variantIsRecorded(normalizedVariantKey) ? durationMonths : expiryMonths;
+                  final expiryBaseMs =
+                  _variantIsFlexible(normalizedVariantKey) ? startDateMs : paidAtMs;
                   final expiresAt =
-                  usesExpiry ? _addMonthsToMs(paidAtMs, monthsForExpiry) : 0;
+                  usesExpiry ? _addMonthsToMs(expiryBaseMs, monthsForExpiry) : 0;
 
                   if (usesExpiry && expiresAt <= 0) {
                     _snack(context, 'Invalid expiry months.');
