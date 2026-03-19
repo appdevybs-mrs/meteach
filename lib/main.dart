@@ -3199,33 +3199,6 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: Brand.primaryBlue,
-            ),
-          ),
-          const SizedBox(height: 8),
-          child,
-        ],
-      ),
-    );
-  }
-}
 
 class _CourseDetailsSheet extends StatelessWidget {
   const _CourseDetailsSheet({required this.course});
@@ -3266,12 +3239,22 @@ class _CourseDetailsSheet extends StatelessWidget {
     );
   }
 
+  Widget _rtlText(BuildContext context, String value, {double height = 1.55}) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Text(
+        value,
+        textAlign: TextAlign.right,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          height: height,
+          color: Brand.mainText.withOpacity(0.85),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final deliveryText = course.deliveryOptions.isNotEmpty
-        ? course.deliveryOptions.join(', ')
-        : course.deliveryOptionRaw.trim();
-
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 22),
@@ -3288,32 +3271,38 @@ class _CourseDetailsSheet extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               _hero(),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (course.level.trim().isNotEmpty)
-                    _PrettyChip(
-                      icon: Icons.bar_chart_rounded,
-                      label: course.level,
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Brand.primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                  if (course.language.trim().isNotEmpty)
-                    _PrettyChip(
-                      icon: Icons.language_rounded,
-                      label: course.language,
-                    ),
-                  if (deliveryText.isNotEmpty)
-                    _PrettyChip(
-                      icon: Icons.videocam_rounded,
-                      label: deliveryText,
-                    ),
-                  if (course.duration.trim().isNotEmpty)
-                    _PrettyChip(
-                      icon: Icons.schedule_rounded,
-                      label: course.duration,
-                    ),
-                ],
+                  ),
+                  onPressed: () async {
+                    final enrollOptions = course.toEnrollOptions();
+
+                    Navigator.of(context).pop();
+
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => EnrollScreen(
+                          courseId: course.id,
+                          courseTitle: course.title,
+                          deliveryOptions: enrollOptions,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.how_to_reg_rounded),
+                  label: const Text(
+                    'Course Enrollment | التسجيل في الدورة',
+                  ),
+                ),
               ),
               const SizedBox(height: 18),
               Wrap(
@@ -3351,91 +3340,79 @@ class _CourseDetailsSheet extends StatelessWidget {
               ],
               const SizedBox(height: 18),
               if (course.content.trim().isNotEmpty)
-                _Section(
-                  title: 'What you will learn',
-                  child: Text(
-                    course.content,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      height: 1.55,
-                      color: Brand.mainText.withOpacity(0.85),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ماذا ستتعلم',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: Brand.primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: _rtlText(context, course.content),
+                      ),
+                    ],
                   ),
                 ),
               const SizedBox(height: 18),
               if (course.longDesc.trim().isNotEmpty)
-                _Section(
-                  title: 'About this course',
-                  child: Text(
-                    course.longDesc,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      height: 1.55,
-                      color: Brand.mainText.withOpacity(0.85),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'الوصف',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: Brand.primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: _rtlText(context, course.longDesc),
+                      ),
+                    ],
                   ),
                 ),
               if (course.longDesc.trim().isEmpty &&
                   course.shortDesc.trim().isNotEmpty)
-                _Section(
-                  title: 'Overview',
-                  child: Text(
-                    course.shortDesc,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      height: 1.55,
-                      color: Brand.mainText.withOpacity(0.85),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'الوصف',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: Brand.primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: _rtlText(context, course.shortDesc),
+                      ),
+                    ],
                   ),
                 ),
               if (course.requirements.trim().isNotEmpty)
-                _Section(
-                  title: 'Requirements',
-                  child: Text(
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: _rtlText(
+                    context,
                     course.requirements,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      height: 1.45,
-                    ),
+                    height: 1.45,
                   ),
                 ),
-              if (course.tags.isNotEmpty)
-                _Section(
-                  title: 'Tags',
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                    course.tags.map((t) => _PrettyChip(label: t)).toList(),
-                  ),
-                ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Brand.primaryBlue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  onPressed: () async {
-                    final enrollOptions = course.toEnrollOptions();
-
-                    Navigator.of(context).pop();
-
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => EnrollScreen(
-                          courseId: course.id,
-                          courseTitle: course.title,
-                          deliveryOptions: enrollOptions,
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.how_to_reg_rounded),
-                  label: const Text('Enroll'),
-                ),
-              ),
             ],
           ),
         ),

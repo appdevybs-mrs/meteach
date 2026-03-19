@@ -1298,9 +1298,11 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     }
   }
 
-  void _openCoursesScreen() {
+  void _openCoursesScreen({String? courseKey}) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const LearnerCoursesScreen()),
+      MaterialPageRoute(
+        builder: (_) => LearnerCoursesScreen(initialCourseKey: courseKey),
+      ),
     );
   }
 
@@ -1347,7 +1349,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 palette: p,
                 learnerName: name.isEmpty ? 'Learner' : name,
                 profilePhotoUrl: profilePhoto,
-                onOpenCourses: _openCoursesScreen,
+                onOpenCourses: () => _openCoursesScreen(),
               );
             },
           ),
@@ -1407,7 +1409,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                     _ProgressCard(
                       palette: p,
                       item: items[i],
-                      onTap: _openCoursesScreen,
+                      onTap: () => _openCoursesScreen(
+                        courseKey: items[i].courseKey,
+                      ),
                     ),
                     if (i != items.length - 1) const SizedBox(height: 10),
                   ],

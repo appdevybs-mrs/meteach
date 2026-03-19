@@ -7,7 +7,12 @@ import '../shared/watermark_background.dart';
 import 'learner_course_detail_screen.dart';
 
 class LearnerCoursesScreen extends StatefulWidget {
-  const LearnerCoursesScreen({super.key});
+  const LearnerCoursesScreen({
+    super.key,
+    this.initialCourseKey,
+  });
+
+  final String? initialCourseKey;
 
   @override
   State<LearnerCoursesScreen> createState() => _LearnerCoursesScreenState();
@@ -27,6 +32,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
   String _uid = '';
   List<Map<String, dynamic>> _courses = [];
+  bool _didOpenInitialCourse = false;
 
   @override
   void initState() {
@@ -95,6 +101,8 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         _courses = list;
         _busy = false;
       });
+
+      _openInitialCourseIfNeeded();
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -110,6 +118,37 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  void _openInitialCourseIfNeeded() {
+    if (_didOpenInitialCourse) return;
+
+    final targetKey = (widget.initialCourseKey ?? '').trim();
+    if (targetKey.isEmpty) return;
+    if (_courses.isEmpty) return;
+    if (!mounted) return;
+
+    final match = _courses.cast<Map<String, dynamic>?>().firstWhere(
+          (course) => (course?['courseKey'] ?? '').toString() == targetKey,
+      orElse: () => null,
+    );
+
+    if (match == null) return;
+
+    _didOpenInitialCourse = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LearnerCourseDetailScreen(
+            courseKey: targetKey,
+            courseData: match,
+          ),
+        ),
+      );
+    });
+  }
   String _courseIdOf(Map<String, dynamic> course) {
     final cls = (course['class'] is Map)
         ? Map<String, dynamic>.from(course['class'] as Map)

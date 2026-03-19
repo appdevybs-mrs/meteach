@@ -1,39 +1,25 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 /// ----------------------------
 /// Course Syllabus Screen
 /// ----------------------------
 /// Data path:
-///   syllabi/{courseId}
+///   syllabi/{courseId}/{variantKey}
 ///
-/// Structure:
-///   {
-///     courseId: "...",
-///     updatedAt: <server timestamp>,
-///     units: [
-///       {
-///         id: "...",
-///         title: "...",
-///         otherTitle: "...",     // name in brackets
-///         description: "...",
-///         order: 1,
-///         sessions: [
-///           {
-///             id: "...",
-///             title: "...",
-///             skillType: "Listening|Speaking|Reading|Writing|Grammar|Project",
-///             objective: "...",
-///             content: "...",
-///             homework: "...",   // optional
-///             ///             sessionNumber: 1    // ✅ NEW
-///             durationMinutes: 45,
-///             order: 1
-///           }
-///         ]
-///       }
-///     ]
-///   }
+/// Recorded sessions:
+/// - upload 1 video file
+/// - upload 1 HTML material file
+/// - files stored under:
+///   courses/<course-folder>/<session-folder>/
+/// - saved back into RTDB as:
+///   videoUrl, materialsUrl, serverFolderPath
 ///
 
 class CourseSyllabusScreen extends StatefulWidget {
@@ -64,7 +50,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   bool _saving = false;
 
   List<SyllabusUnit> _units = [];
-  final Map<String, bool> _unitExpanded = {}; // unitId -> true/false
+  final Map<String, bool> _unitExpanded = {};
+
+  bool get _isRecordedVariant =>
+      widget.variantKey.trim().toLowerCase() == 'recorded';
 
   @override
   void initState() {
@@ -75,11 +64,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _loadSyllabus() async {
     setState(() => _loading = true);
     try {
-      // 1) Read the normalized per-variant syllabus location first
       final snap = await _syllabusRef.get();
       final v = snap.value;
 
-      // If this variant doesn't exist yet, create a placeholder flag in the course node
       if (v == null) {
         await _db
             .ref('courses')
@@ -117,9 +104,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   int get _totalSessions =>
       _units.fold<int>(0, (sum, u) => sum + u.sessions.length);
 
-
   void _ensureSessionNumbers() {
-    // Ensure correct ordering before numbering
     _units.sort((a, b) => a.order.compareTo(b.order));
     for (final u in _units) {
       u.sessions.sort((a, b) => a.order.compareTo(b.order));
@@ -140,10 +125,29 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     }
   }
 
+  Future<Map<String, dynamic>> _loadCourseMeta() async {
+    final snap = await _db.ref('courses').child(widget.courseId).get();
+    if (snap.value is Map) {
+      return Map<String, dynamic>.from(snap.value as Map);
+    }
+    return <String, dynamic>{};
+  }
+
+  Future<String> _loadCourseFolderName() async {
+    final courseMap = await _loadCourseMeta();
+    final courseCode = (courseMap['course_code'] ?? '').toString().trim();
+    final courseTitle =
+    (courseMap['title'] ?? widget.courseTitle).toString().trim();
+
+    return _SyllabusServerStorage.buildCourseFolderName(
+      courseCode: courseCode,
+      courseTitle: courseTitle,
+    );
+  }
+
   Future<void> _saveSyllabus() async {
     setState(() => _saving = true);
     try {
-      // normalize orders before saving
       for (int i = 0; i < _units.length; i++) {
         _units[i] = _units[i].copyWith(order: i + 1);
         for (int j = 0; j < _units[i].sessions.length; j++) {
@@ -153,39 +157,33 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
       _ensureSessionNumbers();
 
-      // 1) Read course meta (code/title/duration) from the "courses/{courseId}" node
-      final courseSnap = await _db.ref('courses').child(widget.courseId).get();
-      final courseMap = (courseSnap.value is Map) ? (courseSnap.value as Map) : {};
-
+      final courseMap = await _loadCourseMeta();
       final courseCode = (courseMap['course_code'] ?? '').toString();
       final courseTitle = (courseMap['title'] ?? widget.courseTitle).toString();
       final courseDuration = (courseMap['duration'] ?? '').toString();
 
-// 2) Save syllabus INCLUDING those fields
       final payload = {
         'courseId': widget.courseId,
-        'courseCode': courseCode,   // <- new
-        'title': courseTitle,       // <- new
-        'duration': courseDuration, // <- new
+        'courseCode': courseCode,
+        'title': courseTitle,
+        'duration': courseDuration,
         'updatedAt': ServerValue.timestamp,
         'units': _units
             .map((u) => u.toMap(
-          includeRecordedExtras: widget.variantKey == 'recorded',
-          includeOnlineExtras: widget.variantKey != 'recorded',
+          includeRecordedExtras: _isRecordedVariant,
+          includeOnlineExtras: !_isRecordedVariant,
         ))
             .toList(),
       };
 
       await _syllabusRef.set(payload);
 
-// ✅ write a quick “tick flag” so Admin list can show ✅ without scanning syllabi
       await _db
           .ref('courses')
           .child(widget.courseId)
           .child('syllabi_flags')
           .child(widget.variantKey)
           .set(true);
-
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -199,6 +197,39 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _deleteRecordedAssetsIfNeeded(SyllabusSession session) async {
+    if (!_isRecordedVariant) return;
+
+    final folderPath = _resolveServerFolderPath(session);
+    if (folderPath.isEmpty) return;
+
+    try {
+      await _SyllabusServerStorage.deletePath(
+        root: 'courses',
+        path: folderPath,
+      );
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('item not found')) return;
+      rethrow;
+    }
+  }
+
+  String _resolveServerFolderPath(SyllabusSession session) {
+    final stored = session.serverFolderPath.trim();
+    if (stored.isNotEmpty) return stored;
+
+    final fromVideo =
+    _SyllabusServerStorage.extractFolderPathFromUrl(session.videoUrl);
+    if (fromVideo.isNotEmpty) return fromVideo;
+
+    final fromMaterials =
+    _SyllabusServerStorage.extractFolderPathFromUrl(session.materialsUrl);
+    if (fromMaterials.isNotEmpty) return fromMaterials;
+
+    return '';
   }
 
   // ----------------------------
@@ -267,10 +298,24 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     );
     if (!ok) return;
 
-    setState(() {
-      final next = [..._units]..removeAt(unitIndex);
-      _units = next;
-    });
+    try {
+      final unit = _units[unitIndex];
+      if (_isRecordedVariant) {
+        for (final session in unit.sessions) {
+          await _deleteRecordedAssetsIfNeeded(session);
+        }
+      }
+
+      setState(() {
+        final next = [..._units]..removeAt(unitIndex);
+        _units = next;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e')),
+      );
+    }
   }
 
   void _moveUnit(int from, int to) {
@@ -287,22 +332,28 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   // ----------------------------
 
   Future<void> _addSession(int unitIndex) async {
+    final courseFolderName =
+    _isRecordedVariant ? await _loadCourseFolderName() : '';
+
     final res = await showModalBottomSheet<_SessionDraft>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _SessionEditorSheet(
         title: 'Add Session',
-        isRecorded: widget.variantKey.trim().toLowerCase() == 'recorded',
+        isRecorded: _isRecordedVariant,
+        courseFolderName: courseFolderName,
+        suggestedSessionNumber: _totalSessions + 1,
         initial: _SessionDraft(
           title: '',
           skillType: SkillType.listening,
           objective: '',
           content: '',
           homework: '',
-          durationMinutes: 45, // default
+          durationMinutes: 45,
           videoUrl: '',
           videoThumbnailUrl: '',
           materialsUrl: '',
+          serverFolderPath: '',
         ),
       ),
     );
@@ -319,10 +370,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       homework: res.homework.trim(),
       durationMinutes: res.durationMinutes,
       order: unit.sessions.length + 1,
-      sessionNumber: _totalSessions + 1, // temporary; _ensureSessionNumbers() will finalize
+      sessionNumber: _totalSessions + 1,
       videoUrl: res.videoUrl.trim(),
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
       materialsUrl: res.materialsUrl.trim(),
+      serverFolderPath: res.serverFolderPath.trim(),
     );
 
     setState(() {
@@ -335,13 +387,18 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _editSession(int unitIndex, int sessionIndex) async {
     final unit = _units[unitIndex];
     final s = unit.sessions[sessionIndex];
+    final courseFolderName =
+    _isRecordedVariant ? await _loadCourseFolderName() : '';
 
     final res = await showModalBottomSheet<_SessionDraft>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _SessionEditorSheet(
         title: 'Edit Session',
-        isRecorded: widget.variantKey.trim().toLowerCase() == 'recorded',
+        isRecorded: _isRecordedVariant,
+        courseFolderName: courseFolderName,
+        suggestedSessionNumber:
+        s.sessionNumber > 0 ? s.sessionNumber : (sessionIndex + 1),
         initial: _SessionDraft(
           title: s.title,
           skillType: s.skillType,
@@ -352,6 +409,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           videoUrl: s.videoUrl,
           videoThumbnailUrl: s.videoThumbnailUrl,
           materialsUrl: s.materialsUrl,
+          serverFolderPath: _resolveServerFolderPath(s),
         ),
       ),
     );
@@ -368,6 +426,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       videoUrl: res.videoUrl.trim(),
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
       materialsUrl: res.materialsUrl.trim(),
+      serverFolderPath: res.serverFolderPath.trim(),
     );
 
     setState(() {
@@ -388,13 +447,26 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     );
     if (!ok) return;
 
-    setState(() {
+    try {
       final unit = _units[unitIndex];
-      final sessions = [...unit.sessions]..removeAt(sessionIndex);
-      final nextUnits = [..._units];
-      nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
-      _units = nextUnits;
-    });
+      final session = unit.sessions[sessionIndex];
+
+      if (_isRecordedVariant) {
+        await _deleteRecordedAssetsIfNeeded(session);
+      }
+
+      setState(() {
+        final sessions = [...unit.sessions]..removeAt(sessionIndex);
+        final nextUnits = [..._units];
+        nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
+        _units = nextUnits;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e')),
+      );
+    }
   }
 
   void _moveSession(int unitIndex, int from, int to) {
@@ -446,7 +518,6 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             ),
           ],
         ),
-
         iconTheme: const IconThemeData(color: Color(0xFF1A2B48)),
         actions: [
           IconButton(
@@ -499,11 +570,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   key: ValueKey(unit.id),
                   unitNumber: unitIndex + 1,
                   unit: unit,
-
-                  // ✅ NEW (collapse/expand)
                   isExpanded: _isExpanded(unit.id),
                   onToggleExpanded: () => _toggleExpanded(unit.id),
-
                   onEdit: () => _editUnit(unitIndex),
                   onDelete: () => _deleteUnit(unitIndex),
                   onAddSession: () => _addSession(unitIndex),
@@ -516,7 +584,6 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   onDeleteSession: (sessionIndex) =>
                       _deleteSession(unitIndex, sessionIndex),
                 );
-
               },
             ),
           ),
@@ -581,6 +648,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   }
 
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+
   bool _isExpanded(String unitId) => _unitExpanded[unitId] ?? true;
 
   String _variantLabel(String key) {
@@ -601,7 +669,169 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   void _toggleExpanded(String unitId) {
     setState(() => _unitExpanded[unitId] = !(_unitExpanded[unitId] ?? true));
   }
+}
 
+class _SyllabusServerStorage {
+  static const String secret = 'my_super_secret_key';
+  static const String uploadUrl =
+      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+  static const String deleteUrl =
+      'https://www.yourbridgeschool.com/api/admin/delete_item.php';
+
+  static String sha1(String s) {
+    final bytes = utf8.encode(s);
+    return crypto.sha1.convert(bytes).toString();
+  }
+
+  static String sanitizeSegment(String value, {String fallback = 'item'}) {
+    final cleaned = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+
+    if (cleaned.isEmpty) return fallback;
+    return cleaned;
+  }
+
+  static String buildCourseFolderName({
+    required String courseCode,
+    required String courseTitle,
+  }) {
+    final code = sanitizeSegment(courseCode, fallback: '');
+    final title = sanitizeSegment(courseTitle, fallback: 'course');
+
+    if (code.isNotEmpty) {
+      return '${code}_$title';
+    }
+    return title;
+  }
+
+  static String buildSessionFolderName({
+    required int sessionNumber,
+    required String sessionTitle,
+  }) {
+    final padded = sessionNumber.toString().padLeft(2, '0');
+    final title = sanitizeSegment(sessionTitle, fallback: 'session_$padded');
+    return 'session_${padded}_$title';
+  }
+
+  static String buildCustomBaseName({
+    required int sessionNumber,
+    required String suffix,
+  }) {
+    final padded = sessionNumber.toString().padLeft(2, '0');
+    return 'session_${padded}_$suffix';
+  }
+
+  static Future<String> uploadPlatformFile({
+    required PlatformFile file,
+    required String root,
+    required String path,
+    required String customName,
+  }) async {
+    final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
+    req.fields['key'] = sha1(secret);
+    req.fields['root'] = root;
+    req.fields['path'] = path;
+    req.fields['custom_name'] = customName;
+
+    if (file.path != null && file.path!.isNotEmpty) {
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          file.path!,
+          filename: file.name,
+        ),
+      );
+    } else {
+      final Uint8List? bytes = file.bytes;
+      if (bytes == null) {
+        throw Exception('Could not read selected file');
+      }
+
+      req.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: file.name,
+        ),
+      );
+    }
+
+    final streamed = await req.send();
+    final response = await http.Response.fromStream(streamed);
+    final raw = response.body.trim();
+
+    if (!raw.startsWith('{')) {
+      throw Exception('Server did not return JSON.\n$raw');
+    }
+
+    final data = json.decode(raw);
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid upload response');
+    }
+
+    if (data['success'] == true) {
+      final url = (data['url'] ?? '').toString().trim();
+      if (url.isEmpty) {
+        throw Exception('Upload succeeded but no URL returned');
+      }
+      return url;
+    }
+
+    throw Exception((data['message'] ?? 'Upload failed').toString());
+  }
+
+  static Future<void> deletePath({
+    required String root,
+    required String path,
+  }) async {
+    final r = await http.post(
+      Uri.parse(deleteUrl),
+      body: {
+        'key': sha1(secret),
+        'root': root,
+        'path': path,
+      },
+    );
+
+    final raw = r.body.trim();
+    if (!raw.startsWith('{')) {
+      throw Exception('Server did not return JSON.\n$raw');
+    }
+
+    final data = json.decode(raw);
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid delete response');
+    }
+
+    if (data['success'] == true) return;
+
+    throw Exception((data['message'] ?? 'Delete failed').toString());
+  }
+
+  static String extractFolderPathFromUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return '';
+
+    try {
+      final uri = Uri.parse(trimmed);
+      final segments = uri.pathSegments;
+      final coursesIndex = segments.indexOf('courses');
+      if (coursesIndex == -1 || segments.length <= coursesIndex + 2) {
+        return '';
+      }
+
+      final folderSegments = segments.sublist(coursesIndex + 1);
+      if (folderSegments.length < 2) return '';
+      final withoutFile = folderSegments.sublist(0, folderSegments.length - 1);
+      return withoutFile.join('/');
+    } catch (_) {
+      return '';
+    }
+  }
 }
 
 /// ----------------------------
@@ -610,6 +840,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
 class _HeaderStats extends StatelessWidget {
   const _HeaderStats({required this.units, required this.sessions});
+
   final int units;
   final int sessions;
 
@@ -636,6 +867,7 @@ class _HeaderStats extends StatelessWidget {
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onAddUnit, required this.courseTitle});
+
   final VoidCallback onAddUnit;
   final String courseTitle;
 
@@ -652,11 +884,12 @@ class _EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.menu_book_outlined, size: 42, color: Color(0xFF1A2B48)),
+              const Icon(Icons.menu_book_outlined,
+                  size: 42, color: Color(0xFF1A2B48)),
               const SizedBox(height: 10),
-              Text(
+              const Text(
                 'No syllabus yet',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
                   color: Color(0xFF1A2B48),
@@ -697,25 +930,21 @@ class _UnitCard extends StatelessWidget {
     required this.onDeleteSession,
   });
 
-
   final int unitNumber;
   final SyllabusUnit unit;
   final bool isExpanded;
   final VoidCallback onToggleExpanded;
-
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onAddSession;
-
   final void Function(int oldIndex, int newIndex) onReorderSession;
   final void Function(int sessionIndex) onEditSession;
   final void Function(int sessionIndex) onDeleteSession;
 
   @override
   Widget build(BuildContext context) {
-    final baseTitle = unit.title.trim().isNotEmpty
-        ? unit.title.trim()
-        : unit.description.trim();
+    final baseTitle =
+    unit.title.trim().isNotEmpty ? unit.title.trim() : unit.description.trim();
 
     final title = unit.otherTitle.trim().isEmpty
         ? baseTitle
@@ -734,7 +963,7 @@ class _UnitCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A2B48).withOpacity(0.08), // light blue bar
+                color: const Color(0xFF1A2B48).withOpacity(0.08),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(
@@ -755,9 +984,9 @@ class _UnitCard extends StatelessWidget {
                   IconButton(
                     tooltip: isExpanded ? 'Collapse' : 'Expand',
                     onPressed: onToggleExpanded,
-                    icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                    icon:
+                    Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
                   ),
-
                   PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'edit') onEdit();
@@ -772,7 +1001,6 @@ class _UnitCard extends StatelessWidget {
                 ],
               ),
             ),
-
             if (unit.description.trim().isNotEmpty) ...[
               const SizedBox(height: 8),
               Align(
@@ -784,7 +1012,6 @@ class _UnitCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 10),
-
             Row(
               children: [
                 Text(
@@ -799,7 +1026,6 @@ class _UnitCard extends StatelessWidget {
                 ),
               ],
             ),
-
             if (!isExpanded)
               Align(
                 alignment: Alignment.centerLeft,
@@ -860,7 +1086,6 @@ class _UnitCard extends StatelessWidget {
                   );
                 },
               ),
-
           ],
         ),
       ),
@@ -870,6 +1095,7 @@ class _UnitCard extends StatelessWidget {
 
 class _Pill extends StatelessWidget {
   const _Pill({required this.label});
+
   final String label;
 
   @override
@@ -910,6 +1136,7 @@ class _UnitDraft {
 
 class _UnitEditorSheet extends StatefulWidget {
   const _UnitEditorSheet({required this.title, required this.initial});
+
   final String title;
   final _UnitDraft initial;
 
@@ -953,7 +1180,9 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                Text(widget.title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 16)),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: titleC,
@@ -962,7 +1191,8 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                     hintText: 'Example: Unit 1: Introductions',
                     filled: true,
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -1024,6 +1254,7 @@ class _SessionDraft {
     this.videoUrl = '',
     this.videoThumbnailUrl = '',
     this.materialsUrl = '',
+    this.serverFolderPath = '',
   });
 
   final String title;
@@ -1032,11 +1263,10 @@ class _SessionDraft {
   final String content;
   final String homework;
   final int durationMinutes;
-
   final String videoUrl;
   final String videoThumbnailUrl;
-
   final String materialsUrl;
+  final String serverFolderPath;
 }
 
 class _SessionEditorSheet extends StatefulWidget {
@@ -1044,17 +1274,34 @@ class _SessionEditorSheet extends StatefulWidget {
     required this.title,
     required this.initial,
     required this.isRecorded,
+    required this.courseFolderName,
+    required this.suggestedSessionNumber,
   });
 
   final String title;
   final _SessionDraft initial;
   final bool isRecorded;
+  final String courseFolderName;
+  final int suggestedSessionNumber;
 
   @override
   State<_SessionEditorSheet> createState() => _SessionEditorSheetState();
 }
 
 class _SessionEditorSheetState extends State<_SessionEditorSheet> {
+  String _fileNameFromUrl(String url) {
+    final t = url.trim();
+    if (t.isEmpty) return '';
+    try {
+      final uri = Uri.parse(t);
+      if (uri.pathSegments.isNotEmpty) {
+        return uri.pathSegments.last;
+      }
+    } catch (_) {}
+    return t.split('/').last;
+  }
+
+  String? _inlineError;
   final _form = GlobalKey<FormState>();
 
   late final TextEditingController titleC;
@@ -1065,7 +1312,18 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   late final TextEditingController videoUrlC;
   late final TextEditingController videoThumbC;
   late final TextEditingController materialsUrlC;
+
   SkillType _skill = SkillType.listening;
+
+  bool _uploadingVideo = false;
+  bool _uploadingMaterials = false;
+  bool _assetsResetForReplacement = false;
+  late String _serverFolderPath;
+
+  bool get _hasInitialRecordedAssets =>
+      widget.initial.serverFolderPath.trim().isNotEmpty ||
+          widget.initial.videoUrl.trim().isNotEmpty ||
+          widget.initial.materialsUrl.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -1074,10 +1332,12 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     objectiveC = TextEditingController(text: widget.initial.objective);
     contentC = TextEditingController(text: widget.initial.content);
     homeworkC = TextEditingController(text: widget.initial.homework);
-    durationC = TextEditingController(text: widget.initial.durationMinutes.toString());
+    durationC =
+        TextEditingController(text: widget.initial.durationMinutes.toString());
     videoUrlC = TextEditingController(text: widget.initial.videoUrl);
     videoThumbC = TextEditingController(text: widget.initial.videoThumbnailUrl);
     materialsUrlC = TextEditingController(text: widget.initial.materialsUrl);
+    _serverFolderPath = widget.initial.serverFolderPath.trim();
     _skill = widget.initial.skillType;
   }
 
@@ -1092,6 +1352,182 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     videoThumbC.dispose();
     materialsUrlC.dispose();
     super.dispose();
+  }
+
+  void _showInlineError(String message) {
+    if (!mounted) return;
+    setState(() => _inlineError = message);
+  }
+
+  void _clearInlineError() {
+    if (!mounted) return;
+    if (_inlineError != null) {
+      setState(() => _inlineError = null);
+    }
+  }
+
+  String _resolvedSessionFolderPath() {
+    if (_serverFolderPath.trim().isNotEmpty) return _serverFolderPath.trim();
+
+    final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
+      sessionNumber: widget.suggestedSessionNumber,
+      sessionTitle: titleC.text.trim(),
+    );
+
+    _serverFolderPath = '${widget.courseFolderName}/$sessionFolder';
+    return _serverFolderPath;
+  }
+
+  Future<bool> _prepareRecordedReplacementIfNeeded() async {
+    if (!widget.isRecorded) return true;
+    if (!_hasInitialRecordedAssets) return true;
+    if (_assetsResetForReplacement) return true;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Replace recorded files?'),
+        content: const Text(
+          'Replacing recorded files will delete the old video and HTML for this session first. You will need to upload both files again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!ok) return false;
+
+    final folderPath = _resolvedSessionFolderPath();
+    if (folderPath.isNotEmpty) {
+      try {
+        await _SyllabusServerStorage.deletePath(
+          root: 'courses',
+          path: folderPath,
+        );
+      } catch (e) {
+        final msg = e.toString().toLowerCase();
+        if (!msg.contains('item not found')) {
+          _showInlineError('Could not replace old recorded files: $e');
+          return false;
+        }
+      }
+    }
+
+    setState(() {
+      _assetsResetForReplacement = true;
+      videoUrlC.clear();
+      materialsUrlC.clear();
+      videoThumbC.clear();
+      _inlineError = null;
+    });
+
+    return true;
+  }
+
+  Future<void> _pickAndUploadVideo() async {
+    final title = titleC.text.trim();
+    if (title.isEmpty) {
+      _showInlineError('Enter session title first.');
+      return;
+    }
+
+    _clearInlineError();
+
+    final prepared = await _prepareRecordedReplacementIfNeeded();
+    if (!prepared) return;
+
+    try {
+      setState(() => _uploadingVideo = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: true,
+        type: FileType.video,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final path = _resolvedSessionFolderPath();
+
+      final url = await _SyllabusServerStorage.uploadPlatformFile(
+        file: file,
+        root: 'courses',
+        path: path,
+        customName: _SyllabusServerStorage.buildCustomBaseName(
+          sessionNumber: widget.suggestedSessionNumber,
+          suffix: 'video',
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        videoUrlC.text = url;
+        _inlineError = null;
+      });
+    } catch (e) {
+      _showInlineError('Video upload failed: $e');
+    } finally {
+      if (mounted) setState(() => _uploadingVideo = false);
+    }
+  }
+
+  Future<void> _pickAndUploadHtml() async {
+    final title = titleC.text.trim();
+    if (title.isEmpty) {
+      _showInlineError('Enter session title first.');
+      return;
+    }
+
+    _clearInlineError();
+
+    final prepared = await _prepareRecordedReplacementIfNeeded();
+    if (!prepared) return;
+
+    try {
+      setState(() => _uploadingMaterials = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const ['html', 'htm'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final path = _resolvedSessionFolderPath();
+
+      final url = await _SyllabusServerStorage.uploadPlatformFile(
+        file: file,
+        root: 'courses',
+        path: path,
+        customName: _SyllabusServerStorage.buildCustomBaseName(
+          sessionNumber: widget.suggestedSessionNumber,
+          suffix: 'materials',
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        materialsUrlC.text = url;
+        _inlineError = null;
+      });
+    } catch (e) {
+      _showInlineError('HTML upload failed: $e');
+    } finally {
+      if (mounted) setState(() => _uploadingMaterials = false);
+    }
   }
 
   @override
@@ -1109,9 +1545,32 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                Text(widget.title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 16)),
+                if (_inlineError != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      border: Border.all(color: Colors.red.shade200),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _inlineError!,
+                      style: TextStyle(
+                        color: Colors.red.shade800,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
-
                 TextFormField(
                   controller: titleC,
                   decoration: const InputDecoration(
@@ -1119,15 +1578,16 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     hintText: 'Example: Listening – Greetings',
                     filled: true,
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  onChanged: (_) => _clearInlineError(),
                 ),
-
                 const SizedBox(height: 12),
-
                 DropdownButtonFormField<SkillType>(
                   value: _skill,
                   items: SkillType.values
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                      .map((s) =>
+                      DropdownMenuItem(value: s, child: Text(s.label)))
                       .toList(),
                   onChanged: (v) => setState(() => _skill = v ?? _skill),
                   decoration: const InputDecoration(
@@ -1135,22 +1595,22 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     filled: true,
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
                 TextFormField(
                   controller: objectiveC,
                   maxLines: 3,
                   decoration: const InputDecoration(
                     labelText: 'Lesson objective *',
-                    hintText: 'By the end of this session, students will be able to…',
+                    hintText:
+                    'By the end of this session, students will be able to…',
                     filled: true,
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Objective is required' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'Objective is required'
+                      : null,
+                  onChanged: (_) => _clearInlineError(),
                 ),
-
                 const SizedBox(height: 12),
-
                 TextFormField(
                   controller: durationC,
                   keyboardType: TextInputType.number,
@@ -1167,10 +1627,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     if (n <= 0) return 'Must be > 0';
                     return null;
                   },
+                  onChanged: (_) => _clearInlineError(),
                 ),
-
                 const SizedBox(height: 12),
-
                 TextFormField(
                   controller: contentC,
                   maxLines: 6,
@@ -1179,10 +1638,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     hintText: 'Optional: instructions, links, text, activities…',
                     filled: true,
                   ),
+                  onChanged: (_) => _clearInlineError(),
                 ),
-
                 const SizedBox(height: 12),
-
                 TextFormField(
                   controller: homeworkC,
                   maxLines: 5,
@@ -1191,24 +1649,117 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     hintText: 'Optional: questions, tasks, exercises…',
                     filled: true,
                   ),
+                  onChanged: (_) => _clearInlineError(),
                 ),
                 if (widget.isRecorded) ...[
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: videoUrlC,
-                    decoration: const InputDecoration(
-                      labelText: 'Recorded video URL',
-                      hintText: 'https://...',
-                      filled: true,
-                    ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Recorded assets',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: videoThumbC,
-                    decoration: const InputDecoration(
-                      labelText: 'Video thumbnail URL',
-                      hintText: 'https://...',
-                      filled: true,
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Video file',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        if (videoUrlC.text.trim().isNotEmpty)
+                          Text(
+                            _fileNameFromUrl(videoUrlC.text.trim()),
+                            style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        else
+                          const Text(
+                            'No video uploaded yet.',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _uploadingVideo || _uploadingMaterials
+                              ? null
+                              : _pickAndUploadVideo,
+                          icon: _uploadingVideo
+                              ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child:
+                            CircularProgressIndicator(strokeWidth: 2),
+                          )
+                              : const Icon(Icons.video_file_rounded),
+                          label: Text(
+                            _uploadingVideo
+                                ? 'Uploading...'
+                                : (videoUrlC.text.trim().isEmpty
+                                ? 'Upload Video'
+                                : 'Replace Video'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'HTML materials',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        if (materialsUrlC.text.trim().isNotEmpty)
+                          Text(
+                            _fileNameFromUrl(materialsUrlC.text.trim()),
+                            style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        else
+                          const Text(
+                            'No HTML materials uploaded yet.',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _uploadingVideo || _uploadingMaterials
+                              ? null
+                              : _pickAndUploadHtml,
+                          icon: _uploadingMaterials
+                              ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child:
+                            CircularProgressIndicator(strokeWidth: 2),
+                          )
+                              : const Icon(Icons.html_rounded),
+                          label: Text(
+                            _uploadingMaterials
+                                ? 'Uploading...'
+                                : (materialsUrlC.text.trim().isEmpty
+                                ? 'Upload HTML'
+                                : 'Replace HTML'),
+                          ),
+                        ),
+                        if (_serverFolderPath.trim().isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Server folder: ${_serverFolderPath.trim()}',
+                            style: TextStyle(
+                              color: Colors.black.withOpacity(0.55),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -1221,6 +1772,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                       hintText: 'https://...',
                       filled: true,
                     ),
+                    onChanged: (_) => _clearInlineError(),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -1228,7 +1780,20 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                   width: double.infinity,
                   child: FilledButton(
                     onPressed: () {
+                      _clearInlineError();
+
                       if (!_form.currentState!.validate()) return;
+
+                      if (widget.isRecorded) {
+                        if (videoUrlC.text.trim().isEmpty) {
+                          _showInlineError('Upload the session video first.');
+                          return;
+                        }
+                        if (materialsUrlC.text.trim().isEmpty) {
+                          _showInlineError('Upload the session HTML first.');
+                          return;
+                        }
+                      }
 
                       Navigator.pop(
                         context,
@@ -1239,9 +1804,13 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           content: contentC.text,
                           homework: homeworkC.text,
                           durationMinutes: int.parse(durationC.text.trim()),
-                          videoUrl: widget.isRecorded ? videoUrlC.text.trim() : '',
-                          videoThumbnailUrl: widget.isRecorded ? videoThumbC.text.trim() : '',
-                          materialsUrl: widget.isRecorded ? '' : materialsUrlC.text.trim(),
+                          videoUrl:
+                          widget.isRecorded ? videoUrlC.text.trim() : '',
+                          videoThumbnailUrl:
+                          widget.isRecorded ? videoThumbC.text.trim() : '',
+                          materialsUrl: materialsUrlC.text.trim(),
+                          serverFolderPath:
+                          widget.isRecorded ? _serverFolderPath.trim() : '',
                         ),
                       );
                     },
@@ -1263,8 +1832,15 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 /// ----------------------------
 /// Models
 /// ----------------------------
-
-enum SkillType { listening, speaking, reading, writing, grammar, project }
+enum SkillType {
+  listening,
+  speaking,
+  reading,
+  writing,
+  grammar,
+  project,
+  workshop,
+}
 
 extension SkillTypeX on SkillType {
   String get label {
@@ -1281,6 +1857,8 @@ extension SkillTypeX on SkillType {
         return 'Grammar';
       case SkillType.project:
         return 'Project';
+      case SkillType.workshop:
+        return 'Workshop';
     }
   }
 
@@ -1297,6 +1875,8 @@ extension SkillTypeX on SkillType {
         return SkillType.grammar;
       case 'project':
         return SkillType.project;
+      case 'workshop':
+        return SkillType.workshop;
       case 'listening':
       default:
         return SkillType.listening;
@@ -1401,7 +1981,6 @@ class SyllabusUnit {
 }
 
 class SyllabusSession {
-
   SyllabusSession({
     required this.id,
     required this.title,
@@ -1415,24 +1994,23 @@ class SyllabusSession {
     this.videoUrl = '',
     this.videoThumbnailUrl = '',
     this.materialsUrl = '',
+    this.serverFolderPath = '',
   });
-
 
   final String id;
   final String title;
   final SkillType skillType;
   final String objective;
   final String content;
-  final String homework; // optional
-  final int durationMinutes; // required
+  final String homework;
+  final int durationMinutes;
   final int order;
-
-  // ✅ NEW
   final int sessionNumber;
-// ✅ Recorded-only extras (optional)
   final String videoUrl;
   final String videoThumbnailUrl;
   final String materialsUrl;
+  final String serverFolderPath;
+
   SyllabusSession copyWith({
     String? title,
     SkillType? skillType,
@@ -1445,6 +2023,7 @@ class SyllabusSession {
     String? videoUrl,
     String? videoThumbnailUrl,
     String? materialsUrl,
+    String? serverFolderPath,
   }) {
     return SyllabusSession(
       id: id,
@@ -1459,6 +2038,7 @@ class SyllabusSession {
       videoUrl: videoUrl ?? this.videoUrl,
       videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
       materialsUrl: materialsUrl ?? this.materialsUrl,
+      serverFolderPath: serverFolderPath ?? this.serverFolderPath,
     );
   }
 
@@ -1466,7 +2046,7 @@ class SyllabusSession {
     required bool includeRecordedExtras,
     required bool includeOnlineExtras,
   }) {
-    final map = {
+    final map = <String, dynamic>{
       'id': id,
       'title': title,
       'skillType': skillType.label,
@@ -1481,14 +2061,17 @@ class SyllabusSession {
     if (includeRecordedExtras) {
       map['videoUrl'] = videoUrl;
       map['videoThumbnailUrl'] = videoThumbnailUrl;
-
+      map['materialsUrl'] = materialsUrl;
+      map['serverFolderPath'] = serverFolderPath;
     }
+
     if (includeOnlineExtras) {
       map['materialsUrl'] = materialsUrl;
     }
 
     return map;
   }
+
   factory SyllabusSession.fromMap(Map m) {
     return SyllabusSession(
       id: (m['id'] ?? '').toString(),
@@ -1503,15 +2086,13 @@ class SyllabusSession {
       order: (m['order'] is num)
           ? (m['order'] as num).toInt()
           : (int.tryParse('${m['order']}') ?? 0),
-
-      // ✅ NEW: if missing, default 0, then _ensureSessionNumbers() will fix it
       sessionNumber: (m['sessionNumber'] is num)
           ? (m['sessionNumber'] as num).toInt()
           : (int.tryParse('${m['sessionNumber']}') ?? 0),
       videoUrl: (m['videoUrl'] ?? '').toString(),
       videoThumbnailUrl: (m['videoThumbnailUrl'] ?? '').toString(),
       materialsUrl: (m['materialsUrl'] ?? '').toString(),
+      serverFolderPath: (m['serverFolderPath'] ?? '').toString(),
     );
   }
 }
-

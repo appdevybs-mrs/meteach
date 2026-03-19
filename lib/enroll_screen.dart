@@ -118,16 +118,27 @@ String studyModeLabel(String key) {
   }
 }
 
+String studyModeLabelAr(String key) {
+  switch (normalizeStudyMode(key)) {
+    case 'online':
+      return 'أونلاين';
+    case 'inclass':
+      return 'حضوري';
+    default:
+      return '';
+  }
+}
+
 String canonicalShortLabelEn(String key, {String? fallback}) {
   switch (normalizeDeliveryKey(key)) {
     case 'inclass':
-      return 'Fixed group classes';
+      return 'Structured classroom learning';
     case 'flexible':
-      return 'Group live classes • Online, In-Class';
+      return 'Flexible group sessions';
     case 'private':
-      return 'One-to-one • Fixed schedule';
+      return 'Personal one-to-one lessons';
     case 'recorded':
-      return 'Self-paced video lessons';
+      return 'Self-paced full course';
     default:
       return (fallback ?? key).trim().isEmpty ? key : fallback!.trim();
   }
@@ -136,13 +147,13 @@ String canonicalShortLabelEn(String key, {String? fallback}) {
 String canonicalShortLabelAr(String key, {String? fallback}) {
   switch (normalizeDeliveryKey(key)) {
     case 'inclass':
-      return 'حصص جماعية ثابتة';
+      return 'تعلم منظم داخل القسم';
     case 'flexible':
-      return 'حصص جماعية مباشرة • أونلاين، حضوري';
+      return 'حصص جماعية مرنة';
     case 'private':
-      return 'حصص فردية • جدول ثابت';
+      return 'حصص فردية مخصصة';
     case 'recorded':
-      return 'دروس مسجلة • تعلم ذاتي';
+      return 'دورة كاملة بتعلم ذاتي';
     default:
       return (fallback ?? key).trim().isEmpty ? key : fallback!.trim();
   }
@@ -224,17 +235,13 @@ class EnrollDeliveryOption {
   String explanationEn() {
     switch (normalizeDeliveryKey(key)) {
       case 'inclass':
-        return 'Fixed-schedule group classes held at one of our branches or partner institutions. You study with learners at the same level, and progress follows the course duration and number of sessions.';
-
+        return 'Fixed-schedule group classes in class. Best for learners who want routine, classroom interaction, and steady progress.';
       case 'flexible':
-        return 'Flexible sessions available online or in class. You can book any open session that suits your schedule. These sessions are shared with other learners at the same level, with a maximum of 6 participants. Progress depends on the number of sessions you attend.';
-
+        return 'Flexible group sessions you can book based on your availability, online or in class. Best for learners with changing schedules.';
       case 'private':
-        return 'Private one-to-one lessons with a teacher on a fixed schedule. You will choose whether you prefer online or in-class study before submitting your enrollment.';
-
+        return 'Private one-to-one lessons on a fixed schedule, personalized to your level and goals. Best for fast and focused progress.';
       case 'recorded':
-        return 'Pre-recorded video lessons with explanations, activities, and quizzes. You learn independently and progress at your own pace.';
-
+        return 'A full recorded course you can study anytime at your own pace. Best for learners who prefer independent and flexible study.';
       default:
         return '';
     }
@@ -243,19 +250,45 @@ class EnrollDeliveryOption {
   String explanationAr() {
     switch (normalizeDeliveryKey(key)) {
       case 'inclass':
-        return 'دروس جماعية حضورية بجدول ثابت في أحد فروعنا أو المؤسسات الشريكة. تدرس مع متعلمين في نفس المستوى، ويعتمد التقدم على مدة الدورة وعدد الحصص.';
-
+        return 'دروس جماعية بجدول ثابت داخل القسم، مناسبة لمن يفضل التعلم المنظم والتفاعل المباشر داخل بيئة تعليمية واضحة.';
       case 'flexible':
-        return 'حصص مرنة يمكن حضورها عبر الإنترنت أو في الفصل. يمكنك حجز أي حصة متاحة في الوقت المناسب لك. هذه الحصص جماعية مع متعلمين في نفس المستوى وبحد أقصى 6 متعلمين. يعتمد التقدم على عدد الحصص التي تحضرها.';
-
+        return 'حصص جماعية مرنة يمكنك حجزها حسب الوقت المناسب لك، أونلاين أو حضورياً، وهي مناسبة لمن يحتاج حرية أكبر في تنظيم وقته.';
       case 'private':
-        return 'حصص فردية مع الأستاذ بجدول ثابت. ستختار قبل إرسال التسجيل ما إذا كنت تفضل الدراسة أونلاين أو حضورياً.';
-
+        return 'حصص فردية خاصة مع الأستاذ بجدول ثابت، موجهة حسب مستواك وهدفك، ومناسبة لمن يريد تركيزاً أكبر وتقدماً أسرع.';
       case 'recorded':
-        return 'دروس مسجلة مسبقاً تحتوي على فيديوهات شرح وأنشطة واختبارات. تتعلم بشكل مستقل وتتقدم حسب سرعتك الخاصة.';
-
+        return 'دورة كاملة مسجلة يمكنك دراستها في أي وقت وبالسرعة التي تناسبك، وهي مناسبة لمن يفضل التعلم الذاتي والمرن.';
       default:
         return '';
+    }
+  }
+
+  String bestForAr() {
+    switch (normalizeDeliveryKey(key)) {
+      case 'inclass':
+        return '🎯 مناسب لمن يحب الالتزام والتعلم داخل القسم';
+      case 'flexible':
+        return '🎯 مناسب لمن يملك وقتاً غير ثابت';
+      case 'private':
+        return '🎯 مناسب لمن يريد نتائج أسرع وتركيزاً كاملاً';
+      case 'recorded':
+        return '🎯 مناسب لمن يفضل الدراسة في أي وقت';
+      default:
+        return '';
+    }
+  }
+
+  IconData icon() {
+    switch (normalizeDeliveryKey(key)) {
+      case 'inclass':
+        return Icons.groups_rounded;
+      case 'flexible':
+        return Icons.schedule_rounded;
+      case 'private':
+        return Icons.person_rounded;
+      case 'recorded':
+        return Icons.play_circle_fill_rounded;
+      default:
+        return Icons.menu_book_rounded;
     }
   }
 }
@@ -286,6 +319,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
   bool saving = false;
   late final List<EnrollDeliveryOption> deliveryOptions;
   String? selectedDeliveryKey;
+  late final PageController _deliveryPageController;
+  int _currentDeliveryIndex = 0;
 
   /// Only required when deliveryKey == private
   String _privateStudyMode = 'online';
@@ -309,7 +344,16 @@ class _EnrollScreenState extends State<EnrollScreen> {
         orElse: () => deliveryOptions.first,
       );
       selectedDeliveryKey = firstSelectable?.key;
+      _currentDeliveryIndex = deliveryOptions.indexWhere(
+            (e) => e.key == selectedDeliveryKey,
+      );
+      if (_currentDeliveryIndex < 0) _currentDeliveryIndex = 0;
     }
+
+    _deliveryPageController = PageController(
+      viewportFraction: 0.82,
+      initialPage: _currentDeliveryIndex,
+    );
   }
 
   List<EnrollDeliveryOption> _dedupeNormalizedOptions(
@@ -353,6 +397,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
   @override
   void dispose() {
+    _deliveryPageController.dispose();
     fullNameC.dispose();
     phoneC.dispose();
     extraInfoC.dispose();
@@ -385,50 +430,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
     return 'Lifetime access.';
   }
 
-  Future<void> _showOptionInfo(EnrollDeliveryOption option) async {
-    await showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(option.label),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'English',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Brand.primaryBlue,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(option.explanationEn()),
-              const SizedBox(height: 16),
-              Text(
-                'العربية',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Brand.primaryBlue,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                option.explanationAr(),
-                textDirection: TextDirection.rtl,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
 
@@ -446,7 +447,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
     if (selected.requiresStudyMode &&
         normalizeStudyMode(_privateStudyMode).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please choose Online or In-Class for Private.')),
+        const SnackBar(
+          content: Text('Please choose Online or In-Class for Private.'),
+        ),
       );
       return;
     }
@@ -507,7 +510,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enrollment sent ✅ We will contact you soon.')),
+        const SnackBar(
+          content: Text('Enrollment sent ✅ We will contact you soon.'),
+        ),
       );
 
       Navigator.pop(context, true);
@@ -573,6 +578,17 @@ class _EnrollScreenState extends State<EnrollScreen> {
         borderSide: const BorderSide(color: Colors.redAccent, width: 2),
       ),
     );
+  }
+
+  void _selectDeliveryByIndex(int index) {
+    if (index < 0 || index >= deliveryOptions.length) return;
+    final option = deliveryOptions[index];
+    if (!option.isSelectable || saving) return;
+
+    setState(() {
+      _currentDeliveryIndex = index;
+      selectedDeliveryKey = option.key;
+    });
   }
 
   @override
@@ -643,28 +659,43 @@ class _EnrollScreenState extends State<EnrollScreen> {
                           icon: Icons.menu_book_rounded,
                           title: 'Choose how you want to study',
                         ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Swipe to explore the available study options.',
+                          style: TextStyle(
+                            color: Brand.mainText.withOpacity(0.72),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                         const SizedBox(height: 12),
-
                         if (deliveryOptions.isEmpty)
                           const _InfoBanner(
-                            text: 'No study options are available for this course right now.',
+                            text:
+                            'No study options are available for this course right now.',
                           )
-                        else
-                          ...deliveryOptions.map(
-                                (option) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _DeliveryOptionCard(
-                                option: option,
-                                selected: selectedDeliveryKey == option.key,
-                                onTap: saving || !option.isSelectable
-                                    ? null
-                                    : () => setState(() {
-                                  selectedDeliveryKey = option.key;
-                                }),
-                                onInfoTap: () => _showOptionInfo(option),
-                              ),
-                            ),
+                        else ...[
+                          _DeliveryCarousel(
+                            controller: _deliveryPageController,
+                            options: deliveryOptions,
+                            selectedIndex: _currentDeliveryIndex,
+                            onTapIndex: _selectDeliveryByIndex,
+                            onPageChanged: (index) {
+                              setState(() {
+                                _currentDeliveryIndex = index;
+                                selectedDeliveryKey =
+                                    deliveryOptions[index].key;
+                              });
+                            },
                           ),
+                          const SizedBox(height: 10),
+                          _CarouselDots(
+                            count: deliveryOptions.length,
+                            activeIndex: _currentDeliveryIndex,
+                          ),
+                          const SizedBox(height: 14),
+                          if (selected != null)
+                            _DeliveryExplanation(option: selected),
+                        ],
                       ],
                     ),
                   ),
@@ -685,7 +716,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             value: _privateStudyMode,
                             onChanged: saving
                                 ? null
-                                : (v) => setState(() => _privateStudyMode = v ?? 'online'),
+                                : (v) => setState(
+                                  () => _privateStudyMode = v ?? 'online',
+                            ),
                           ),
                         ],
                       ),
@@ -725,7 +758,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             ),
                             validator: (v) {
                               final s = (v ?? '').trim();
-                              if (s.isEmpty) return 'Please enter your full name.';
+                              if (s.isEmpty) {
+                                return 'Please enter your full name.';
+                              }
                               if (s.length < 3) return 'Name looks too short.';
                               return null;
                             },
@@ -743,8 +778,12 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             ),
                             validator: (v) {
                               final s = (v ?? '').trim();
-                              if (s.isEmpty) return 'Please enter your phone number.';
-                              if (s.length < 8) return 'Phone number looks too short.';
+                              if (s.isEmpty) {
+                                return 'Please enter your phone number.';
+                              }
+                              if (s.length < 8) {
+                                return 'Phone number looks too short.';
+                              }
                               return null;
                             },
                           ),
@@ -764,7 +803,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
                           const SizedBox(height: 14),
 
                           const _InfoBanner(
-                            text: 'We will contact you soon to confirm your subscription.',
+                            text:
+                            'We will contact you soon to confirm your subscription.',
                           ),
                         ],
                       ),
@@ -791,115 +831,311 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
 /// ===== UI =====
 
-class _DeliveryOptionCard extends StatelessWidget {
-  const _DeliveryOptionCard({
-    required this.option,
-    required this.selected,
-    required this.onTap,
-    required this.onInfoTap,
+class _DeliveryCarousel extends StatelessWidget {
+  const _DeliveryCarousel({
+    required this.controller,
+    required this.options,
+    required this.selectedIndex,
+    required this.onTapIndex,
+    required this.onPageChanged,
   });
 
-  final EnrollDeliveryOption option;
-  final bool selected;
-  final VoidCallback? onTap;
-  final VoidCallback onInfoTap;
+  final PageController controller;
+  final List<EnrollDeliveryOption> options;
+  final int selectedIndex;
+  final ValueChanged<int> onTapIndex;
+  final ValueChanged<int> onPageChanged;
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = selected ? Brand.accentCyan : Brand.uiBorder;
-    final bg = selected
-        ? Brand.accentCyan.withOpacity(0.10)
-        : Colors.white.withOpacity(0.92);
+    return SizedBox(
+      height: 170,
+      child: PageView.builder(
+        controller: controller,
+        itemCount: options.length,
+        onPageChanged: onPageChanged,
+        itemBuilder: (_, i) {
+          final option = options[i];
+          final selected = i == selectedIndex;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: borderColor, width: selected ? 2 : 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 8),
+          return AnimatedPadding(
+            duration: const Duration(milliseconds: 220),
+            padding: EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: selected ? 2 : 10,
             ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected ? Brand.primaryBlue : Colors.white,
-                border: Border.all(
-                  color: selected ? Brand.primaryBlue : Brand.uiBorder,
+            child: GestureDetector(
+              onTap: () => onTapIndex(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: selected
+                      ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Brand.primaryBlue,
+                      Brand.primaryBlue.withOpacity(0.92),
+                    ],
+                  )
+                      : LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.98),
+                      Colors.white.withOpacity(0.92),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: selected ? Brand.accentCyan : Brand.uiBorder,
+                    width: selected ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: selected
+                          ? Brand.primaryBlue.withOpacity(0.18)
+                          : Colors.black.withOpacity(0.05),
+                      blurRadius: selected ? 20 : 12,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.white.withOpacity(0.12)
+                            : Brand.accentCyan.withOpacity(0.14),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected
+                              ? Colors.white.withOpacity(0.18)
+                              : Brand.uiBorder.withOpacity(0.9),
+                        ),
+                      ),
+                      child: Icon(
+                        option.icon(),
+                        color: selected ? Colors.white : Brand.primaryBlue,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      option.label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: selected ? Colors.white : Brand.primaryBlue,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      option.shortLabelAr,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: selected
+                            ? Colors.white.withOpacity(0.92)
+                            : Brand.mainText.withOpacity(0.75),
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: selected
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
-                  : null,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          option.label,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: Brand.primaryBlue,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'About this option',
-                        onPressed: onInfoTap,
-                        icon: const Icon(
-                          Icons.help_outline_rounded,
-                          color: Brand.primaryBlue,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    option.shortLabelEn,
-                    style: TextStyle(
-                      color: Brand.mainText.withOpacity(0.78),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _MiniTag(
-                        icon: Icons.payments_rounded,
-                        label: option.feeLabel(),
-                      ),
-                      _MiniTag(
-                        icon: Icons.lock_open_rounded,
-                        label: option.accessLabelEn(),
-                      ),
-                    ],
-                  ),
-                ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CarouselDots extends StatelessWidget {
+  const _CarouselDots({
+    required this.count,
+    required this.activeIndex,
+  });
+
+  final int count;
+  final int activeIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(count, (i) {
+        final active = i == activeIndex;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: active ? 22 : 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: active ? Brand.primaryBlue : Brand.uiBorder,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+class _DeliveryExplanation extends StatelessWidget {
+  const _DeliveryExplanation({required this.option});
+
+  final EnrollDeliveryOption option;
+
+  List<_FeatureItem> _features() {
+    switch (option.key) {
+      case 'inclass':
+        return const [
+          _FeatureItem(Icons.event_rounded, '📅 جدول ثابت وواضح'),
+          _FeatureItem(Icons.groups_rounded, '👥 تعلم مع مجموعة في نفس المستوى'),
+          _FeatureItem(Icons.school_rounded, '🏫 بيئة تعليمية منظمة داخل القسم'),
+          _FeatureItem(Icons.trending_up_rounded, '📈 تقدم خطوة بخطوة'),
+        ];
+
+      case 'flexible':
+        return const [
+          _FeatureItem(Icons.schedule_rounded, '⏱ اختر الوقت المناسب لك'),
+          _FeatureItem(Icons.groups_rounded, '👥 حصص جماعية'),
+          _FeatureItem(Icons.people_alt_rounded, '👤 حتى 6 متعلمين'),
+          _FeatureItem(Icons.swap_horiz_rounded, '📍 أونلاين'),
+        ];
+
+      case 'private':
+        return const [
+          _FeatureItem(Icons.person_rounded, '👤 حصص فردية 1 to 1'),
+          _FeatureItem(Icons.track_changes_rounded, '🎯 برنامج حسب مستواك وهدفك'),
+          _FeatureItem(Icons.flash_on_rounded, '⚡ تقدم أسرع وتركيز أكبر'),
+          _FeatureItem(Icons.swap_horiz_rounded, '📍 أونلاين أو حضوري'),
+        ];
+
+      case 'recorded':
+        return const [
+          _FeatureItem(Icons.video_library_rounded, '🎥 دورة كاملة مسجلة'),
+          _FeatureItem(Icons.self_improvement_rounded, '📚 تعلم ذاتي وبالسرعة المناسبة'),
+          _FeatureItem(Icons.replay_rounded, '🔁 أعد مشاهدة الدروس وقتما تشاء'),
+          _FeatureItem(Icons.access_time_rounded, '🕒 ادرس في أي وقت'),
+        ];
+
+      default:
+        return const [];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final features = _features();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withOpacity(0.98),
+            Brand.accentCyan.withOpacity(0.04),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Brand.uiBorder.withOpacity(0.95)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              option.explanationAr(),
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                height: 1.55,
+                color: Brand.mainText,
+                fontSize: 14.2,
               ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              option.bestForAr(),
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: Brand.primaryBlue,
+                fontSize: 13.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: features
+                  .map((item) => _FeatureTag(item: item))
+                  .toList(),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FeatureItem {
+  const _FeatureItem(this.icon, this.label);
+  final IconData icon;
+  final String label;
+}
+
+class _FeatureTag extends StatelessWidget {
+  const _FeatureTag({required this.item});
+
+  final _FeatureItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 120, maxWidth: 240),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(item.icon, size: 17, color: Brand.primaryBlue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(
+                item.label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Brand.mainText,
+                  height: 1.25,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -917,7 +1153,9 @@ class _StudyModeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: normalizeStudyMode(value).isEmpty ? 'online' : normalizeStudyMode(value),
+      value: normalizeStudyMode(value).isEmpty
+          ? 'online'
+          : normalizeStudyMode(value),
       decoration: InputDecoration(
         labelText: 'Choose mode',
         filled: true,
@@ -966,6 +1204,8 @@ class _SelectedOptionSummary extends StatelessWidget {
         : 'Lifetime access.';
 
     final modeText = option.requiresStudyMode ? studyModeLabel(studyMode) : '';
+    final modeTextAr =
+    option.requiresStudyMode ? studyModeLabelAr(studyMode) : '';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -999,7 +1239,7 @@ class _SelectedOptionSummary extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: Brand.actionOrange.withOpacity(0.25)),
             ),
-            child: const Icon(Icons.menu_book_rounded, color: Brand.actionOrange),
+            child: Icon(option.icon(), color: Brand.actionOrange),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1014,10 +1254,12 @@ class _SelectedOptionSummary extends StatelessWidget {
                     fontSize: 16,
                   ),
                 ),
-                if (modeText.isNotEmpty) ...[
+                if (modeText.isNotEmpty || modeTextAr.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
-                    modeText,
+                    modeTextAr.isNotEmpty
+                        ? '$modeText • $modeTextAr'
+                        : modeText,
                     style: TextStyle(
                       color: Brand.primaryBlue.withOpacity(0.85),
                       fontWeight: FontWeight.w800,
@@ -1042,43 +1284,6 @@ class _SelectedOptionSummary extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniTag extends StatelessWidget {
-  const _MiniTag({
-    required this.icon,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: Brand.primaryBlue),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Brand.primaryBlue,
-              fontSize: 12,
             ),
           ),
         ],
@@ -1338,7 +1543,8 @@ class _BottomActionBar extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: Brand.primaryBlue,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Brand.primaryBlue.withOpacity(0.55),
+                    disabledBackgroundColor:
+                    Brand.primaryBlue.withOpacity(0.55),
                     disabledForegroundColor: Colors.white.withOpacity(0.9),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
