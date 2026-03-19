@@ -5,7 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
 import 'learner_course_detail_screen.dart';
-
+import 'recorded_course_study_screen.dart';
 class LearnerCoursesScreen extends StatefulWidget {
   const LearnerCoursesScreen({
     super.key,
@@ -138,10 +138,17 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
+      final variantKey = _variantKeyOf(match);
+
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => LearnerCourseDetailScreen(
+          builder: (_) => variantKey == 'recorded'
+              ? RecordedCourseStudyScreen(
+            courseKey: targetKey,
+            courseData: match,
+          )
+              : LearnerCourseDetailScreen(
             courseKey: targetKey,
             courseData: match,
           ),
@@ -723,7 +730,12 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => LearnerCourseDetailScreen(
+                      builder: (_) => variantKey == 'recorded'
+                          ? RecordedCourseStudyScreen(
+                        courseKey: courseKey,
+                        courseData: course,
+                      )
+                          : LearnerCourseDetailScreen(
                         courseKey: courseKey,
                         courseData: course,
                       ),

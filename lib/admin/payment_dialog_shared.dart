@@ -4,7 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 class PaymentDialogShared {
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
 
-  // ---------- Date helpers (same behavior as your payments screen) ----------
+  // ---------- Date helpers ----------
 
   static String _todayYmd() {
     final d = DateTime.now();
@@ -63,6 +63,21 @@ class PaymentDialogShared {
     return '${picked.year}-${two(picked.month)}-${two(picked.day)}';
   }
 
+  static int _addMonthsToMs(int baseMs, int months) {
+    if (baseMs <= 0 || months <= 0) return 0;
+    final d = DateTime.fromMillisecondsSinceEpoch(baseMs);
+    return DateTime(d.year, d.month + months, d.day).millisecondsSinceEpoch;
+  }
+
+  static int _monthsBetweenMs(int startMs, int endMs) {
+    if (startMs <= 0 || endMs <= 0) return 0;
+    final a = DateTime.fromMillisecondsSinceEpoch(startMs);
+    final b = DateTime.fromMillisecondsSinceEpoch(endMs);
+    var months = (b.year - a.year) * 12 + (b.month - a.month);
+    if (b.day < a.day) months -= 1;
+    return months < 0 ? 0 : months;
+  }
+
   // ---------- Small helpers ----------
 
   static void _snack(BuildContext context, String msg) {
@@ -84,12 +99,23 @@ class PaymentDialogShared {
     return int.tryParse(m.group(1) ?? '') ?? 0;
   }
 
-  static int _defaultAmount({
+  static int _defaultAmountForVariant({
+    required String variantKey,
     required int pricePerMonth,
     required int pricePerLevel,
     required int sessionsPaid,
     required int totalSessions,
+    required int durationMonths,
   }) {
+    final v = _normalizeDeliveryKey(variantKey);
+
+    if (v == 'recorded') {
+      if (pricePerMonth > 0 && durationMonths > 0) {
+        return pricePerMonth * durationMonths;
+      }
+      return 0;
+    }
+
     if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
     if (totalSessions > 0 && sessionsPaid == totalSessions && pricePerLevel > 0) {
       return pricePerLevel;
@@ -244,6 +270,39 @@ class PaymentDialogShared {
     return _deliveryLabelFromKey(dk);
   }
 
+  static bool _variantUsesTeacher(String variantKey) {
+    final v = _normalizeDeliveryKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
+  static bool _variantUsesSessions(String variantKey) {
+    final v = _normalizeDeliveryKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  static bool _variantUsesReminder(String variantKey) {
+    final v = _normalizeDeliveryKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
+  static bool _variantUsesExpiry(String variantKey) {
+    final v = _normalizeDeliveryKey(variantKey);
+    return v == 'flexible' || v == 'recorded';
+  }
+
+  static bool _variantUsesStartDate(String variantKey) {
+    final v = _normalizeDeliveryKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  static bool _variantIsRecorded(String variantKey) {
+    return _normalizeDeliveryKey(variantKey) == 'recorded';
+  }
+
+  static bool _variantIsFlexible(String variantKey) {
+    return _normalizeDeliveryKey(variantKey) == 'flexible';
+  }
+
   static Map<String, String> _extractStudyFieldsFromLearnerCourseNode(
       Map<String, dynamic> node,
       ) {
@@ -316,7 +375,7 @@ class PaymentDialogShared {
     return _extractStudyFieldsFromLearnerCourseNode(node);
   }
 
-  // ---------- Learner summary update ----------
+  // ---------- Summary / access rebuild helpers ----------
 
   static Future<void> _rebuildLearnerSummaryFromPayments({
     required FirebaseDatabase db,
@@ -344,6 +403,7 @@ class PaymentDialogShared {
     String latestMethod = '';
     int latestAmount = 0;
     int latestRemind = 0;
+    String latestVariantKey = '';
 
     if (allForUidRaw is Map) {
       allForUidRaw.forEach((payId, payVal) {
@@ -356,9 +416,12 @@ class PaymentDialogShared {
         final amount = _asInt(p['amount']);
         final sp = _asInt(p['sessionsPaid']);
         final paidAt = _asInt(p['paidAt']);
+        final variantKey = _normalizeDeliveryKey((p['variantKey'] ?? '').toString());
 
         totalPaid += amount;
-        sessionsPaidTotal += sp;
+        if (_variantUsesSessions(variantKey)) {
+          sessionsPaidTotal += sp;
+        }
 
         if (paidAt >= latestPaidAt) {
           latestPaidAt = paidAt;
@@ -366,17 +429,20 @@ class PaymentDialogShared {
           latestMethod = (p['method'] ?? '').toString();
           latestAmount = amount;
           latestRemind = _asInt(p['remindBeforeSession']);
+          latestVariantKey = variantKey;
         }
       });
     }
 
-    int remind = latestRemind > 0 ? latestRemind : _asInt(oldSum['remindBeforeSession']);
-
-    if (sessionsPaidTotal <= 0) {
-      remind = 0;
-    } else {
-      if (remind <= 0) remind = sessionsPaidTotal;
-      if (remind > sessionsPaidTotal) remind = sessionsPaidTotal;
+    int remind = 0;
+    if (_variantUsesReminder(latestVariantKey)) {
+      remind = latestRemind > 0 ? latestRemind : _asInt(oldSum['remindBeforeSession']);
+      if (sessionsPaidTotal <= 0) {
+        remind = 0;
+      } else {
+        if (remind <= 0) remind = sessionsPaidTotal;
+        if (remind > sessionsPaidTotal) remind = sessionsPaidTotal;
+      }
     }
 
     await sumRef.update({
@@ -433,6 +499,89 @@ class PaymentDialogShared {
         'lastMethod': lastMethod,
         'lastAmount': lastAmount,
       });
+    });
+  }
+
+  static Future<void> _rebuildVariantAccessFromPayments({
+    required FirebaseDatabase db,
+    required String uid,
+    required String courseKey,
+    required String variantKey,
+  }) async {
+    final usersRef = db.ref('users');
+    final paymentsRef = db.ref('payments');
+
+    final v = _normalizeDeliveryKey(variantKey);
+    if (!_variantUsesExpiry(v)) return;
+
+    final accessNode = v == 'recorded' ? 'recorded_access' : 'flexible_access';
+    final accessRef = usersRef.child(uid).child('courses').child(courseKey).child(accessNode);
+
+    final allForUidSnap = await paymentsRef.orderByChild('uid').equalTo(uid).get();
+    final allForUidRaw = allForUidSnap.value;
+
+    int latestPaidAt = 0;
+    int latestExpiresAt = 0;
+    int latestMonths = 0;
+    String latestPaymentId = '';
+
+    if (allForUidRaw is Map) {
+      allForUidRaw.forEach((payId, payVal) {
+        if (payId == null || payVal == null || payVal is! Map) return;
+
+        final p = payVal.map((k, v) => MapEntry(k.toString(), v));
+        if ((p['courseKey'] ?? '').toString() != courseKey) return;
+
+        final payVariant = _normalizeDeliveryKey((p['variantKey'] ?? '').toString());
+        if (payVariant != v) return;
+
+        final paidAt = _asInt(p['paidAt']);
+        if (paidAt >= latestPaidAt) {
+          latestPaidAt = paidAt;
+          latestExpiresAt = _asInt(p['expiresAt']);
+          latestMonths = v == 'recorded'
+              ? _asInt(p['durationMonths'])
+              : _asInt(p['expiryMonths']);
+          latestPaymentId = payId.toString();
+        }
+      });
+    }
+
+    if (latestPaymentId.isEmpty) {
+      await accessRef.remove();
+      return;
+    }
+
+    await accessRef.update({
+      'expiresAt': latestExpiresAt,
+      if (v == 'recorded') 'durationMonths': latestMonths,
+      if (v == 'flexible') 'expiryMonths': latestMonths,
+      'lastPaymentId': latestPaymentId,
+      'updatedAt': ServerValue.timestamp,
+    });
+  }
+
+  static Future<void> _writeVariantAccess({
+    required DatabaseReference usersRef,
+    required String uid,
+    required String courseKey,
+    required String variantKey,
+    required int expiresAt,
+    required int months,
+    required String paymentId,
+  }) async {
+    final v = _normalizeDeliveryKey(variantKey);
+    if (!_variantUsesExpiry(v)) return;
+
+    final accessNode = v == 'recorded' ? 'recorded_access' : 'flexible_access';
+    final accessRef = usersRef.child(uid).child('courses').child(courseKey).child(accessNode);
+
+    await accessRef.update({
+      'expiresAt': expiresAt,
+      if (v == 'recorded') 'durationMonths': months,
+      if (v == 'flexible') 'expiryMonths': months,
+      'lastPaymentId': paymentId,
+      'updatedAt': ServerValue.timestamp,
     });
   }
 
@@ -501,6 +650,7 @@ class PaymentDialogShared {
     final paymentId = (payment['paymentId'] ?? '').toString().trim();
     final uid = (payment['uid'] ?? '').toString().trim();
     final courseKey = (payment['courseKey'] ?? '').toString().trim();
+    final variantKey = _normalizeDeliveryKey((payment['variantKey'] ?? '').toString());
 
     if (paymentId.isEmpty || uid.isEmpty || courseKey.isEmpty) {
       _snack(context, 'Cannot delete: missing paymentId/uid/courseKey');
@@ -511,7 +661,7 @@ class PaymentDialogShared {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete payment?'),
-        content: const Text('This will remove the payment and update the learner summary.'),
+        content: const Text('This will remove the payment and update learner payment data.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(
@@ -535,6 +685,15 @@ class PaymentDialogShared {
         courseKey: courseKey,
       );
 
+      if (_variantUsesExpiry(variantKey)) {
+        await _rebuildVariantAccessFromPayments(
+          db: db,
+          uid: uid,
+          courseKey: courseKey,
+          variantKey: variantKey,
+        );
+      }
+
       _snack(context, 'Deleted ✅');
     } catch (e) {
       _snack(context, 'Delete failed: $e');
@@ -549,16 +708,34 @@ class PaymentDialogShared {
     final paymentsRef = db.ref('payments');
     final usersRef = db.ref('users');
 
-    final paymentId = (payment['paymentId'] ?? '').toString();
+    final paymentId = (payment['paymentId'] ?? '').toString().trim();
     if (paymentId.isEmpty) return;
 
     final teachers = await _loadTeachers(usersRef);
 
+    String variantKey = _normalizeDeliveryKey((payment['variantKey'] ?? '').toString());
+    final uid = (payment['uid'] ?? '').toString().trim();
+    final courseKey = (payment['courseKey'] ?? '').toString().trim();
+
+    if (variantKey.isEmpty && uid.isNotEmpty && courseKey.isNotEmpty) {
+      final study = await _loadStudyFieldsForLearnerCourse(
+        usersRef: usersRef,
+        uid: uid,
+        courseKey: courseKey,
+      );
+      variantKey = _normalizeDeliveryKey((study['variantKey'] ?? '').toString());
+    }
+
     int sessionsPaid = _asInt(payment['sessionsPaid']);
+    if (sessionsPaid <= 0) sessionsPaid = 8;
+
     int remindBeforeSession = _asInt(payment['remindBeforeSession']);
-    if (remindBeforeSession <= 0) {
+    if (_variantUsesReminder(variantKey) && remindBeforeSession <= 0) {
       remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
     }
+
+    int expiryMonths = _asInt(payment['expiryMonths']);
+    int durationMonths = _asInt(payment['durationMonths']);
 
     String method = (payment['method'] ?? _methods.first).toString();
     final amountC = TextEditingController(text: _asInt(payment['amount']).toString());
@@ -570,15 +747,43 @@ class PaymentDialogShared {
     String startDateYmd = (payment['startDate'] ?? '').toString();
     if (startDateYmd.trim().isEmpty) startDateYmd = _todayYmd();
 
+    int expiresAt = _asInt(payment['expiresAt']);
+    if (_variantUsesExpiry(variantKey) && expiresAt > 0) {
+      final inferredMonths = _monthsBetweenMs(_ymdToMs(paidDateYmd), expiresAt);
+      if (_variantIsFlexible(variantKey) && expiryMonths <= 0) {
+        expiryMonths = inferredMonths > 0 ? inferredMonths : 1;
+      }
+      if (_variantIsRecorded(variantKey) && durationMonths <= 0) {
+        durationMonths = inferredMonths > 0 ? inferredMonths : 1;
+      }
+    }
+
+    if (_variantIsFlexible(variantKey) && expiryMonths <= 0) expiryMonths = 1;
+    if (_variantIsRecorded(variantKey) && durationMonths <= 0) durationMonths = 1;
+
     String? teacherUid = (payment['teacherId'] ?? '').toString().trim();
     if (teacherUid.isEmpty) teacherUid = null;
-
     String teacherName = (payment['teacherName'] ?? '').toString().trim();
 
     await showDialog<void>(
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
+          final usesTeacher = _variantUsesTeacher(variantKey);
+          final usesSessions = _variantUsesSessions(variantKey);
+          final usesReminder = _variantUsesReminder(variantKey);
+          final usesExpiry = _variantUsesExpiry(variantKey);
+          final usesStartDate = _variantUsesStartDate(variantKey);
+          final isRecorded = _variantIsRecorded(variantKey);
+
+          final expiryPreviewMs = usesExpiry
+              ? _addMonthsToMs(
+            _ymdToMs(paidDateYmd),
+            isRecorded ? durationMonths : expiryMonths,
+          )
+              : 0;
+          final expiryPreviewYmd = usesExpiry ? _fmtDateFromMs(expiryPreviewMs) : '';
+
           return AlertDialog(
             title: const Text('Edit payment'),
             content: SizedBox(
@@ -586,79 +791,138 @@ class PaymentDialogShared {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DateField(
-                            label: 'Paid date',
-                            value: paidDateYmd,
-                            onTap: () async {
-                              final d = await _pickDateYmd(
-                                context: context,
-                                initialYmd: paidDateYmd,
-                                helpText: 'Pick paid date',
-                              );
-                              if (d == null) return;
-                              paidDateYmd = d;
-                              setD(() {});
-                            },
+                    if (usesStartDate) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DateField(
+                              label: 'Paid date',
+                              value: paidDateYmd,
+                              onTap: () async {
+                                final d = await _pickDateYmd(
+                                  context: context,
+                                  initialYmd: paidDateYmd,
+                                  helpText: 'Pick paid date',
+                                );
+                                if (d == null) return;
+                                paidDateYmd = d;
+                                setD(() {});
+                              },
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DateField(
-                            label: 'Start date (count from)',
-                            value: startDateYmd,
-                            onTap: () async {
-                              final d = await _pickDateYmd(
-                                context: context,
-                                initialYmd: startDateYmd,
-                                helpText: 'Pick start date',
-                              );
-                              if (d == null) return;
-                              startDateYmd = d;
-                              setD(() {});
-                            },
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _DateField(
+                              label: 'Start date (count from)',
+                              value: startDateYmd,
+                              onTap: () async {
+                                final d = await _pickDateYmd(
+                                  context: context,
+                                  initialYmd: startDateYmd,
+                                  helpText: 'Pick start date',
+                                );
+                                if (d == null) return;
+                                startDateYmd = d;
+                                setD(() {});
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ] else ...[
+                      _DateField(
+                        label: 'Paid date',
+                        value: paidDateYmd,
+                        onTap: () async {
+                          final d = await _pickDateYmd(
+                            context: context,
+                            initialYmd: paidDateYmd,
+                            helpText: 'Pick paid date',
+                          );
+                          if (d == null) return;
+                          paidDateYmd = d;
+                          setD(() {});
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 12),
-                    _prettyDropdown<String>(
-                      label: 'Teacher',
-                      value: teacherUid,
-                      items: {
-                        null: '— Select teacher —',
-                        ...teachers.map((k, v) => MapEntry(k, v)),
-                      },
-                      onChanged: (v) => setD(() {
-                        teacherUid = v;
-                        teacherName = (v == null) ? '' : (teachers[v] ?? '');
-                      }),
-                    ),
-                    const SizedBox(height: 12),
-                    _NumberPickerRow(
-                      label: 'Sessions paid',
-                      value: sessionsPaid,
-                      min: 1,
-                      max: 60,
-                      onChanged: (v) {
-                        sessionsPaid = v;
-                        if (remindBeforeSession > sessionsPaid) {
-                          remindBeforeSession = sessionsPaid;
-                        }
-                        setD(() {});
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _NumberPickerRow(
-                      label: 'Reminder (how many sessions left)',
-                      value: remindBeforeSession,
-                      min: 1,
-                      max: sessionsPaid > 0 ? sessionsPaid : 1,
-                      onChanged: (v) => setD(() => remindBeforeSession = v),
-                    ),
-                    const SizedBox(height: 12),
+
+                    if (usesTeacher) ...[
+                      _prettyDropdown<String>(
+                        label: 'Teacher',
+                        value: teacherUid,
+                        items: {
+                          null: '— Select teacher —',
+                          ...teachers.map((k, v) => MapEntry(k, v)),
+                        },
+                        onChanged: (v) => setD(() {
+                          teacherUid = v;
+                          teacherName = (v == null) ? '' : (teachers[v] ?? '');
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (usesSessions) ...[
+                      _NumberPickerRow(
+                        label: 'Sessions paid',
+                        value: sessionsPaid,
+                        min: 1,
+                        max: 60,
+                        onChanged: (v) {
+                          sessionsPaid = v;
+                          if (usesReminder && remindBeforeSession > sessionsPaid) {
+                            remindBeforeSession = sessionsPaid;
+                          }
+                          setD(() {});
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
+                    if (usesReminder) ...[
+                      _NumberPickerRow(
+                        label: 'Reminder (how many sessions left)',
+                        value: remindBeforeSession <= 0 ? 1 : remindBeforeSession,
+                        min: 1,
+                        max: sessionsPaid > 0 ? sessionsPaid : 1,
+                        onChanged: (v) => setD(() => remindBeforeSession = v),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (_variantIsFlexible(variantKey)) ...[
+                      _NumberPickerRow(
+                        label: 'Expires in months',
+                        value: expiryMonths,
+                        min: 1,
+                        max: 12,
+                        onChanged: (v) => setD(() => expiryMonths = v),
+                      ),
+                      const SizedBox(height: 10),
+                      _InfoLine(
+                        label: 'Expires on',
+                        value: expiryPreviewYmd.isEmpty ? '—' : expiryPreviewYmd,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (_variantIsRecorded(variantKey)) ...[
+                      _NumberPickerRow(
+                        label: 'Duration months',
+                        value: durationMonths,
+                        min: 1,
+                        max: 12,
+                        onChanged: (v) => setD(() => durationMonths = v),
+                      ),
+                      const SizedBox(height: 10),
+                      _InfoLine(
+                        label: 'Expires on',
+                        value: expiryPreviewYmd.isEmpty ? '—' : expiryPreviewYmd,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     _prettyDropdown<String>(
                       label: 'Method',
                       value: method,
@@ -666,12 +930,14 @@ class PaymentDialogShared {
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
                     const SizedBox(height: 12),
+
                     _prettyField(
                       controller: amountC,
                       label: 'Fee (editable)',
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
+
                     _prettyField(
                       controller: notesC,
                       label: 'Notes (optional)',
@@ -697,15 +963,34 @@ class PaymentDialogShared {
                     return;
                   }
 
+                  final usesTeacher = _variantUsesTeacher(variantKey);
+                  final usesSessions = _variantUsesSessions(variantKey);
+                  final usesReminder = _variantUsesReminder(variantKey);
+                  final usesExpiry = _variantUsesExpiry(variantKey);
+                  final usesStartDate = _variantUsesStartDate(variantKey);
+
+                  final monthsForExpiry = _variantIsRecorded(variantKey) ? durationMonths : expiryMonths;
+                  final nextExpiresAt = usesExpiry
+                      ? _addMonthsToMs(paidAtMs, monthsForExpiry)
+                      : 0;
+
+                  if (usesExpiry && nextExpiresAt <= 0) {
+                    _snack(context, 'Invalid expiry months.');
+                    return;
+                  }
+
                   try {
                     await paymentsRef.child(paymentId).update({
-                      'sessionsPaid': sessionsPaid,
-                      'remindBeforeSession': remindBeforeSession,
+                      'sessionsPaid': usesSessions ? sessionsPaid : null,
+                      'remindBeforeSession': usesReminder ? remindBeforeSession : null,
                       'method': method,
                       'amount': fee,
-                      'teacherId': teacherUid ?? '',
-                      'teacherName': teacherName,
-                      'startDate': startDateYmd,
+                      'teacherId': usesTeacher ? (teacherUid ?? '') : null,
+                      'teacherName': usesTeacher ? teacherName : null,
+                      'startDate': usesStartDate ? startDateYmd : null,
+                      'expiryMonths': _variantIsFlexible(variantKey) ? expiryMonths : null,
+                      'durationMonths': _variantIsRecorded(variantKey) ? durationMonths : null,
+                      'expiresAt': usesExpiry ? nextExpiresAt : null,
                       'notes': notesC.text.trim(),
                       'paidAt': paidAtMs,
                       'dayKey': paidDateYmd,
@@ -715,9 +1000,18 @@ class PaymentDialogShared {
 
                     await _rebuildLearnerSummaryFromPayments(
                       db: db,
-                      uid: (payment['uid'] ?? '').toString(),
-                      courseKey: (payment['courseKey'] ?? '').toString(),
+                      uid: uid,
+                      courseKey: courseKey,
                     );
+
+                    if (usesExpiry) {
+                      await _rebuildVariantAccessFromPayments(
+                        db: db,
+                        uid: uid,
+                        courseKey: courseKey,
+                        variantKey: variantKey,
+                      );
+                    }
 
                     if (context.mounted) Navigator.pop(context);
                     _snack(context, 'Updated ✅');
@@ -772,6 +1066,8 @@ class PaymentDialogShared {
     String method = _methods.first;
     int sessionsPaid = 8;
     int remindBeforeSession = 0;
+    int expiryMonths = 1;
+    int durationMonths = 1;
 
     String paidDateYmd = _todayYmd();
     String startDateYmd = _todayYmd();
@@ -811,20 +1107,40 @@ class PaymentDialogShared {
         };
       }
 
+      final variantKey = _normalizeDeliveryKey((pickedStudyFields['variantKey'] ?? '').toString());
       final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
-      sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
+
+      if (_variantUsesSessions(variantKey)) {
+        sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
+      } else {
+        sessionsPaid = 0;
+      }
+
+      if (_variantUsesReminder(variantKey)) {
+        remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
+      } else {
+        remindBeforeSession = 0;
+      }
+
+      expiryMonths = _variantIsFlexible(variantKey) ? 1 : expiryMonths;
+      durationMonths = _variantIsRecorded(variantKey) ? 1 : durationMonths;
 
       final pricePerMonth = _asInt(pickedCourse['price_per_month']);
       final pricePerLevel = _asInt(pickedCourse['price_per_level']);
 
-      amountC.text = _defaultAmount(
+      amountC.text = _defaultAmountForVariant(
+        variantKey: variantKey,
         pricePerMonth: pricePerMonth,
         pricePerLevel: pricePerLevel,
         sessionsPaid: sessionsPaid,
         totalSessions: totalSessions,
+        durationMonths: durationMonths,
       ).toString();
 
-      remindBeforeSession = sessionsPaid;
+      if (!_variantUsesTeacher(variantKey)) {
+        selectedTeacherUid = null;
+        selectedTeacherName = '';
+      }
     }
 
     if (pickedCourse.isNotEmpty && pickedCourseId != null) {
@@ -838,21 +1154,7 @@ class PaymentDialogShared {
           courseKey: pickedCourseKey!,
         );
       }
-
-      final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
-      sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
-
-      final pricePerMonth = _asInt(pickedCourse['price_per_month']);
-      final pricePerLevel = _asInt(pickedCourse['price_per_level']);
-
-      amountC.text = _defaultAmount(
-        pricePerMonth: pricePerMonth,
-        pricePerLevel: pricePerLevel,
-        sessionsPaid: sessionsPaid,
-        totalSessions: totalSessions,
-      ).toString();
-
-      remindBeforeSession = sessionsPaid;
+      await loadCourseAndDefaults();
     } else {
       await loadCourseAndDefaults();
     }
@@ -861,8 +1163,17 @@ class PaymentDialogShared {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
+          final variantKey = _normalizeDeliveryKey((pickedStudyFields['variantKey'] ?? '').toString());
           final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
           final maxSessions = totalSessions > 0 ? totalSessions : 24;
+
+          final usesTeacher = _variantUsesTeacher(variantKey);
+          final usesSessions = _variantUsesSessions(variantKey);
+          final usesReminder = _variantUsesReminder(variantKey);
+          final usesExpiry = _variantUsesExpiry(variantKey);
+          final usesStartDate = _variantUsesStartDate(variantKey);
+          final isRecorded = _variantIsRecorded(variantKey);
+          final isFlexible = _variantIsFlexible(variantKey);
 
           final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
           final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '').trim();
@@ -876,6 +1187,14 @@ class PaymentDialogShared {
           } else if (deliveryLabel.isNotEmpty) {
             studyInfoText = deliveryLabel;
           }
+
+          final previewExpiresAt = usesExpiry
+              ? _addMonthsToMs(
+            _ymdToMs(paidDateYmd),
+            isRecorded ? durationMonths : expiryMonths,
+          )
+              : 0;
+          final previewExpiresYmd = usesExpiry ? _fmtDateFromMs(previewExpiresAt) : '';
 
           return AlertDialog(
             title: const Text('Add payment'),
@@ -919,10 +1238,9 @@ class PaymentDialogShared {
                               if (firstNode is Map) {
                                 final node = firstNode.map((k, v) => MapEntry(k.toString(), v));
                                 pickedCourseId = (node['id'] ?? '').toString();
-                                pickedStudyFields =
-                                    _extractStudyFieldsFromLearnerCourseNode(
-                                      node.cast<String, dynamic>(),
-                                    );
+                                pickedStudyFields = _extractStudyFieldsFromLearnerCourseNode(
+                                  node.cast<String, dynamic>(),
+                                );
                               }
                             }
                           }
@@ -955,8 +1273,7 @@ class PaymentDialogShared {
                                   final variant = _extractStudyFieldsFromLearnerCourseNode(
                                     m.cast<String, dynamic>(),
                                   );
-                                  final variantLabel =
-                                  (variant['variantLabel'] ?? '').trim();
+                                  final variantLabel = (variant['variantLabel'] ?? '').trim();
 
                                   final pieces = <String>[
                                     if (code.isNotEmpty) code,
@@ -965,8 +1282,7 @@ class PaymentDialogShared {
                                   ];
 
                                   keys.add(key);
-                                  labelByKey[key] =
-                                  pieces.isEmpty ? key : pieces.join(' — ');
+                                  labelByKey[key] = pieces.isEmpty ? key : pieces.join(' — ');
                                   idByKey[key] = (m['id'] ?? '').toString();
                                   studyByKey[key] = variant;
                                 }
@@ -1048,96 +1364,170 @@ class PaymentDialogShared {
                       const SizedBox(height: 12),
                     ],
 
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DateField(
-                            label: 'Paid date',
-                            value: paidDateYmd,
-                            onTap: () async {
-                              final d = await _pickDateYmd(
-                                context: context,
-                                initialYmd: paidDateYmd,
-                                helpText: 'Pick paid date',
-                              );
-                              if (d == null) return;
-                              paidDateYmd = d;
-                              setD(() {});
-                            },
+                    if (usesStartDate) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DateField(
+                              label: 'Paid date',
+                              value: paidDateYmd,
+                              onTap: () async {
+                                final d = await _pickDateYmd(
+                                  context: context,
+                                  initialYmd: paidDateYmd,
+                                  helpText: 'Pick paid date',
+                                );
+                                if (d == null) return;
+                                paidDateYmd = d;
+                                setD(() {});
+                              },
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DateField(
-                            label: 'Start date (count from)',
-                            value: startDateYmd,
-                            onTap: () async {
-                              final d = await _pickDateYmd(
-                                context: context,
-                                initialYmd: startDateYmd,
-                                helpText: 'Pick start date',
-                              );
-                              if (d == null) return;
-                              startDateYmd = d;
-                              setD(() {});
-                            },
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _DateField(
+                              label: 'Start date (count from)',
+                              value: startDateYmd,
+                              onTap: () async {
+                                final d = await _pickDateYmd(
+                                  context: context,
+                                  initialYmd: startDateYmd,
+                                  helpText: 'Pick start date',
+                                );
+                                if (d == null) return;
+                                startDateYmd = d;
+                                setD(() {});
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ] else ...[
+                      _DateField(
+                        label: 'Paid date',
+                        value: paidDateYmd,
+                        onTap: () async {
+                          final d = await _pickDateYmd(
+                            context: context,
+                            initialYmd: paidDateYmd,
+                            helpText: 'Pick paid date',
+                          );
+                          if (d == null) return;
+                          paidDateYmd = d;
+                          setD(() {});
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
-                    _prettyDropdown<String>(
-                      label: 'Teacher',
-                      value: selectedTeacherUid,
-                      items: {
-                        null: '— Select teacher —',
-                        ...teachers.map((k, v) => MapEntry(k, v)),
-                      },
-                      onChanged: (v) => setD(() {
-                        selectedTeacherUid = v;
-                        selectedTeacherName = (v == null) ? '' : (teachers[v] ?? '');
-                      }),
-                    ),
-                    const SizedBox(height: 12),
+                    if (usesTeacher) ...[
+                      _prettyDropdown<String>(
+                        label: 'Teacher',
+                        value: selectedTeacherUid,
+                        items: {
+                          null: '— Select teacher —',
+                          ...teachers.map((k, v) => MapEntry(k, v)),
+                        },
+                        onChanged: (v) => setD(() {
+                          selectedTeacherUid = v;
+                          selectedTeacherName = (v == null) ? '' : (teachers[v] ?? '');
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
-                    _NumberPickerRow(
-                      label: 'Sessions paid',
-                      value: sessionsPaid,
-                      min: 1,
-                      max: maxSessions,
-                      onChanged: (v) {
-                        sessionsPaid = v;
+                    if (usesSessions) ...[
+                      _NumberPickerRow(
+                        label: 'Sessions paid',
+                        value: sessionsPaid,
+                        min: 1,
+                        max: maxSessions,
+                        onChanged: (v) {
+                          sessionsPaid = v;
 
-                        final pricePerMonth = _asInt(pickedCourse['price_per_month']);
-                        final pricePerLevel = _asInt(pickedCourse['price_per_level']);
+                          final pricePerMonth = _asInt(pickedCourse['price_per_month']);
+                          final pricePerLevel = _asInt(pickedCourse['price_per_level']);
 
-                        amountC.text = _defaultAmount(
-                          pricePerMonth: pricePerMonth,
-                          pricePerLevel: pricePerLevel,
-                          sessionsPaid: sessionsPaid,
-                          totalSessions: totalSessions,
-                        ).toString();
+                          amountC.text = _defaultAmountForVariant(
+                            variantKey: variantKey,
+                            pricePerMonth: pricePerMonth,
+                            pricePerLevel: pricePerLevel,
+                            sessionsPaid: sessionsPaid,
+                            totalSessions: totalSessions,
+                            durationMonths: durationMonths,
+                          ).toString();
 
-                        if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
-                        if (remindBeforeSession > sessionsPaid) {
-                          remindBeforeSession = sessionsPaid;
-                        }
+                          if (usesReminder) {
+                            if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
+                            if (remindBeforeSession > sessionsPaid) {
+                              remindBeforeSession = sessionsPaid;
+                            }
+                          }
 
-                        setD(() {});
-                      },
-                    ),
-                    const SizedBox(height: 10),
+                          setD(() {});
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                    ],
 
-                    _NumberPickerRow(
-                      label: 'Reminder (before session)',
-                      value: (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession),
-                      min: 1,
-                      max: sessionsPaid > 0 ? sessionsPaid : 1,
-                      onChanged: (v) => setD(() => remindBeforeSession = v),
-                    ),
+                    if (usesReminder) ...[
+                      _NumberPickerRow(
+                        label: 'Reminder (before session)',
+                        value: (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession),
+                        min: 1,
+                        max: sessionsPaid > 0 ? sessionsPaid : 1,
+                        onChanged: (v) => setD(() => remindBeforeSession = v),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
-                    const SizedBox(height: 12),
+                    if (isFlexible) ...[
+                      _NumberPickerRow(
+                        label: 'Expires in months',
+                        value: expiryMonths,
+                        min: 1,
+                        max: 12,
+                        onChanged: (v) => setD(() => expiryMonths = v),
+                      ),
+                      const SizedBox(height: 10),
+                      _InfoLine(
+                        label: 'Expires on',
+                        value: previewExpiresYmd.isEmpty ? '—' : previewExpiresYmd,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (isRecorded) ...[
+                      _NumberPickerRow(
+                        label: 'Duration months',
+                        value: durationMonths,
+                        min: 1,
+                        max: 12,
+                        onChanged: (v) {
+                          durationMonths = v;
+
+                          final pricePerMonth = _asInt(pickedCourse['price_per_month']);
+                          final pricePerLevel = _asInt(pickedCourse['price_per_level']);
+
+                          amountC.text = _defaultAmountForVariant(
+                            variantKey: variantKey,
+                            pricePerMonth: pricePerMonth,
+                            pricePerLevel: pricePerLevel,
+                            sessionsPaid: sessionsPaid,
+                            totalSessions: totalSessions,
+                            durationMonths: durationMonths,
+                          ).toString();
+
+                          setD(() {});
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _InfoLine(
+                        label: 'Expires on',
+                        value: previewExpiresYmd.isEmpty ? '—' : previewExpiresYmd,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
                     _prettyDropdown<String>(
                       label: 'Method',
@@ -1200,15 +1590,32 @@ class PaymentDialogShared {
                   final courseCode = (pickedCourse['course_code'] ?? '').toString();
                   final courseTitle = (pickedCourse['title'] ?? '').toString();
 
-                  final remind =
-                  (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession);
-
                   final deliveryKey = (pickedStudyFields['deliveryKey'] ?? '').trim();
                   final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '').trim();
                   final studyMode = (pickedStudyFields['studyMode'] ?? '').trim();
                   final studyModeLabel = (pickedStudyFields['studyModeLabel'] ?? '').trim();
-                  final variantKey = (pickedStudyFields['variantKey'] ?? '').trim();
+                  final normalizedVariantKey =
+                  _normalizeDeliveryKey((pickedStudyFields['variantKey'] ?? '').trim());
                   final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
+
+                  final usesTeacher = _variantUsesTeacher(normalizedVariantKey);
+                  final usesSessions = _variantUsesSessions(normalizedVariantKey);
+                  final usesReminder = _variantUsesReminder(normalizedVariantKey);
+                  final usesExpiry = _variantUsesExpiry(normalizedVariantKey);
+                  final usesStartDate = _variantUsesStartDate(normalizedVariantKey);
+
+                  final monthsForExpiry =
+                  _variantIsRecorded(normalizedVariantKey) ? durationMonths : expiryMonths;
+                  final expiresAt =
+                  usesExpiry ? _addMonthsToMs(paidAtMs, monthsForExpiry) : 0;
+
+                  if (usesExpiry && expiresAt <= 0) {
+                    _snack(context, 'Invalid expiry months.');
+                    return;
+                  }
+
+                  final remind =
+                  usesReminder ? (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession) : 0;
 
                   try {
                     final newRef = paymentsRef.push();
@@ -1221,16 +1628,19 @@ class PaymentDialogShared {
                       'course_code': courseCode,
                       'course_title': courseTitle,
 
-                      'sessionsPaid': sessionsPaid,
-                      'remindBeforeSession': remind,
+                      'sessionsPaid': usesSessions ? sessionsPaid : null,
+                      'remindBeforeSession': usesReminder ? remind : null,
 
                       'amount': fee,
                       'method': method,
 
-                      'teacherId': selectedTeacherUid ?? '',
-                      'teacherName': selectedTeacherName,
+                      'teacherId': usesTeacher ? (selectedTeacherUid ?? '') : null,
+                      'teacherName': usesTeacher ? selectedTeacherName : null,
 
-                      'startDate': startDateYmd,
+                      'startDate': usesStartDate ? startDateYmd : null,
+                      'expiryMonths': _variantIsFlexible(normalizedVariantKey) ? expiryMonths : null,
+                      'durationMonths': _variantIsRecorded(normalizedVariantKey) ? durationMonths : null,
+                      'expiresAt': usesExpiry ? expiresAt : null,
                       'notes': notesC.text.trim(),
 
                       'paidAt': paidAtMs,
@@ -1242,26 +1652,31 @@ class PaymentDialogShared {
                       'dayKey': paidDateYmd,
                       'monthKey': paidDateYmd.substring(0, 7),
 
-                      // ✅ new study / variant fields
                       'deliveryKey': deliveryKey,
                       'deliveryLabel': deliveryLabel,
                       'studyMode': studyMode,
                       'studyModeLabel': studyModeLabel,
-                      'variantKey': variantKey,
+                      'variantKey': normalizedVariantKey,
                       'variantLabel': variantLabel,
                     });
 
-                    await _updateLearnerSummary(
-                      usersRef: usersRef,
+                    await _rebuildLearnerSummaryFromPayments(
+                      db: db,
                       uid: pickedUid!,
                       courseKey: pickedCourseKey!,
-                      addSessionsPaid: sessionsPaid,
-                      addAmount: fee,
-                      lastPaymentId: paymentId,
-                      lastMethod: method,
-                      lastAmount: fee,
-                      remindBeforeSession: remind,
                     );
+
+                    if (usesExpiry) {
+                      await _writeVariantAccess(
+                        usersRef: usersRef,
+                        uid: pickedUid!,
+                        courseKey: pickedCourseKey!,
+                        variantKey: normalizedVariantKey,
+                        expiresAt: expiresAt,
+                        months: monthsForExpiry,
+                        paymentId: paymentId,
+                      );
+                    }
 
                     if (context.mounted) Navigator.pop(context);
                     _snack(context, 'Payment saved ✅');
@@ -1347,6 +1762,44 @@ class _MiniHint extends StatelessWidget {
           color: Colors.black.withOpacity(0.6),
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7F9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
