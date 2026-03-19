@@ -106,9 +106,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final m = _normalizeStudyMode(studyMode);
 
     if (v == 'private') {
-      if (m == 'online') return 'Private Online';
-      if (m == 'inclass') return 'Private In-Class';
-      return 'Private';
+      if (m == 'online') return 'VIP Online';
+      if (m == 'inclass') return 'VIP In-Class';
+      return 'VIP';
     }
     if (v == 'inclass') return 'In-Class';
     if (v == 'flexible') return 'Flexible';
@@ -1054,8 +1054,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           final usesExpiry = _variantUsesExpiry(pickedVariantKey);
           final isRecorded = _variantIsRecorded(pickedVariantKey);
 
+          final expiryPreviewBaseMs = _variantIsFlexible(pickedVariantKey)
+              ? _ymdToMs(startDateYmd)
+              : _ymdToMs(paidDateYmd);
+
           final expiryPreviewMs = usesExpiry
-              ? _addMonthsToMs(_ymdToMs(paidDateYmd), isRecorded ? durationMonths : expiryMonths)
+              ? _addMonthsToMs(
+            expiryPreviewBaseMs,
+            isRecorded ? durationMonths : expiryMonths,
+          )
               : 0;
           final expiryPreviewYmd = usesExpiry ? _fmtDateFromMs(expiryPreviewMs) : '';
 
@@ -1403,10 +1410,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                   final usesStartDate = _variantUsesStartDate(pickedVariantKey);
                   final usesExpiry = _variantUsesExpiry(pickedVariantKey);
 
+                  final startDateMs = _ymdToMs(startDateYmd);
                   final monthsForExpiry =
                   _variantIsRecorded(pickedVariantKey) ? durationMonths : expiryMonths;
+                  final expiryBaseMs =
+                  _variantIsFlexible(pickedVariantKey) ? startDateMs : paidAtMs;
                   final expiresAt =
-                  usesExpiry ? _addMonthsToMs(paidAtMs, monthsForExpiry) : 0;
+                  usesExpiry ? _addMonthsToMs(expiryBaseMs, monthsForExpiry) : 0;
 
                   setD(() => isSaving = true);
 
@@ -1581,8 +1591,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           final usesStartDate = _variantUsesStartDate(variantKey);
           final usesExpiry = _variantUsesExpiry(variantKey);
           final isRecorded = _variantIsRecorded(variantKey);
+          final previewExpiryBaseMs = _variantIsFlexible(variantKey)
+              ? _ymdToMs(startDateYmd)
+              : _ymdToMs(paidDateYmd);
+
           final previewExpiryMs = usesExpiry
-              ? _addMonthsToMs(_ymdToMs(paidDateYmd), isRecorded ? durationMonths : expiryMonths)
+              ? _addMonthsToMs(
+            previewExpiryBaseMs,
+            isRecorded ? durationMonths : expiryMonths,
+          )
               : 0;
           final previewExpiryYmd = usesExpiry ? _fmtDateFromMs(previewExpiryMs) : '';
 
@@ -1754,10 +1771,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                   try {
                     final monthKey = paidDateYmd.substring(0, 7);
                     final usesExpiry = _variantUsesExpiry(variantKey);
+                    final startDateMs = _ymdToMs(startDateYmd);
                     final monthsForExpiry =
                     _variantIsRecorded(variantKey) ? durationMonths : expiryMonths;
+                    final expiryBaseMs =
+                    _variantIsFlexible(variantKey) ? startDateMs : paidAtMs;
                     final expiresAt =
-                    usesExpiry ? _addMonthsToMs(paidAtMs, monthsForExpiry) : 0;
+                    usesExpiry ? _addMonthsToMs(expiryBaseMs, monthsForExpiry) : 0;
 
                     await _paymentsRef.child(paymentId).update({
                       'sessionsPaid': _variantUsesSessions(variantKey) ? sessionsPaid : null,

@@ -105,14 +105,8 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                     final title = (p['course_title'] ?? '').toString();
                     final uid = (p['uid'] ?? '').toString();
                     final variantKey = (p['variantKey'] ?? '').toString().trim();
-                    final studyMode = (p['studyMode'] ?? '').toString().trim();
-                    final studyModeLabel = (p['studyModeLabel'] ?? '').toString().trim();
-
-                    final studyTypeText = studyModeLabel.isNotEmpty
-                        ? studyModeLabel
-                        : (studyMode.isNotEmpty
-                        ? studyMode
-                        : variantKey);
+                    final studyTypeText = _studyTypeText(p);
+                    final usesSessions = _variantUsesSessions(variantKey);
                     return Card(
                       elevation: 0,
                       color: Colors.white,
@@ -150,7 +144,7 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                               runSpacing: 8,
                               children: [
                                 _pill('Amount: $amount'),
-                                _pill('Sessions paid: $sessionsPaid'),
+                                if (usesSessions) _pill('Sessions paid: $sessionsPaid'),
                                 if ((p['method'] ?? '').toString().trim().isNotEmpty)
                                   _pill('Method: ${p['method']}'),
                               ],
@@ -174,6 +168,51 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
         ],
       ),
     );
+  }
+
+  static String _normalizeVariantKey(String raw) {
+    final v = raw.trim().toLowerCase();
+
+    switch (v) {
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return 'inclass';
+
+      case 'flexible':
+      case 'online':
+        return 'flexible';
+
+      case 'private':
+      case 'vip':
+      case 'live':
+        return 'private';
+
+      case 'recorded':
+        return 'recorded';
+
+      default:
+        return v;
+    }
+  }
+
+  static bool _variantUsesSessions(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  static String _studyTypeText(Map<String, dynamic> p) {
+    final variantLabel = (p['variantLabel'] ?? '').toString().trim();
+    if (variantLabel.isNotEmpty) return variantLabel;
+
+    final studyModeLabel = (p['studyModeLabel'] ?? '').toString().trim();
+    final studyMode = (p['studyMode'] ?? '').toString().trim();
+    final variantKey = (p['variantKey'] ?? '').toString().trim();
+
+    if (studyModeLabel.isNotEmpty) return studyModeLabel;
+    if (studyMode.isNotEmpty) return studyMode;
+    return variantKey;
   }
 
   static Widget _pill(String t) {

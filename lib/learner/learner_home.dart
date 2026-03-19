@@ -1372,7 +1372,62 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         }
       } catch (_) {}
     }
+    if (learnerUid.isNotEmpty && courseId.isNotEmpty) {
+      try {
+        final snap = await _db
+            .child(
+          'booking_progress/$learnerUid/$courseId/online_attendance',
+        )
+            .get();
 
+        if (snap.exists && snap.value is Map) {
+          final m = Map<dynamic, dynamic>.from(snap.value as Map);
+
+          for (final e in m.entries) {
+            final rec = e.value;
+            if (rec is! Map) continue;
+            final r = Map<String, dynamic>.from(rec);
+
+            // Only teacher-confirmed present records should count
+            if (r['present'] != true) continue;
+
+            final taughtItems = r['taughtItems'];
+            if (taughtItems is List) {
+              for (final it in taughtItems) {
+                if (it is! Map) continue;
+                final item = Map<String, dynamic>.from(it);
+
+                final type =
+                (item['type'] ?? '').toString().trim().toLowerCase();
+                if (type != 'syllabus') continue;
+
+                final sid = (item['sessionId'] ?? '').toString().trim();
+                if (sid.isNotEmpty) {
+                  covered.add(sid);
+                  continue;
+                }
+
+                final sn = _toInt(item['sessionNumber']);
+                if (sn > 0) {
+                  final mapped = sessionIdByNumber[sn];
+                  if (mapped != null && mapped.isNotEmpty) {
+                    covered.add(mapped);
+                  }
+                }
+              }
+            } else {
+              final sn = _toInt(r['sessionNo']);
+              if (sn > 0) {
+                final mapped = sessionIdByNumber[sn];
+                if (mapped != null && mapped.isNotEmpty) {
+                  covered.add(mapped);
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
     return covered;
   }
 
