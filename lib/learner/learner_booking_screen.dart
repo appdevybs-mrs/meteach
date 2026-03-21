@@ -1,21 +1,3 @@
-// ✅ FULL REPLACEMENT: lib/learner/learner_booking_screen.dart
-//
-// Updated safely to preserve your working booking/Firebase/transaction logic,
-// while improving the learner UX:
-//
-// NEW UPDATES INCLUDED:
-// 1) Learners cannot make NEW bookings within 24 hours of class start
-// 2) Existing cancel/change logic within 24h is kept
-// 3) "+X more" is now tappable and opens a picker sheet for hidden teachers
-// 4) Extra visible helper labels removed from main screen and kept in help sheet
-// 5) Filters made more compact
-// 6) Extra safe bottom space added under schedule
-// 7) Blocking progress overlay added while booking/canceling/refreshing
-//
-// Notes:
-// - Core booking logic is preserved as much as possible
-// - Firebase paths, reminders, transactions, capacity logic, Meet logic kept
-// - Main changes are UI + booking lock visibility
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -82,10 +64,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   static const int timetableDays = 7;
   List<_Slot> generatedSlots = [];
 
-  // My bookings map: "yyyy-mm-dd|HH:MM" -> sessionNo
+// My bookings map: "yyyy-mm-dd|HH:MM|teacherId" -> sessionNo
   Map<String, int> myBookedSlots = {};
 
-  // Slot group summary: "yyyy-mm-dd|HH:MM" -> summary
+// Slot group summary: "yyyy-mm-dd|HH:MM|teacherId" -> summary
   Map<String, _SlotSummary> slotSummary = {};
 
   // Filters
@@ -150,16 +132,31 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     return fallback;
   }
 
-  DatabaseReference _curriculumRef(String cid) =>
-      _db.child('booking_curriculum/$cid');
   DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
-  DatabaseReference _syllabiRef(String cid) => _db.child('syllabi/$cid');
+
   DatabaseReference _progressRef(String cid) =>
       _db.child('booking_progress/$myUid/$cid');
+
   DatabaseReference _reservationsRootRef(String cid) =>
       _db.child('booking_reservations/$cid');
-  DatabaseReference _reservationsRef(String cid, String dayKey, String hhmm) =>
+
+  DatabaseReference _legacyReservationsRef(
+      String cid,
+      String dayKey,
+      String hhmm,
+      ) =>
       _db.child('booking_reservations/$cid/$dayKey/$hhmm');
+
+  DatabaseReference _reservationsRef(
+      String cid,
+      String dayKey,
+      String hhmm,
+      String teacherId,
+      ) =>
+      _db.child('booking_reservations/$cid/$dayKey/$hhmm/$teacherId');
+
+  String _slotSummaryKey(String dayKey, String hhmm, String teacherId) =>
+      '$dayKey|$hhmm|$teacherId';
 
   DateTime? _parseSlotStart(String dayKey, String hhmm) {
     try {
@@ -636,32 +633,41 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         for (final e in m.entries) {
           final hhmm = e.key.toString();
-          final slotNode = e.value;
-          if (slotNode is! Map) continue;
+          final timeNode = e.value;
+          if (timeNode is! Map) continue;
 
-          final sm = slotNode.map((k, vv) => MapEntry(k.toString(), vv));
+          final teachersAtTime =
+          timeNode.map((k, vv) => MapEntry(k.toString(), vv));
 
-          final learnersRaw = sm['learners'];
-          if (learnersRaw is! Map) continue;
+          for (final teacherEntry in teachersAtTime.entries) {
+            final teacherId = teacherEntry.key.toString();
+            final slotNode = teacherEntry.value;
+            if (slotNode is! Map) continue;
 
-          final learners =
-          learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
-          final count = learners.length;
-          if (count <= 0) continue;
+            final sm = slotNode.map((k, vv) => MapEntry(k.toString(), vv));
 
-          final groupSessionNo = _toInt(sm['sessionNo'], fallback: 0);
-          final groupSession = groupSessionNo <= 0 ? null : groupSessionNo;
+            final learnersRaw = sm['learners'];
+            if (learnersRaw is! Map) continue;
 
-          final key = '$dk|$hhmm';
+            final learners =
+            learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
+            final count = learners.length;
+            if (count <= 0) continue;
 
-          summary[key] = _SlotSummary(
-            bookedCount: count,
-            groupSessionNo: groupSession,
-            bookedByMe: learners.containsKey(myUid),
-          );
+            final groupSessionNo = _toInt(sm['sessionNo'], fallback: 0);
+            final groupSession = groupSessionNo <= 0 ? null : groupSessionNo;
 
-          if (learners.containsKey(myUid)) {
-            mine[key] = groupSession ?? currentSession;
+            final key = _slotSummaryKey(dk, hhmm, teacherId);
+
+            summary[key] = _SlotSummary(
+              bookedCount: count,
+              groupSessionNo: groupSession,
+              bookedByMe: learners.containsKey(myUid),
+            );
+
+            if (learners.containsKey(myUid)) {
+              mine[key] = groupSession ?? currentSession;
+            }
           }
         }
       }
@@ -688,37 +694,47 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         if (!snap.exists || snap.value == null || snap.value is! Map) continue;
 
         final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+
         for (final e in m.entries) {
           final hhmm = e.key.toString();
-          final node = e.value;
-          if (node is! Map) continue;
+          final timeNode = e.value;
+          if (timeNode is! Map) continue;
 
-          final sm = node.map((k, vv) => MapEntry(k.toString(), vv));
-          final learners = sm['learners'];
-          if (learners is! Map) continue;
+          final teachersAtTime =
+          timeNode.map((k, vv) => MapEntry(k.toString(), vv));
 
-          final lm = learners.map((k, vv) => MapEntry(k.toString(), vv));
-          if (!lm.containsKey(myUid)) continue;
+          for (final teacherEntry in teachersAtTime.entries) {
+            final teacherId = teacherEntry.key.toString();
+            final node = teacherEntry.value;
+            if (node is! Map) continue;
 
-          final start = _parseSlotStart(dk, hhmm);
-          if (start == null) continue;
-          if (!start.isAfter(now)) continue;
+            final sm = node.map((k, vv) => MapEntry(k.toString(), vv));
+            final learners = sm['learners'];
+            if (learners is! Map) continue;
 
-          final tId = (sm['teacherId'] ?? '').toString().trim();
-          final tName = (sm['teacherName'] ?? 'Teacher').toString().trim();
-          final sNo = _toInt(sm['sessionNo'], fallback: 0);
+            final lm = learners.map((k, vv) => MapEntry(k.toString(), vv));
+            if (!lm.containsKey(myUid)) continue;
 
-          final candidate = _MyBooking(
-            dayKey: dk,
-            time: hhmm,
-            start: start,
-            teacherId: tId,
-            teacherName: tName,
-            sessionNo: sNo,
-          );
+            final start = _parseSlotStart(dk, hhmm);
+            if (start == null) continue;
+            if (!start.isAfter(now)) continue;
 
-          if (best == null || candidate.start.isBefore(best.start)) {
-            best = candidate;
+            final tId = (sm['teacherId'] ?? teacherId).toString().trim();
+            final tName = (sm['teacherName'] ?? 'Teacher').toString().trim();
+            final sNo = _toInt(sm['sessionNo'], fallback: 0);
+
+            final candidate = _MyBooking(
+              dayKey: dk,
+              time: hhmm,
+              start: start,
+              teacherId: tId,
+              teacherName: tName,
+              sessionNo: sNo,
+            );
+
+            if (best == null || candidate.start.isBefore(best.start)) {
+              best = candidate;
+            }
           }
         }
       }
@@ -840,7 +856,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             if (start == null) continue;
             if (start.isBefore(now.add(const Duration(minutes: 1)))) continue;
 
-            final slotKey = '$dayKey|$hhmm';
+            final slotKey = _slotSummaryKey(dayKey, hhmm, t.teacherId);
             final summ = slotSummary[slotKey];
 
             final bookedCount = summ?.bookedCount ?? 0;
@@ -934,8 +950,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       if (existing != null &&
           existing.dayKey == slot.dayKey &&
-          existing.time == slot.time) {
-        _toast('You already booked this slot ✅');
+          existing.time == slot.time &&
+          existing.teacherId == slot.teacherId) {
+        _toast('You already booked this teacher and slot ✅');
         return;
       }
 
@@ -948,8 +965,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           return;
         }
 
-        final okCancel =
-        await _cancelBookingByKey(cid, existing.dayKey, existing.time);
+        final okCancel = await _cancelBookingByKey(
+          cid,
+          existing.dayKey,
+          existing.time,
+          existing.teacherId,
+        );
         if (!okCancel) {
           _toast('Could not change booking (cancel failed).');
           return;
@@ -969,7 +990,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         }
       }
 
-      final ref = _reservationsRef(cid, slot.dayKey, slot.time);
+      final ref = _reservationsRef(cid, slot.dayKey, slot.time, slot.teacherId);
 
       final pre = await ref.get();
       int? existingGroupSession;
@@ -1070,7 +1091,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     }
   }
 
-  Future<bool> _cancelBookingByKey(String cid, String dayKey, String hhmm) async {
+  Future<bool> _cancelBookingByKey(
+      String cid,
+      String dayKey,
+      String hhmm,
+      String teacherId,
+      ) async {
     try {
       final start = _parseSlotStart(dayKey, hhmm);
       if (start == null) return false;
@@ -1079,29 +1105,39 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       !start.isAfter(DateTime.now().add(const Duration(hours: 24)));
       if (locked) return false;
 
-      final ref = _reservationsRef(cid, dayKey, hhmm);
+      Future<bool> cancelAtRef(DatabaseReference ref) async {
+        final result = await ref.runTransaction((Object? currentData) {
+          if (currentData is! Map) return Transaction.abort();
 
-      final result = await ref.runTransaction((Object? currentData) {
-        if (currentData is! Map) return Transaction.abort();
+          final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+          final learnersRaw = node['learners'];
+          if (learnersRaw is! Map) return Transaction.abort();
 
-        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
-        final learnersRaw = node['learners'];
-        if (learnersRaw is! Map) return Transaction.abort();
+          final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
+          if (!learners.containsKey(myUid)) return Transaction.abort();
 
-        final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
-        if (!learners.containsKey(myUid)) return Transaction.abort();
+          learners.remove(myUid);
 
-        learners.remove(myUid);
+          if (learners.isEmpty) {
+            return Transaction.success(null);
+          }
 
-        if (learners.isEmpty) {
-          return Transaction.success(null);
-        }
+          node['learners'] = learners;
+          return Transaction.success(node);
+        });
 
-        node['learners'] = learners;
-        return Transaction.success(node);
-      });
+        return result.committed;
+      }
 
-      return result.committed;
+      final newRef = _reservationsRef(cid, dayKey, hhmm, teacherId);
+      final newCancelled = await cancelAtRef(newRef);
+      if (newCancelled) return true;
+
+      final legacyRef = _legacyReservationsRef(cid, dayKey, hhmm);
+      final legacyCancelled = await cancelAtRef(legacyRef);
+      if (legacyCancelled) return true;
+
+      return false;
     } catch (_) {
       return false;
     }
@@ -1121,7 +1157,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     setState(() => booking = true);
 
     try {
-      final ok = await _cancelBookingByKey(cid, slot.dayKey, slot.time);
+      final ok = await _cancelBookingByKey(
+        cid,
+        slot.dayKey,
+        slot.time,
+        slot.teacherId,
+      );
       if (!ok) {
         _toast('Cancel failed.');
         return;
@@ -2062,26 +2103,37 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       Navigator.pop(context);
 
                       final existing = await _findMyNextBooking(courseId!);
-                      final hasOther = existing != null &&
-                          !(existing.dayKey == slot.dayKey &&
-                              existing.time == slot.time);
+
+                      final isSameExactBooking = existing != null &&
+                          existing.dayKey == slot.dayKey &&
+                          existing.time == slot.time &&
+                          existing.teacherId == slot.teacherId;
+
+                      final isSameTimeDifferentTeacher = existing != null &&
+                          existing.dayKey == slot.dayKey &&
+                          existing.time == slot.time &&
+                          existing.teacherId != slot.teacherId;
+
+                      final hasOther = existing != null && !isSameExactBooking;
 
                       final locked = existing != null &&
                           !existing.start.isAfter(
                             DateTime.now().add(const Duration(hours: 24)),
                           );
 
-                      final label = (slot.bookedCount > 0 &&
-                          slot.groupSessionNo == currentSession)
+                      final label = isSameTimeDifferentTeacher
+                          ? 'Change teacher'
+                          : ((slot.bookedCount > 0 && slot.groupSessionNo == currentSession)
                           ? 'Join group'
-                          : 'Book this slot';
+                          : 'Book this slot');
 
                       final msg = hasOther
                           ? (locked
                           ? 'You already booked a class within 24 hours.\nYou can’t change it now.'
+                          : isSameTimeDifferentTeacher
+                          ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
                           : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? currentSession} (${slot.bookedCount}/$cap).')
                           : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? currentSession}\nLearners: ${slot.bookedCount}/$cap';
-
                       if (hasOther && locked) {
                         _toast('You can’t change booking within 24 hours.');
                         return;
@@ -2090,7 +2142,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       final ok = await showDialog<bool>(
                         context: context,
                         builder: (_) => AlertDialog(
-                          title: Text(hasOther ? 'Change booking' : label),
+                          title: Text(
+                            hasOther
+                                ? (isSameTimeDifferentTeacher ? 'Change teacher' : 'Change booking')
+                                : label,
+                          ),
                           content: Text(msg),
                           actions: [
                             TextButton(
@@ -2101,7 +2157,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                             FilledButton(
                               onPressed: () =>
                                   Navigator.pop(context, true),
-                              child: Text(hasOther ? 'Yes, Change' : 'Yes'),
+                              child: Text(
+                                hasOther
+                                    ? (isSameTimeDifferentTeacher ? 'Yes, Change Teacher' : 'Yes, Change')
+                                    : 'Yes',
+                              ),
                             ),
                           ],
                         ),
@@ -2776,7 +2836,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     final Map<String, List<_Slot>> index = {};
     for (final s in slots) {
-      index.putIfAbsent(s.key, () => <_Slot>[]).add(s);
+      final cellKey = '${s.dayKey}|${s.time}';
+      index.putIfAbsent(cellKey, () => <_Slot>[]).add(s);
     }
 
     for (final k in index.keys) {
@@ -3192,7 +3253,7 @@ class _Slot {
     this.groupSessionNo,
   });
 
-  String get key => '$dayKey|$time';
+  String get key => '$dayKey|$time|$teacherId';
 
   bool get isFull {
     final cap = maxLearnersPerSlot <= 0 ? 6 : maxLearnersPerSlot;

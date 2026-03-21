@@ -1874,6 +1874,8 @@ class _OverviewPanel extends StatelessWidget {
                   label: 'Online',
                   value: '$upcomingOnlineCount',
                   icon: Icons.videocam_rounded,
+                  badgeCount: upcomingOnlineCount,
+                  badgeColor: Colors.red,
                 ),
               ),
             ],
@@ -1890,12 +1892,16 @@ class _OverviewStatBox extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    this.badgeCount = 0,
+    this.badgeColor,
   });
 
   final _HomePalette palette;
   final String label;
   final String value;
   final IconData icon;
+  final int badgeCount;
+  final Color? badgeColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1905,36 +1911,66 @@ class _OverviewStatBox extends StatelessWidget {
         color: palette.soft.withOpacity(0.7),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Icon(icon, color: palette.primary, size: 20),
-          const SizedBox(height: 7),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: palette.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
+          Column(
+            children: [
+              Icon(icon, color: palette.primary, size: 20),
+              const SizedBox(height: 7),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.text.withOpacity(0.65),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 10,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: palette.text.withOpacity(0.65),
-              fontWeight: FontWeight.w800,
-              fontSize: 10,
+          if (badgeCount > 0)
+            Positioned(
+              top: -6,
+              right: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: badgeColor ?? Colors.red,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 }
+
 
 class _SingleDashboardActionCard extends StatelessWidget {
   const _SingleDashboardActionCard({

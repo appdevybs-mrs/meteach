@@ -146,12 +146,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_messages/$threadId/$msgKey/toUids/$teacherUid': true,
 
       // my index
+      // my index
       'mail_index/$_uid/$threadId/peerUid': teacherUid,
       'mail_index/$_uid/$threadId/peerName': teacherName.isEmpty ? 'Teacher' : teacherName,
       'mail_index/$_uid/$threadId/subject': subject,
       'mail_index/$_uid/$threadId/lastMessage': body.length > 60 ? body.substring(0, 60) : body,
       'mail_index/$_uid/$threadId/unreadCount': 0,
       'mail_index/$_uid/$threadId/updatedAt': now,
+      'mail_index/$_uid/$threadId/type': 'homework',
 
       // my read state (optional but consistent)
       'mail_state/$_uid/$threadId/lastReadAt': now,
@@ -170,6 +172,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'subject': subject,
       'lastMessage': body.length > 60 ? body.substring(0, 60) : body,
       'updatedAt': now,
+      'type': 'homework',
     });
 
     await teacherIndexRef.child('unreadCount').runTransaction((v) {
@@ -854,43 +857,45 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
                           // Helpful quick action: open the homework mail thread (compact)
                           const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.mail_outline_rounded),
-                                  label: const Text('Open homework chat'),
-                                  style: OutlinedButton.styleFrom(
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                  ),
-                                  onPressed: () async {
-                                    final teacherUid = (it['teacherUid'] ?? '').toString().trim();
-                                    if (teacherUid.isEmpty) return;
+                          if (submittedAt != null && autoMailMsgKey.isNotEmpty) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    icon: const Icon(Icons.mail_outline_rounded),
+                                    label: const Text('Open homework chat'),
+                                    style: OutlinedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    ),
+                                    onPressed: () async {
+                                      final teacherUid = (it['teacherUid'] ?? '').toString().trim();
+                                      if (teacherUid.isEmpty) return;
 
-                                    final threadId = '${_uid}_${teacherUid}_$sessionId';
-                                    final subject =
-                                        '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
+                                      final threadId = '${_uid}_${teacherUid}_$sessionId';
+                                      final subject =
+                                          '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
 
-                                    await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => LearnerMailThreadScreen(
-                                          threadId: threadId,
-                                          peerUid: teacherUid,
-                                          peerName: ((it['teacherName'] ?? '').toString().trim().isEmpty)
-                                              ? 'Teacher'
-                                              : (it['teacherName'] ?? '').toString().trim(),
-                                          subject: subject,
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => LearnerMailThreadScreen(
+                                            threadId: threadId,
+                                            peerUid: teacherUid,
+                                            peerName: ((it['teacherName'] ?? '').toString().trim().isEmpty)
+                                                ? 'Teacher'
+                                                : (it['teacherName'] ?? '').toString().trim(),
+                                            subject: subject,
+                                          ),
                                         ),
-                                      ),
-                                    );
+                                      );
 
-                                    if (mounted) await _load();
-                                  },
+                                      if (mounted) await _load();
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          ],
                         ],
                       ],
                     ),

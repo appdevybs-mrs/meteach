@@ -587,31 +587,71 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         return;
       }
 
-      if (picked.mode == _ComposeMode.single && picked.receiverUid != null) {
-        final toUid = picked.receiverUid!;
-        final toName = picked.receiverName ?? '';
+      if (picked.mode == _ComposeMode.single) {
+        final selectedUids = picked.receiverUids ?? const [];
 
-        final threadId = await _createThreadWithFirstMessage(
-          subject: subject,
-          firstMessage: firstMessage,
-          toUid: toUid,
-          toName: toName,
-          teacherName: picked.teacherName,
-        );
+        if (selectedUids.isEmpty) {
+          _snack('Please select at least one recipient.');
+          return;
+        }
+
+        final usersSnap = await _db.ref('users').get();
+        final usersVal = usersSnap.value;
+        final nameByUid = <String, String>{};
+
+        if (usersVal is Map) {
+          usersVal.forEach((uid, vv) {
+            if (uid == null || vv == null || vv is! Map) return;
+            final m = vv.map((k, v) => MapEntry(k.toString(), v));
+            final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+            final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+            final email = (m['email'] ?? '').toString().trim();
+            final n = ('$fn $ln').trim();
+            nameByUid[uid.toString()] =
+            n.isNotEmpty ? n : (email.isNotEmpty ? email : uid.toString());
+          });
+        }
+
+        String? firstThreadId;
+        String? firstUid;
+        String firstName = '';
+        int sent = 0;
+
+        for (final toUid in selectedUids) {
+          final toName = nameByUid[toUid] ?? 'User';
+
+          final threadId = await _createThreadWithFirstMessage(
+            subject: subject,
+            firstMessage: firstMessage,
+            toUid: toUid,
+            toName: toName,
+            teacherName: picked.teacherName,
+          );
+
+          firstThreadId ??= threadId;
+          firstUid ??= toUid;
+          if (firstName.isEmpty) firstName = toName;
+          sent++;
+        }
 
         if (!mounted) return;
 
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            settings: RouteSettings(name: '/mail/thread/$threadId'),
-            builder: (_) => TeacherMailThreadScreen(
-              threadId: threadId,
-              peerUid: toUid,
-              peerName: toName.isEmpty ? 'User' : toName,
-              subject: subject,
+        if (sent == 1 && firstThreadId != null && firstUid != null) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              settings: RouteSettings(name: '/mail/thread/$firstThreadId'),
+              builder: (_) => TeacherMailThreadScreen(
+                threadId: firstThreadId!,
+                peerUid: firstUid!,
+                peerName: firstName.isEmpty ? 'User' : firstName,
+                subject: subject,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          _snack('Sent to $sent recipients ✅');
+        }
+
         return;
       }
 
@@ -778,7 +818,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 row: r,
                 timeLabel: _timeLabel(r.updatedAtMs),
                 onDelete: () => _deleteThreadForMe(r),
-                onReview: () => _tryOpenHomeworkReview(r),
+                onReview: (r.type == 'homework') ? () => _tryOpenHomeworkReview(r) : null,
                 onOpen: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
@@ -1083,13 +1123,10 @@ class _ThreadTile extends StatelessWidget {
   final _TopicRow row;
   final String timeLabel;
   final VoidCallback onDelete;
-  final VoidCallback onReview;
+  final VoidCallback? onReview;
   final VoidCallback onOpen;
 
-  bool _isHomeworkSubject(String s) {
-    final t = s.trim().toUpperCase();
-    return t.startsWith('[HW]');
-  }
+
 
   List<String> _hwParts(String subject) {
     var s = subject.trim();
@@ -1109,7 +1146,7 @@ class _ThreadTile extends StatelessWidget {
     final subject = row.subject.trim().isEmpty ? '(No topic)' : row.subject.trim();
     final preview = row.lastMessage.trim().isEmpty ? '(No messages yet)' : row.lastMessage.trim();
 
-    final isHomework = _isHomeworkSubject(subject);
+    final isHomework = row.type == 'homework';
     final parts = _hwParts(subject);
     final hwCourse = parts.isNotEmpty ? parts.first : 'Homework';
     final hwDate = parts.length >= 2 ? parts[1] : '';
@@ -1316,6 +1353,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 
   List<_RecipientRow> _recipients = [];
   _RecipientRow? _picked;
+  final Set<String> _pickedRecipientUids = {};
 
   List<_ClassRow> _classes = [];
   _ClassRow? _pickedClass;
@@ -1456,6 +1494,11 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         _recipients = all;
         _picked = all.isNotEmpty ? all.first : null;
 
+        _pickedRecipientUids.clear();
+        if (_picked != null) {
+          _pickedRecipientUids.add(_picked!.uid);
+        }
+
         _classes = myClasses;
         _pickedClass = myClasses.isNotEmpty ? myClasses.first : null;
 
@@ -1475,8 +1518,11 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     if (msg.isEmpty) return;
 
     if (_mode == _ComposeMode.single) {
-      final r = _picked;
-      if (r == null) return;
+      final selected = _recipients
+          .where((r) => _pickedRecipientUids.contains(r.uid))
+          .toList();
+
+      if (selected.isEmpty) return;
 
       Navigator.pop(
         context,
@@ -1485,8 +1531,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           teacherName: _teacherName,
           subject: subject,
           firstMessage: msg,
-          receiverUid: r.uid,
-          receiverName: r.name,
+          receiverUid: selected.length == 1 ? selected.first.uid : null,
+          receiverName: selected.length == 1 ? selected.first.name : null,
+          receiverUids: selected.map((e) => e.uid).toList(),
           classId: null,
         ),
       );
@@ -1505,6 +1552,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         firstMessage: msg,
         receiverUid: null,
         receiverName: null,
+        receiverUids: null,
         classId: c.classId,
       ),
     );
@@ -1569,20 +1617,86 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                 ),
                 const SizedBox(height: 14),
                 if (_mode == _ComposeMode.single)
-                  DropdownButtonFormField<_RecipientRow>(
-                    value: _picked,
-                    items: _recipients.map((r) {
-                      return DropdownMenuItem<_RecipientRow>(
-                        value: r,
-                        child: Text('${prefixFor(r.type)}${r.name}'),
-                      );
-                    }).toList(),
-                    onChanged: (v) => setState(() => _picked = v),
-                    decoration: InputDecoration(
-                      labelText: 'Send to',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: scheme.outline.withOpacity(0.35)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Send to',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_recipients.isEmpty)
+                          const Text('No recipients found.')
+                        else ...[
+                          Row(
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _pickedRecipientUids
+                                      ..clear()
+                                      ..addAll(_recipients.map((e) => e.uid));
+                                  });
+                                },
+                                child: const Text('Select all'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _pickedRecipientUids.clear();
+                                  });
+                                },
+                                child: const Text('Clear'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _recipients.length,
+                              itemBuilder: (context, index) {
+                                final r = _recipients[index];
+                                final checked = _pickedRecipientUids.contains(r.uid);
+
+                                return CheckboxListTile(
+                                  value: checked,
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  title: Text('${prefixFor(r.type)}${r.name}'),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      if (v == true) {
+                                        _pickedRecipientUids.add(r.uid);
+                                        _picked = r;
+                                      } else {
+                                        _pickedRecipientUids.remove(r.uid);
+                                        if (_picked?.uid == r.uid) {
+                                          _picked = _recipients
+                                              .where((x) => _pickedRecipientUids.contains(x.uid))
+                                              .cast<_RecipientRow?>()
+                                              .firstWhere(
+                                                (x) => x != null,
+                                            orElse: () => null,
+                                          );
+                                        }
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   )
                 else
@@ -1674,6 +1788,7 @@ class _ComposeResult {
     required this.firstMessage,
     required this.receiverUid,
     required this.receiverName,
+    required this.receiverUids,
     required this.classId,
   });
 
@@ -1683,6 +1798,7 @@ class _ComposeResult {
   final String firstMessage;
   final String? receiverUid;
   final String? receiverName;
+  final List<String>? receiverUids;
   final String? classId;
 }
 
@@ -1696,6 +1812,7 @@ class _TopicRow {
     required this.updatedAtMs,
     required this.unreadCount,
     required this.deletedAtMs,
+    required this.type,
   });
 
   final String threadId;
@@ -1706,6 +1823,7 @@ class _TopicRow {
   final int updatedAtMs;
   final int unreadCount;
   final int? deletedAtMs;
+  final String type;
 
   factory _TopicRow.fromMap(String threadId, Map<String, dynamic> m) {
     int toInt(dynamic v) {
@@ -1729,6 +1847,7 @@ class _TopicRow {
       updatedAtMs: toInt(m['updatedAt']),
       unreadCount: toInt(m['unreadCount']),
       deletedAtMs: toIntN(m['deletedAt']),
+      type: (m['type'] ?? '').toString().trim(),
     );
   }
 }

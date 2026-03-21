@@ -21,7 +21,8 @@ import 'admin_booking.dart';
 import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import '../calls/call_logs_screen.dart';
-
+import 'admin_teacher_availability_overview_screen.dart';
+import 'admin_booking.dart';
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
 
@@ -158,6 +159,18 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
+      _DashCard(
+        title: 'Teacher Availability',
+        subtitle: 'Coverage & staffing overview',
+        icon: Icons.manage_accounts_rounded,
+        color: AdminHome.accentCyan,
+        isReceptionistStyle: !_isAdminMode,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => AdminTeacherAvailabilityOverviewScreen(),
+          ),
+        ),
+      ),
       _DashCard(
         title: 'Classes',
         subtitle: 'Manage classes',

@@ -43,6 +43,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _isCompleted = false;
   bool _bookmarked = false;
   bool _showControls = true;
+  bool _isFullscreen = false;
+  bool _isScrubbing = false;
 
   String? _error;
   String _notes = '';
@@ -51,6 +53,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   int _savedDurationMs = 0;
   int _bookmarkPositionMs = 0;
   int _lastSavedPositionMs = 0;
+
+  double _dragSliderValue = 0.0;
 
   Timer? _saveDebounce;
   Timer? _hideControlsTimer;
@@ -80,7 +84,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _persistProgressNow();
     _controller?.removeListener(_videoListener);
     _controller?.dispose();
-    _restorePreferredOrientations();
+    _restoreDefaultUiAndOrientation();
     super.dispose();
   }
 
@@ -93,10 +97,65 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     ]);
   }
 
-  Future<void> _restorePreferredOrientations() async {
+  Future<void> _restoreDefaultUiAndOrientation() async {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     await SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
     ]);
+  }
+
+  Future<void> _enterFullscreen() async {
+    _hideControlsTimer?.cancel();
+
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _isFullscreen = true;
+      _showControls = true;
+    });
+
+    _startHideControlsTimer();
+  }
+
+  Future<void> _exitFullscreen() async {
+    _hideControlsTimer?.cancel();
+
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    await SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _isFullscreen = false;
+      _showControls = true;
+    });
+
+    _startHideControlsTimer();
+  }
+
+  Future<void> _toggleFullscreen() async {
+    if (_isFullscreen) {
+      await _exitFullscreen();
+    } else {
+      await _enterFullscreen();
+    }
+  }
+
+  Future<bool> _handleBackPressed() async {
+    if (_isFullscreen) {
+      await _exitFullscreen();
+      return false;
+    }
+    return true;
   }
 
   @override
@@ -151,6 +210,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       setState(() {
         _initialized = true;
         _busy = false;
+        _isPlaying = controller.value.isPlaying;
       });
 
       _listenForRemoteProgress();
@@ -224,10 +284,17 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final value = controller.value;
     final positionMs = value.position.inMilliseconds;
     final durationMs = value.duration.inMilliseconds;
-
     final playing = value.isPlaying;
+
     if (_isPlaying != playing && mounted) {
       setState(() => _isPlaying = playing);
+      if (playing) {
+        _startHideControlsTimer();
+      }
+    }
+
+    if (!_isScrubbing && durationMs > 0) {
+      _dragSliderValue = (positionMs / durationMs).clamp(0.0, 1.0);
     }
 
     if (positionMs > 0) {
@@ -323,9 +390,13 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     if (controller.value.isPlaying) {
       await controller.pause();
+      if (mounted) {
+        setState(() => _showControls = true);
+      }
+      _hideControlsTimer?.cancel();
     } else {
       await controller.play();
-      _startHideControlsTimer();
+      _showControlsTemporarily();
     }
   }
 
@@ -406,13 +477,14 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: const Color(0xFF101828),
       builder: (_) {
         final bottom = MediaQuery.of(context).viewInsets.bottom;
         return Padding(
           padding: EdgeInsets.only(bottom: bottom),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -421,7 +493,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                     'Session Notes',
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      fontSize: 17,
+                      fontSize: 18,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -429,10 +502,29 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                     controller: notesController,
                     minLines: 5,
                     maxLines: 10,
-                    decoration: const InputDecoration(
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    decoration: InputDecoration(
                       hintText: 'Write your notes here...',
-                      border: OutlineInputBorder(),
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.45),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFF344054)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFF344054)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFF7C3AED)),
+                      ),
                       filled: true,
+                      fillColor: const Color(0xFF182230),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -440,6 +532,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                     children: [
                       Expanded(
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Color(0xFF475467)),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                          ),
                           onPressed: () => Navigator.pop(context, false),
                           child: const Text('Cancel'),
                         ),
@@ -447,6 +544,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       const SizedBox(width: 10),
                       Expanded(
                         child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C3AED),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                          ),
                           onPressed: () => Navigator.pop(context, true),
                           child: const Text('Save Notes'),
                         ),
@@ -521,64 +622,92 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final ratio = durationMs <= 0 ? 0.0 : positionMs / durationMs;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF111827),
+            Color(0xFF1F2937),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Expanded(
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _isCompleted
+                      ? const Color(0xFF0B3B2E)
+                      : const Color(0xFF2A1A4A),
+                  borderRadius: BorderRadius.circular(999),
+                ),
                 child: Text(
-                  _isCompleted
-                      ? 'Completed'
-                      : '${_formatDurationMs(positionMs)} / ${_formatDurationMs(durationMs)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  _isCompleted ? 'Completed' : 'In Progress',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
+                    fontSize: 12,
                     color: _isCompleted
-                        ? const Color(0xFF1E8E3E)
-                        : const Color(0xFF1A2B48),
+                        ? const Color(0xFF86EFAC)
+                        : const Color(0xFFD8B4FE),
                   ),
                 ),
               ),
+              const Spacer(),
               if (_bookmarked)
                 const Icon(
                   Icons.bookmark_rounded,
                   size: 18,
-                  color: Color(0xFF7C3AED),
+                  color: Color(0xFFD8B4FE),
                 ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            _isCompleted
+                ? 'You finished this session.'
+                : '${_formatDurationMs(positionMs)} watched of ${_formatDurationMs(durationMs)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
           ),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
               value: ratio.clamp(0.0, 1.0),
-              minHeight: 6,
-              backgroundColor: const Color(0xFFEAECEF),
+              minHeight: 7,
+              backgroundColor: Colors.white.withOpacity(0.12),
               valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFF7C3AED),
+                Color(0xFF8B5CF6),
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             _isCompleted
                 ? 'Marked done automatically after reaching the end.'
-                : 'Will mark done automatically when the video reaches the end.',
+                : 'The session will be marked done automatically at the end.',
             style: TextStyle(
               fontSize: 12,
-              height: 1.25,
-              color: _isCompleted
-                  ? const Color(0xFF166534)
-                  : const Color(0xFF92400E),
-              fontWeight: FontWeight.w700,
+              height: 1.35,
+              color: Colors.white.withOpacity(0.75),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -590,18 +719,25 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final hasNotes = _notes.trim().isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+        border: Border.all(color: const Color(0xFFEAECF0)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 10,
+            runSpacing: 10,
             children: [
               _smallActionButton(
                 onPressed: _toggleBookmark,
@@ -623,24 +759,24 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             ],
           ),
           if (hasNotes) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Container(
               width: double.infinity,
               constraints: BoxConstraints(
-                maxHeight: isLandscape ? 120 : 150,
+                maxHeight: isLandscape ? 130 : 160,
               ),
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFEAECF0)),
               ),
               child: SingleChildScrollView(
                 child: Text(
                   _notes.trim(),
                   style: TextStyle(
                     fontSize: 13,
-                    height: 1.3,
+                    height: 1.4,
                     color: Colors.black.withOpacity(0.78),
                     fontWeight: FontWeight.w600,
                   ),
@@ -658,17 +794,21 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     required IconData icon,
     required String label,
   }) {
+    final enabled = onPressed != null;
+
     return Material(
-      color: const Color(0xFFF8FAFC),
-      borderRadius: BorderRadius.circular(12),
+      color: enabled ? const Color(0xFFF5F3FF) : const Color(0xFFF2F4F7),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: enabled ? const Color(0xFFE9D5FF) : const Color(0xFFEAECF0),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -676,18 +816,315 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               Icon(
                 icon,
                 size: 18,
-                color: onPressed == null ? Colors.grey : const Color(0xFF1A2B48),
+                color: enabled ? const Color(0xFF6D28D9) : Colors.grey,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 7),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: onPressed == null ? Colors.grey : const Color(0xFF1A2B48),
+                  fontWeight: FontWeight.w800,
+                  color: enabled ? const Color(0xFF1F2937) : Colors.grey,
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopLeftChip({
+    required IconData icon,
+    required String label,
+    Color background = const Color(0x66000000),
+    Color foreground = Colors.white,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: foreground),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlayerIconButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    double size = 42,
+    Color background = const Color(0x33000000),
+    Color iconColor = Colors.white,
+  }) {
+    return Material(
+      color: background,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Icon(icon, color: iconColor, size: size * 0.52),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoControlsOverlay({
+    required bool isLandscape,
+    required int positionMs,
+    required int durationMs,
+    required double ratio,
+    required bool isBuffering,
+  }) {
+    final iconButtonSize = _isFullscreen ? 40.0 : 36.0;
+    final playButtonSize = _isFullscreen ? 74.0 : 66.0;
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: _showControls ? 1 : 0,
+      child: IgnorePointer(
+        ignoring: !_showControls,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.black.withOpacity(0.55),
+                Colors.transparent,
+                Colors.black.withOpacity(0.72),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: const [0.0, 0.45, 1.0],
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    _isFullscreen ? 14 : 12,
+                    _isFullscreen ? 12 : 10,
+                    _isFullscreen ? 14 : 12,
+                    0,
+                  ),
+                  child: Row(
+                    children: [
+                      if (_isFullscreen)
+                        _buildPlayerIconButton(
+                          onPressed: _exitFullscreen,
+                          icon: Icons.arrow_back_rounded,
+                          size: iconButtonSize,
+                        ),
+                      if (_isFullscreen) const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.sessionTitle.trim().isEmpty
+                              ? 'Session Video'
+                              : widget.sessionTitle.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: _isFullscreen ? 14 : 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (_bookmarked)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _buildTopLeftChip(
+                            icon: Icons.bookmark_rounded,
+                            label: 'Saved',
+                            background: const Color(0x552A1A4A),
+                            foreground: const Color(0xFFE9D5FF),
+                          ),
+                        ),
+                      _buildPlayerIconButton(
+                        onPressed: _toggleFullscreen,
+                        icon: _isFullscreen
+                            ? Icons.fullscreen_exit_rounded
+                            : Icons.fullscreen_rounded,
+                        size: iconButtonSize,
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildPlayerIconButton(
+                      onPressed: () => _seekRelative(-10),
+                      icon: Icons.replay_10_rounded,
+                      size: iconButtonSize + 4,
+                    ),
+                    const SizedBox(width: 14),
+                    Material(
+                      color: Colors.white.withOpacity(0.14),
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: _togglePlayPause,
+                        child: SizedBox(
+                          width: playButtonSize,
+                          height: playButtonSize,
+                          child: Icon(
+                            _isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: playButtonSize * 0.56,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    _buildPlayerIconButton(
+                      onPressed: () => _seekRelative(10),
+                      icon: Icons.forward_10_rounded,
+                      size: iconButtonSize + 4,
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                if (!_isFullscreen)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        _buildTopLeftChip(
+                          icon: Icons.lock_clock_rounded,
+                          label: _isCompleted ? 'Done' : 'Continue learning',
+                        ),
+                        _buildTopLeftChip(
+                          icon: Icons.screen_rotation_alt_rounded,
+                          label: 'Tap fullscreen for locked landscape',
+                        ),
+                      ],
+                    ),
+                  ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    _isFullscreen ? 14 : 12,
+                    0,
+                    _isFullscreen ? 14 : 12,
+                    _isFullscreen ? 14 : 12,
+                  ),
+                  child: Column(
+                    children: [
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: const Color(0xFF8B5CF6),
+                          inactiveTrackColor: Colors.white.withOpacity(0.24),
+                          thumbColor: Colors.white,
+                          overlayColor: const Color(0x228B5CF6),
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12,
+                          ),
+                          trackHeight: 4,
+                        ),
+                        child: Slider(
+                          value: (_isScrubbing ? _dragSliderValue : ratio)
+                              .clamp(0.0, 1.0),
+                          onChangeStart: (v) {
+                            setState(() {
+                              _isScrubbing = true;
+                              _dragSliderValue = v;
+                              _showControls = true;
+                            });
+                            _hideControlsTimer?.cancel();
+                          },
+                          onChanged: (v) {
+                            setState(() {
+                              _dragSliderValue = v;
+                            });
+                          },
+                          onChangeEnd: (v) async {
+                            setState(() {
+                              _isScrubbing = false;
+                              _dragSliderValue = v;
+                            });
+                            await _seekToRatio(v);
+                          },
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            _formatDurationMs(positionMs),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (isBuffering)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Row(
+                                children: const [
+                                  SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Buffering',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Text(
+                            _formatDurationMs(durationMs),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -706,111 +1143,52 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final ratio = durationMs <= 0 ? 0.0 : positionMs / durationMs;
 
     return GestureDetector(
-      onTap: _showControlsTemporarily,
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (_showControls) {
+          if (_isPlaying) {
+            setState(() => _showControls = false);
+          }
+        } else {
+          _showControlsTemporarily();
+        }
+      },
       child: Container(
         decoration: BoxDecoration(
           color: Colors.black,
-          borderRadius: BorderRadius.circular(isLandscape ? 16 : 20),
+          borderRadius: BorderRadius.circular(_isFullscreen ? 0 : 24),
+          boxShadow: _isFullscreen
+              ? null
+              : [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.20),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           alignment: Alignment.center,
           children: [
-            AspectRatio(
-              aspectRatio: value.aspectRatio <= 0 ? 16 / 9 : value.aspectRatio,
-              child: VideoPlayer(controller),
-            ),
-            if (_showControls)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withOpacity(0.24),
-                  child: Column(
-                    children: [
-                      const Spacer(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            onPressed: () => _seekRelative(-10),
-                            iconSize: isLandscape ? 30 : 34,
-                            color: Colors.white,
-                            icon: const Icon(Icons.replay_10_rounded),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.16),
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              onPressed: _togglePlayPause,
-                              iconSize: isLandscape ? 40 : 44,
-                              color: Colors.white,
-                              icon: Icon(
-                                _isPlaying
-                                    ? Icons.pause_circle_filled_rounded
-                                    : Icons.play_circle_fill_rounded,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: () => _seekRelative(10),
-                            iconSize: isLandscape ? 30 : 34,
-                            color: Colors.white,
-                            icon: const Icon(Icons.forward_10_rounded),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                        child: Column(
-                          children: [
-                            SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 6,
-                                ),
-                                overlayShape: const RoundSliderOverlayShape(
-                                  overlayRadius: 12,
-                                ),
-                                trackHeight: 3,
-                              ),
-                              child: Slider(
-                                value: ratio.clamp(0.0, 1.0),
-                                onChanged: (v) => _seekToRatio(v),
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Text(
-                                  _formatDurationMs(positionMs),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _formatDurationMs(durationMs),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+            Center(
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: value.size.width <= 0 ? 16 : value.size.width,
+                  height: value.size.height <= 0 ? 9 : value.size.height,
+                  child: VideoPlayer(controller),
                 ),
               ),
-            if (value.isBuffering)
+            ),
+            _buildVideoControlsOverlay(
+              isLandscape: isLandscape,
+              positionMs: positionMs,
+              durationMs: durationMs,
+              ratio: ratio,
+              isBuffering: value.isBuffering,
+            ),
+            if (!_showControls && value.isBuffering)
               const Positioned(
                 child: CircularProgressIndicator(color: Colors.white),
               ),
@@ -829,14 +1207,21 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFF5B5B5)),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFFECACA)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Text(
             _error ?? 'Could not open video.',
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xFFC62828),
+              color: Color(0xFFB42318),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -847,9 +1232,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   PreferredSizeWidget _buildAppBar(String title, bool isLandscape) {
     return AppBar(
-      toolbarHeight: isLandscape ? 52 : kToolbarHeight,
-      backgroundColor: Colors.black,
+      toolbarHeight: isLandscape ? 58 : kToolbarHeight,
+      backgroundColor: const Color(0xFF0F172A),
       foregroundColor: Colors.white,
+      elevation: 0,
       titleSpacing: 10,
       title: Text(
         title,
@@ -857,13 +1243,18 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: isLandscape ? 15 : 17,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w800,
         ),
       ),
       actions: [
+        IconButton(
+          tooltip: 'Fullscreen',
+          onPressed: _toggleFullscreen,
+          icon: const Icon(Icons.fullscreen_rounded),
+        ),
         if (_isCompleted)
           const Padding(
-            padding: EdgeInsets.only(right: 12),
+            padding: EdgeInsets.only(right: 14),
             child: Center(
               child: Text(
                 'DONE',
@@ -880,12 +1271,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   Widget _buildPortraitLayout() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
       children: [
         _buildCompactStatusCard(),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         _buildVideoArea(isLandscape: false),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         _buildCompactActionPanel(isLandscape: false),
       ],
     );
@@ -893,22 +1284,22 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   Widget _buildLandscapeLayout() {
     return Padding(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 9,
+            flex: 10,
             child: _buildVideoArea(isLandscape: true),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             flex: 5,
             child: SingleChildScrollView(
               child: Column(
                 children: [
                   _buildCompactStatusCard(),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _buildCompactActionPanel(isLandscape: true),
                 ],
               ),
@@ -916,6 +1307,14 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFullscreenLayout() {
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      child: _buildVideoArea(isLandscape: true),
     );
   }
 
@@ -930,18 +1329,24 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF4F7F9),
-        appBar: _buildAppBar(title, isLandscape),
-        body: _busy
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? _buildErrorState()
-            : _initialized
-            ? (isLandscape
-            ? _buildLandscapeLayout()
-            : _buildPortraitLayout())
-            : const Center(child: CircularProgressIndicator()),
+      child: WillPopScope(
+        onWillPop: _handleBackPressed,
+        child: Scaffold(
+          backgroundColor:
+          _isFullscreen ? Colors.black : const Color(0xFFF3F5F8),
+          appBar: _isFullscreen ? null : _buildAppBar(title, isLandscape),
+          body: _busy
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? _buildErrorState()
+              : _initialized
+              ? (_isFullscreen
+              ? _buildFullscreenLayout()
+              : (isLandscape
+              ? _buildLandscapeLayout()
+              : _buildPortraitLayout()))
+              : const Center(child: CircularProgressIndicator()),
+        ),
       ),
     );
   }

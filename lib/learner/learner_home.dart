@@ -1478,6 +1478,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             courseKey: key,
             title: title.isEmpty ? 'Course' : title,
             code: code,
+            variantKey: (course['variantKey'] ?? course['variant'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase(),
             classType: _courseTypeLabel(course),
             detailsLine: _courseDetailsLine(course),
             completed: completed,
@@ -1572,30 +1576,23 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           16 + (bottomPad > 0 ? bottomPad : 12),
         ),
         children: [
-          FutureBuilder<Map<String, String>>(
-            future: _loadLearnerHeaderData(),
-            builder: (context, snap) {
-              final data = snap.data ?? const {
-                'name': 'Learner',
-                'profilePhoto': '',
-              };
 
-              final name = (data['name'] ?? 'Learner').trim();
-              final profilePhoto = (data['profilePhoto'] ?? '').trim();
 
-              return _LearnerHeroCard(
-                palette: p,
-                learnerName: name.isEmpty ? 'Learner' : name,
-                profilePhotoUrl: profilePhoto,
-                onOpenCourses: () => _openCoursesScreen(),
-              );
-            },
+
+          const SizedBox(height: 8),
+
+          _SectionTitle(
+            palette: p,
+            title: 'Homework & Reminders',
           ),
-
           const SizedBox(height: 10),
-
-
-          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: _LearnerHomeworkHomeCard()),
+              const SizedBox(width: 12),
+              Expanded(child: _RemindersHomeCard()),
+            ],
+          ),
           FutureBuilder<bool>(
             future: _hasFlexibleBookableCourse(),
             builder: (context, snap) {
@@ -1658,18 +1655,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             },
           ),
 
-          _SectionTitle(
-            palette: p,
-            title: 'Homework & Reminders',
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: _LearnerHomeworkHomeCard()),
-              const SizedBox(width: 12),
-              Expanded(child: _RemindersHomeCard()),
-            ],
-          ),
+
 
         ],
       ),
@@ -1697,6 +1683,7 @@ class _CourseProgressItem {
   final String courseKey;
   final String title;
   final String code;
+  final String variantKey;
   final String classType;
   final String detailsLine;
   final int completed;
@@ -1707,6 +1694,7 @@ class _CourseProgressItem {
     required this.courseKey,
     required this.title,
     required this.code,
+    required this.variantKey,
     required this.classType,
     required this.detailsLine,
     required this.completed,
@@ -1996,10 +1984,78 @@ class _ProgressCard extends StatelessWidget {
   final _CourseProgressItem item;
   final VoidCallback onTap;
 
+  String _variantBadgeText(String variantKey) {
+    switch (variantKey) {
+      case 'recorded':
+        return 'Recorded';
+      case 'flexible':
+      case 'online':
+        return 'Online';
+      case 'private':
+      case 'live':
+        return 'Private';
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return 'In-class';
+      default:
+        return 'Course';
+    }
+  }
+
+  IconData _variantIcon(String variantKey) {
+    switch (variantKey) {
+      case 'recorded':
+        return Icons.play_circle_fill_rounded;
+      case 'flexible':
+      case 'online':
+        return Icons.wifi_rounded;
+      case 'private':
+      case 'live':
+        return Icons.person_rounded;
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return Icons.groups_rounded;
+      default:
+        return Icons.menu_book_rounded;
+    }
+  }
+
+  Color _variantAccentColor(String variantKey) {
+    switch (variantKey) {
+      case 'recorded':
+        return palette.accent;
+      case 'flexible':
+      case 'online':
+        return palette.primary;
+      case 'private':
+      case 'live':
+        return Color.alphaBlend(
+          palette.accent.withOpacity(0.35),
+          palette.primary,
+        );
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return Color.alphaBlend(
+          palette.primary.withOpacity(0.18),
+          palette.accent,
+        );
+      default:
+        return palette.primary;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final percentText = (item.progress * 100).round();
-
+    final variantAccent = _variantAccentColor(item.variantKey);
+    final variantIcon = _variantIcon(item.variantKey);
+    final variantBadge = _variantBadgeText(item.variantKey);
     return Material(
       color: palette.cardBg,
       borderRadius: BorderRadius.circular(22),
@@ -2030,10 +2086,13 @@ class _ProgressCard extends StatelessWidget {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color: palette.soft,
+                      color: variantAccent.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        color: variantAccent.withOpacity(0.18),
+                      ),
                     ),
-                    child: Icon(Icons.menu_book_rounded, color: palette.primary),
+                    child: Icon(variantIcon, color: variantAccent),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -2050,18 +2109,46 @@ class _ProgressCard extends StatelessWidget {
                             fontSize: 15,
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          item.code.isEmpty
-                              ? item.classType
-                              : '${item.classType} • Code: ${item.code}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.text.withOpacity(0.60),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: variantAccent.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: variantAccent.withOpacity(0.22),
+                                ),
+                              ),
+                              child: Text(
+                                variantBadge,
+                                style: TextStyle(
+                                  color: variantAccent,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              item.code.isEmpty
+                                  ? item.classType
+                                  : '${item.classType} • Code: ${item.code}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.text.withOpacity(0.60),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -2152,6 +2239,9 @@ class _ProgressCard extends StatelessWidget {
       ),
     );
   }
+
+
+
 }
 
 class _BookingTopCard extends StatefulWidget {
@@ -3500,6 +3590,8 @@ class _SupportTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+
+
 
   @override
   Widget build(BuildContext context) {

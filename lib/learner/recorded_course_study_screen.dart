@@ -763,59 +763,58 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               ),
             )
-          else
+          else if (requiresVideo || requiresMaterials)
             Row(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: requiresVideo
-                        ? () => _openVideoPlaceholder(session)
-                        : null,
-                    icon: const Icon(Icons.ondemand_video_rounded, size: 18),
-                    label: Text(
-                      progress.videoCompleted ? 'Video done' : 'Video',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF0F172A),
-                      side: const BorderSide(color: Color(0xFFE2E8F0)),
-                      backgroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                if (requiresVideo) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openVideoPlaceholder(session),
+                      icon: const Icon(Icons.ondemand_video_rounded, size: 18),
+                      label: Text(
+                        progress.videoCompleted ? 'Video done' : 'Video',
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: requiresMaterials
-                        ? () => _openMaterials(session)
-                        : null,
-                    icon: const Icon(Icons.menu_book_rounded, size: 18),
-                    label: Text(
-                      progress.materialsCompleted ? 'Read done' : 'Read',
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF111827),
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFE5E7EB),
-                      disabledForegroundColor: const Color(0xFF9CA3AF),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0F172A),
+                        side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        backgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
+                if (requiresVideo && requiresMaterials)
+                  const SizedBox(width: 8),
+                if (requiresMaterials) ...[
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _openMaterials(session),
+                      icon: const Icon(Icons.menu_book_rounded, size: 18),
+                      label: Text(
+                        progress.materialsCompleted ? 'Read done' : 'Read',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF111827),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
         ],

@@ -1365,6 +1365,33 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() => _inlineError = null);
     }
   }
+  Future<bool> _confirmClearAsset({
+    required String title,
+    required String message,
+    required String confirmText,
+  }) async {
+    return (await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(confirmText),
+          ),
+        ],
+      ),
+    )) ??
+        false;
+  }
 
   String _resolvedSessionFolderPath() {
     if (_serverFolderPath.trim().isNotEmpty) return _serverFolderPath.trim();
@@ -1377,7 +1404,44 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     _serverFolderPath = '${widget.courseFolderName}/$sessionFolder';
     return _serverFolderPath;
   }
+  Future<void> _clearVideoOnly() async {
+    if (videoUrlC.text.trim().isEmpty && videoThumbC.text.trim().isEmpty) return;
 
+    final ok = await _confirmClearAsset(
+      title: 'Remove video?',
+      message:
+      'This will remove the video from this session. Learners will no longer see the video button.',
+      confirmText: 'Remove',
+    );
+
+    if (!ok) return;
+
+    if (!mounted) return;
+    setState(() {
+      videoUrlC.clear();
+      videoThumbC.clear();
+      _inlineError = null;
+    });
+  }
+
+  Future<void> _clearHtmlOnly() async {
+    if (materialsUrlC.text.trim().isEmpty) return;
+
+    final ok = await _confirmClearAsset(
+      title: 'Remove HTML?',
+      message:
+      'This will remove the HTML materials from this session. Learners will no longer see the read button.',
+      confirmText: 'Remove',
+    );
+
+    if (!ok) return;
+
+    if (!mounted) return;
+    setState(() {
+      materialsUrlC.clear();
+      _inlineError = null;
+    });
+  }
   Future<bool> _prepareRecordedReplacementIfNeeded() async {
     if (!widget.isRecorded) return true;
     if (!_hasInitialRecordedAssets) return true;
@@ -1708,6 +1772,20 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                                 : 'Replace Video'),
                           ),
                         ),
+                        if (videoUrlC.text.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _uploadingVideo || _uploadingMaterials
+                                ? null
+                                : _clearVideoOnly,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Remove Video'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade200),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         const Text(
                           'HTML materials',
@@ -1748,6 +1826,20 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                                 : 'Replace HTML'),
                           ),
                         ),
+                        if (materialsUrlC.text.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _uploadingVideo || _uploadingMaterials
+                                ? null
+                                : _clearHtmlOnly,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text('Remove HTML'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade200),
+                            ),
+                          ),
+                        ],
                         if (_serverFolderPath.trim().isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Text(
@@ -1784,16 +1876,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
                       if (!_form.currentState!.validate()) return;
 
-                      if (widget.isRecorded) {
-                        if (videoUrlC.text.trim().isEmpty) {
-                          _showInlineError('Upload the session video first.');
-                          return;
-                        }
-                        if (materialsUrlC.text.trim().isEmpty) {
-                          _showInlineError('Upload the session HTML first.');
-                          return;
-                        }
-                      }
+
 
                       Navigator.pop(
                         context,

@@ -76,6 +76,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   @override
   void initState() {
     super.initState();
+    _debugLogClassDataShape();
     _init();
   }
 
@@ -85,6 +86,42 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     super.dispose();
   }
 
+  Map<String, dynamic> _safeMap(dynamic value) {
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return <String, dynamic>{};
+  }
+  void _debugLogClassDataShape() {
+    debugPrint('========== TAKE ATTENDANCE DEBUG START ==========');
+    debugPrint('classData runtimeType: ${widget.classData.runtimeType}');
+    debugPrint('classData keys: ${widget.classData.keys.toList()}');
+
+    for (final entry in widget.classData.entries) {
+      debugPrint(
+        'classData[${entry.key}] => type=${entry.value.runtimeType} value=${entry.value}',
+      );
+    }
+
+    final learnersNode = widget.classData['learners'];
+    debugPrint('learners runtimeType: ${learnersNode.runtimeType}');
+    debugPrint('learners value: $learnersNode');
+
+    if (learnersNode is Map) {
+      for (final entry in learnersNode.entries) {
+        debugPrint(
+          'learners[${entry.key}] => type=${entry.value.runtimeType} value=${entry.value}',
+        );
+      }
+    }
+
+    debugPrint('classId: $_classId');
+    debugPrint('courseId: $_courseId');
+    debugPrint('courseCode: $_courseCode');
+    debugPrint('courseTitle: $_courseTitle');
+    debugPrint('isEdit: $_isEdit');
+    debugPrint('========== TAKE ATTENDANCE DEBUG END ==========');
+  }
   DateTime? _parseDate(String s) {
     try {
       final parts = s.split('-');
@@ -107,23 +144,25 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     while (used.contains(n)) n++;
     return n;
   }
-
   Future<int> _computeNextMeetingNumber() async {
-    // Reads all existing attendance records and finds the first missing meetingNumber.
-    // If meetingNumber is missing in old records, we ignore it.
     final snap =
     await _db.child('classes').child(_classId).child('attendance').get();
     if (!snap.exists) return 1;
 
     final used = <int>{};
-    final m = Map<String, dynamic>.from(snap.value as Map);
+    final m = _safeMap(snap.value);
+
     for (final entry in m.entries) {
       final rec = entry.value;
       if (rec is! Map) continue;
-      final mnRaw = rec['meetingNumber'];
+
+      final recMap = _safeMap(rec);
+      final mnRaw = recMap['meetingNumber'];
+
       int? mn;
       if (mnRaw is num) mn = mnRaw.toInt();
       if (mnRaw is String) mn = int.tryParse(mnRaw);
+
       if (mn != null && mn > 0) used.add(mn);
     }
 
@@ -141,15 +180,16 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       final learnersNode = widget.classData['learners'];
       final Set<String> learnerSet = {};
       if (learnersNode is Map) {
-        learnerSet.addAll(learnersNode.keys.map((e) => e.toString()));
+        final learnersMap = _safeMap(learnersNode);
+        learnerSet.addAll(learnersMap.keys.map((e) => e.toString()));
       }
 
       // restore edit mode
       if (_isEdit && widget.existingRecord != null) {
         final rec = widget.existingRecord!;
 
-        final p = Map<String, dynamic>.from(rec['present'] ?? {});
-        final a = Map<String, dynamic>.from(rec['absent'] ?? {});
+        final p = _safeMap(rec['present']);
+        final a = _safeMap(rec['absent']);
         learnerSet.addAll(p.keys.map((e) => e.toString()));
         learnerSet.addAll(a.keys.map((e) => e.toString()));
 
@@ -161,7 +201,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         }
 
         // homework
-        final hw = Map<String, dynamic>.from(rec['homework'] ?? {});
+        final hw = _safeMap(rec['homework']);
         _homeworkCtrl.text = (hw['text'] ?? '').toString();
         _homeworkDueDate = (hw['dueDate'] ?? '').toString();
         _homeworkTouchedByUser = _homeworkCtrl.text.trim().isNotEmpty;
@@ -181,11 +221,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         if (rec['taughtItems'] is List) {
           final raw = (rec['taughtItems'] as List).whereType<Map>().toList();
           for (final item in raw) {
-            _taughtItems.add(Map<String, dynamic>.from(item));
+            _taughtItems.add(_safeMap(item));
           }
         } else {
           // OLD format: single taught map
-          final taught = Map<String, dynamic>.from(rec['taught'] ?? {});
+          final taught = _safeMap(rec['taught']);
           if (taught.isNotEmpty) {
             _taughtItems.add({
               'type': (taught['type'] ?? 'syllabus').toString(),
@@ -229,7 +269,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           _learnerInfo[uid] = {'uid': uid, 'name': uid, 'serial': ''};
           return;
         }
-        final m = Map<String, dynamic>.from(snap.value as Map);
+        final m = _safeMap(snap.value);
         final fullName =
         "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim();
         _learnerInfo[uid] = {
@@ -244,17 +284,19 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         final sSnap =
         await _db.child('syllabi').child(_courseId).child('inclass').get();
         if (sSnap.exists && sSnap.value is Map) {
-          final s = Map<String, dynamic>.from(sSnap.value as Map);
+          final s = _safeMap(sSnap.value);
           final units = s['units'] as List?;
           final List<Map<String, dynamic>> flat = [];
 
           if (units != null) {
             for (final u in units) {
-              final unit = Map<String, dynamic>.from(u as Map);
+              if (u is! Map) continue;
+              final unit = _safeMap(u);
               final sessions = unit['sessions'] as List?;
               if (sessions != null) {
                 for (final ss in sessions) {
-                  final sess = Map<String, dynamic>.from(ss as Map);
+                  if (ss is! Map) continue;
+                  final sess = _safeMap(ss);
                   flat.add({
                     'unitId': (unit['id'] ?? '').toString(),
                     'unitTitle':
@@ -339,7 +381,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }
 
       setState(() => _busy = false);
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('TakeAttendanceScreen _init ERROR: $e');
+      debugPrint('$st');
       setState(() {
         _error = e.toString();
         _busy = false;
@@ -690,6 +734,19 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   }
 
   Future<void> _saveAttendance() async {
+    debugPrint('========== SAVE ATTENDANCE DEBUG START ==========');
+    debugPrint('saving for classId=$_classId');
+    debugPrint('widget.classData keys=${widget.classData.keys.toList()}');
+    debugPrint('widget.classData learners type=${widget.classData['learners'].runtimeType}');
+    debugPrint('widget.classData learners value=${widget.classData['learners']}');
+    debugPrint('_learnerUids=$_learnerUids');
+    debugPrint('_present=$_present');
+    debugPrint('_taughtItems=$_taughtItems');
+    debugPrint('existingSessionId=${widget.existingSessionId}');
+    debugPrint('existingRecord type=${widget.existingRecord.runtimeType}');
+    debugPrint('existingRecord value=${widget.existingRecord}');
+    debugPrint('========== SAVE ATTENDANCE DEBUG BEFORE VALIDATION END ==========');
+
     if (_classId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Missing class id')),
@@ -712,15 +769,37 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       final dateStr = _dateStr(_date);
 
       if (!_isEdit) {
-        final q = _db
+        final attendanceSnap = await _db
             .child('classes')
             .child(_classId)
             .child('attendance')
-            .orderByChild('date')
-            .equalTo(dateStr);
+            .get();
 
-        final snap = await q.get();
-        if (snap.exists && !(await _confirmDuplicateDialog())) {
+        bool duplicateExists = false;
+
+        if (attendanceSnap.exists && attendanceSnap.value is Map) {
+          final attendanceMap = _safeMap(attendanceSnap.value);
+
+          for (final entry in attendanceMap.entries) {
+            final rec = entry.value;
+            if (rec is! Map) {
+              debugPrint(
+                'SKIP malformed attendance entry at classes/$_classId/attendance/${entry.key} => ${rec.runtimeType} $rec',
+              );
+              continue;
+            }
+
+            final recMap = _safeMap(rec);
+            final recDate = (recMap['date'] ?? '').toString().trim();
+
+            if (recDate == dateStr) {
+              duplicateExists = true;
+              break;
+            }
+          }
+        }
+
+        if (duplicateExists && !(await _confirmDuplicateDialog())) {
           setState(() => _busy = false);
           return;
         }
@@ -728,7 +807,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       final teacherSnap = await _db.child('users').child(user.uid).get();
       final tm = teacherSnap.exists
-          ? Map<String, dynamic>.from(teacherSnap.value as Map)
+          ? _safeMap(teacherSnap.value)
           : <String, dynamic>{};
       final teacherName =
       "${tm['first_name'] ?? ''} ${tm['last_name'] ?? ''}".trim();
@@ -746,8 +825,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }
 
       final hwText = _homeworkCtrl.text.trim();
-      final prevHw =
-      Map<String, dynamic>.from(widget.existingRecord?['homework'] ?? {});
+      final prevHw = _safeMap(widget.existingRecord?['homework']);
       final hwCreatedAt = prevHw['createdAt'] ??
           (widget.existingRecord?['createdAt'] ?? ServerValue.timestamp);
 
@@ -820,25 +898,57 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       // Also write to each learner course node
       for (final lUid in _learnerUids) {
+        debugPrint('---- learner loop start: $lUid ----');
+
         final cSnap = await _db.child('users').child(lUid).child('courses').get();
+        debugPrint('courses exists for $lUid => ${cSnap.exists}');
+        debugPrint('courses raw type for $lUid => ${cSnap.value.runtimeType}');
+        debugPrint('courses raw value for $lUid => ${cSnap.value}');
+
         if (!cSnap.exists) continue;
 
-        final courses = Map<String, dynamic>.from(cSnap.value as Map);
+        final courses = _safeMap(cSnap.value);
+        debugPrint('courses keys for $lUid => ${courses.keys.toList()}');
+
         String? targetKey;
 
         for (final entry in courses.entries) {
           final val = entry.value;
-          if (val is! Map) continue;
+          debugPrint(
+            'course entry key=${entry.key} type=${val.runtimeType} value=$val',
+          );
 
-          final classNode = val['class'];
-          if (classNode is! Map) continue;
+          if (val is! Map) {
+            debugPrint('SKIP: entry.value is not Map');
+            continue;
+          }
+
+          final valMap = _safeMap(val);
+          debugPrint('valMap keys=${valMap.keys.toList()}');
+
+          debugPrint(
+            'valMap["class"] type=${valMap['class'].runtimeType} value=${valMap['class']}',
+          );
+
+          final classNode = _safeMap(valMap['class']);
+          debugPrint('classNode keys=${classNode.keys.toList()}');
+
+          if (classNode.isEmpty) {
+            debugPrint('SKIP: classNode is empty');
+            continue;
+          }
 
           final cid = (classNode['class_id'] ?? '').toString();
+          debugPrint('classNode class_id=$cid vs current _classId=$_classId');
+
           if (cid == _classId) {
             targetKey = entry.key.toString();
+            debugPrint('MATCH FOUND: targetKey=$targetKey');
             break;
           }
         }
+
+        debugPrint('final targetKey for $lUid => $targetKey');
 
         if (targetKey != null) {
           updates['users/$lUid/courses/$targetKey/attendance/$sessionId'] = {
@@ -860,7 +970,12 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         SnackBar(content: Text(_isEdit ? 'Updated ✅' : 'Saved ✅')),
       );
       Navigator.pop(context);
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('========== SAVE ATTENDANCE ERROR ==========');
+      debugPrint('error: $e');
+      debugPrint('stack: $st');
+      debugPrint('========== SAVE ATTENDANCE ERROR END ==========');
+
       setState(() {
         _error = e.toString();
         _busy = false;
