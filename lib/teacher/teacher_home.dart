@@ -5,8 +5,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'teacher_public_gallery_screen.dart';
-import '../calls/audio_call_screen.dart';
-import '../calls/call_logs_screen.dart';
 import 'teacher_online_circle_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/session_manager.dart';
@@ -21,6 +19,7 @@ import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
+
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
 
@@ -50,10 +49,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      _remindersStream =
-          _db.child('reminders/$uid').onValue.asBroadcastStream();
-      _mailIndexStream =
-          _db.child('mail_index/$uid').onValue.asBroadcastStream();
+      _remindersStream = _db
+          .child('reminders/$uid')
+          .onValue
+          .asBroadcastStream();
+      _mailIndexStream = _db
+          .child('mail_index/$uid')
+          .onValue
+          .asBroadcastStream();
       _classesSummaryFuture = _loadClassesSummaryForHome(uid);
       _upcomingOnlineCountFuture = _loadUpcomingOnlineCountForHome(uid);
       _displayNameFuture = _myDisplayName();
@@ -174,16 +177,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
         final matchesUid = curUid.isNotEmpty && curUid == teacherUid;
 
-        final matchesName = teacherName.isNotEmpty &&
+        final matchesName =
+            teacherName.isNotEmpty &&
             _norm(
-              legacyInstructorName.isNotEmpty
-                  ? legacyInstructorName
-                  : curName,
-            ) ==
+                  legacyInstructorName.isNotEmpty
+                      ? legacyInstructorName
+                      : curName,
+                ) ==
                 _norm(teacherName);
 
-        final legacySerial =
-        (c['instructorserial'] ?? c['serial'] ?? '').toString().trim();
+        final legacySerial = (c['instructorserial'] ?? c['serial'] ?? '')
+            .toString()
+            .trim();
         final matchesSerial =
             teacherSerial.isNotEmpty && legacySerial == teacherSerial;
 
@@ -255,12 +260,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
             final slot = slotNode.map((k, v) => MapEntry(k.toString(), v));
 
-            final teacherId = (slot['teacherId'] ??
-                slot['teacherUid'] ??
-                slot['teacher_id'] ??
-                '')
-                .toString()
-                .trim();
+            final teacherId =
+                (slot['teacherId'] ??
+                        slot['teacherUid'] ??
+                        slot['teacher_id'] ??
+                        '')
+                    .toString()
+                    .trim();
 
             if (teacherId != teacherUid) continue;
 
@@ -281,8 +287,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<_HomeUpcomingClass?> _loadNextUpcomingClassForHome(
-      String teacherUid,
-      ) async {
+    String teacherUid,
+  ) async {
     try {
       final snap = await _db.child(classesNode).get();
       if (!snap.exists || snap.value == null || snap.value is! Map) {
@@ -325,8 +331,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   List<_HomeUpcomingClass> _generateOccurrencesForHome(
-      Map<String, dynamic> cls,
-      ) {
+    Map<String, dynamic> cls,
+  ) {
     if (cls['status']?.toString() != 'active') return [];
 
     final schedule = (cls['schedule'] is Map)
@@ -521,16 +527,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         final name = fullName.isNotEmpty
             ? fullName
             : (serial.isNotEmpty
-            ? serial
-            : (email.isNotEmpty ? email.split('@').first : 'Teacher'));
+                  ? serial
+                  : (email.isNotEmpty ? email.split('@').first : 'Teacher'));
 
-        out.add(
-          _UserPick(
-            uid: teacherUid,
-            name: name,
-            subtitle: 'Teacher',
-          ),
-        );
+        out.add(_UserPick(uid: teacherUid, name: name, subtitle: 'Teacher'));
       });
 
       out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -650,18 +650,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     required String peerUid,
     required String peerName,
   }) async {
-    final myName = await _myDisplayName();
     if (!mounted) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AudioCallScreen(
-          peerUid: peerUid,
-          peerName: peerName,
-          isCaller: true,
-          callerName: myName,
-        ),
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Call feature has been removed.')),
     );
   }
 
@@ -748,13 +739,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                         ConstrainedBox(
                           constraints: BoxConstraints(
                             maxHeight:
-                            MediaQuery.of(context).size.height * 0.55,
+                                MediaQuery.of(context).size.height * 0.55,
                           ),
                           child: ListView.separated(
                             shrinkWrap: true,
                             itemCount: items.length,
                             separatorBuilder: (_, __) =>
-                            const SizedBox(height: 10),
+                                const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final it = items[i];
                               return InkWell(
@@ -778,8 +769,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                   child: Row(
                                     children: [
                                       CircleAvatar(
-                                        backgroundColor:
-                                        p.primary.withOpacity(0.08),
+                                        backgroundColor: p.primary.withOpacity(
+                                          0.08,
+                                        ),
                                         child: Text(
                                           it.name.isNotEmpty
                                               ? it.name[0].toUpperCase()
@@ -794,7 +786,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               it.name,
@@ -825,8 +817,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: p.accent.withOpacity(0.10),
-                                          borderRadius:
-                                          BorderRadius.circular(999),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
                                           border: Border.all(
                                             color: p.accent.withOpacity(0.22),
                                           ),
@@ -998,8 +991,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     ),
                     const SizedBox(height: 14),
                     ...AppThemeMode.values.map((mode) {
-                      final previewPalette =
-                      appThemeController.paletteForMode(mode);
+                      final previewPalette = appThemeController.paletteForMode(
+                        mode,
+                      );
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -1024,9 +1018,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   void _pushScreen(Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => screen),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
   void _onThemeChanged() {
@@ -1056,10 +1048,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         onOpenReminders: () => _pushScreen(const TeacherReminderScreen()),
         onOpenGallery: () => _pushScreen(const TeacherPublicGalleryScreen()),
         onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
-        onOpenRegulations: () =>
-            _pushScreen(const TeacherRegulationsScreen()),
+        onOpenRegulations: () => _pushScreen(const TeacherRegulationsScreen()),
         onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
-        onOpenCallLogs: () => _pushScreen(const CallLogsScreen()),
 
         onOpenThemeSettings: _openThemeSheet,
         onLogout: () => _logout(context),
@@ -1109,22 +1099,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             icon: Icon(Icons.palette_rounded, color: p.accent),
             onPressed: _openThemeSheet,
           ),
-          IconButton(
-            tooltip: 'Call Logs',
-            icon: Icon(Icons.history_rounded, color: p.primary),
-            onPressed: () => _pushScreen(const CallLogsScreen()),
-          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: p.accent,
-        foregroundColor: Colors.white,
-        icon: const Text('🎧', style: TextStyle(fontSize: 18)),
-        label: const Text(
-          'Support',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        onPressed: _openSupportSheet,
       ),
       body: Stack(
         children: [
@@ -1169,8 +1144,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       child: StreamBuilder<DatabaseEvent>(
                         stream: _mailIndexStream,
                         builder: (context, snap) {
-                          final unread =
-                          _countUnreadMail(snap.data?.snapshot.value);
+                          final unread = _countUnreadMail(
+                            snap.data?.snapshot.value,
+                          );
                           return _MiniStatCard(
                             palette: p,
                             label: 'Inbox',
@@ -1198,9 +1174,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             icon: Icons.alarm_rounded,
                             badgeCount: pending,
                             badgeColor: p.accent,
-                            onTap: () => _pushScreen(
-                              const TeacherReminderScreen(),
-                            ),
+                            onTap: () =>
+                                _pushScreen(const TeacherReminderScreen()),
                           );
                         },
                       ),
@@ -1211,7 +1186,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 FutureBuilder<_ClassesSummary>(
                   future: _classesSummaryFuture,
                   builder: (context, classSnap) {
-                    final s = classSnap.data ??
+                    final s =
+                        classSnap.data ??
                         const _ClassesSummary(
                           classesCount: 0,
                           learnersCount: 0,
@@ -1331,7 +1307,6 @@ class _UserPick {
 }
 
 class _TeacherDrawer extends StatelessWidget {
-
   const _TeacherDrawer({
     required this.palette,
     required this.onOpenProfile,
@@ -1345,13 +1320,11 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenWages,
     required this.onOpenRegulations,
     required this.onOpenSyllabi,
-    required this.onOpenCallLogs,
     required this.onOpenThemeSettings,
     required this.onLogout,
     required this.onOpenGames,
     required this.onOpenStories,
   });
-
 
   final _HomePalette palette;
   final VoidCallback onOpenProfile;
@@ -1365,7 +1338,6 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenWages;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenSyllabi;
-  final VoidCallback onOpenCallLogs;
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStories;
@@ -1543,15 +1515,6 @@ class _TeacherDrawer extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: Icons.history_rounded,
-                    title: 'Call Logs',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenCallLogs();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
                     icon: Icons.palette_rounded,
                     title: 'Theme Settings',
                     subtitle: 'Manly / girly looks',
@@ -1693,10 +1656,7 @@ class _HeroSummaryCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1794,10 +1754,7 @@ class _HeroActionButton extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: TextStyle(
-                  color: textColor,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(color: textColor, fontWeight: FontWeight.w900),
               ),
             ],
           ),
@@ -1946,10 +1903,7 @@ class _OverviewStatBox extends StatelessWidget {
               top: -6,
               right: -6,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: badgeColor ?? Colors.red,
                   borderRadius: BorderRadius.circular(999),
@@ -1970,7 +1924,6 @@ class _OverviewStatBox extends StatelessWidget {
     );
   }
 }
-
 
 class _SingleDashboardActionCard extends StatelessWidget {
   const _SingleDashboardActionCard({
@@ -2098,113 +2051,113 @@ class _NextComingClassCard extends StatelessWidget {
           ),
           child: c == null
               ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Next Coming Class',
-                style: TextStyle(
-                  color: palette.primary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'No upcoming classes found.',
-                style: TextStyle(
-                  color: palette.text.withOpacity(0.70),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          )
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Next Coming Class',
+                      style: TextStyle(
+                        color: palette.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No upcoming classes found.',
+                      style: TextStyle(
+                        color: palette.text.withOpacity(0.70),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                )
               : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Next Coming Class',
-                style: TextStyle(
-                  color: palette.primary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: palette.soft,
-                      borderRadius: BorderRadius.circular(16),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Next Coming Class',
+                      style: TextStyle(
+                        color: palette.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.access_time_rounded,
-                      color: palette.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        Text(
-                          c.courseTitle.isNotEmpty
-                              ? c.courseTitle
-                              : 'Untitled Class',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: palette.soft,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(
+                            Icons.access_time_rounded,
                             color: palette.primary,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          c.courseCode.isNotEmpty
-                              ? c.courseCode
-                              : 'No course code',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.text.withOpacity(0.65),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.courseTitle.isNotEmpty
+                                    ? c.courseTitle
+                                    : 'Untitled Class',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.primary,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                c.courseCode.isNotEmpty
+                                    ? c.courseCode
+                                    : 'No course code',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.text.withOpacity(0.65),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _InfoChip(
-                    palette: palette,
-                    icon: Icons.calendar_today_rounded,
-                    text: DateFormat('EEE, MMM d').format(c.start),
-                  ),
-                  _InfoChip(
-                    palette: palette,
-                    icon: Icons.schedule_rounded,
-                    text:
-                    '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
-                  ),
-                  _InfoChip(
-                    palette: palette,
-                    icon: Icons.badge_rounded,
-                    text: 'ID: ${c.classId}',
-                  ),
-                ],
-              ),
-            ],
-          ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _InfoChip(
+                          palette: palette,
+                          icon: Icons.calendar_today_rounded,
+                          text: DateFormat('EEE, MMM d').format(c.start),
+                        ),
+                        _InfoChip(
+                          palette: palette,
+                          icon: Icons.schedule_rounded,
+                          text:
+                              '${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
+                        ),
+                        _InfoChip(
+                          palette: palette,
+                          icon: Icons.badge_rounded,
+                          text: 'ID: ${c.classId}',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -2503,9 +2456,7 @@ class _ThemeChoiceTile extends StatelessWidget {
                 ),
               ),
               Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.circle_outlined,
+                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
                 color: selected ? preview1 : Colors.grey,
               ),
             ],

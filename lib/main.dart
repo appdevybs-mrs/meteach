@@ -22,15 +22,13 @@ import 'auth/auth_gate.dart';
 import 'package:video_player/video_player.dart';
 
 final GlobalKey<ScaffoldMessengerState> messengerKey =
-GlobalKey<ScaffoldMessengerState>();
+    GlobalKey<ScaffoldMessengerState>();
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await appThemeController.loadSavedTheme();
 
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -72,9 +70,7 @@ class YourBridgeSchoolApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: appThemeController.themeData,
           home: ForceUpdateGate(
-            child: const AuthGate(
-              signedOutHome: HomeShell(),
-            ),
+            child: const AuthGate(signedOutHome: HomeShell()),
           ),
         );
       },
@@ -102,11 +98,9 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   Future<void> _openLogin(BuildContext context) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   @override
@@ -114,10 +108,7 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: IndexedStack(
-          index: mode.index,
-          children: _pages,
-        ),
+        child: IndexedStack(index: mode.index, children: _pages),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openLogin(context),
@@ -130,10 +121,7 @@ class _HomeShellState extends State<HomeShell> {
         selectedIndex: mode.index,
         onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
+          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
           NavigationDestination(
             icon: Icon(Icons.auto_stories_rounded),
             label: 'Stories',
@@ -160,11 +148,7 @@ class SoftBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Container(
-          decoration: const BoxDecoration(
-            color: Brand.appBg,
-          ),
-        ),
+        Container(decoration: const BoxDecoration(color: Brand.appBg)),
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -209,11 +193,7 @@ class SimpleTopBar extends StatelessWidget {
   final String title;
   final Widget? right;
 
-  const SimpleTopBar({
-    super.key,
-    required this.title,
-    this.right,
-  });
+  const SimpleTopBar({super.key, required this.title, this.right});
 
   @override
   Widget build(BuildContext context) {
@@ -242,10 +222,8 @@ class SimpleTopBar extends StatelessWidget {
             child: Image.asset(
               'assets/images/ybs_logo.png',
               fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.school_rounded,
-                color: Brand.primaryBlue,
-              ),
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.school_rounded, color: Brand.primaryBlue),
             ),
           ),
           const SizedBox(width: 12),
@@ -258,10 +236,7 @@ class SimpleTopBar extends StatelessWidget {
               ),
             ),
           ),
-          if (right != null) ...[
-            const SizedBox(width: 8),
-            right!,
-          ],
+          if (right != null) ...[const SizedBox(width: 8), right!],
         ],
       ),
     );
@@ -287,7 +262,7 @@ class CardShell extends StatelessWidget {
             color: Colors.black.withOpacity(0.06),
             blurRadius: 28,
             offset: const Offset(0, 14),
-          )
+          ),
         ],
       ),
       child: child,
@@ -362,9 +337,9 @@ class _LevelTestCard extends StatelessWidget {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Open failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Open failed: $e')));
     }
   }
 
@@ -415,10 +390,7 @@ class _LevelTestCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(
-                Icons.open_in_new_rounded,
-                color: Brand.primaryBlue,
-              ),
+              const Icon(Icons.open_in_new_rounded, color: Brand.primaryBlue),
             ],
           ),
         ),
@@ -432,9 +404,7 @@ class StoriesHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftBackground(
-      child: const LearnerStoriesScreen(),
-    );
+    return SoftBackground(child: const LearnerStoriesScreen());
   }
 }
 
@@ -443,9 +413,7 @@ class GamesHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftBackground(
-      child: const LearnerGamesScreen(),
-    );
+    return SoftBackground(child: const LearnerGamesScreen());
   }
 }
 
@@ -551,9 +519,7 @@ class LoginScreen extends StatelessWidget {
                           bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                         ),
                         child: CardShell(
-                          child: ClassroomLoginSection(
-                            onLoggedInAdmin: () {},
-                          ),
+                          child: ClassroomLoginSection(onLoggedInAdmin: () {}),
                         ),
                       ),
                     ),
@@ -599,70 +565,67 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                         duration: const Duration(milliseconds: 220),
                         child: showLogin
                             ? ClassroomLoginSection(
-                          key: const ValueKey('login'),
-                          onLoggedInAdmin: () {},
-                        )
+                                key: const ValueKey('login'),
+                                onLoggedInAdmin: () {},
+                              )
                             : Column(
-                          key: const ValueKey('classroomInfo'),
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 54,
-                              height: 54,
-                              decoration: BoxDecoration(
-                                color: Brand.accentCyan.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(16),
-                                border:
-                                Border.all(color: Brand.uiBorder),
+                                key: const ValueKey('classroomInfo'),
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 54,
+                                    height: 54,
+                                    decoration: BoxDecoration(
+                                      color: Brand.accentCyan.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Brand.uiBorder),
+                                    ),
+                                    child: const Icon(
+                                      Icons.school_rounded,
+                                      color: Brand.primaryBlue,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Classroom (Next)',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(fontWeight: FontWeight.w900),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Next step: student/teacher login.\nTeachers mark attendance and post assignments.',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: Brand.mainText.withOpacity(
+                                            0.75,
+                                          ),
+                                          height: 1.4,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        setState(() => showLogin = true),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Brand.primaryBlue,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    child: const Text('Open Login'),
+                                  ),
+                                ],
                               ),
-                              child: const Icon(
-                                Icons.school_rounded,
-                                color: Brand.primaryBlue,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Classroom (Next)',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Next step: student/teacher login.\nTeachers mark attendance and post assignments.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                color: Brand.mainText
-                                    .withOpacity(0.75),
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton(
-                              onPressed: () =>
-                                  setState(() => showLogin = true),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Brand.primaryBlue,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(14),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                              ),
-                              child: const Text('Open Login'),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ),
@@ -675,13 +638,11 @@ class _ClassroomHomeState extends State<ClassroomHome> {
     );
   }
 }
+
 class ClassroomLoginSection extends StatefulWidget {
   final VoidCallback onLoggedInAdmin;
 
-  const ClassroomLoginSection({
-    super.key,
-    required this.onLoggedInAdmin,
-  });
+  const ClassroomLoginSection({super.key, required this.onLoggedInAdmin});
 
   @override
   State<ClassroomLoginSection> createState() => _ClassroomLoginSectionState();
@@ -689,7 +650,6 @@ class ClassroomLoginSection extends StatefulWidget {
 
 class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
   static const String supportWhatsAppNumber = '';
-  static const String supportPhoneNumber = '';
   static const String supportEmail = '';
 
   final emailCtrl = TextEditingController();
@@ -830,11 +790,11 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         failedAttempts = 0;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Welcome back!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Welcome back!')));
 
-// ✅ CLOSE LOGIN SCREEN
+      // ✅ CLOSE LOGIN SCREEN
       Navigator.of(context).pop();
 
       if (!mounted) return;
@@ -843,9 +803,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         failedAttempts = 0;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Welcome back!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Welcome back!')));
     } on FirebaseAuthException catch (e) {
       failedAttempts += 1;
       showCaptcha = true;
@@ -882,8 +842,10 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     if (loading) return;
 
     if (_isCoolingDown) {
-      setState(() =>
-      error = 'Please wait $_cooldownSecondsLeft seconds and try again.');
+      setState(
+        () =>
+            error = 'Please wait $_cooldownSecondsLeft seconds and try again.',
+      );
       return;
     }
 
@@ -1005,27 +967,17 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     final uri = Uri.parse('https://wa.me/$n');
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open WhatsApp.')),
-      );
-    }
-  }
-
-  Future<void> _callSupport() async {
-    if (supportPhoneNumber.trim().isEmpty) return;
-    final uri = Uri.parse('tel:${supportPhoneNumber.trim()}');
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not start a call.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open WhatsApp.')));
     }
   }
 
   Future<void> _emailSupport() async {
     if (supportEmail.trim().isEmpty) return;
-    final uri =
-    Uri.parse('mailto:${supportEmail.trim()}?subject=Support%20Request');
+    final uri = Uri.parse(
+      'mailto:${supportEmail.trim()}?subject=Support%20Request',
+    );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1036,10 +988,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
   Widget _supportRow() {
     final hasWhatsApp = supportWhatsAppNumber.trim().isNotEmpty;
-    final hasPhone = supportPhoneNumber.trim().isNotEmpty;
     final hasEmail = supportEmail.trim().isNotEmpty;
 
-    if (!hasWhatsApp && !hasPhone && !hasEmail) {
+    if (!hasWhatsApp && !hasEmail) {
       return const SizedBox.shrink();
     }
 
@@ -1066,12 +1017,6 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                 onPressed: loading ? null : _openWhatsApp,
                 icon: const Text('💬', style: TextStyle(fontSize: 16)),
                 label: const Text('WhatsApp'),
-              ),
-            if (hasPhone)
-              OutlinedButton.icon(
-                onPressed: loading ? null : _callSupport,
-                icon: const Icon(Icons.call_rounded, size: 18),
-                label: const Text('Call'),
               ),
             if (hasEmail)
               OutlinedButton.icon(
@@ -1108,7 +1053,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                       color: Colors.black.withOpacity(0.06),
                       blurRadius: 18,
                       offset: const Offset(0, 10),
-                    )
+                    ),
                   ],
                 ),
                 padding: const EdgeInsets.all(12),
@@ -1156,8 +1101,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             prefixIcon: const Icon(Icons.lock_rounded),
             suffixIcon: IconButton(
               tooltip: 'Show/Hide password',
-              onPressed:
-              loading ? null : () => setState(() => showPass = !showPass),
+              onPressed: loading
+                  ? null
+                  : () => setState(() => showPass = !showPass),
               icon: Icon(showPass ? Icons.visibility_off : Icons.visibility),
             ),
           ),
@@ -1178,8 +1124,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             decoration: BoxDecoration(
               color: Brand.actionOrange.withOpacity(0.10),
               borderRadius: BorderRadius.circular(14),
-              border:
-              Border.all(color: Brand.actionOrange.withOpacity(0.35)),
+              border: Border.all(color: Brand.actionOrange.withOpacity(0.35)),
             ),
             child: Row(
               children: [
@@ -1242,8 +1187,10 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                   decoration: const InputDecoration(
                     hintText: '...',
                     isDense: true,
-                    contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
                   ),
                 ),
               ),
@@ -1270,13 +1217,13 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           ),
           icon: loading
               ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
               : const Icon(Icons.login_rounded),
           label: Text(loading ? 'Signing in...' : 'Sign in'),
         ),
@@ -1336,14 +1283,12 @@ class _JoinOnlineCircleEntryButtonState
     );
 
     _scaleAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
-      CurvedAnimation(
-        parent: _pulseController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
     _pulseController.repeat(reverse: true);
   }
+
   DatabaseReference get _circlesRef =>
       FirebaseDatabase.instance.ref(circlesPath);
 
@@ -1494,7 +1439,7 @@ class _JoinOnlineCircleEntryButtonState
                       icon: Icons.access_time_filled_rounded,
                       label: 'Join rule',
                       value:
-                      'Users can join from 5 minutes before start until the circle duration ends.',
+                          'Users can join from 5 minutes before start until the circle duration ends.',
                     ),
                     if (circle.description.isNotEmpty) ...[
                       const SizedBox(height: 10),
@@ -1508,10 +1453,7 @@ class _JoinOnlineCircleEntryButtonState
                 ),
               ),
               const SizedBox(height: 16),
-              _CircleJoinStatusBanner(
-                state: joinState,
-                circle: circle,
-              ),
+              _CircleJoinStatusBanner(state: joinState, circle: circle),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -1532,9 +1474,9 @@ class _JoinOnlineCircleEntryButtonState
                     child: FilledButton.icon(
                       onPressed: joinState.canJoin
                           ? () async {
-                        Navigator.of(context).pop();
-                        await _joinCircle(circle);
-                      }
+                              Navigator.of(context).pop();
+                              await _joinCircle(circle);
+                            }
                           : null,
                       style: FilledButton.styleFrom(
                         backgroundColor: Brand.primaryBlue,
@@ -1562,25 +1504,22 @@ class _JoinOnlineCircleEntryButtonState
 
     if (!state.canJoin) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(state.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(state.message)));
       return;
     }
 
     final uri = Uri.tryParse(circle.meetingUrl);
     if (uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid meeting link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invalid meeting link.')));
       return;
     }
 
-    final ok = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1608,23 +1547,20 @@ class _JoinOnlineCircleEntryButtonState
                 if (snap.hasError) {
                   return const SizedBox(
                     height: 260,
-                    child: Center(
-                      child: Text('Could not load circles.'),
-                    ),
+                    child: Center(child: Text('Could not load circles.')),
                   );
                 }
 
                 if (!snap.hasData) {
                   return const SizedBox(
                     height: 260,
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                    child: Center(child: CircularProgressIndicator()),
                   );
                 }
 
-                final circles = _parseCircles(snap.data?.snapshot.value)
-                    .where((c) {
+                final circles = _parseCircles(snap.data?.snapshot.value).where((
+                  c,
+                ) {
                   final status = c.status.toLowerCase();
                   return status == 'open' || status.isEmpty;
                 }).toList();
@@ -1653,26 +1589,21 @@ class _JoinOnlineCircleEntryButtonState
                             const SizedBox(height: 14),
                             Text(
                               'No Available Classes',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
+                              style: Theme.of(context).textTheme.titleLarge
                                   ?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: Brand.primaryBlue,
-                              ),
+                                    fontWeight: FontWeight.w900,
+                                    color: Brand.primaryBlue,
+                                  ),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'There are no online classes to show right now.',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
+                              style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(
-                                color:
-                                Brand.mainText.withOpacity(0.75),
-                                height: 1.45,
-                              ),
+                                    color: Brand.mainText.withOpacity(0.75),
+                                    height: 1.45,
+                                  ),
                             ),
                           ],
                         ),
@@ -1702,13 +1633,11 @@ class _JoinOnlineCircleEntryButtonState
                         Expanded(
                           child: Text(
                             'Online Classes',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
+                            style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: Brand.primaryBlue,
-                            ),
+                                  fontWeight: FontWeight.w900,
+                                  color: Brand.primaryBlue,
+                                ),
                           ),
                         ),
                       ],
@@ -1729,8 +1658,7 @@ class _JoinOnlineCircleEntryButtonState
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: circles.length,
-                        separatorBuilder: (_, __) =>
-                        const SizedBox(height: 12),
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final circle = circles[index];
                           final state = circle.joinStateAt(DateTime.now());
@@ -1759,10 +1687,8 @@ class _JoinOnlineCircleEntryButtonState
                                     height: 52,
                                     decoration: BoxDecoration(
                                       color: state.canJoin
-                                          ? Brand.actionOrange
-                                          .withOpacity(0.12)
-                                          : Brand.primaryBlue
-                                          .withOpacity(0.10),
+                                          ? Brand.actionOrange.withOpacity(0.12)
+                                          : Brand.primaryBlue.withOpacity(0.10),
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Icon(
@@ -1778,7 +1704,7 @@ class _JoinOnlineCircleEntryButtonState
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           circle.topic,
@@ -1795,8 +1721,9 @@ class _JoinOnlineCircleEntryButtonState
                                           _formatDateTime(circle.timeMs),
                                           style: TextStyle(
                                             fontWeight: FontWeight.w700,
-                                            color: Brand.mainText
-                                                .withOpacity(0.75),
+                                            color: Brand.mainText.withOpacity(
+                                              0.75,
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -1824,6 +1751,7 @@ class _JoinOnlineCircleEntryButtonState
       },
     );
   }
+
   @override
   void dispose() {
     _pulseController.dispose();
@@ -1844,10 +1772,7 @@ class _JoinOnlineCircleEntryButtonState
             decoration: BoxDecoration(
               color: const Color(0xFFFFD54F),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: const Color(0xFFFFC107),
-                width: 1.4,
-              ),
+              border: Border.all(color: const Color(0xFFFFC107), width: 1.4),
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFFFFC107).withOpacity(0.35),
@@ -1974,20 +1899,14 @@ class _CircleJoinState {
   final bool canJoin;
   final String message;
 
-  const _CircleJoinState({
-    required this.canJoin,
-    required this.message,
-  });
+  const _CircleJoinState({required this.canJoin, required this.message});
 }
 
 class _CircleJoinStatusBanner extends StatelessWidget {
   final _CircleJoinState state;
   final _OnlineCircle circle;
 
-  const _CircleJoinStatusBanner({
-    required this.state,
-    required this.circle,
-  });
+  const _CircleJoinStatusBanner({required this.state, required this.circle});
 
   @override
   Widget build(BuildContext context) {
@@ -2001,9 +1920,7 @@ class _CircleJoinStatusBanner extends StatelessWidget {
             ? Brand.actionOrange.withOpacity(0.10)
             : Brand.primaryBlue.withOpacity(0.07),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isOpen ? Brand.actionOrange : Brand.uiBorder,
-        ),
+        border: Border.all(color: isOpen ? Brand.actionOrange : Brand.uiBorder),
       ),
       child: Row(
         children: [
@@ -2072,6 +1989,7 @@ class _DetailRow extends StatelessWidget {
     );
   }
 }
+
 class _PublicGalleryShowcase extends StatefulWidget {
   const _PublicGalleryShowcase();
 
@@ -2094,10 +2012,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
       if (val is! Map) return;
 
       final m = val.map((k, vv) => MapEntry(k.toString(), vv));
-      out.add({
-        'id': key.toString(),
-        ...m,
-      });
+      out.add({'id': key.toString(), ...m});
     });
 
     out.sort((a, b) {
@@ -2161,25 +2076,18 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                             const SizedBox(height: 12),
                             Text(
                               'Gallery Coming Soon',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                fontWeight: FontWeight.w900,
-                              ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w900),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'Public gallery teaser media will appear here.',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
+                              style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(
-                                color:
-                                Brand.mainText.withOpacity(0.75),
-                                height: 1.4,
-                              ),
+                                    color: Brand.mainText.withOpacity(0.75),
+                                    height: 1.4,
+                                  ),
                             ),
                           ],
                         ),
@@ -2190,8 +2098,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
 
                 return GridView.builder(
                   padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
-                  gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
@@ -2200,11 +2107,14 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
-                    final type =
-                    (item['type'] ?? '').toString().trim().toLowerCase();
+                    final type = (item['type'] ?? '')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
                     final url = (item['url'] ?? '').toString().trim();
-                    final uploadedByName =
-                    (item['uploadedByName'] ?? '').toString().trim();
+                    final uploadedByName = (item['uploadedByName'] ?? '')
+                        .toString()
+                        .trim();
                     final createdAt = _fmtDate(item['createdAt']);
 
                     return InkWell(
@@ -2328,9 +2238,7 @@ class _PublicGalleryVideoTile extends StatelessWidget {
             ),
           ),
         ),
-        Container(
-          color: Colors.black.withOpacity(0.18),
-        ),
+        Container(color: Colors.black.withOpacity(0.18)),
         const Center(
           child: Icon(
             Icons.play_circle_fill_rounded,
@@ -2381,18 +2289,18 @@ class _PublicGalleryViewerScreen extends StatelessWidget {
               child: isVideo
                   ? _PublicGalleryViewerVideo(url: url)
                   : InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white,
-                    size: 44,
-                  ),
-                ),
-              ),
+                      minScale: 0.8,
+                      maxScale: 4,
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white,
+                          size: 44,
+                        ),
+                      ),
+                    ),
             ),
           ),
           Container(
@@ -2466,8 +2374,9 @@ class _PublicGalleryViewerVideoState extends State<_PublicGalleryViewerVideo> {
 
   Future<void> _init() async {
     try {
-      final controller =
-      VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
       await controller.initialize();
       controller.setLooping(false);
 
@@ -2689,8 +2598,10 @@ class _CourseLite {
         return out;
       }
 
-      final parts =
-      s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty);
+      final parts = s
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
       for (final name in parts) {
         addInstructor('', name);
       }
@@ -2720,8 +2631,10 @@ class _CourseLite {
         fee = double.tryParse(rawFee.toString());
       }
 
-      final accessMode =
-      (m['access_mode'] ?? 'lifetime').toString().trim().toLowerCase();
+      final accessMode = (m['access_mode'] ?? 'lifetime')
+          .toString()
+          .trim()
+          .toLowerCase();
 
       int? durationMonths;
       final rawDuration = m['access_duration_months'];
@@ -2854,8 +2767,9 @@ class _CourseLite {
       duration: pickString(['duration']),
       level: pickString(['level']),
       language: pickString(['language']),
-      deliveryOptions:
-      _parseList(m['delivery_options'] ?? m['deliveryOptions']),
+      deliveryOptions: _parseList(
+        m['delivery_options'] ?? m['deliveryOptions'],
+      ),
       deliveryOptionRaw: pickString(['delivery_option', 'deliveryOption']),
       deliveryConfigs: _parseDeliveryConfigs(m['delivery_configs']),
       instructors: _parseInstructors(
@@ -2912,10 +2826,7 @@ class _DeliveryConfigLite {
 }
 
 class _InstructorLite {
-  const _InstructorLite({
-    required this.uid,
-    required this.name,
-  });
+  const _InstructorLite({required this.uid, required this.name});
 
   final String uid;
   final String name;
@@ -2950,7 +2861,9 @@ class _CoursesByCategory extends StatelessWidget {
             .toList();
 
         if (published.isEmpty) {
-          return const CardShell(child: Text('No courses available right now.'));
+          return const CardShell(
+            child: Text('No courses available right now.'),
+          );
         }
 
         final Map<String, List<_CourseLite>> grouped = {};
@@ -2977,10 +2890,7 @@ class _CoursesByCategory extends StatelessWidget {
 }
 
 class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({
-    required this.title,
-    required this.courses,
-  });
+  const _CategoryRow({required this.title, required this.courses});
 
   final String title;
   final List<_CourseLite> courses;
@@ -3049,20 +2959,20 @@ class _CourseCardMini extends StatelessWidget {
                 width: double.infinity,
                 child: course.thumb.trim().isNotEmpty
                     ? Image.network(
-                  course.thumb,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return Container(color: Brand.appBg);
-                  },
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Icon(Icons.image_not_supported),
-                  ),
-                )
+                        course.thumb,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return Container(color: Brand.appBg);
+                        },
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.image_not_supported),
+                        ),
+                      )
                     : Container(
-                  color: Brand.appBg,
-                  child: const Icon(Icons.school_rounded, size: 40),
-                ),
+                        color: Brand.appBg,
+                        child: const Icon(Icons.school_rounded, size: 40),
+                      ),
               ),
             ),
             const SizedBox(height: 10),
@@ -3106,11 +3016,7 @@ class _CourseCardMini extends StatelessWidget {
 }
 
 class _PrettyChip extends StatelessWidget {
-  const _PrettyChip({
-    this.icon,
-    required this.label,
-    this.ellipsize = false,
-  });
+  const _PrettyChip({this.icon, required this.label, this.ellipsize = false});
 
   final IconData? icon;
   final String label;
@@ -3199,7 +3105,6 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-
 class _CourseDetailsSheet extends StatelessWidget {
   const _CourseDetailsSheet({required this.course});
   final _CourseLite course;
@@ -3214,11 +3119,7 @@ class _CourseDetailsSheet extends StatelessWidget {
           border: Border.all(color: Brand.uiBorder),
         ),
         child: const Center(
-          child: Icon(
-            Icons.school_rounded,
-            size: 44,
-            color: Brand.primaryBlue,
-          ),
+          child: Icon(Icons.school_rounded, size: 44, color: Brand.primaryBlue),
         ),
       );
     }
@@ -3299,9 +3200,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                     );
                   },
                   icon: const Icon(Icons.how_to_reg_rounded),
-                  label: const Text(
-                    'Course Enrollment | التسجيل في الدورة',
-                  ),
+                  label: const Text('Course Enrollment | التسجيل في الدورة'),
                 ),
               ),
               const SizedBox(height: 18),
@@ -3330,11 +3229,7 @@ class _CourseDetailsSheet extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: course.instructors
-                      .map(
-                        (teacher) => _TeacherChip(
-                      teacher: teacher,
-                    ),
-                  )
+                      .map((teacher) => _TeacherChip(teacher: teacher))
                       .toList(),
                 ),
               ],
@@ -3347,10 +3242,11 @@ class _CourseDetailsSheet extends StatelessWidget {
                     children: [
                       Text(
                         'ماذا ستتعلم',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: Brand.primaryBlue,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: Brand.primaryBlue,
+                            ),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -3369,10 +3265,11 @@ class _CourseDetailsSheet extends StatelessWidget {
                     children: [
                       Text(
                         'الوصف',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: Brand.primaryBlue,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: Brand.primaryBlue,
+                            ),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -3391,10 +3288,11 @@ class _CourseDetailsSheet extends StatelessWidget {
                     children: [
                       Text(
                         'الوصف',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          color: Brand.primaryBlue,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: Brand.primaryBlue,
+                            ),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -3407,11 +3305,7 @@ class _CourseDetailsSheet extends StatelessWidget {
               if (course.requirements.trim().isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
-                  child: _rtlText(
-                    context,
-                    course.requirements,
-                    height: 1.45,
-                  ),
+                  child: _rtlText(context, course.requirements, height: 1.45),
                 ),
             ],
           ),
@@ -3462,8 +3356,9 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
     bool isAdmin = false;
 
     if (uid != null && uid.isNotEmpty) {
-      final adminSnap =
-      await FirebaseDatabase.instance.ref('admins/$uid').get();
+      final adminSnap = await FirebaseDatabase.instance
+          .ref('admins/$uid')
+          .get();
       isAdmin = adminSnap.value == true;
     }
 
@@ -3478,9 +3373,7 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
   @override
   Widget build(BuildContext context) {
     if (_myBuild == null || _myVersion == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final platformKey = kIsWeb
@@ -3601,9 +3494,9 @@ class UpdateRequiredScreen extends StatelessWidget {
     if (ok2) return;
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not open store link.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Could not open store link.')));
   }
 
   @override
@@ -3669,9 +3562,7 @@ class UpdateRequiredScreen extends StatelessWidget {
 }
 
 class _TeacherChip extends StatelessWidget {
-  const _TeacherChip({
-    required this.teacher,
-  });
+  const _TeacherChip({required this.teacher});
 
   final _InstructorLite teacher;
 
@@ -3684,20 +3575,20 @@ class _TeacherChip extends StatelessWidget {
       onTap: !canOpen
           ? null
           : () {
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          backgroundColor: Colors.white,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          builder: (_) => TeacherMediaSheet(
-            teacherUid: teacher.uid,
-            teacherName: teacher.name,
-          ),
-        );
-      },
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                showDragHandle: true,
+                backgroundColor: Colors.white,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                builder: (_) => TeacherMediaSheet(
+                  teacherUid: teacher.uid,
+                  teacherName: teacher.name,
+                ),
+              );
+            },
       child: Opacity(
         opacity: canOpen ? 1 : 0.75,
         child: _PrettyChip(

@@ -19,8 +19,6 @@ import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
-import '../calls/call_logs_screen.dart';
-import '../calls/audio_call_screen.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -42,7 +40,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     appThemeController.addListener(_onThemeChanged);
     _displayNameFuture = _myDisplayName();
     _profilePhotoFuture = _myProfilePhoto();
-
   }
 
   @override
@@ -71,17 +68,13 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   void _pushScreen(Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => screen),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
   void _openStoriesScreen() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const LearnerStoriesScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LearnerStoriesScreen()));
   }
 
   Future<void> _refreshShell() async {
@@ -91,7 +84,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     });
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
-
 
   Future<void> _logout(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -179,8 +171,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     return '';
   }
 
-
-
   Future<List<_UserPick>> _loadAdmins() async {
     final out = <_UserPick>[];
     try {
@@ -258,7 +248,9 @@ class _LearnerHomeState extends State<LearnerHome> {
               final mm = lv.map((kk, vv) => MapEntry(kk.toString(), vv));
               final n = (mm['name'] ?? '').toString().trim();
               final serial = (mm['serial'] ?? '').toString().trim();
-              name = n.isNotEmpty ? n : (serial.isNotEmpty ? serial : 'Learner');
+              name = n.isNotEmpty
+                  ? n
+                  : (serial.isNotEmpty ? serial : 'Learner');
             }
 
             if (imInThisClass) {
@@ -279,7 +271,7 @@ class _LearnerHomeState extends State<LearnerHome> {
           if (tuid.isNotEmpty) {
             teacherUids.putIfAbsent(
               tuid,
-                  () => tname.isNotEmpty ? tname : 'Teacher',
+              () => tname.isNotEmpty ? tname : 'Teacher',
             );
           }
         }
@@ -367,19 +359,9 @@ class _LearnerHomeState extends State<LearnerHome> {
     required String peerUid,
     required String peerName,
   }) async {
-    final myName = await _myDisplayName();
     if (!mounted) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AudioCallScreen(
-          peerUid: peerUid,
-          peerName: peerName,
-          isCaller: true,
-          callerName: myName,
-          startWithVideo: false,
-        ),
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Call feature has been removed.')),
     );
   }
 
@@ -466,13 +448,13 @@ class _LearnerHomeState extends State<LearnerHome> {
                         ConstrainedBox(
                           constraints: BoxConstraints(
                             maxHeight:
-                            MediaQuery.of(context).size.height * 0.55,
+                                MediaQuery.of(context).size.height * 0.55,
                           ),
                           child: ListView.separated(
                             shrinkWrap: true,
                             itemCount: items.length,
                             separatorBuilder: (_, __) =>
-                            const SizedBox(height: 10),
+                                const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final it = items[i];
 
@@ -497,8 +479,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                                   child: Row(
                                     children: [
                                       CircleAvatar(
-                                        backgroundColor:
-                                        p.primary.withOpacity(0.08),
+                                        backgroundColor: p.primary.withOpacity(
+                                          0.08,
+                                        ),
                                         child: Text(
                                           it.name.isNotEmpty
                                               ? it.name[0].toUpperCase()
@@ -513,7 +496,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               it.name,
@@ -544,8 +527,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: p.accent.withOpacity(0.10),
-                                          borderRadius:
-                                          BorderRadius.circular(999),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
                                           border: Border.all(
                                             color: p.accent.withOpacity(0.22),
                                           ),
@@ -749,8 +733,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenStories: _openStoriesScreen,
         onOpenGames: () => _pushScreen(const LearnerGamesScreen()),
         onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
-        onOpenRegulations: () =>
-            _pushScreen(const LearnerRegulationsScreen()),
+        onOpenRegulations: () => _pushScreen(const LearnerRegulationsScreen()),
         onOpenThemeSettings: _openThemeSheet,
         onLogout: () => _logout(context),
       ),
@@ -796,16 +779,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.history_rounded, color: p.accent),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const CallLogsScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
             icon: Icon(Icons.logout_rounded, color: p.accent),
             onPressed: () => _logout(context),
           ),
@@ -813,19 +786,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       ),
       body: RefreshIndicator(
         onRefresh: _refreshShell,
-        child: WatermarkBackground(
-          child: _LearnerDashboardLite(),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: p.accent,
-        foregroundColor: Colors.white,
-        icon: const Text('🎧', style: TextStyle(fontSize: 18)),
-        label: const Text(
-          'Support',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        onPressed: _openSupportSheet,
+        child: WatermarkBackground(child: _LearnerDashboardLite()),
       ),
     );
   }
@@ -860,13 +821,11 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (v is num) return v.toInt();
     return int.tryParse(v?.toString() ?? '') ?? 0;
   }
+
   Future<Map<String, String>> _loadLearnerHeaderData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) {
-      return {
-        'name': 'Learner',
-        'profilePhoto': '',
-      };
+      return {'name': 'Learner', 'profilePhoto': ''};
     }
 
     try {
@@ -887,10 +846,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       }
     } catch (_) {}
 
-    return {
-      'name': 'Learner',
-      'profilePhoto': '',
-    };
+    return {'name': 'Learner', 'profilePhoto': ''};
   }
 
   String _courseTypeLabel(Map<String, dynamic> course) {
@@ -928,7 +884,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
     return 'Course details';
   }
-
 
   String _courseDetailsLine(Map<String, dynamic> course) {
     final variant = (course['variantKey'] ?? course['variant'] ?? '')
@@ -983,13 +938,14 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         ? Map<String, dynamic>.from(course['class'] as Map)
         : <String, dynamic>{};
 
-    final teacherName = (cls['teacher_name'] ??
-        cls['instructor_name'] ??
-        cls['teacher'] ??
-        cls['instructor'] ??
-        '')
-        .toString()
-        .trim();
+    final teacherName =
+        (cls['teacher_name'] ??
+                cls['instructor_name'] ??
+                cls['teacher'] ??
+                cls['instructor'] ??
+                '')
+            .toString()
+            .trim();
 
     final classId = (cls['class_id'] ?? '').toString().trim();
     final code = (course['course_code'] ?? '').toString().trim();
@@ -1013,8 +969,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         : <String, dynamic>{};
 
     final classId = (cls['class_id'] ?? '').toString().trim();
-    final courseId =
-    (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+    final courseId = (cls['course_id'] ?? course['id'] ?? '').toString().trim();
     final variantKey = (course['variantKey'] ?? course['variant'] ?? '')
         .toString()
         .trim()
@@ -1083,8 +1038,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               if (sessions is List) {
                 totalLessons += sessions.length;
               } else if (sessions is Map) {
-                totalLessons +=
-                    Map<dynamic, dynamic>.from(sessions).length;
+                totalLessons += Map<dynamic, dynamic>.from(sessions).length;
               }
             }
           }
@@ -1121,8 +1075,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       }
 
       try {
-        final syllabusSnap =
-        await _db.child('syllabi/$courseId/recorded').get();
+        final syllabusSnap = await _db
+            .child('syllabi/$courseId/recorded')
+            .get();
         final Map<String, Map<String, dynamic>> sessionMetaById = {};
 
         List<Map<String, dynamic>> asListOfMaps(dynamic node) {
@@ -1165,8 +1120,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             for (final session in rawSessions) {
               final sessionId = (session['id'] ?? '').toString().trim();
               final videoUrl = (session['videoUrl'] ?? '').toString().trim();
-              final materialsUrl =
-              (session['materialsUrl'] ?? '').toString().trim();
+              final materialsUrl = (session['materialsUrl'] ?? '')
+                  .toString()
+                  .trim();
 
               if (sessionId.isNotEmpty) {
                 sessionMetaById[sessionId] = {
@@ -1183,8 +1139,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             .get();
 
         if (progressSnap.exists && progressSnap.value is Map) {
-          final rawProgress =
-          Map<String, dynamic>.from(progressSnap.value as Map);
+          final rawProgress = Map<String, dynamic>.from(
+            progressSnap.value as Map,
+          );
 
           for (final entry in rawProgress.entries) {
             final sessionId = entry.key.toString().trim();
@@ -1275,8 +1232,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           for (final it in taughtItems) {
             if (it is! Map) continue;
             final item = Map<String, dynamic>.from(it);
-            final type =
-            (item['type'] ?? '').toString().trim().toLowerCase();
+            final type = (item['type'] ?? '').toString().trim().toLowerCase();
             if (type != 'syllabus') continue;
 
             final sid = (item['sessionId'] ?? '').toString().trim();
@@ -1320,9 +1276,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (learnerUid.isNotEmpty && courseId.isNotEmpty) {
       try {
         final snap = await _db
-            .child(
-          'booking_progress/$learnerUid/$courseId/flexible_attendance',
-        )
+            .child('booking_progress/$learnerUid/$courseId/flexible_attendance')
             .get();
 
         if (snap.exists && snap.value is Map) {
@@ -1341,8 +1295,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 if (it is! Map) continue;
                 final item = Map<String, dynamic>.from(it);
 
-                final type =
-                (item['type'] ?? '').toString().trim().toLowerCase();
+                final type = (item['type'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
                 if (type != 'syllabus') continue;
 
                 final sid = (item['sessionId'] ?? '').toString().trim();
@@ -1375,9 +1331,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (learnerUid.isNotEmpty && courseId.isNotEmpty) {
       try {
         final snap = await _db
-            .child(
-          'booking_progress/$learnerUid/$courseId/online_attendance',
-        )
+            .child('booking_progress/$learnerUid/$courseId/online_attendance')
             .get();
 
         if (snap.exists && snap.value is Map) {
@@ -1397,8 +1351,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 if (it is! Map) continue;
                 final item = Map<String, dynamic>.from(it);
 
-                final type =
-                (item['type'] ?? '').toString().trim().toLowerCase();
+                final type = (item['type'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
                 if (type != 'syllabus') continue;
 
                 final sid = (item['sessionId'] ?? '').toString().trim();
@@ -1430,7 +1386,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     }
     return covered;
   }
-
 
   Future<List<_CourseProgressItem>> _loadProgressItems() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -1464,14 +1419,17 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
         final total = meta.totalLessons > 0
             ? meta.totalLessons
-            : ((meta.plannedMeetings ?? 0) > 0 ? (meta.plannedMeetings ?? 0) : 0);
+            : ((meta.plannedMeetings ?? 0) > 0
+                  ? (meta.plannedMeetings ?? 0)
+                  : 0);
 
         final completed = total > 0
             ? covered.length.clamp(0, total)
             : covered.length;
 
-        final double progress =
-        total > 0 ? (completed / total).clamp(0.0, 1.0) : 0.0;
+        final double progress = total > 0
+            ? (completed / total).clamp(0.0, 1.0)
+            : 0.0;
 
         out.add(
           _CourseProgressItem(
@@ -1526,8 +1484,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
         if (variantKey != 'flexible') continue;
 
-        final flexibleSyllabusSnap =
-        await _db.child('syllabi/$courseId/flexible').get();
+        final flexibleSyllabusSnap = await _db
+            .child('syllabi/$courseId/flexible')
+            .get();
 
         if (flexibleSyllabusSnap.exists) {
           return true;
@@ -1558,10 +1517,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       return Center(
         child: Text(
           'Not logged in.',
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w800,
-          ),
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w800),
         ),
       );
     }
@@ -1576,15 +1532,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           16 + (bottomPad > 0 ? bottomPad : 12),
         ),
         children: [
-
-
-
           const SizedBox(height: 8),
 
-          _SectionTitle(
-            palette: p,
-            title: 'Homework & Reminders',
-          ),
+          _SectionTitle(palette: p, title: 'Homework & Reminders'),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -1607,10 +1557,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
               return Column(
                 children: [
-                  _SectionTitle(
-                    palette: p,
-                    title: 'Booking',
-                  ),
+                  _SectionTitle(palette: p, title: 'Booking'),
                   const SizedBox(height: 10),
                   const _BookingTopCard(),
                   const SizedBox(height: 16),
@@ -1644,9 +1591,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                     _ProgressCard(
                       palette: p,
                       item: items[i],
-                      onTap: () => _openCoursesScreen(
-                        courseKey: items[i].courseKey,
-                      ),
+                      onTap: () =>
+                          _openCoursesScreen(courseKey: items[i].courseKey),
                     ),
                     if (i != items.length - 1) const SizedBox(height: 10),
                   ],
@@ -1654,9 +1600,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
               );
             },
           ),
-
-
-
         ],
       ),
     );
@@ -1716,17 +1659,13 @@ class _LearnerHeroCard extends StatelessWidget {
   final String profilePhotoUrl;
   final VoidCallback onOpenCourses;
 
-
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1747,24 +1686,27 @@ class _LearnerHeroCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.12),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.35), width: 2),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.35),
+                width: 2,
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: profilePhotoUrl.isNotEmpty
                 ? Image.network(
-              profilePhotoUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.person_rounded,
-                color: Colors.white,
-                size: 28,
-              ),
-            )
+                    profilePhotoUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.person_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  )
                 : const Icon(
-              Icons.person_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
+                    Icons.person_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
           ),
 
           const SizedBox(width: 14),
@@ -1899,10 +1841,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _LoadingCard extends StatelessWidget {
-  const _LoadingCard({
-    required this.palette,
-    required this.text,
-  });
+  const _LoadingCard({required this.palette, required this.text});
 
   final _HomePalette palette;
   final String text;
@@ -1944,10 +1883,7 @@ class _LoadingCard extends StatelessWidget {
 }
 
 class _EmptyCard extends StatelessWidget {
-  const _EmptyCard({
-    required this.palette,
-    required this.text,
-  });
+  const _EmptyCard({required this.palette, required this.text});
 
   final _HomePalette palette;
   final String text;
@@ -1964,10 +1900,7 @@ class _EmptyCard extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(
-          color: palette.text,
-          fontWeight: FontWeight.w800,
-        ),
+        style: TextStyle(color: palette.text, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -2239,9 +2172,6 @@ class _ProgressCard extends StatelessWidget {
       ),
     );
   }
-
-
-
 }
 
 class _BookingTopCard extends StatefulWidget {
@@ -2277,14 +2207,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
       duration: const Duration(milliseconds: 1100),
     );
 
-    _pulseScale = Tween<double>(
-      begin: 1.0,
-      end: 1.035,
-    ).animate(
-      CurvedAnimation(
-        parent: _pulseController,
-        curve: Curves.easeInOut,
-      ),
+    _pulseScale = Tween<double>(begin: 1.0, end: 1.035).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
   }
 
@@ -2343,8 +2267,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
       final assignedAt = numVal(m['assignedAt']);
 
-      final flexibleSyllabusSnap =
-      await _db.child('syllabi/$courseId/flexible').get();
+      final flexibleSyllabusSnap = await _db
+          .child('syllabi/$courseId/flexible')
+          .get();
       if (!flexibleSyllabusSnap.exists) continue;
 
       temp.add({
@@ -2355,7 +2280,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
     }
 
     temp.sort(
-          (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
+      (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
     );
     return temp;
   }
@@ -2423,8 +2348,11 @@ class _BookingTopCardState extends State<_BookingTopCard>
       if (cid.isEmpty) continue;
 
       for (int i = 0; i < daysAhead; i++) {
-        final day =
-        DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).add(Duration(days: i));
         final dk = _dateKey(day);
 
         final snap = await _db.child('booking_reservations/$cid/$dk').get();
@@ -2451,8 +2379,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
           if (joinWindowEnds.isBefore(now)) continue;
 
           final teacherId = (sm['teacherId'] ?? '').toString().trim();
-          final teacherName =
-          (sm['teacherName'] ?? 'Teacher').toString().trim();
+          final teacherName = (sm['teacherName'] ?? 'Teacher')
+              .toString()
+              .trim();
 
           final candidate = _NextBooking(
             courseId: cid,
@@ -2486,20 +2415,22 @@ class _BookingTopCardState extends State<_BookingTopCard>
     if (teacherId.isEmpty || courseId.isEmpty) return null;
 
     try {
-      final snap =
-      await _db.child('booking_availability/$teacherId/$courseId').get();
+      final snap = await _db
+          .child('booking_availability/$teacherId/$courseId')
+          .get();
       final v = snap.value;
       if (v is! Map) return null;
 
       final m = Map<String, dynamic>.from(v);
 
-      final meetUrl = (m['meetUrl'] ??
-          m['meet_url'] ??
-          m['googleMeetUrl'] ??
-          m['google_meet_url'] ??
-          '')
-          .toString()
-          .trim();
+      final meetUrl =
+          (m['meetUrl'] ??
+                  m['meet_url'] ??
+                  m['googleMeetUrl'] ??
+                  m['google_meet_url'] ??
+                  '')
+              .toString()
+              .trim();
 
       int dur = _toInt(m['durationMinutes'], fallback: 0);
       if (dur <= 0) dur = _toInt(m['durationMin'], fallback: 0);
@@ -2608,6 +2539,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
     if (urgency >= 0.20) return const Color(0xFFE53935);
     return const Color(0xFFEF5350);
   }
+
   Color _statusColor({
     required bool canJoin,
     required bool beforeOpen,
@@ -2635,18 +2567,18 @@ class _BookingTopCardState extends State<_BookingTopCard>
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid meeting link.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invalid meeting link.')));
       }
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open the link.')));
     }
   }
 
@@ -2662,8 +2594,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
     try {
       final slotSnap = await _db
           .child(
-        'booking_reservations/${next.courseId}/${next.dayKey}/${next.time}',
-      )
+            'booking_reservations/${next.courseId}/${next.dayKey}/${next.time}',
+          )
           .get();
       if (!slotSnap.exists || slotSnap.value is! Map) return;
       final slot = Map<String, dynamic>.from(slotSnap.value as Map);
@@ -2680,11 +2612,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
       final taughtItems = (sessionNo > 0)
           ? [
-        {
-          'type': 'syllabus',
-          'sessionNumber': sessionNo,
-        }
-      ]
+              {'type': 'syllabus', 'sessionNumber': sessionNo},
+            ]
           : <Map<String, dynamic>>[];
 
       await ref.set({
@@ -2718,10 +2647,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  p.accent,
-                  p.accent.withOpacity(0.88),
-                ],
+                colors: [p.accent, p.accent.withOpacity(0.88)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -2780,8 +2706,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: p.cardBg,
                     borderRadius: BorderRadius.circular(999),
@@ -2847,7 +2775,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 final teacherStr = next.teacherName;
 
                 final now = DateTime.now();
-                final openFrom = next.start.subtract(const Duration(minutes: 5));
+                final openFrom = next.start.subtract(
+                  const Duration(minutes: 5),
+                );
                 final openUntil = next.start.add(const Duration(minutes: 10));
 
                 final beforeOpen = now.isBefore(openFrom);
@@ -2859,7 +2789,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 final opensInText = _formatCountdown(opensIn);
                 final closesInText = _formatCountdown(closesIn);
 
-                final canJoin = _canJoinNow(next.start, meet?.durationMinutes ?? 60);
+                final canJoin = _canJoinNow(
+                  next.start,
+                  meet?.durationMinutes ?? 60,
+                );
 
                 final statusColor = _statusColor(
                   canJoin: canJoin,
@@ -2951,9 +2884,6 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   );
                 }
 
-
-
-
                 if (canJoin) {
                   if (!_pulseController.isAnimating) {
                     _pulseController.repeat(reverse: true);
@@ -2979,7 +2909,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: (canJoin ? statusColor : urgentRed).withOpacity(0.18 + (urgency * 0.20)),
+                        color: (canJoin ? statusColor : urgentRed).withOpacity(
+                          0.18 + (urgency * 0.20),
+                        ),
                         blurRadius: 14 + (urgency * 10),
                         offset: const Offset(0, 8),
                       ),
@@ -3095,8 +3027,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                             : const AlwaysStoppedAnimation<double>(1.0),
                         child: FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor:
-                            canJoin ? statusColor : p.accent.withOpacity(0.55),
+                            backgroundColor: canJoin
+                                ? statusColor
+                                : p.accent.withOpacity(0.55),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -3105,20 +3038,21 @@ class _BookingTopCardState extends State<_BookingTopCard>
                           ),
                           onPressed: canJoin
                               ? () async {
-                            final uid =
-                                FirebaseAuth.instance.currentUser?.uid ?? '';
+                                  final uid =
+                                      FirebaseAuth.instance.currentUser?.uid ??
+                                      '';
 
-                            await _openExternalUrl(context, meet.meetUrl);
+                                  await _openExternalUrl(context, meet.meetUrl);
 
-                            if (uid.isNotEmpty) {
-                              unawaited(
-                                _autoMarkPresentAndTaught(
-                                  learnerUid: uid,
-                                  next: next,
-                                ),
-                              );
-                            }
-                          }
+                                  if (uid.isNotEmpty) {
+                                    unawaited(
+                                      _autoMarkPresentAndTaught(
+                                        learnerUid: uid,
+                                        next: next,
+                                      ),
+                                    );
+                                  }
+                                }
                               : null,
                           child: Text(
                             canJoin
@@ -3128,9 +3062,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                 : afterClose
                                 ? 'Join window closed'
                                 : 'Join unavailable',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
                         ),
                       ),
@@ -3175,9 +3107,9 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Not logged in.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Not logged in.')));
     return;
   }
 
@@ -3218,8 +3150,9 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 
         final assignedAt = numVal(m['assignedAt']);
 
-        final flexibleSyllabusSnap =
-        await db.child('syllabi/$courseId/flexible').get();
+        final flexibleSyllabusSnap = await db
+            .child('syllabi/$courseId/flexible')
+            .get();
         if (!flexibleSyllabusSnap.exists) continue;
 
         courses.add({
@@ -3230,12 +3163,14 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
         });
       }
 
-      courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
+      courses.sort(
+        (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
+      );
     }
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Failed to load courses: $e')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Failed to load courses: $e')));
     return;
   }
 
@@ -3347,10 +3282,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                 ],
                               ),
                             ),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              color: p.primary,
-                            ),
+                            Icon(Icons.chevron_right_rounded, color: p.primary),
                           ],
                         ),
                       ),
@@ -3367,15 +3299,15 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
 }
 
 Future<void> _openHomeworkCoursePicker(
-    BuildContext context, {
-      Set<String> courseKeysWithUndone = const {},
-    }) async {
+  BuildContext context, {
+  Set<String> courseKeysWithUndone = const {},
+}) async {
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Not logged in.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Not logged in.')));
     return;
   }
 
@@ -3410,12 +3342,14 @@ Future<void> _openHomeworkCoursePicker(
         };
       }).toList();
 
-      courses.sort((a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int));
+      courses.sort(
+        (a, b) => (b['assignedAt'] as int).compareTo(a['assignedAt'] as int),
+      );
     }
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Failed to load courses: $e')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Failed to load courses: $e')));
     return;
   }
 
@@ -3423,7 +3357,9 @@ Future<void> _openHomeworkCoursePicker(
 
   if (courses.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('All slots are full, please try again later')),
+      const SnackBar(
+        content: Text('All slots are full, please try again later'),
+      ),
     );
     return;
   }
@@ -3482,9 +3418,7 @@ Future<void> _openHomeworkCoursePicker(
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: p.border.withOpacity(0.85),
-                          ),
+                          border: Border.all(color: p.border.withOpacity(0.85)),
                         ),
                         child: Row(
                           children: [
@@ -3590,8 +3524,6 @@ class _SupportTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -3968,11 +3900,9 @@ class _GalleryHomeCard extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const LearnerGalleryScreen(),
-          ),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const LearnerGalleryScreen()));
       },
       child: Container(
         width: double.infinity,
@@ -3999,10 +3929,7 @@ class _GalleryHomeCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: p.border.withOpacity(0.85)),
               ),
-              child: Icon(
-                Icons.photo_library_rounded,
-                color: p.primary,
-              ),
+              child: Icon(Icons.photo_library_rounded, color: p.primary),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -4030,18 +3957,12 @@ class _GalleryHomeCard extends StatelessWidget {
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: p.soft,
                 borderRadius: BorderRadius.circular(999),
               ),
-              child: Icon(
-                Icons.chevron_right_rounded,
-                color: p.primary,
-              ),
+              child: Icon(Icons.chevron_right_rounded, color: p.primary),
             ),
           ],
         ),
@@ -4049,6 +3970,7 @@ class _GalleryHomeCard extends StatelessWidget {
     );
   }
 }
+
 class _StudyCoachHomeCard extends StatelessWidget {
   const _StudyCoachHomeCard();
 
@@ -4060,9 +3982,7 @@ class _StudyCoachHomeCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       onTap: () {
         Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const LearnerStudyCoachScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const LearnerStudyCoachScreen()),
         );
       },
       child: Container(
@@ -4090,10 +4010,7 @@ class _StudyCoachHomeCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: p.border.withOpacity(0.85)),
               ),
-              child: Icon(
-                Icons.psychology_alt_rounded,
-                color: p.primary,
-              ),
+              child: Icon(Icons.psychology_alt_rounded, color: p.primary),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -4121,18 +4038,12 @@ class _StudyCoachHomeCard extends StatelessWidget {
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: p.soft,
                 borderRadius: BorderRadius.circular(999),
               ),
-              child: Icon(
-                Icons.chevron_right_rounded,
-                color: p.primary,
-              ),
+              child: Icon(Icons.chevron_right_rounded, color: p.primary),
             ),
           ],
         ),
@@ -4169,7 +4080,6 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
   final VoidCallback onLogout;
-
 
   @override
   Widget build(BuildContext context) {
@@ -4213,19 +4123,19 @@ class _LearnerDrawer extends StatelessWidget {
                             clipBehavior: Clip.antiAlias,
                             child: profilePhotoUrl.isNotEmpty
                                 ? Image.network(
-                              profilePhotoUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            )
+                                    profilePhotoUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.person_rounded,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
+                                  )
                                 : const Icon(
-                              Icons.person_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
+                                    Icons.person_rounded,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -4518,9 +4428,7 @@ class _ThemeChoiceTile extends StatelessWidget {
                 ),
               ),
               Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.circle_outlined,
+                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
                 color: selected ? preview1 : _fallbackBorder,
               ),
             ],

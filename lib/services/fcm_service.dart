@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,9 +9,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../admin/admin_payments.dart'; // keep (project safety)
 import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
-import '../calls/audio_call_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../main.dart'; // appNavigatorKey + messengerKey
 import '../teacher/teacher_mail_thread_screen.dart';
@@ -39,29 +36,14 @@ class FCMService {
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _local =
-  FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
 
   bool _localInited = false;
 
   static const String chMessages = 'ch_messages';
   static const String chReminders = 'ch_reminders';
   static const String chMail = 'ch_mail';
-  static const String chCalls = 'ch_calls';
   static const String chDefault = 'ch_default';
-
-  // Prevent opening same call screen multiple times quickly
-  static String? _lastIncomingCallIdHandled;
-  static DateTime? _lastIncomingCallHandledAt;
-
-  // Keep a watcher per callId so we can cancel notification when call ends
-  final Map<String, StreamSubscription<DatabaseEvent>> _callWatchers = {};
-
-  // Notification action ids
-  static const String actionAccept = 'ACCEPT_CALL';
-  static const String actionDecline = 'DECLINE_CALL';
-
-  // Presence path (for busy feature)
-  static const String _presenceInCallPath = 'presence/in_call';
 
   /// REQUIRED by AuthGate (your app calls this)
   static Future<void> syncTokenAfterLogin() async {
@@ -115,16 +97,6 @@ class FCMService {
         if (threadId.isNotEmpty && RouteState.currentMailThreadId == threadId) {
           return;
         }
-      }
-
-      // Calls: show call-style notif + start watcher to auto-cancel when status changes
-      if (type == 'incoming_call') {
-        final callId = (data['callId'] ?? '').toString().trim();
-        if (callId.isNotEmpty) {
-          _watchCallToAutoCancel(callId);
-        }
-        await _showFromRemoteMessage(message);
-        return;
       }
 
       // Others
@@ -187,36 +159,6 @@ class FCMService {
         final payload = response.payload;
         if (payload == null || payload.isEmpty) return;
 
-        Map<String, dynamic> data;
-        try {
-          data = jsonDecode(payload) as Map<String, dynamic>;
-        } catch (_) {
-          return;
-        }
-
-        final type = (data['type'] ?? '').toString().toLowerCase();
-        final actionId = response.actionId;
-
-        // Handle call actions
-        if (type == 'incoming_call') {
-          final callId = (data['callId'] ?? '').toString().trim();
-          if (callId.isNotEmpty) {
-            _watchCallToAutoCancel(callId);
-          }
-
-          if (actionId == actionDecline) {
-            await _markCallStatus(callId, 'declined');
-            await _cancelCallNotification(callId);
-            return;
-          }
-
-          if (actionId == actionAccept) {
-            // Accept: validate + busy check + mark accepted + open
-            await _handleIncomingCallTap(data, fromAcceptAction: true);
-            return;
-          }
-        }
-
         // Default tap handling
         _handleNotificationTapPayload(payload);
       },
@@ -229,9 +171,10 @@ class FCMService {
       Future.microtask(() => _handleNotificationTapPayload(payload));
     }
 
-    final androidPlugin =
-    _local.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _local
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     if (androidPlugin != null) {
       await androidPlugin.createNotificationChannel(
@@ -260,14 +203,6 @@ class FCMService {
       );
       await androidPlugin.createNotificationChannel(
         const AndroidNotificationChannel(
-          chCalls,
-          'Calls',
-          description: 'Incoming call notifications',
-          importance: Importance.max,
-        ),
-      );
-      await androidPlugin.createNotificationChannel(
-        const AndroidNotificationChannel(
           chDefault,
           'General',
           description: 'General notifications',
@@ -279,90 +214,13 @@ class FCMService {
     _localInited = true;
   }
 
-  int _stableNotifIdForCall(String callId) {
-    final h = callId.hashCode;
-    return h < 0 ? -h : h;
-  }
-
-  Future<void> _cancelCallNotification(String callId) async {
-    try {
-      final id = _stableNotifIdForCall(callId);
-      await _local.cancel(id: id);
-    } catch (_) {}
-  }
-
-  void _watchCallToAutoCancel(String callId) {
-    // cancel old watcher
-    _callWatchers[callId]?.cancel();
-
-    final sub = FirebaseDatabase.instance.ref('calls/$callId').onValue.listen((event) async {
-      final v = event.snapshot.value;
-      if (v is! Map) {
-        // call deleted => cancel notif
-        await _cancelCallNotification(callId);
-        _callWatchers[callId]?.cancel();
-        _callWatchers.remove(callId);
-        return;
-      }
-
-      final status = (v['status'] ?? '').toString();
-      if (status != 'ringing') {
-        await _cancelCallNotification(callId);
-        _callWatchers[callId]?.cancel();
-        _callWatchers.remove(callId);
-      }
-    });
-
-    _callWatchers[callId] = sub;
-  }
-
-  Future<void> _markCallStatus(String callId, String status) async {
-    if (callId.trim().isEmpty) return;
-    try {
-      await FirebaseDatabase.instance.ref('calls/$callId').update({
-        'status': status,
-        'updatedAt': ServerValue.timestamp,
-      });
-    } catch (_) {}
-  }
-
-  Future<bool> _isMeBusyInCall() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return false;
-
-    try {
-      final snap = await FirebaseDatabase.instance.ref('$_presenceInCallPath/$uid').get();
-      final v = snap.value;
-      if (v is bool) return v;
-      return v?.toString() == 'true';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<String?> _validateCallBeforeOpening(String callId) async {
-    try {
-      final snap = await FirebaseDatabase.instance.ref('calls/$callId').get();
-
-      if (!snap.exists) return 'This call no longer exists.';
-      final data = snap.value;
-      if (data is! Map) return 'Invalid call data.';
-
-      final status = (data['status'] ?? '').toString();
-      if (status != 'ringing') return 'This call has already ended.';
-
-      return null; // OK
-    } catch (_) {
-      return 'Unable to verify call status.';
-    }
-  }
-
   Future<void> _showFromRemoteMessage(RemoteMessage message) async {
     final data = Map<String, dynamic>.from(message.data);
     final type = (data['type'] ?? '').toString().toLowerCase();
 
     final title =
-    (data['title'] ?? message.notification?.title ?? 'Notification').toString();
+        (data['title'] ?? message.notification?.title ?? 'Notification')
+            .toString();
     final body = (data['body'] ?? message.notification?.body ?? '').toString();
 
     String channelId = chDefault;
@@ -377,54 +235,9 @@ class FCMService {
     } else if (type == 'mail' || type == 'email') {
       channelId = chMail;
       channelName = 'Mail';
-    } else if (type == 'incoming_call') {
-      channelId = chCalls;
-      channelName = 'Calls';
     }
 
-    // Notification ID:
-    // - Calls: stable id from callId (prevents duplicates)
-    // - Others: timestamp id
     int notifId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
-    if (type == 'incoming_call') {
-      final callId = (data['callId'] ?? '').toString().trim();
-      if (callId.isNotEmpty) {
-        notifId = _stableNotifIdForCall(callId);
-      }
-
-      await _local.show(
-        id: notifId,
-        title: title,
-        body: body,
-        notificationDetails: NotificationDetails(
-          android: AndroidNotificationDetails(
-            channelId,
-            channelName,
-            importance: Importance.max,
-            priority: Priority.high,
-            category: AndroidNotificationCategory.call,
-            fullScreenIntent: true,
-            autoCancel: false,
-            ongoing: true,
-            actions: const [
-              AndroidNotificationAction(
-                actionAccept,
-                'Accept',
-                showsUserInterface: true,
-              ),
-              AndroidNotificationAction(
-                actionDecline,
-                'Decline',
-                showsUserInterface: false,
-              ),
-            ],
-          ),
-        ),
-        payload: jsonEncode(data),
-      );
-      return;
-    }
 
     await _local.show(
       id: notifId,
@@ -439,77 +252,6 @@ class FCMService {
         ),
       ),
       payload: data.isEmpty ? null : jsonEncode(data),
-    );
-  }
-
-  Future<void> _handleIncomingCallTap(
-      Map<String, dynamic> data, {
-        required bool fromAcceptAction,
-      }) async {
-    final callId = (data['callId'] ?? '').toString().trim();
-    final peerUid = (data['peerUid'] ?? '').toString().trim();
-    final peerName = (data['peerName'] ?? 'Caller').toString().trim();
-
-    if (callId.isEmpty) return;
-
-    // duplicate block
-    final now = DateTime.now();
-    if (_lastIncomingCallIdHandled == callId &&
-        _lastIncomingCallHandledAt != null &&
-        now.difference(_lastIncomingCallHandledAt!).inSeconds < 10) {
-      return;
-    }
-    _lastIncomingCallIdHandled = callId;
-    _lastIncomingCallHandledAt = now;
-
-    // Busy check (receiver already in a call)
-    final busy = await _isMeBusyInCall();
-    if (busy) {
-      await _markCallStatus(callId, 'busy');
-      await _cancelCallNotification(callId);
-      messengerKey.currentState?.showSnackBar(
-        const SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text('You are busy (already in a call).'),
-        ),
-      );
-      return;
-    }
-
-    // Validate call is still ringing (fix old notifications)
-    final err = await _validateCallBeforeOpening(callId);
-    if (err != null) {
-      await _cancelCallNotification(callId);
-      messengerKey.currentState?.showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text(err),
-        ),
-      );
-      return;
-    }
-
-    // Mark accepted (optional but important)
-    if (fromAcceptAction) {
-      await FirebaseDatabase.instance.ref('calls/$callId').update({
-        'status': 'accepted',
-        'acceptedAt': ServerValue.timestamp,
-      });
-    }
-
-    final nav = appNavigatorKey.currentState;
-    if (nav == null) return;
-
-    nav.push(
-      MaterialPageRoute(
-        builder: (_) => AudioCallScreen(
-          peerUid: peerUid,
-          peerName: peerName,
-          isCaller: false,
-          incomingCallId: callId,
-          startWithVideo: false,
-        ),
-      ),
     );
   }
 
@@ -562,8 +304,9 @@ class FCMService {
     if (threadId.trim().isEmpty) return '';
 
     try {
-      final threadSnap =
-      await FirebaseDatabase.instance.ref('mail_threads/$threadId/subject').get();
+      final threadSnap = await FirebaseDatabase.instance
+          .ref('mail_threads/$threadId/subject')
+          .get();
       final threadSubject = (threadSnap.value ?? '').toString().trim();
       if (threadSubject.isNotEmpty) return threadSubject;
     } catch (_) {}
@@ -607,7 +350,9 @@ class FCMService {
     if (peerUid.trim().isEmpty) return null;
 
     try {
-      final userSnap = await FirebaseDatabase.instance.ref('users/$peerUid').get();
+      final userSnap = await FirebaseDatabase.instance
+          .ref('users/$peerUid')
+          .get();
       final v = userSnap.value;
 
       if (v is! Map) return null;
@@ -704,10 +449,8 @@ class FCMService {
     nav.push(
       MaterialPageRoute(
         settings: RouteSettings(name: targetName),
-        builder: (_) => MailThreadByIdScreen(
-          threadId: threadId,
-          peerUid: peerUid,
-        ),
+        builder: (_) =>
+            MailThreadByIdScreen(threadId: threadId, peerUid: peerUid),
       ),
     );
   }
@@ -721,14 +464,6 @@ class FCMService {
     }
 
     final type = (data['type'] ?? '').toString().toLowerCase();
-
-    // Calls: validate + busy check before opening
-    if (type == 'incoming_call') {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await _handleIncomingCallTap(data, fromAcceptAction: false);
-      });
-      return;
-    }
 
     // Mail
     if (type == 'mail' || type == 'email') {

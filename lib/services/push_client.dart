@@ -5,10 +5,12 @@ import 'package:http/http.dart' as http;
 /// Calls your PHP endpoint: https://www.yourbridgeschool.com/app/push.php
 class PushClient {
   // ✅ Use the FINAL working URL (with www)
-  static const String _endpoint = 'https://www.yourbridgeschool.com/app/push.php';
+  static const String _endpoint =
+      'https://www.yourbridgeschool.com/app/push.php';
 
   // ✅ Must match your push.php $SHARED_SECRET exactly
-  static const String _secret = 'dea_2026_SUPER_SECRET_9f2b7c3e1a8d4c6f7a9b0c2d';
+  static const String _secret =
+      'dea_2026_SUPER_SECRET_9f2b7c3e1a8d4c6f7a9b0c2d';
 
   static const Duration _timeout = Duration(seconds: 12);
 
@@ -40,13 +42,13 @@ class PushClient {
 
     final res = await http
         .post(
-      Uri.parse(_endpoint),
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Secret': _secret, // ✅ your PHP checks this header
-      },
-      body: jsonEncode(body),
-    )
+          Uri.parse(_endpoint),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-App-Secret': _secret, // ✅ your PHP checks this header
+          },
+          body: jsonEncode(body),
+        )
         .timeout(_timeout);
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -82,13 +84,13 @@ class PushClient {
 
     final res = await http
         .post(
-      Uri.parse(_endpoint),
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Secret': _secret,
-      },
-      body: jsonEncode(body),
-    )
+          Uri.parse(_endpoint),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-App-Secret': _secret,
+          },
+          body: jsonEncode(body),
+        )
         .timeout(_timeout);
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -105,27 +107,5 @@ class PushClient {
     if (decoded is Map && decoded['success'] != true) {
       throw Exception('Push failed: ${res.body}');
     }
-  }
-
-  /// ✅ Convenience helper: standard incoming call payload
-  static Future<void> sendIncomingCall({
-    required String token,
-    required String callId,
-    required String peerUid,
-    required String peerName,
-    String title = 'Incoming call',
-    String? message,
-  }) {
-    return sendToToken(
-      token: token,
-      title: title,
-      message: message ?? '$peerName is calling you',
-      data: {
-        'type': 'incoming_call',
-        'callId': callId,
-        'peerUid': peerUid,
-        'peerName': peerName,
-      },
-    );
   }
 }

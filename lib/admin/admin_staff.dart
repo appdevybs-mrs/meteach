@@ -6,8 +6,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'admin_teacher_reminders_screen.dart';
-import '../calls/audio_call_screen.dart';
-import '../calls/audio_call_screen.dart';
 import 'admin_teacher_mail_thread_screen.dart';
 import 'admin_teacher_mail_topics_screen.dart';
 
@@ -75,30 +73,6 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     });
   }
 
-  // ✅ NEW: get my caller display name from RTDB (best-effort)
-  Future<String> _getMyCallerName() async {
-    final me = FirebaseAuth.instance.currentUser;
-    if (me == null) return 'Caller';
-
-    try {
-      final snap = await _db.ref('users/${me.uid}').get();
-      final v = snap.value;
-      if (v is Map) {
-        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-        final first =
-        (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-        final last =
-        (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
-        final full = ('$first $last').trim();
-        if (full.isNotEmpty) return full;
-      }
-    } catch (_) {}
-
-    // fallback
-    final email = (me.email ?? '').trim();
-    return email.isNotEmpty ? email : 'Caller';
-  }
-
   Future<bool> _confirm({
     required String title,
     required String message,
@@ -106,25 +80,25 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     bool danger = false,
   }) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: danger ? Colors.red : null,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmText),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: danger ? Colors.red : null,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(confirmText),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
@@ -150,7 +124,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     final ok = await _confirm(
       title: 'Delete staff?',
       message:
-      'This will move the staff member to "deleted".\n\nYou can restore later.',
+          'This will move the staff member to "deleted".\n\nYou can restore later.',
       confirmText: 'Move to deleted',
       danger: true,
     );
@@ -249,17 +223,14 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     final ok = await _confirm(
       title: 'Block staff?',
       message:
-      'This will move the staff member to "blocked".\n\nYou can restore later.',
+          'This will move the staff member to "blocked".\n\nYou can restore later.',
       confirmText: 'Block',
       danger: true,
     );
     if (!ok) return;
 
     final data = staff.toMap()
-      ..addAll({
-        'movedAt': ServerValue.timestamp,
-        'movedFrom': _usersPath,
-      });
+      ..addAll({'movedAt': ServerValue.timestamp, 'movedFrom': _usersPath});
 
     await _blockedRef.child(uid).set(data);
     await _usersRef.child(uid).remove();
@@ -355,13 +326,15 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
               if (!isUsersTab) return const SizedBox.shrink();
               return IconButton(
                 tooltip: 'Add staff',
-                icon: const Icon(Icons.person_add_alt_1_rounded,
-                    color: AdminStaffScreen.actionOrange),
+                icon: const Icon(
+                  Icons.person_add_alt_1_rounded,
+                  color: AdminStaffScreen.actionOrange,
+                ),
                 onPressed: () async {
                   final created = await Navigator.of(context).push<Staff?>(
                     MaterialPageRoute(
                       builder: (_) =>
-                      const StaffEditorScreen(mode: EditorMode.create),
+                          const StaffEditorScreen(mode: EditorMode.create),
                     ),
                   );
                   if (created != null) _snack('Staff created ✅');
@@ -651,9 +624,9 @@ class _StaffListState extends State<_StaffList>
                 final matchesSearch = s.isEmpty
                     ? true
                     : u.fullName.toLowerCase().contains(s) ||
-                    u.email.toLowerCase().contains(s) ||
-                    u.phone1.toLowerCase().contains(s) ||
-                    u.phone2.toLowerCase().contains(s);
+                          u.email.toLowerCase().contains(s) ||
+                          u.phone1.toLowerCase().contains(s) ||
+                          u.phone2.toLowerCase().contains(s);
 
                 final matchesStatus = widget.statusFilter == null
                     ? true
@@ -661,7 +634,7 @@ class _StaffListState extends State<_StaffList>
                 final matchesRole = widget.roleFilter == null
                     ? true
                     : u.role.value.toLowerCase().trim() ==
-                    widget.roleFilter!.value.toLowerCase().trim();
+                          widget.roleFilter!.value.toLowerCase().trim();
 
                 return matchesSearch && matchesStatus && matchesRole;
               }).toList();
@@ -692,10 +665,10 @@ class _StaffListState extends State<_StaffList>
 
                   final unreadRef = canShowMailBadge
                       ? _db
-                      .ref('mail_index')
-                      .child(meUid!)
-                      .child(threadId)
-                      .child('unreadCount')
+                            .ref('mail_index')
+                            .child(meUid!)
+                            .child(threadId)
+                            .child('unreadCount')
                       : null;
 
                   return Card(
@@ -703,7 +676,8 @@ class _StaffListState extends State<_StaffList>
                     elevation: 0,
                     color: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(
@@ -711,57 +685,16 @@ class _StaffListState extends State<_StaffList>
                           GestureDetector(
                             onTap: () =>
                                 _openTeacherQuickActions(context, row.uid, u),
-                            onLongPress: () async {
-                              // ✅ Confirmation first (Yes / No)
-                              final ok = await showDialog<bool>(
-                                context: context,
-                                builder: (_) => AlertDialog(
-                                  title: const Text('Call teacher?'),
-                                  content: Text(
-                                    'Do you want to call ${u.fullName.isEmpty ? 'this teacher' : u.fullName}?',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, false),
-                                      child: const Text('No'),
-                                    ),
-                                    FilledButton(
-                                      onPressed: () => Navigator.pop(context, true),
-                                      child: const Text('Yes'),
-                                    ),
-                                  ],
-                                ),
-                              );
-
-                              if (ok != true) return;
-
-                              final callerName =
-                              await (context.findAncestorStateOfType<_AdminStaffScreenState>()
-                                  ?._getMyCallerName() ??
-                                  Future.value('Caller'));
-
-                              if (!context.mounted) return;
-
-                              await Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => AudioCallScreen(
-                                    peerUid: row.uid,
-                                    peerName: u.fullName.isEmpty ? 'User' : u.fullName,
-                                    isCaller: true,
-                                    callerName: callerName,
-                                    startWithVideo: false,
-                                  ),
-                                ),
-                              );
-                            },
+                            onLongPress: () =>
+                                _openTeacherQuickActions(context, row.uid, u),
 
                             // ✅ Avatar + Mail badge
                             child: Stack(
                               clipBehavior: Clip.none,
                               children: [
                                 CircleAvatar(
-                                  backgroundColor:
-                                  AdminStaffScreen.appBg.withOpacity(1),
+                                  backgroundColor: AdminStaffScreen.appBg
+                                      .withOpacity(1),
                                   child: Text(
                                     u.firstName.isNotEmpty
                                         ? u.firstName[0].toUpperCase()
@@ -779,25 +712,31 @@ class _StaffListState extends State<_StaffList>
                                     child: StreamBuilder<DatabaseEvent>(
                                       stream: unreadRef.onValue,
                                       builder: (_, snap) {
-                                        final unread =
-                                        _parseUnread(snap.data?.snapshot.value);
+                                        final unread = _parseUnread(
+                                          snap.data?.snapshot.value,
+                                        );
                                         if (unread <= 0) {
                                           return const SizedBox.shrink();
                                         }
 
-                                        final txt =
-                                        unread > 99 ? '99+' : unread.toString();
+                                        final txt = unread > 99
+                                            ? '99+'
+                                            : unread.toString();
 
                                         return IgnorePointer(
                                           child: Container(
                                             padding: const EdgeInsets.symmetric(
-                                                horizontal: 6, vertical: 2),
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: Colors.red,
                                               borderRadius:
-                                              BorderRadius.circular(999),
+                                                  BorderRadius.circular(999),
                                               border: Border.all(
-                                                  color: Colors.white, width: 2),
+                                                color: Colors.white,
+                                                width: 2,
+                                              ),
                                             ),
                                             constraints: const BoxConstraints(
                                               minWidth: 18,
@@ -828,7 +767,10 @@ class _StaffListState extends State<_StaffList>
                               onTap: () {
                                 // Only teachers have learners list
                                 if (u.role != StaffRole.teacher) {
-                                  _snackHere(context, 'Only teachers have learners.');
+                                  _snackHere(
+                                    context,
+                                    'Only teachers have learners.',
+                                  );
                                   return;
                                 }
 
@@ -843,12 +785,16 @@ class _StaffListState extends State<_StaffList>
                               },
                               child: Padding(
                                 // small padding so InkWell feels nice but doesn't change layout much
-                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 2,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      u.fullName.isEmpty ? '(No name)' : u.fullName,
+                                      u.fullName.isEmpty
+                                          ? '(No name)'
+                                          : u.fullName,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w900,
                                         color: AdminStaffScreen.primaryBlue,
@@ -874,8 +820,10 @@ class _StaffListState extends State<_StaffList>
                                           bg: _statusBg(u.status),
                                           fg: _statusFg(u.status),
                                         ),
-                                        if (u.phone1.trim().isNotEmpty) _Pill(label: '📞 ${u.phone1}'),
-                                        if (u.dob.trim().isNotEmpty) _Pill(label: '🎂 ${u.dob}'),
+                                        if (u.phone1.trim().isNotEmpty)
+                                          _Pill(label: '📞 ${u.phone1}'),
+                                        if (u.dob.trim().isNotEmpty)
+                                          _Pill(label: '🎂 ${u.dob}'),
                                       ],
                                     ),
                                   ],
@@ -898,10 +846,12 @@ class _StaffListState extends State<_StaffList>
                             itemBuilder: (_) {
                               final items = <PopupMenuEntry<_RowAction>>[];
                               if (widget.onEdit != null) {
-                                items.add(const PopupMenuItem(
-                                  value: _RowAction.edit,
-                                  child: Text('Edit'),
-                                ));
+                                items.add(
+                                  const PopupMenuItem(
+                                    value: _RowAction.edit,
+                                    child: Text('Edit'),
+                                  ),
+                                );
                                 items.add(const PopupMenuDivider());
                               }
                               items.addAll(widget.actionsBuilder(row.uid, u));
@@ -949,8 +899,10 @@ class _TopBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
           ),
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
         ),
       ),
     );
@@ -971,12 +923,17 @@ class _Pill extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration:
-      BoxDecoration(color: background, borderRadius: BorderRadius.circular(999)),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Text(
         label,
         style: TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w700, color: foreground),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
       ),
     );
   }
@@ -987,7 +944,10 @@ void _snackHere(BuildContext context, String msg) {
 }
 
 Future<void> _openTeacherQuickActions(
-    BuildContext context, String teacherUid, Staff staff) async {
+  BuildContext context,
+  String teacherUid,
+  Staff staff,
+) async {
   // Only for teachers (safe)
   if (staff.role != StaffRole.teacher) {
     _snackHere(context, 'Only teachers have reminders.');
@@ -1005,8 +965,9 @@ Future<void> _openTeacherQuickActions(
             ListTile(
               leading: const Icon(Icons.mail_outline),
               title: const Text('Mail'),
-              subtitle:
-              Text(staff.email.trim().isEmpty ? '(No email)' : staff.email),
+              subtitle: Text(
+                staff.email.trim().isEmpty ? '(No email)' : staff.email,
+              ),
               onTap: () async {
                 Navigator.pop(ctx);
 
@@ -1045,7 +1006,11 @@ Future<void> _openTeacherQuickActions(
 }
 
 class _StateCard extends StatelessWidget {
-  const _StateCard({required this.title, required this.message, required this.icon});
+  const _StateCard({
+    required this.title,
+    required this.message,
+    required this.icon,
+  });
 
   final String title;
   final String message;
@@ -1106,23 +1071,26 @@ class _LoadingList extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: ColoredBox(color: AdminStaffScreen.appBg)),
+                width: 44,
+                height: 44,
+                child: ColoredBox(color: AdminStaffScreen.appBg),
+              ),
               SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
-                        height: 14,
-                        width: 160,
-                        child: ColoredBox(color: AdminStaffScreen.appBg)),
+                      height: 14,
+                      width: 160,
+                      child: ColoredBox(color: AdminStaffScreen.appBg),
+                    ),
                     SizedBox(height: 10),
                     SizedBox(
-                        height: 12,
-                        width: 260,
-                        child: ColoredBox(color: AdminStaffScreen.appBg)),
+                      height: 12,
+                      width: 260,
+                      child: ColoredBox(color: AdminStaffScreen.appBg),
+                    ),
                   ],
                 ),
               ),
@@ -1252,16 +1220,19 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         coursesVal.forEach((key, value) {
           if (key == null || value == null) return;
           if (value is Map) {
-            coursesOut[key.toString()] =
-                value.map((k, v) => MapEntry(k.toString(), v));
+            coursesOut[key.toString()] = value.map(
+              (k, v) => MapEntry(k.toString(), v),
+            );
           }
         });
       }
 
       // If editing: read /users/{uid}/courses as course_1/course_2 structure
       if (widget.mode == EditorMode.edit && widget.uid != null) {
-        final userCoursesSnap =
-        await _usersRef.child(widget.uid!).child('courses').get();
+        final userCoursesSnap = await _usersRef
+            .child(widget.uid!)
+            .child('courses')
+            .get();
         final userCoursesVal = userCoursesSnap.value;
 
         _selectedCourseIds.clear();
@@ -1349,7 +1320,10 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
   }) async {
     final options = Firebase.app().options;
     final name = 'secondary_${DateTime.now().microsecondsSinceEpoch}';
-    final secondary = await Firebase.initializeApp(name: name, options: options);
+    final secondary = await Firebase.initializeApp(
+      name: name,
+      options: options,
+    );
 
     try {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondary);
@@ -1407,32 +1381,32 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
             child: _allCourses.isEmpty
                 ? const Text('No courses found.')
                 : ListView(
-              shrinkWrap: true,
-              children: _allCourses.entries.map((e) {
-                final id = e.key;
-                return CheckboxListTile(
-                  value: tempSelected.contains(id),
-                  title: Text(_courseLabelFor(id)),
-                  subtitle: Text(
-                    id,
-                    style: TextStyle(
-                      color: Colors.black.withOpacity(0.5),
-                      fontSize: 12,
-                    ),
+                    shrinkWrap: true,
+                    children: _allCourses.entries.map((e) {
+                      final id = e.key;
+                      return CheckboxListTile(
+                        value: tempSelected.contains(id),
+                        title: Text(_courseLabelFor(id)),
+                        subtitle: Text(
+                          id,
+                          style: TextStyle(
+                            color: Colors.black.withOpacity(0.5),
+                            fontSize: 12,
+                          ),
+                        ),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        onChanged: (v) {
+                          setDialogState(() {
+                            if (v == true) {
+                              tempSelected.add(id);
+                            } else {
+                              tempSelected.remove(id);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
                   ),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  onChanged: (v) {
-                    setDialogState(() {
-                      if (v == true) {
-                        tempSelected.add(id);
-                      } else {
-                        tempSelected.remove(id);
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-            ),
           ),
           actions: [
             TextButton(
@@ -1511,8 +1485,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
       final c = _allCourses[courseId];
 
       final code = (c?['course_code'] ?? '').toString().trim();
-      final title =
-      (c?['title'] ?? c?['name'] ?? c?['level'] ?? '').toString().trim();
+      final title = (c?['title'] ?? c?['name'] ?? c?['level'] ?? '')
+          .toString()
+          .trim();
 
       updates['$key/id'] = courseId;
       updates['$key/course_code'] = code;
@@ -1542,10 +1517,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
           final name = (mm['name'] ?? '').toString().trim();
 
           if (uid.isNotEmpty || name.isNotEmpty) {
-            out.add({
-              'uid': uid,
-              'name': name,
-            });
+            out.add({'uid': uid, 'name': name});
           }
         } else {
           final s = (item ?? '').toString().trim();
@@ -1560,10 +1532,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
           final name = (mm['name'] ?? '').toString().trim();
 
           if (uid.isNotEmpty || name.isNotEmpty) {
-            out.add({
-              'uid': uid,
-              'name': name,
-            });
+            out.add({'uid': uid, 'name': name});
           }
         } else {
           final s = (item ?? '').toString().trim();
@@ -1600,10 +1569,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     }
 
     if (!exists) {
-      list.add({
-        'uid': uid,
-        'name': name,
-      });
+      list.add({'uid': uid, 'name': name});
       await instrRef.set(list);
     }
   }
@@ -1670,20 +1636,14 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         final mm = item.map((k, vv) => MapEntry(k.toString(), vv));
         final itemUid = (mm['uid'] ?? '').toString().trim();
         if (uid.isNotEmpty && itemUid == uid) {
-          list[i] = {
-            'uid': uid,
-            'name': newName,
-          };
+          list[i] = {'uid': uid, 'name': newName};
           changed = true;
           break;
         }
       } else {
         final s = item.toString().trim();
         if (oldName.isNotEmpty && s.toLowerCase() == oldName.toLowerCase()) {
-          list[i] = {
-            'uid': uid,
-            'name': newName,
-          };
+          list[i] = {'uid': uid, 'name': newName};
           changed = true;
           break;
         }
@@ -1691,10 +1651,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     }
 
     if (!changed) {
-      list.add({
-        'uid': uid,
-        'name': newName,
-      });
+      list.add({'uid': uid, 'name': newName});
     }
 
     await instrRef.set(list);
@@ -1713,8 +1670,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     final isTeacherNow = afterRole == StaffRole.teacher;
 
     if (wasTeacher) {
-      final removed =
-      isTeacherNow ? beforeCourses.difference(afterCourses) : beforeCourses;
+      final removed = isTeacherNow
+          ? beforeCourses.difference(afterCourses)
+          : beforeCourses;
 
       for (final courseId in removed) {
         await _removeTeacherFromCourse(
@@ -1745,8 +1703,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
     }
 
     if (isTeacherNow) {
-      final added =
-      wasTeacher ? afterCourses.difference(beforeCourses) : afterCourses;
+      final added = wasTeacher
+          ? afterCourses.difference(beforeCourses)
+          : afterCourses;
 
       for (final courseId in added) {
         await _addTeacherToCourse(
@@ -1896,9 +1855,11 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
             onPressed: _saving ? null : _save,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Text(_saving
-                  ? 'Saving…'
-                  : (isEdit ? 'Save Changes' : 'Create Staff')),
+              child: Text(
+                _saving
+                    ? 'Saving…'
+                    : (isEdit ? 'Save Changes' : 'Create Staff'),
+              ),
             ),
           ),
         ),
@@ -1918,7 +1879,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       label: 'First name *',
                       hint: 'First name',
                       validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
                     _TextField(
@@ -1926,7 +1887,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       label: 'Last name *',
                       hint: 'Last name',
                       validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                          (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -1957,7 +1918,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       controller: phone1C,
                       keyboardType: TextInputType.phone,
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]')),
                       ],
                       decoration: InputDecoration(
                         labelText: 'Phone 1',
@@ -1976,7 +1937,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       controller: phone2C,
                       keyboardType: TextInputType.phone,
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]'))
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]')),
                       ],
                       decoration: InputDecoration(
                         labelText: 'Phone 2',
@@ -2038,8 +1999,12 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         ),
                       ),
                       items: StaffRole.values
-                          .map((r) =>
-                          DropdownMenuItem(value: r, child: Text(r.label)))
+                          .map(
+                            (r) => DropdownMenuItem(
+                              value: r,
+                              child: Text(r.label),
+                            ),
+                          )
                           .toList(),
                       onChanged: (v) async {
                         if (v == null) return;
@@ -2072,8 +2037,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                       TextFormField(
                         readOnly: true,
                         controller: TextEditingController(
-                          text:
-                          _serial.trim().isEmpty ? '(auto on save)' : _serial,
+                          text: _serial.trim().isEmpty
+                              ? '(auto on save)'
+                              : _serial,
                         ),
                         decoration: InputDecoration(
                           labelText: 'Serial',
@@ -2083,8 +2049,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                             borderRadius: BorderRadius.circular(14),
                             borderSide: BorderSide.none,
                           ),
-                          prefixIcon:
-                          const Icon(Icons.confirmation_number_rounded),
+                          prefixIcon: const Icon(
+                            Icons.confirmation_number_rounded,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -2102,8 +2069,12 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         ),
                       ),
                       items: StaffStatus.values
-                          .map((s) =>
-                          DropdownMenuItem(value: s, child: Text(s.label)))
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(s.label),
+                            ),
+                          )
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
@@ -2118,65 +2089,66 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                 title: 'Assign Courses',
                 child: _loadingCourses
                     ? const Row(
-                  children: [
-                    SizedBox(
-                        width: 18,
-                        height: 18,
-                        child:
-                        CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 10),
-                    Text('Loading courses...'),
-                  ],
-                )
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 10),
+                          Text('Loading courses...'),
+                        ],
+                      )
                     : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FilledButton.tonalIcon(
-                      onPressed:
-                      (_allCourses.isEmpty || _role != StaffRole.teacher)
-                          ? null
-                          : _openCoursesPicker,
-                      icon: const Icon(Icons.school_rounded),
-                      label: Text(
-                        _selectedCourseIds.isEmpty
-                            ? 'Select courses'
-                            : 'Selected: ${_selectedCourseIds.length}',
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FilledButton.tonalIcon(
+                            onPressed:
+                                (_allCourses.isEmpty ||
+                                    _role != StaffRole.teacher)
+                                ? null
+                                : _openCoursesPicker,
+                            icon: const Icon(Icons.school_rounded),
+                            label: Text(
+                              _selectedCourseIds.isEmpty
+                                  ? 'Select courses'
+                                  : 'Selected: ${_selectedCourseIds.length}',
+                            ),
+                          ),
+                          if (_role != StaffRole.teacher) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Only teachers can be assigned to courses.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black.withOpacity(0.55),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          if (_selectedCourseIds.isNotEmpty)
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _selectedCourseIds.map((id) {
+                                return _Pill(label: _courseLabelFor(id));
+                              }).toList(),
+                            ),
+                          if (_role == StaffRole.teacher &&
+                              _selectedCourseIds.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              'Teacher will be added to each course instructors list.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black.withOpacity(0.55),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ),
-                    if (_role != StaffRole.teacher) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Only teachers can be assigned to courses.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black.withOpacity(0.55),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    if (_selectedCourseIds.isNotEmpty)
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _selectedCourseIds.map((id) {
-                          return _Pill(label: _courseLabelFor(id));
-                        }).toList(),
-                      ),
-                    if (_role == StaffRole.teacher &&
-                        _selectedCourseIds.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'Teacher will be added to each course instructors list.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black.withOpacity(0.55),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
               ),
             ],
           ),
@@ -2480,14 +2452,13 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
       ),
     );
   }
+
   Widget _statInline(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Text(
         '$label $value',
-        style: const TextStyle(
-          fontWeight: FontWeight.w900,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -2519,7 +2490,8 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
           if (snap.hasError) {
             return const Center(child: Text('Failed to load classes.'));
           }
-          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -2534,7 +2506,8 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
 
           int openClasses = 0;
           int closedClasses = 0;
-          int totalEnrollments = 0; // counts learners across classes (duplicates allowed)
+          int totalEnrollments =
+              0; // counts learners across classes (duplicates allowed)
 
           final classesMap = Map<dynamic, dynamic>.from(data);
           for (final entry in classesMap.entries) {
@@ -2556,10 +2529,10 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
 
             final isThisTeacher =
                 (instUid.isNotEmpty && instUid == teacherUid) ||
-                    (instUid.isEmpty &&
-                        teacherName.trim().isNotEmpty &&
-                        instName.toLowerCase().trim() ==
-                            teacherName.toLowerCase().trim());
+                (instUid.isEmpty &&
+                    teacherName.trim().isNotEmpty &&
+                    instName.toLowerCase().trim() ==
+                        teacherName.toLowerCase().trim());
 
             if (!isThisTeacher) continue;
 
@@ -2617,7 +2590,8 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
 
           if (learnersList.isEmpty) {
             return const Center(
-                child: Text('No learners found for this teacher.'));
+              child: Text('No learners found for this teacher.'),
+            );
           }
 
           final uniqueLearners = learnersList.length;
@@ -2628,7 +2602,10 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     color: Colors.black.withOpacity(0.06),
@@ -2666,8 +2643,9 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
                           name.isEmpty ? 'Unnamed' : name,
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
-                        subtitle:
-                        Text('Serial: ${serial.isEmpty ? 'N/A' : serial}'),
+                        subtitle: Text(
+                          'Serial: ${serial.isEmpty ? 'N/A' : serial}',
+                        ),
                       ),
                     );
                   },

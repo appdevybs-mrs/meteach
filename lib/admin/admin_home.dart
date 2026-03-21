@@ -20,9 +20,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'admin_booking.dart';
 import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
-import '../calls/call_logs_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
 import 'admin_booking.dart';
+
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
 
@@ -119,11 +119,11 @@ class _AdminHomeState extends State<AdminHome> {
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
-  Color get _screenBg => _isAdminMode ? AdminHome.appBg : const Color(0xFFFBFCFE);
+  Color get _screenBg =>
+      _isAdminMode ? AdminHome.appBg : const Color(0xFFFBFCFE);
 
-  Color get _headerTint => _isAdminMode
-      ? const Color(0xFFEAF2FF)
-      : const Color(0xFFFFF7F1);
+  Color get _headerTint =>
+      _isAdminMode ? const Color(0xFFEAF2FF) : const Color(0xFFFFF7F1);
 
   Color get _roleAccent =>
       _isAdminMode ? AdminHome.primaryBlue : AdminHome.actionOrange;
@@ -154,9 +154,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.menu_book_rounded,
         color: AdminHome.primaryBlue,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminCoursesScreen())),
       ),
       _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
       _DashCard(
@@ -177,9 +177,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.class_rounded,
         color: AdminHome.actionOrange,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
       ),
       _DashCard(
         title: 'Attendance',
@@ -199,9 +199,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.calendar_view_week_rounded,
         color: AdminHome.accentTeal,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminTimetableScreen())),
       ),
       _DashCard(
         title: 'Payments',
@@ -209,16 +209,16 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.payments_rounded,
         color: AdminHome.accentBlue,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminPaymentsScreen())),
       ),
       _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
       _LearnersDashCard(
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminLearnersScreen())),
       ),
       _DashCard(
         title: 'Reminders',
@@ -238,9 +238,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.badge_rounded,
         color: AdminHome.accentSlate,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
       ),
       _DashCard(
         title: 'Wages',
@@ -248,9 +248,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.wallet_rounded,
         color: AdminHome.accentRose,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminWagesScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminWagesScreen())),
       ),
       _DashCard(
         title: 'Settings',
@@ -268,9 +268,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.description_rounded,
         color: AdminHome.accentCyan,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminContractScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminContractScreen())),
       ),
       _DashCard(
         title: 'File Manager',
@@ -278,9 +278,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.folder_open,
         color: AdminHome.accentGreen,
         isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminFileManager()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminFileManager())),
       ),
       _DashCard(
         title: 'Public Gallery',
@@ -289,9 +289,7 @@ class _AdminHomeState extends State<AdminHome> {
         color: AdminHome.accentSky,
         isReceptionistStyle: !_isAdminMode,
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const AdminPublicGalleryScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
         ),
       ),
     ];
@@ -304,9 +302,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.class_rounded,
         color: AdminHome.actionOrange,
         isReceptionistStyle: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
       ),
       _DashCard(
         title: 'Schedule',
@@ -314,9 +312,9 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.calendar_view_week_rounded,
         color: AdminHome.accentTeal,
         isReceptionistStyle: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminTimetableScreen())),
       ),
       _DashCard(
         title: 'Payments',
@@ -324,16 +322,16 @@ class _AdminHomeState extends State<AdminHome> {
         icon: Icons.payments_rounded,
         color: AdminHome.accentBlue,
         isReceptionistStyle: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminPaymentsScreen())),
       ),
       _SubscriptionsDashCard(isReceptionistStyle: true),
       _LearnersDashCard(
         isReceptionistStyle: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AdminLearnersScreen())),
       ),
       _DashCard(
         title: 'Public Gallery',
@@ -342,9 +340,7 @@ class _AdminHomeState extends State<AdminHome> {
         color: AdminHome.accentSky,
         isReceptionistStyle: true,
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => const AdminPublicGalleryScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
         ),
       ),
       _DashCard(
@@ -378,17 +374,11 @@ class _AdminHomeState extends State<AdminHome> {
           Navigator.of(context).pop();
           await _setRoleMode(false);
         },
-        onOpenCallLogs: () {
-          Navigator.of(context).pop();
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CallLogsScreen()),
-          );
-        },
         onOpenPublicPreview: () {
           Navigator.of(context).pop();
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminPublicPreview()));
         },
         onLogout: () async {
           Navigator.of(context).pop();
@@ -641,7 +631,6 @@ class _AdminHomeDrawer extends StatelessWidget {
   final bool loadingRole;
   final VoidCallback onSelectAdmin;
   final VoidCallback onSelectReceptionist;
-  final VoidCallback onOpenCallLogs;
   final VoidCallback onOpenPublicPreview;
   final VoidCallback onLogout;
 
@@ -651,15 +640,15 @@ class _AdminHomeDrawer extends StatelessWidget {
     required this.loadingRole,
     required this.onSelectAdmin,
     required this.onSelectReceptionist,
-    required this.onOpenCallLogs,
     required this.onOpenPublicPreview,
     required this.onLogout,
   });
 
   @override
   Widget build(BuildContext context) {
-    final activeColor =
-    isAdminMode ? AdminHome.primaryBlue : AdminHome.actionOrange;
+    final activeColor = isAdminMode
+        ? AdminHome.primaryBlue
+        : AdminHome.actionOrange;
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -743,13 +732,6 @@ class _AdminHomeDrawer extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 children: [
-                  _DrawerTile(
-                    icon: Icons.history_rounded,
-                    title: 'Call Logs',
-                    subtitle: 'Open recent calls history',
-                    color: AdminHome.accentIndigo,
-                    onTap: onOpenCallLogs,
-                  ),
                   _DrawerTile(
                     icon: Icons.public_rounded,
                     title: 'Public Preview',
@@ -886,9 +868,7 @@ class _DrawerTile extends StatelessWidget {
 class _AdminOnlineBookingDashCard extends StatelessWidget {
   final bool isReceptionistStyle;
 
-  const _AdminOnlineBookingDashCard({
-    this.isReceptionistStyle = false,
-  });
+  const _AdminOnlineBookingDashCard({this.isReceptionistStyle = false});
 
   DateTime? _parseSlotStart(String dayKey, String hhmm) {
     try {
@@ -972,9 +952,9 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           color: AdminHome.accentGreen,
           badgeCount: count,
           isReceptionistStyle: isReceptionistStyle,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminBookingScreen()),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminBookingScreen())),
         );
       },
     );
@@ -984,9 +964,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
 class _SubscriptionsDashCard extends StatelessWidget {
   final bool isReceptionistStyle;
 
-  const _SubscriptionsDashCard({
-    this.isReceptionistStyle = false,
-  });
+  const _SubscriptionsDashCard({this.isReceptionistStyle = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1143,7 +1121,10 @@ class _LearnersDashCard extends StatelessWidget {
 
             final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
 
-            final role = (userMap['role'] ?? '').toString().toLowerCase().trim();
+            final role = (userMap['role'] ?? '')
+                .toString()
+                .toLowerCase()
+                .trim();
             if (role != 'learner') return;
 
             totalLearners++;
@@ -1160,7 +1141,9 @@ class _LearnersDashCard extends StatelessWidget {
               if (courseKey == null || courseVal == null) return;
               if (courseVal is! Map) return;
 
-              final courseMap = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
+              final courseMap = courseVal.map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              );
 
               final sum = courseMap['payment_summary'];
               final sumMap = sum is Map
@@ -1246,7 +1229,7 @@ class _LearnersDashCard extends StatelessWidget {
             color: Colors.black.withOpacity(boxShadowOpacity),
             blurRadius: isReceptionistStyle ? 10 : 14,
             offset: const Offset(0, 6),
-          )
+          ),
         ],
       ),
       child: Padding(
@@ -1266,16 +1249,16 @@ class _LearnersDashCard extends StatelessWidget {
               ),
               child: loading
                   ? const Padding(
-                padding: EdgeInsets.all(8),
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : Icon(
-                Icons.people_alt_rounded,
-                color: isReceptionistStyle
-                    ? AdminHome.actionOrange
-                    : AdminHome.accentPurple,
-                size: 20,
-              ),
+                      Icons.people_alt_rounded,
+                      color: isReceptionistStyle
+                          ? AdminHome.actionOrange
+                          : AdminHome.accentPurple,
+                      size: 20,
+                    ),
             ),
             const SizedBox(height: 10),
             const Text(
@@ -1304,15 +1287,39 @@ class _LearnersDashCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               text: TextSpan(
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 10,
+                ),
                 children: [
-                  TextSpan(text: '👥 $total   ', style: TextStyle(color: Colors.grey.shade700)),
-                  const TextSpan(text: '🔵 ', style: TextStyle(color: Colors.blue)),
-                  TextSpan(text: '$blue   ', style: const TextStyle(color: Colors.blue)),
-                  const TextSpan(text: '🖤 ', style: TextStyle(color: Colors.black)),
-                  TextSpan(text: '$black   ', style: const TextStyle(color: Colors.black)),
-                  const TextSpan(text: '🔴 ', style: TextStyle(color: Colors.red)),
-                  TextSpan(text: '$red   ', style: const TextStyle(color: Colors.red)),
+                  TextSpan(
+                    text: '👥 $total   ',
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                  const TextSpan(
+                    text: '🔵 ',
+                    style: TextStyle(color: Colors.blue),
+                  ),
+                  TextSpan(
+                    text: '$blue   ',
+                    style: const TextStyle(color: Colors.blue),
+                  ),
+                  const TextSpan(
+                    text: '🖤 ',
+                    style: TextStyle(color: Colors.black),
+                  ),
+                  TextSpan(
+                    text: '$black   ',
+                    style: const TextStyle(color: Colors.black),
+                  ),
+                  const TextSpan(
+                    text: '🔴 ',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  TextSpan(
+                    text: '$red   ',
+                    style: const TextStyle(color: Colors.red),
+                  ),
                   TextSpan(
                     text: '🟠 ',
                     style: TextStyle(color: AdminHome.actionOrange),
@@ -1321,8 +1328,14 @@ class _LearnersDashCard extends StatelessWidget {
                     text: '$yellow   ',
                     style: TextStyle(color: AdminHome.actionOrange),
                   ),
-                  const TextSpan(text: '✅ ', style: TextStyle(color: Colors.green)),
-                  TextSpan(text: '$ok', style: const TextStyle(color: Colors.green)),
+                  const TextSpan(
+                    text: '✅ ',
+                    style: TextStyle(color: Colors.green),
+                  ),
+                  TextSpan(
+                    text: '$ok',
+                    style: const TextStyle(color: Colors.green),
+                  ),
                 ],
               ),
             ),
@@ -1390,7 +1403,7 @@ class _DashCard extends StatelessWidget {
               color: Colors.black.withOpacity(shadowOpacity),
               blurRadius: isReceptionistStyle ? 10 : 14,
               offset: const Offset(0, 6),
-            )
+            ),
           ],
         ),
         child: Padding(
@@ -1415,7 +1428,10 @@ class _DashCard extends StatelessWidget {
                   const Spacer(),
                   if (badgeCount > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(999),
@@ -1468,7 +1484,8 @@ class AdminForceUpdateAllScreen extends StatefulWidget {
   const AdminForceUpdateAllScreen({super.key});
 
   @override
-  State<AdminForceUpdateAllScreen> createState() => _AdminForceUpdateAllScreenState();
+  State<AdminForceUpdateAllScreen> createState() =>
+      _AdminForceUpdateAllScreenState();
 }
 
 class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
@@ -1494,7 +1511,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
   bool loading = true;
   bool saving = false;
 
-  DatabaseReference get _root => FirebaseDatabase.instance.ref('appConfig/forceUpdate');
+  DatabaseReference get _root =>
+      FirebaseDatabase.instance.ref('appConfig/forceUpdate');
 
   @override
   void initState() {
@@ -1592,9 +1610,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Load failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Load failed: $e')));
     } finally {
       if (!mounted) return;
       setState(() => loading = false);
@@ -1628,14 +1646,14 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved all ✅')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Saved all ✅')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
     } finally {
       if (!mounted) return;
       setState(() => saving = false);
@@ -1644,39 +1662,54 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
 
   Future<bool> _confirm(BuildContext context, String title, String msg) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(msg),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(msg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
   Future<void> _deleteAndroid() async {
-    final ok = await _confirm(context, 'Delete Android config?', 'This removes appConfig/forceUpdate/android.');
+    final ok = await _confirm(
+      context,
+      'Delete Android config?',
+      'This removes appConfig/forceUpdate/android.',
+    );
     if (!ok) return;
     await _root.child('android').remove();
     await _loadAll();
   }
 
   Future<void> _deleteIos() async {
-    final ok = await _confirm(context, 'Delete iOS config?', 'This removes appConfig/forceUpdate/ios.');
+    final ok = await _confirm(
+      context,
+      'Delete iOS config?',
+      'This removes appConfig/forceUpdate/ios.',
+    );
     if (!ok) return;
     await _root.child('ios').remove();
     await _loadAll();
   }
 
   Future<void> _deleteAll() async {
-    final ok = await _confirm(context, 'Delete ALL forceUpdate?', 'This removes appConfig/forceUpdate بالكامل.');
+    final ok = await _confirm(
+      context,
+      'Delete ALL forceUpdate?',
+      'This removes appConfig/forceUpdate بالكامل.',
+    );
     if (!ok) return;
     await _root.remove();
     if (!mounted) return;
@@ -1701,17 +1734,27 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue)),
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+            ),
+          ),
           const SizedBox(height: 10),
           TextField(
             controller: minVersionC,
-            decoration: const InputDecoration(labelText: 'minVersion (example: 2.0.0)'),
+            decoration: const InputDecoration(
+              labelText: 'minVersion (example: 2.0.0)',
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: minBuildC,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'minBuild (example: 76)'),
+            decoration: const InputDecoration(
+              labelText: 'minBuild (example: 76)',
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -1766,7 +1809,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
                     foregroundColor: Colors.red,
                     side: const BorderSide(color: Colors.red),
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                   onPressed: saving ? null : _deleteAll,
                   icon: const Icon(Icons.delete_forever_rounded),
@@ -1780,15 +1825,20 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
                     backgroundColor: actionOrange,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                   onPressed: saving ? null : _saveAll,
                   icon: saving
                       ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
                       : const Icon(Icons.save_rounded),
                   label: Text(saving ? 'Saving…' : 'Save ALL'),
                 ),
@@ -1800,76 +1850,80 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          _section(
-            title: 'Android',
-            minVersionC: aMinVersionC,
-            minBuildC: aMinBuildC,
-            messageC: aMessageC,
-            storeUrlC: aStoreUrlC,
-            storeWebUrlC: aStoreWebUrlC,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: _deleteAndroid,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Delete Android'),
+              padding: const EdgeInsets.all(12),
+              children: [
+                _section(
+                  title: 'Android',
+                  minVersionC: aMinVersionC,
+                  minBuildC: aMinBuildC,
+                  messageC: aMessageC,
+                  storeUrlC: aStoreUrlC,
+                  storeWebUrlC: aStoreWebUrlC,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          _section(
-            title: 'iOS',
-            minVersionC: iMinVersionC,
-            minBuildC: iMinBuildC,
-            messageC: iMessageC,
-            storeUrlC: iStoreUrlC,
-            storeWebUrlC: iStoreWebUrlC,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: _deleteIos,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Delete iOS'),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: _deleteAndroid,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Delete Android'),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: appBg,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: uiBorder),
+                const SizedBox(height: 18),
+                _section(
+                  title: 'iOS',
+                  minVersionC: iMinVersionC,
+                  minBuildC: iMinBuildC,
+                  messageC: iMessageC,
+                  storeUrlC: iStoreUrlC,
+                  storeWebUrlC: iStoreWebUrlC,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: _deleteIos,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Delete iOS'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: appBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: uiBorder),
+                  ),
+                  child: const Text(
+                    'Tip:\n- To force update, increase minBuild.\n- Example: users 75 → set minBuild 76.\n- If you want to block by version, increase minVersion.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ),
-            child: const Text(
-              'Tip:\n- To force update, increase minBuild.\n- Example: users 75 → set minBuild 76.\n- If you want to block by version, increase minVersion.',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
