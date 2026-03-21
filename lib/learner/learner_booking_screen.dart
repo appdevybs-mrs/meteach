@@ -2371,6 +2371,37 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       },
     );
   }
+  void _openExpandedSchedule() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: appBg,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            surfaceTintColor: Colors.white,
+            iconTheme: const IconThemeData(color: primaryBlue),
+            title: const Text(
+              'Full Schedule',
+              style: TextStyle(
+                color: primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [
+                _buildTimetable(generatedSlots, expanded: true),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   // ================== Filters UI ==================
 
@@ -2828,7 +2859,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     );
   }
 
-  Widget _buildTimetable(List<_Slot> rawSlots) {
+  Widget _buildTimetable(List<_Slot> rawSlots, {bool expanded = false}) {
     final slots = _applyFilters(rawSlots);
 
     final days = _nextDays(timetableDays);
@@ -2843,144 +2874,206 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     for (final k in index.keys) {
       index[k]!.sort((a, b) => a.teacherName.compareTo(b.teacherName));
     }
+    double _rowHeightForTime(String time) {
+      int maxVisibleCount = 0;
+      bool hasHidden = false;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      for (final d in days) {
+        final dk = _dateKey(d);
+        final key = '$dk|$time';
+        final list = index[key] ?? const <_Slot>[];
+
+        final visibleCount = list.length > 2 ? 2 : list.length;
+        final hiddenCount = list.length - visibleCount;
+
+        if (visibleCount > maxVisibleCount) {
+          maxVisibleCount = visibleCount;
+        }
+        if (hiddenCount > 0) {
+          hasHidden = true;
+        }
+      }
+
+      if (maxVisibleCount <= 0) return 72;
+      if (maxVisibleCount == 1 && !hasHidden) return 96;
+      if (maxVisibleCount == 1 && hasHidden) return 132;
+      if (maxVisibleCount == 2 && !hasHidden) return 168;
+      return 196;
+    }
+
+    final double timeColumnWidth = expanded ? 92 : 84;
+    final double dayColumnWidth = expanded ? 220 : 164;
+
+    // Fixed heights so the sticky time column stays aligned with the grid rows.
+    const double headerHeight = 44;
+
+    if (times.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: uiBorder.withOpacity(0.85)),
+        ),
+        child: const Text(
+          'No slots match your filters.',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // LEFT STICKY TIME COLUMN
+        SizedBox(
+          width: timeColumnWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(width: 84),
-              ...days.map((d) {
+              const SizedBox(height: headerHeight + 8),
+              ...times.map((t) {
+                final rowHeight = _rowHeightForTime(t);
+
                 return Container(
-                  width: 164,
-                  padding:
-                  const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: uiBorder.withOpacity(0.8)),
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.white,
-                  ),
+                  height: rowHeight,
+                  alignment: Alignment.topLeft,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
                   child: Text(
-                    _friendlyDate(d),
+                    t,
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: primaryBlue,
-                      fontSize: 12,
                     ),
                   ),
                 );
               }).toList(),
             ],
           ),
-          const SizedBox(height: 8),
-          if (times.isEmpty)
-            Container(
-              width: 94.0 + (164.0 * timetableDays),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: uiBorder.withOpacity(0.85)),
-              ),
-              child: const Text(
-                'No slots match your filters.',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ...times.map((t) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 84,
-                    padding:
-                    const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-                    child: Text(
-                      t,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
-                      ),
-                    ),
-                  ),
-                  ...days.map((d) {
-                    final dk = _dateKey(d);
-                    final key = '$dk|$t';
-                    final list = index[key] ?? const <_Slot>[];
+        ),
 
-                    final hasSlot = list.isNotEmpty;
-                    final visibleCount = list.length > 2 ? 2 : list.length;
-                    final hiddenCount = list.length - visibleCount;
+        const SizedBox(width: 8),
 
+        // HORIZONTALLY SCROLLABLE DAYS GRID
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: days.map((d) {
                     return Container(
-                      width: 164,
-                      constraints: const BoxConstraints(minHeight: 72),
+                      width: dayColumnWidth,
+                      height: headerHeight,
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 8,
+                      ),
                       margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: hasSlot ? Colors.white : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: hasSlot
-                              ? uiBorder.withOpacity(0.85)
-                              : uiBorder.withOpacity(0.25),
+                        border: Border.all(color: uiBorder.withOpacity(0.8)),
+                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white,
+                      ),
+                      child: Text(
+                        _friendlyDate(d),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                          fontSize: 12,
                         ),
                       ),
-                      child: hasSlot
-                          ? Column(
-                        children: [
-                          for (int i = 0; i < visibleCount; i++) ...[
-                            _teacherMiniTile(list[i]),
-                            if (i != visibleCount - 1)
-                              const SizedBox(height: 8),
-                          ],
-                          if (hiddenCount > 0) ...[
-                            const SizedBox(height: 6),
-                            InkWell(
-                              borderRadius: BorderRadius.circular(999),
-                              onTap: () => _openMoreTeachersSheet(
-                                list,
-                                list.sublist(visibleCount),
-                              ),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFB),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: uiBorder.withOpacity(0.9),
-                                  ),
-                                ),
-                                child: Text(
-                                  '+$hiddenCount more',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 11,
-                                    color: Colors.grey.shade800,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      )
-                          : const SizedBox.shrink(),
                     );
                   }).toList(),
-                ],
-              ),
-            );
-          }).toList(),
-        ],
-      ),
+                ),
+                const SizedBox(height: 8),
+                ...times.map((t) {
+                  final rowHeight = _rowHeightForTime(t);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: days.map((d) {
+                        final dk = _dateKey(d);
+                        final key = '$dk|$t';
+                        final list = index[key] ?? const <_Slot>[];
+
+                        final hasSlot = list.isNotEmpty;
+                        final visibleCount = list.length > 2 ? 2 : list.length;
+                        final hiddenCount = list.length - visibleCount;
+
+                        return Container(
+                          width: dayColumnWidth,
+                          height: rowHeight,
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: hasSlot ? Colors.white : Colors.transparent,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: hasSlot
+                                  ? uiBorder.withOpacity(0.85)
+                                  : uiBorder.withOpacity(0.25),
+                            ),
+                          ),
+                          child: hasSlot
+                              ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (int i = 0; i < visibleCount; i++) ...[
+                                _teacherMiniTile(list[i]),
+                                if (i != visibleCount - 1)
+                                  const SizedBox(height: 8),
+                              ],
+                              if (hiddenCount > 0) ...[
+                                const SizedBox(height: 6),
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(999),
+                                  onTap: () => _openMoreTeachersSheet(
+                                    list,
+                                    list.sublist(visibleCount),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 7,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFB),
+                                      borderRadius:
+                                      BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: uiBorder.withOpacity(0.9),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '+$hiddenCount more',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 11,
+                                        color: Colors.grey.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          )
+                              : const SizedBox.shrink(),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -3040,42 +3133,77 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 const SizedBox(height: 12),
                 _SectionCard(
                   title: 'Schedule',
-                  trailing: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => setState(
-                            () => filtersExpanded = !filtersExpanded),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: uiBorder.withOpacity(0.9),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.tune_rounded,
-                            size: 16,
-                            color: primaryBlue,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            filtersExpanded
-                                ? 'Hide filters'
-                                : 'Filters',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
-                              fontSize: 12,
+                        onTap: generatedSlots.isEmpty ? null : _openExpandedSchedule,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: uiBorder.withOpacity(0.9),
                             ),
                           ),
-                        ],
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.open_in_full_rounded,
+                                size: 16,
+                                color: primaryBlue,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Expand',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => setState(() => filtersExpanded = !filtersExpanded),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: uiBorder.withOpacity(0.9),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.tune_rounded,
+                                size: 16,
+                                color: primaryBlue,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                filtersExpanded ? 'Hide filters' : 'Filters',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   child: generatedSlots.isEmpty
                       ? const Text(

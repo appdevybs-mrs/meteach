@@ -38,6 +38,13 @@ class _AdminTeacherAvailabilityOverviewScreenState
 
   final TextEditingController searchC = TextEditingController();
 
+  bool overviewExpanded = true;
+  bool attentionExpanded = false;
+  bool coursesExpanded = true;
+  bool teachersExpanded = true;
+
+  final Set<String> expandedTeacherIds = {};
+
   final List<String> dayKeys = const [
     'mon',
     'tue',
@@ -94,8 +101,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
     return fallback;
   }
 
-  String _two(int n) => n < 10 ? '0$n' : '$n';
-
   int _slotCountFromWeek(Map<String, Set<String>> week) {
     int count = 0;
     for (final dk in dayKeys) {
@@ -107,8 +112,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
   String _fullNameFromUserMap(Map<String, dynamic> m) {
     final first = (m['first_name'] ?? '').toString().trim();
     final last = (m['last_name'] ?? '').toString().trim();
-    final full = '$first $last'.trim();
-    return full;
+    return '$first $last'.trim();
   }
 
   Future<void> _loadAll() async {
@@ -126,18 +130,26 @@ class _AdminTeacherAvailabilityOverviewScreenState
       final syllabiSnap = results[2];
 
       final Map<String, dynamic> bookingRoot =
-      bookingSnap.value is Map ? (bookingSnap.value as Map).map((k, v) => MapEntry(k.toString(), v)) : {};
+      bookingSnap.value is Map
+          ? (bookingSnap.value as Map)
+          .map((k, v) => MapEntry(k.toString(), v))
+          : {};
 
       final Map<String, dynamic> usersRoot =
-      usersSnap.value is Map ? (usersSnap.value as Map).map((k, v) => MapEntry(k.toString(), v)) : {};
+      usersSnap.value is Map
+          ? (usersSnap.value as Map)
+          .map((k, v) => MapEntry(k.toString(), v))
+          : {};
 
       final Map<String, dynamic> syllabiRoot =
-      syllabiSnap.value is Map ? (syllabiSnap.value as Map).map((k, v) => MapEntry(k.toString(), v)) : {};
+      syllabiSnap.value is Map
+          ? (syllabiSnap.value as Map)
+          .map((k, v) => MapEntry(k.toString(), v))
+          : {};
 
       final Map<String, _CourseMeta> flexibleMap = {};
       final Map<String, _CourseMeta> fallbackCourseMap = {};
 
-      // Build flexible courses from syllabi
       syllabiRoot.forEach((courseId, raw) {
         if (raw is! Map) return;
         final m = raw.map((k, v) => MapEntry(k.toString(), v));
@@ -157,7 +169,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
         );
       });
 
-      // Build fallback titles/codes from teacher user nodes
       usersRoot.forEach((uid, rawUser) {
         if (rawUser is! Map) return;
         final um = rawUser.map((k, v) => MapEntry(k.toString(), v));
@@ -165,8 +176,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
         final coursesRaw = um['courses'];
         if (coursesRaw is! Map) return;
 
-        final coursesMap =
-        coursesRaw.map((k, v) => MapEntry(k.toString(), v));
+        final coursesMap = coursesRaw.map((k, v) => MapEntry(k.toString(), v));
 
         for (final entry in coursesMap.entries) {
           final val = entry.value;
@@ -186,7 +196,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
 
       final Set<String> teacherIds = {};
 
-      // Teachers from users with role teacher
       usersRoot.forEach((uid, rawUser) {
         if (rawUser is! Map) return;
         final um = rawUser.map((k, v) => MapEntry(k.toString(), v));
@@ -196,7 +205,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
         }
       });
 
-      // Teachers from booking_availability
       teacherIds.addAll(bookingRoot.keys);
 
       final List<_TeacherCoverage> builtTeachers = [];
@@ -231,7 +239,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
           teacherName = 'Teacher';
         }
 
-        final Set<String> activeCourseIds = {};
         final List<_CourseMeta> activeCourses = [];
         final Map<String, Set<String>> mergedWeek = {
           'mon': <String>{},
@@ -260,8 +267,6 @@ class _AdminTeacherAvailabilityOverviewScreenState
           );
 
           if (!teacherOnlineEnabled || !isCourseOn) return;
-
-          activeCourseIds.add(key);
 
           final meta =
               flexibleMap[key] ??
@@ -327,7 +332,8 @@ class _AdminTeacherAvailabilityOverviewScreenState
       for (final entry in flexibleMap.entries) {
         final cid = entry.key;
         final meta = entry.value;
-        final covered = (courseCoverage[cid] ?? const <_TeacherCoverage>[]).isNotEmpty;
+        final covered =
+            (courseCoverage[cid] ?? const <_TeacherCoverage>[]).isNotEmpty;
         if (!covered) uncovered.add(meta);
       }
       uncovered.sort((a, b) => a.title.compareTo(b.title));
@@ -360,9 +366,12 @@ class _AdminTeacherAvailabilityOverviewScreenState
         teachersOff = off;
         teachersOnNoCourses = onNoCourses;
         teachersOnNoSlots = onNoSlots;
-        coveredFlexibleCourses =
-            flexibleMap.length - uncovered.length;
+        coveredFlexibleCourses = flexibleMap.length - uncovered.length;
         uncoveredFlexibleCourses = uncovered.length;
+
+        expandedTeacherIds.removeWhere(
+              (id) => !builtTeachers.any((t) => t.teacherId == id),
+        );
       });
     } catch (e) {
       _toast('Failed loading teacher availability: $e');
@@ -416,8 +425,233 @@ class _AdminTeacherAvailabilityOverviewScreenState
   String _dayPreview(Set<String> slots) {
     if (slots.isEmpty) return '—';
     final sorted = slots.toList()..sort();
-    final shown = sorted.take(4).join(', ');
-    return sorted.length > 4 ? '$shown …' : shown;
+    final shown = sorted.take(3).join(', ');
+    return sorted.length > 3 ? '$shown …' : shown;
+  }
+
+  String _teacherCoursePreview(_TeacherCoverage t) {
+    if (t.activeCourses.isEmpty) return 'No active courses';
+    final names = t.activeCourses.map((e) => e.code.isEmpty ? e.title : e.code);
+    final list = names.take(3).join(' • ');
+    return t.activeCourses.length > 3 ? '$list …' : list;
+  }
+
+  List<String> _allVisibleTimeSlots(List<_TeacherCoverage> sourceTeachers) {
+    final Set<String> slots = {};
+    for (final teacher in sourceTeachers) {
+      for (final dk in dayKeys) {
+        slots.addAll(teacher.mergedWeek[dk] ?? const <String>{});
+      }
+    }
+    final list = slots.toList()..sort();
+    return list;
+  }
+
+  void _showCourseTeachersSheet(_CourseMeta course) {
+    final list = (coveredByCourse[course.id] ?? <_TeacherCoverage>[])
+      ..sort((a, b) => a.teacherName.compareTo(b.teacherName));
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.82,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Column(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              course.title.isEmpty ? course.id : course.title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                                color: primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              course.code.isEmpty
+                                  ? course.id
+                                  : '${course.code} • ${course.id}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: mutedText,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: list.isEmpty
+                              ? Colors.red.withOpacity(0.10)
+                              : successGreen.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          list.isEmpty
+                              ? '0 teachers'
+                              : '${list.length} teacher${list.length == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: list.isEmpty ? Colors.red : successGreen,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: list.isEmpty
+                        ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: uiBorder),
+                      ),
+                      child: const Text(
+                        'No active teacher currently covers this course.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: primaryBlue,
+                        ),
+                      ),
+                    )
+                        : ListView.separated(
+                      itemCount: list.length,
+                      separatorBuilder: (_, __) =>
+                      const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final t = list[index];
+                        final statusColor = _teacherStatusColor(t);
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: uiBorder),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      t.teacherName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: primaryBlue,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withOpacity(0.10),
+                                      borderRadius:
+                                      BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _teacherStatusLabel(t),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 11,
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (t.email.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  t.email,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _miniStat(
+                                    label: 'Courses',
+                                    value: '${t.activeCourses.length}',
+                                    color: primaryBlue,
+                                  ),
+                                  _miniStat(
+                                    label: 'Slots',
+                                    value: '${t.slotCount}',
+                                    color: actionOrange,
+                                  ),
+                                  _miniStat(
+                                    label: 'Status',
+                                    value:
+                                    t.status.isEmpty ? '—' : t.status,
+                                    color: successGreen,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              _buildWeeklyTimetable(
+                                t.mergedWeek,
+                                dense: true,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _summaryCard({
@@ -427,7 +661,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -436,33 +670,37 @@ class _AdminTeacherAvailabilityOverviewScreenState
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: color.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 18,
+                    fontSize: 16,
                     color: primaryBlue,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    fontSize: 11,
                     color: mutedText,
                   ),
                 ),
@@ -474,38 +712,63 @@ class _AdminTeacherAvailabilityOverviewScreenState
     );
   }
 
-  Widget _sectionCard({
+  Widget _buildSection({
     required String title,
+    required bool expanded,
+    required VoidCallback onToggle,
     required Widget child,
     Widget? trailing,
   }) {
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: uiBorder),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        color: primaryBlue,
+                      ),
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    trailing,
+                    const SizedBox(width: 8),
+                  ],
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
                     color: primaryBlue,
                   ),
-                ),
+                ],
               ),
-              if (trailing != null) trailing,
-            ],
+            ),
           ),
-          const SizedBox(height: 10),
-          child,
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 180),
+            crossFadeState: expanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: child,
+            ),
+            secondChild: const SizedBox.shrink(),
+          ),
         ],
       ),
     );
@@ -560,71 +823,236 @@ class _AdminTeacherAvailabilityOverviewScreenState
 
     return Column(
       children: items.map((course) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: uiBorder),
+        return InkWell(
+          onTap: () => _showCourseTeachersSheet(course),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: uiBorder),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        course.title.isEmpty ? course.id : course.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        course.code.isEmpty
+                            ? course.id
+                            : '${course.code} • ${course.id}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Needs teacher',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Colors.red,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(10),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildCoveredCourseCards() {
+    if (flexibleCourses.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: uiBorder),
+        ),
+        child: const Text(
+          'No flexible courses found.',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: primaryBlue,
+          ),
+        ),
+      );
+    }
+
+    final filtered = flexibleCourses.where((c) {
+      if (searchText.isEmpty) return true;
+      final haystack = '${c.title} ${c.code} ${c.id}'.toLowerCase();
+      return haystack.contains(searchText);
+    }).toList();
+
+    if (filtered.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: uiBorder),
+        ),
+        child: const Text(
+          'No course cards match your search.',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: primaryBlue,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: filtered.map((course) {
+        final list = (coveredByCourse[course.id] ?? <_TeacherCoverage>[])
+          ..sort((a, b) => a.teacherName.compareTo(b.teacherName));
+        final isCovered = list.isNotEmpty;
+
+        return InkWell(
+          onTap: () => _showCourseTeachersSheet(course),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: uiBorder),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: (isCovered ? successGreen : Colors.red)
+                        .withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    isCovered
+                        ? Icons.check_circle_rounded
+                        : Icons.error_outline_rounded,
+                    color: isCovered ? successGreen : Colors.red,
+                    size: 20,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.warning_amber_rounded,
-                  color: Colors.red,
-                  size: 20,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        course.title.isEmpty ? course.id : course.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        course.code.isEmpty
+                            ? course.id
+                            : '${course.code} • ${course.id}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (list.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          list.map((e) => e.teacherName).take(3).join(' • '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: mutedText,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      course.title.isEmpty ? course.id : course.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: primaryBlue,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: (isCovered ? successGreen : Colors.red)
+                            .withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        isCovered
+                            ? '${list.length} teacher${list.length == 1 ? '' : 's'}'
+                            : '0 teachers',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: isCovered ? successGreen : Colors.red,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      course.code.isEmpty ? course.id : '${course.code} • ${course.id}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
-                        fontSize: 12,
-                      ),
+                    const SizedBox(height: 6),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: mutedText,
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  'Needs teacher',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: Colors.red,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }).toList(),
@@ -702,8 +1130,181 @@ class _AdminTeacherAvailabilityOverviewScreenState
     );
   }
 
+  Widget _buildWeeklyTimetable(
+      Map<String, Set<String>> mergedWeek, {
+        bool dense = false,
+      }) {
+    final allSlots = <String>{};
+    for (final dk in dayKeys) {
+      allSlots.addAll(mergedWeek[dk] ?? const <String>{});
+    }
+
+    final sortedTimes = allSlots.toList()..sort();
+
+    if (sortedTimes.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: uiBorder),
+        ),
+        child: const Text(
+          'No weekly slots.',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: mutedText,
+          ),
+        ),
+      );
+    }
+
+    final visibleTimes = dense && sortedTimes.length > 10
+        ? sortedTimes.take(10).toList()
+        : sortedTimes;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: uiBorder),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                _timeCell('Time', header: true, width: dense ? 64 : 72),
+                ...dayKeys.map(
+                      (dk) => _gridCell(
+                    dayLabels[dk] ?? dk,
+                    header: true,
+                    width: dense ? 54 : 60,
+                    height: dense ? 30 : 34,
+                  ),
+                ),
+              ],
+            ),
+            ...visibleTimes.map((time) {
+              return Row(
+                children: [
+                  _timeCell(time, width: dense ? 64 : 72),
+                  ...dayKeys.map((dk) {
+                    final hasSlot =
+                    (mergedWeek[dk] ?? const <String>{}).contains(time);
+                    return _gridCell(
+                      hasSlot ? '●' : '',
+                      width: dense ? 54 : 60,
+                      height: dense ? 28 : 32,
+                      active: hasSlot,
+                    );
+                  }),
+                ],
+              );
+            }),
+            if (dense && sortedTimes.length > 10)
+              Container(
+                width: (64 + (7 * 54)).toDouble(),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: uiBorder),
+                  ),
+                ),
+                child: Text(
+                  'Showing first 10 time rows',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gridCell(
+      String text, {
+        required double width,
+        required double height,
+        bool header = false,
+        bool active = false,
+      }) {
+    final bg = header
+        ? primaryBlue.withOpacity(0.06)
+        : active
+        ? actionOrange.withOpacity(0.12)
+        : Colors.white;
+
+    final textColor = header
+        ? primaryBlue
+        : active
+        ? actionOrange
+        : mutedText;
+
+    return Container(
+      width: width,
+      height: height,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        border: Border(
+          left: BorderSide(color: uiBorder),
+          top: BorderSide(color: uiBorder),
+        ),
+        color: Colors.transparent,
+      ),
+      child: Container(
+        width: width,
+        height: height,
+        alignment: Alignment.center,
+        color: bg,
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: header || active ? FontWeight.w900 : FontWeight.w700,
+            fontSize: 11,
+            color: textColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _timeCell(
+      String text, {
+        required double width,
+        bool header = false,
+      }) {
+    return Container(
+      width: width,
+      height: header ? 34 : 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: header ? primaryBlue.withOpacity(0.06) : Colors.grey.shade50,
+        border: const Border(
+          top: BorderSide(color: uiBorder),
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 11,
+          color: primaryBlue,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTeacherCard(_TeacherCoverage t) {
     final statusColor = _teacherStatusColor(t);
+    final isExpanded = expandedTeacherIds.contains(t.teacherId);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -712,183 +1313,251 @@ class _AdminTeacherAvailabilityOverviewScreenState
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: uiBorder),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    t.teacherName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                      color: primaryBlue,
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  expandedTeacherIds.remove(t.teacherId);
+                } else {
+                  expandedTeacherIds.add(t.teacherId);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t.teacherName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            color: primaryBlue,
+                          ),
+                        ),
+                        if (t.email.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            t.email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _miniStat(
+                              label: 'Courses',
+                              value: '${t.activeCourses.length}',
+                              color: primaryBlue,
+                            ),
+                            _miniStat(
+                              label: 'Slots',
+                              value: '${t.slotCount}',
+                              color: actionOrange,
+                            ),
+                            _miniStat(
+                              label: 'Status',
+                              value: t.status.isEmpty ? '—' : t.status,
+                              color: successGreen,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _teacherCoursePreview(t),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: mutedText,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(999),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _teacherStatusLabel(t),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            color: statusColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Icon(
+                        isExpanded
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        color: primaryBlue,
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    _teacherStatusLabel(t),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 180),
+            crossFadeState:
+            isExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Active courses',
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      fontSize: 11,
-                      color: statusColor,
+                      color: Colors.grey.shade800,
+                      fontSize: 12,
                     ),
                   ),
-                ),
-              ],
-            ),
-            if (t.email.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                t.email,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _miniStat(
-                  label: 'Courses',
-                  value: '${t.activeCourses.length}',
-                  color: primaryBlue,
-                ),
-                _miniStat(
-                  label: 'Slots',
-                  value: '${t.slotCount}',
-                  color: actionOrange,
-                ),
-                _miniStat(
-                  label: 'Status',
-                  value: t.status.isEmpty ? '—' : t.status,
-                  color: successGreen,
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Active courses',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                color: Colors.grey.shade800,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 6),
-            if (t.activeCourses.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: uiBorder),
-                ),
-                child: const Text(
-                  'No active course coverage.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: mutedText,
-                  ),
-                ),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: t.activeCourses
-                    .map((c) => _courseChip(c, color: primaryBlue))
-                    .toList(),
-              ),
-            const SizedBox(height: 12),
-            Text(
-              'Weekly schedule',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                color: Colors.grey.shade800,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...dayKeys.map((dk) {
-              final slots = t.mergedWeek[dk] ?? const <String>{};
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: uiBorder),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 44,
-                      child: Text(
-                        dayLabels[dk] ?? dk,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primaryBlue,
-                        ),
+                  const SizedBox(height: 6),
+                  if (t.activeCourses.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: uiBorder),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _dayPreview(slots),
+                      child: const Text(
+                        'No active course coverage.',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade700,
-                          fontSize: 12,
+                          color: mutedText,
                         ),
                       ),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: t.activeCourses
+                          .map((c) => GestureDetector(
+                        onTap: () => _showCourseTeachersSheet(c),
+                        child: _courseChip(c, color: primaryBlue),
+                      ))
+                          .toList(),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: slots.isEmpty
-                            ? Colors.grey.shade100
-                            : actionOrange.withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${slots.length}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: slots.isEmpty
-                              ? Colors.grey.shade700
-                              : actionOrange,
-                          fontSize: 11,
+                  const SizedBox(height: 12),
+                  Text(
+                    'Weekly timetable',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Colors.grey.shade800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildWeeklyTimetable(t.mergedWeek),
+                  const SizedBox(height: 10),
+                  Column(
+                    children: dayKeys.map((dk) {
+                      final slots = t.mergedWeek[dk] ?? const <String>{};
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 9,
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: uiBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 44,
+                              child: Text(
+                                dayLabels[dk] ?? dk,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _dayPreview(slots),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: slots.isEmpty
+                                    ? Colors.grey.shade100
+                                    : actionOrange.withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${slots.length}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: slots.isEmpty
+                                      ? Colors.grey.shade700
+                                      : actionOrange,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+            secondChild: const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -948,8 +1617,12 @@ class _AdminTeacherAvailabilityOverviewScreenState
           : ListView(
         padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
         children: [
-          _sectionCard(
+          _buildSection(
             title: 'Overview',
+            expanded: overviewExpanded,
+            onToggle: () {
+              setState(() => overviewExpanded = !overviewExpanded);
+            },
             child: Column(
               children: [
                 TextField(
@@ -979,7 +1652,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                   MediaQuery.of(context).size.width >= 900 ? 3 : 2,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 2.25,
+                  childAspectRatio: 2.5,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
@@ -1025,34 +1698,83 @@ class _AdminTeacherAvailabilityOverviewScreenState
             ),
           ),
           const SizedBox(height: 10),
-          _sectionCard(
+          _buildSection(
             title: 'Attention',
+            expanded: attentionExpanded,
+            onToggle: () {
+              setState(() => attentionExpanded = !attentionExpanded);
+            },
             child: _buildAttentionBox(),
           ),
           const SizedBox(height: 10),
-          _sectionCard(
-            title: 'Courses needing teacher',
+          _buildSection(
+            title: 'Course coverage',
+            expanded: coursesExpanded,
+            onToggle: () {
+              setState(() => coursesExpanded = !coursesExpanded);
+            },
             trailing: Container(
               padding:
               const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.10),
+                color: primaryBlue.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                '${_filteredUncoveredCourses().length}',
+                '${flexibleCourses.length}',
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: Colors.red,
+                  color: primaryBlue,
                   fontSize: 11,
                 ),
               ),
             ),
-            child: _buildUncoveredCourses(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Tap a course card to view teachers covering it.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: mutedText,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _buildCoveredCourseCards(),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: uiBorder),
+                  ),
+                  child: Text(
+                    'Courses needing teacher • ${_filteredUncoveredCourses().length}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Colors.red,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildUncoveredCourses(),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
-          _sectionCard(
+          _buildSection(
             title: 'Teachers',
+            expanded: teachersExpanded,
+            onToggle: () {
+              setState(() => teachersExpanded = !teachersExpanded);
+            },
             trailing: Container(
               padding:
               const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -1093,7 +1815,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
             ),
           ),
           if (teachersOnNoSlots > 0) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: Text(
