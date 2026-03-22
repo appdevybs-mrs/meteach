@@ -1616,6 +1616,8 @@ class LearnerPrefill {
     this.firstName = '',
     this.lastName = '',
     this.phone1 = '',
+    this.dob = '',
+    this.email = '',
 
     this.selectedCourseIds = const <String>{},
   });
@@ -1623,6 +1625,8 @@ class LearnerPrefill {
   final String firstName;
   final String lastName;
   final String phone1;
+  final String dob;
+  final String email;
   final Set<String> selectedCourseIds;
 }
 
@@ -1681,10 +1685,15 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       if (p.firstName.trim().isNotEmpty) firstNameC.text = p.firstName.trim();
       if (p.lastName.trim().isNotEmpty) lastNameC.text = p.lastName.trim();
       if (p.phone1.trim().isNotEmpty) phone1C.text = p.phone1.trim();
+      if (p.dob.trim().isNotEmpty) dobC.text = p.dob.trim();
     }
 
     phone2C = TextEditingController(text: initial?.phone2 ?? '');
     emailC = TextEditingController(text: initial?.email ?? '');
+    if (widget.mode == EditorMode.create && widget.prefill != null) {
+      final p = widget.prefill!;
+      if (p.email.trim().isNotEmpty) emailC.text = p.email.trim();
+    }
     passwordC = TextEditingController(
       text: widget.mode == EditorMode.create ? '12345678' : '',
     );

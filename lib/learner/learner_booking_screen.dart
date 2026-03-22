@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../shared/human_error.dart';
 import '../services/push_client.dart';
 import '../services/notification_service.dart';
 import '../widgets/teacher_media_sheet.dart';
@@ -129,6 +130,32 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     if (s == 'true' || s == '1' || s == 'yes') return true;
     if (s == 'false' || s == '0' || s == 'no') return false;
     return fallback;
+  }
+
+  Map<String, dynamic> _asStringKeyMap(dynamic value) {
+    if (value is! Map) return const <String, dynamic>{};
+    final out = <String, dynamic>{};
+    value.forEach((k, v) {
+      out[k.toString()] = v;
+    });
+    return out;
+  }
+
+  int _readSessionNoFromProgress(dynamic raw) {
+    if (raw == null) return 0;
+
+    if (raw is Map) {
+      final m = _asStringKeyMap(raw);
+      final direct = _toInt(m['currentSession'], fallback: 0);
+      if (direct > 0) return direct;
+
+      if (m.length == 1) {
+        return _readSessionNoFromProgress(m.values.first);
+      }
+      return 0;
+    }
+
+    return _toInt(raw, fallback: 0);
   }
 
   DatabaseReference _availabilityRootRef() => _db.child('booking_availability');
@@ -587,27 +614,44 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   Future<void> _loadOrCreateProgress(String cid) async {
     try {
-      final snap = await _progressRef(cid).get();
-      if (!snap.exists || snap.value == null) {
+      final ref = _progressRef(cid);
+      final snap = await ref.get();
+      final raw = snap.value;
+
+      final sessionNo = _readSessionNoFromProgress(raw);
+      currentSession = sessionNo > 0 ? sessionNo : 1;
+
+      final needsCanonicalWrite =
+          raw == null ||
+          raw is! Map ||
+          _asStringKeyMap(raw)['currentSession'] == null;
+
+      if (needsCanonicalWrite) {
+        await ref.set({
+          'currentSession': currentSession,
+          'updatedAt': ServerValue.timestamp,
+        });
+      }
+    } catch (e) {
+      currentSession = 1;
+      try {
         await _progressRef(
           cid,
         ).set({'currentSession': 1, 'updatedAt': ServerValue.timestamp});
-        currentSession = 1;
-        return;
+      } catch (writeError) {
+        final lower = writeError.toString().toLowerCase();
+        final denied =
+            lower.contains('permission-denied') ||
+            lower.contains('permission denied');
+        if (!denied) {
+          _toast(
+            toHumanError(
+              writeError,
+              fallback: 'Could not load your booking progress.',
+            ),
+          );
+        }
       }
-
-      if (snap.value is Map) {
-        final m = (snap.value as Map).map(
-          (k, vv) => MapEntry(k.toString(), vv),
-        );
-        currentSession = _toInt(m['currentSession'], fallback: 1);
-        if (currentSession <= 0) currentSession = 1;
-      } else {
-        currentSession = 1;
-      }
-    } catch (e) {
-      _toast('Failed to load progress: $e');
-      currentSession = 1;
     }
   }
 

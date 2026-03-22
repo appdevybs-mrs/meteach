@@ -10,7 +10,8 @@ import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 // - Supports new enrollment fields:
 //   fullName, phone, courseId, courseTitle, createdAt,
 //   deliveryKey, deliveryLabel, studyMode, studyModeLabel,
-//   selectedFee, accessMode, accessDurationMonths, accessLabel, additionalInfo
+//   selectedFee, accessMode, accessDurationMonths, accessLabel,
+//   dob/dateOfBirth, email, additionalInfo
 // - Still supports old data:
 //   firstName + lastName
 // - Also tolerates snake_case variants if they ever exist
@@ -307,6 +308,8 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                             firstName: split.first,
                             lastName: split.last,
                             phone1: sub.phone,
+                            dob: sub.dob,
+                            email: sub.email,
                             selectedCourseIds: {
                               if (sub.courseId.trim().isNotEmpty) sub.courseId,
                             },
@@ -333,6 +336,8 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               _line('Course', sub.courseTitle),
               _line('CourseId', sub.courseId),
               _line('Study type', sub.studyTypeDisplay),
+              _line('Date of birth', sub.dob),
+              _line('Email', sub.email),
               _line('Delivery key', sub.deliveryKey),
               _line('Study mode', sub.studyModeLabel),
               _line(
@@ -462,6 +467,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
   final firstNameC = TextEditingController();
   final lastNameC = TextEditingController();
   final phoneC = TextEditingController();
+  final dobC = TextEditingController();
+  final emailC = TextEditingController();
 
   String? selectedCourseId;
   String selectedCourseTitle = '';
@@ -477,6 +484,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     firstNameC.dispose();
     lastNameC.dispose();
     phoneC.dispose();
+    dobC.dispose();
+    emailC.dispose();
     super.dispose();
   }
 
@@ -547,6 +556,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     final fn = firstNameC.text.trim();
     final ln = lastNameC.text.trim();
     final ph = phoneC.text.trim();
+    final dob = dobC.text.trim();
+    final email = emailC.text.trim();
 
     if (fn.isEmpty || ln.isEmpty || ph.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -569,6 +580,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
         'lastName': ln,
         'fullName': '$fn $ln'.trim(),
         'phone': ph,
+        'dob': dob,
+        'dateOfBirth': dob,
+        'email': email,
       });
 
       if (!mounted) return;
@@ -643,6 +657,19 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
                 controller: phoneC,
                 decoration: const InputDecoration(labelText: 'Phone'),
                 keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: dobC,
+                decoration: const InputDecoration(labelText: 'Date of birth'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: emailC,
+                decoration: const InputDecoration(
+                  labelText: 'Email (optional)',
+                ),
+                keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
@@ -748,6 +775,8 @@ class SubscriptionItem {
     required this.accessMode,
     required this.accessDurationMonths,
     required this.accessLabel,
+    required this.dob,
+    required this.email,
     required this.additionalInfo,
   });
 
@@ -766,6 +795,8 @@ class SubscriptionItem {
   final String accessMode;
   final int? accessDurationMonths;
   final String accessLabel;
+  final String dob;
+  final String email;
   final String additionalInfo;
 
   String get displayName =>
@@ -867,6 +898,8 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
             ? null
             : asInt(m['accessDurationMonths'] ?? m['access_duration_months']),
         accessLabel: readString(m, ['accessLabel', 'access_label']),
+        dob: readString(m, ['dob', 'dateOfBirth', 'date_of_birth']),
+        email: readString(m, ['email', 'mail']),
         additionalInfo: readString(m, ['additionalInfo', 'additional_info']),
       ),
     );

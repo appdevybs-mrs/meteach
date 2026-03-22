@@ -315,7 +315,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
   final fullNameC = TextEditingController();
   final phoneC = TextEditingController();
-  final extraInfoC = TextEditingController();
+  final dobC = TextEditingController();
+  final emailC = TextEditingController();
 
   bool saving = false;
   late final List<EnrollDeliveryOption> deliveryOptions;
@@ -402,8 +403,40 @@ class _EnrollScreenState extends State<EnrollScreen> {
     _deliveryPageController.dispose();
     fullNameC.dispose();
     phoneC.dispose();
-    extraInfoC.dispose();
+    dobC.dispose();
+    emailC.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDob() async {
+    FocusScope.of(context).unfocus();
+    final now = DateTime.now();
+    DateTime initial = DateTime(now.year - 14, now.month, now.day);
+
+    final existing = dobC.text.trim();
+    final parts = existing.split('-');
+    if (parts.length == 3) {
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final d = int.tryParse(parts[2]);
+      if (y != null && m != null && d != null) {
+        initial = DateTime(y, m, d);
+      }
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1950),
+      lastDate: now,
+      helpText: 'Date of birth',
+    );
+    if (picked == null) return;
+
+    String two(int n) => n.toString().padLeft(2, '0');
+    setState(() {
+      dobC.text = '${picked.year}-${two(picked.month)}-${two(picked.day)}';
+    });
   }
 
   EnrollDeliveryOption? get _selectedOption {
@@ -488,6 +521,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'courseTitle': widget.courseTitle,
         'fullName': fullNameC.text.trim(),
         'phone': phoneC.text.trim(),
+        'dob': dobC.text.trim(),
+        'dateOfBirth': dobC.text.trim(),
+        'email': emailC.text.trim(),
 
         // legacy-friendly field
         'delivery': selected.label,
@@ -503,7 +539,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'accessDurationMonths': selected.accessDurationMonths,
         'accessLabel': _accessSummary(selected),
 
-        'additionalInfo': extraInfoC.text.trim(),
+        'additionalInfo': '',
         'createdAt': ServerValue.timestamp,
       });
 
@@ -608,13 +644,13 @@ class _EnrollScreenState extends State<EnrollScreen> {
     return Scaffold(
       backgroundColor: Brand.appBg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        surfaceTintColor: Colors.transparent,
+        surfaceTintColor: Colors.white,
         foregroundColor: Brand.primaryBlue,
         title: const Text(
-          'Enroll',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          'Course Enrollment',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
         ),
       ),
       body: SafeArea(
@@ -799,14 +835,61 @@ class _EnrollScreenState extends State<EnrollScreen> {
                           const SizedBox(height: 12),
 
                           TextFormField(
-                            controller: extraInfoC,
-                            keyboardType: TextInputType.multiline,
-                            maxLines: 3,
+                            controller: dobC,
+                            readOnly: true,
+                            onTap: _pickDob,
+                            textInputAction: TextInputAction.next,
                             decoration: _inputDeco(
-                              label: 'Additional information (optional)',
-                              icon: Icons.notes_rounded,
-                              hint: 'Any note for the administration…',
+                              label: 'Date of birth',
+                              icon: Icons.cake_rounded,
+                              hint: 'YYYY-MM-DD',
                             ),
+                            validator: (v) {
+                              final s = (v ?? '').trim();
+                              if (s.isEmpty) {
+                                return 'Please select your date of birth.';
+                              }
+                              final p = s.split('-');
+                              if (p.length != 3) {
+                                return 'Use format YYYY-MM-DD.';
+                              }
+                              final y = int.tryParse(p[0]);
+                              final m = int.tryParse(p[1]);
+                              final d = int.tryParse(p[2]);
+                              if (y == null || m == null || d == null) {
+                                return 'Use format YYYY-MM-DD.';
+                              }
+                              final parsed = DateTime(y, m, d);
+                              if (parsed.year != y ||
+                                  parsed.month != m ||
+                                  parsed.day != d) {
+                                return 'Please choose a valid date.';
+                              }
+                              if (parsed.isAfter(DateTime.now())) {
+                                return 'Date of birth cannot be in the future.';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          TextFormField(
+                            controller: emailC,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.done,
+                            decoration: _inputDeco(
+                              label: 'Email (optional)',
+                              icon: Icons.alternate_email_rounded,
+                              hint: 'name@example.com',
+                            ),
+                            validator: (v) {
+                              final s = (v ?? '').trim();
+                              if (s.isEmpty) return null;
+                              if (!s.contains('@') || !s.contains('.')) {
+                                return 'Please enter a valid email address.';
+                              }
+                              return null;
+                            },
                           ),
 
                           const SizedBox(height: 14),
