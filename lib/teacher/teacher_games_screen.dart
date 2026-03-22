@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -8,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 
@@ -30,12 +30,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   String _categoryFilter = 'all';
   String _sortBy = 'updated_desc';
 
-  static const String _secret = 'my_super_secret_key';
   static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
 
   static const String _deleteUrl =
-      'https://www.yourbridgeschool.com/api/admin/delete_file.php';
+      'https://www.yourbridgeschool.com/app/secure/delete_file_secure.php';
 
   static const List<String> _categoryOptions = [
     'Vocabulary',
@@ -66,11 +65,6 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  String _sha1(String s) {
-    final bytes = utf8.encode(s);
-    return crypto.sha1.convert(bytes).toString();
   }
 
   String _safeFolderName(String value) {
@@ -109,8 +103,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
     final picked = result.files.single;
     final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
+    req.headers.addAll(await BackendApi.authHeaders());
 
-    req.fields['key'] = _sha1(_secret);
     req.fields['root'] = 'games';
     req.fields['path'] =
         'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
@@ -163,10 +157,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     required String gameUid,
     required String gameName,
   }) async {
+    final headers = await BackendApi.authHeaders();
     final response = await http.post(
       Uri.parse(_deleteUrl),
+      headers: headers,
       body: {
-        'key': _sha1(_secret),
         'root': 'games',
         'path': _serverFolderPath(
           teacherUid: teacherUid,

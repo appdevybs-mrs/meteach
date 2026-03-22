@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import 'package:dream_english_academy/course_syllabus_screen.dart';
 import 'package:dream_english_academy/shared/human_error.dart';
@@ -2281,21 +2282,18 @@ class UploadClient {
   UploadClient({
     required this.endpoint,
     required this.appId,
-    required this.key,
     http.Client? httpClient,
   }) : _http = httpClient ?? http.Client();
 
   final String endpoint;
   final String appId;
-  final String key;
   final http.Client _http;
 
   /// Hardcoded default client per your requirements
   factory UploadClient.defaultClient() {
     return UploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/upload.php',
+      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
       appId: 'dreamenglishacademy',
-      key: 'a7a995d9c499128351d827eaad7285bcc891919b',
     );
   }
 
@@ -2306,10 +2304,16 @@ class UploadClient {
   /// Returns url from JSON: { success: true, url: "..." }
   Future<String> uploadFile({required File file}) async {
     final uri = Uri.parse(endpoint);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await user.getIdToken(true);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Uid': user.uid,
+      })
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 

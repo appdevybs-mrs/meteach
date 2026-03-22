@@ -80,7 +80,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   String _meDisplayName = 'Learner';
   String _peerDisplayName = '';
 
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   String get _peerNameShown {
     final p = _peerDisplayName.trim();
@@ -2085,20 +2085,17 @@ class MailUploadClient {
   MailUploadClient({
     required this.endpoint,
     required this.appId,
-    required this.key,
     http.Client? httpClient,
   }) : _http = httpClient ?? http.Client();
 
   final String endpoint;
   final String appId;
-  final String key;
   final http.Client _http;
 
   factory MailUploadClient.defaultClient() {
     return MailUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/upload.php',
+      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
       appId: 'dreamenglishacademy',
-      key: 'a7a995d9c499128351d827eaad7285bcc891919b',
     );
   }
 
@@ -2107,10 +2104,16 @@ class MailUploadClient {
     required String filename,
   }) async {
     final uri = Uri.parse(endpoint);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await user.getIdToken(true);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Uid': user.uid,
+      })
       ..fields['app_id'] = appId
       ..files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
@@ -2138,10 +2141,16 @@ class MailUploadClient {
     required String filename,
   }) async {
     final uri = Uri.parse(endpoint);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await user.getIdToken(true);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Uid': user.uid,
+      })
       ..fields['app_id'] = appId
       ..files.add(
         await http.MultipartFile.fromPath('file', path, filename: filename),

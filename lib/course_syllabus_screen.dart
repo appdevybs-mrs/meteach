@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'shared/human_error.dart';
+import 'services/backend_api.dart';
 
 /// ----------------------------
 /// Course Syllabus Screen
@@ -684,16 +684,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 }
 
 class _SyllabusServerStorage {
-  static const String secret = 'my_super_secret_key';
   static const String uploadUrl =
-      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
   static const String deleteUrl =
-      'https://www.yourbridgeschool.com/api/admin/delete_item.php';
-
-  static String sha1(String s) {
-    final bytes = utf8.encode(s);
-    return crypto.sha1.convert(bytes).toString();
-  }
+      'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
 
   static String sanitizeSegment(String value, {String fallback = 'item'}) {
     final cleaned = value
@@ -744,7 +738,8 @@ class _SyllabusServerStorage {
     required String customName,
   }) async {
     final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
-    req.fields['key'] = sha1(secret);
+    req.headers.addAll(await BackendApi.authHeaders());
+    req.fields.addAll(await BackendApi.authFormFields());
     req.fields['root'] = root;
     req.fields['path'] = path;
     req.fields['custom_name'] = customName;
@@ -796,9 +791,12 @@ class _SyllabusServerStorage {
     required String root,
     required String path,
   }) async {
+    final headers = await BackendApi.authHeaders();
+    final authFields = await BackendApi.authFormFields();
     final r = await http.post(
       Uri.parse(deleteUrl),
-      body: {'key': sha1(secret), 'root': root, 'path': path},
+      headers: headers,
+      body: {'root': root, 'path': path, ...authFields},
     );
 
     final raw = r.body.trim();

@@ -13,7 +13,7 @@ class AdminMailInboxScreen extends StatefulWidget {
 
 class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
   final _db = FirebaseDatabase.instance;
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
   DatabaseReference get _stateRef => _db.ref('mail_state/$_meUid');

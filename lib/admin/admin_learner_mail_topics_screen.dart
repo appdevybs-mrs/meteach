@@ -23,7 +23,7 @@ class AdminLearnerMailTopicsScreen extends StatefulWidget {
 class _AdminLearnerMailTopicsScreenState
     extends State<AdminLearnerMailTopicsScreen> {
   final _db = FirebaseDatabase.instance;
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get _meName =>
       (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
 

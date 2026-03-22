@@ -22,7 +22,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   Timer? _searchDebounce;
   String _q = '';
 
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   DatabaseReference get _indexRef => _db.ref('mail_index/$_meUid');
 
   late final Stream<DatabaseEvent> _stream;
@@ -137,11 +137,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   String _bestName(_TopicRow r) {
-    final pn = r.peerName.trim();
-    if (pn.isNotEmpty) return pn;
-
     final cached = _nameCache[r.peerUid.trim()];
     if (cached != null && cached.trim().isNotEmpty) return cached;
+
+    final pn = r.peerName.trim();
+    if (pn.isNotEmpty) return pn;
 
     return 'User';
   }
@@ -844,9 +844,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 row: r,
                 timeLabel: _timeLabel(r.updatedAtMs),
                 onDelete: () => _deleteThreadForMe(r),
-                onReview: (r.type == 'homework')
-                    ? () => _tryOpenHomeworkReview(r)
-                    : null,
+                onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
                 onOpen: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
@@ -1193,7 +1191,7 @@ class _ThreadTile extends StatelessWidget {
         ? '(No messages yet)'
         : row.lastMessage.trim();
 
-    final isHomework = row.type == 'homework';
+    final isHomework = row.isHomework;
     final parts = _hwParts(subject);
     final hwCourse = parts.isNotEmpty ? parts.first : 'Homework';
     final hwDate = parts.length >= 2 ? parts[1] : '';
@@ -1916,6 +1914,14 @@ class _TopicRow {
   final int? deletedAtMs;
   final String type;
 
+  bool get isHomework {
+    if (type.toLowerCase() == 'homework') return true;
+    final s = subject.trim().toLowerCase();
+    if (s.startsWith('[hw]')) return true;
+    if (s.contains('homework')) return true;
+    return false;
+  }
+
   factory _TopicRow.fromMap(String threadId, Map<String, dynamic> m) {
     int toInt(dynamic v) {
       if (v is int) return v;
@@ -1929,16 +1935,25 @@ class _TopicRow {
       return x == 0 ? null : x;
     }
 
+    final subject = (m['subject'] ?? '').toString();
+    final typeRaw = (m['type'] ?? '').toString().trim().toLowerCase();
+    final inferredType = (typeRaw.isNotEmpty)
+        ? typeRaw
+        : (subject.trim().toLowerCase().startsWith('[hw]') ||
+                  subject.toLowerCase().contains('homework')
+              ? 'homework'
+              : '');
+
     return _TopicRow(
       threadId: threadId,
       peerUid: (m['peerUid'] ?? '').toString(),
       peerName: (m['peerName'] ?? '').toString(),
-      subject: (m['subject'] ?? '').toString(),
+      subject: subject,
       lastMessage: (m['lastMessage'] ?? '').toString(),
       updatedAtMs: toInt(m['updatedAt']),
       unreadCount: toInt(m['unreadCount']),
       deletedAtMs: toIntN(m['deletedAt']),
-      type: (m['type'] ?? '').toString().trim(),
+      type: inferredType,
     );
   }
 }

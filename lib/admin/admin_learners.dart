@@ -589,7 +589,7 @@ class _LearnersListState extends State<_LearnersList>
     return token;
   }
 
-  String get _adminUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   Stream<int> _unreadForLearnerStream(String learnerUid) {
     final q = FirebaseDatabase.instance

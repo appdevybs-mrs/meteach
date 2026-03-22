@@ -153,6 +153,7 @@ class _TeacherClassProgressScreenState
         },
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
         _busy = false;

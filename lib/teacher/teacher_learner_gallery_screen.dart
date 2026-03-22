@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
+import '../services/backend_api.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 
@@ -33,12 +34,6 @@ class TeacherLearnerGalleryScreen extends StatefulWidget {
 
 class _TeacherLearnerGalleryScreenState
     extends State<TeacherLearnerGalleryScreen> {
-  static const String _uploadEndpoint =
-      'https://www.yourbridgeschool.com/app/upload.php';
-
-  static const String _uploadKeySha1 =
-      'a7a995d9c499128351d827eaad7285bcc891919b';
-
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool _uploadingPhoto = false;
@@ -97,10 +92,14 @@ class _TeacherLearnerGalleryScreenState
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
+    final request = http.MultipartRequest(
+      'POST',
+      BackendApi.uri('upload_secure.php'),
+    );
+    final authHeaders = await BackendApi.authHeaders();
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
-    request.fields['key'] = _uploadKeySha1;
+    request.headers.addAll(authHeaders);
     request.fields['app_id'] = _teacherAppId(user.uid);
 
     if (kIsWeb) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -50,9 +52,13 @@ class _AuthGateState extends State<AuthGate> {
 
         final user = authSnap.data;
         if (user == null) {
+          final previousUid = _sessionUid;
           _sessionStarted = false;
           _sessionUid = null;
           SessionManager.stopListening(); // stop session listener when signed out
+          if (previousUid != null && previousUid.isNotEmpty) {
+            unawaited(TopicService.clearForUser(previousUid));
+          }
           return widget.signedOutHome;
         }
 
@@ -249,8 +255,10 @@ class _AuthGateState extends State<AuthGate> {
                   });
                 }
 
-                TopicService.subscribeForRole(role: role);
-                FCMService.syncTokenAfterLogin();
+                unawaited(
+                  TopicService.syncForCurrentUser(role: role, uid: uid),
+                );
+                unawaited(FCMService.syncTokenAfterLogin());
 
                 if (role == 'admin') return const AdminHome();
 

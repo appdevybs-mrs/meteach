@@ -100,7 +100,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   String _meDisplayName = 'Teacher';
   String _peerDisplayName = '';
 
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   String get _peerNameShown {
     final p = _peerDisplayName.trim();
@@ -258,10 +258,42 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return email;
   }
 
+  String _nameFromUserMap(Map<String, dynamic> m) {
+    final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+    final full = ('$first $last').trim();
+    if (full.isNotEmpty) return full;
+
+    final fallback =
+        (m['learnerName'] ?? m['peerName'] ?? m['name'] ?? m['email'] ?? '')
+            .toString()
+            .trim();
+    return fallback;
+  }
+
   Future<void> _loadNames() async {
     try {
       final me = await _fetchDisplayName(_meUid);
-      final peer = await _fetchDisplayName(widget.peerUid);
+      String peer = await _fetchDisplayName(widget.peerUid);
+
+      if (peer.trim().isEmpty) {
+        final idxSnap = await _indexRef
+            .child(_meUid)
+            .child(widget.threadId)
+            .get();
+        if (idxSnap.exists && idxSnap.value is Map) {
+          final m = Map<String, dynamic>.from(idxSnap.value as Map);
+          peer = _nameFromUserMap(m);
+        }
+      }
+
+      if (peer.trim().isEmpty) {
+        final tSnap = await _threadRef.get();
+        if (tSnap.exists && tSnap.value is Map) {
+          final m = Map<String, dynamic>.from(tSnap.value as Map);
+          peer = _nameFromUserMap(m);
+        }
+      }
 
       if (!mounted) return;
       setState(() {
@@ -735,7 +767,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         'lastMessage': preview80,
         'unreadCount': 0,
         'peerUid': widget.peerUid,
-        'peerName': widget.peerName,
+        'peerName': _peerNameShown,
         'deletedAt': null,
       });
 
@@ -1975,9 +2007,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               });
             }
 
-            scoreC.removeListener(recalcGradeFromText);
-            scoreC.addListener(recalcGradeFromText);
-
             return Dialog(
               insetPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -2141,6 +2170,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
                             TextField(
                               controller: scoreC,
+                              onChanged: (_) => recalcGradeFromText(),
                               keyboardType: TextInputType.number,
                               decoration: InputDecoration(
                                 labelText: 'Score (0-100)',
@@ -2514,7 +2544,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ),
       );
 
-      if (ok != true) return;
+      if (ok != true) {
+        scoreC.dispose();
+        noteC.dispose();
+        return;
+      }
 
       int parsedScore = int.tryParse(scoreC.text.trim()) ?? 0;
       parsedScore = parsedScore.clamp(0, 100);
@@ -2585,6 +2619,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           });
 
       _snack('Saved + sent ✅');
+      scoreC.dispose();
+      noteC.dispose();
     } catch (e) {
       _snack(toHumanError(e));
     }
@@ -4422,20 +4458,17 @@ class MailUploadClient {
   MailUploadClient({
     required this.endpoint,
     required this.appId,
-    required this.key,
     http.Client? httpClient,
   }) : _http = httpClient ?? http.Client();
 
   final String endpoint;
   final String appId;
-  final String key;
   final http.Client _http;
 
   factory MailUploadClient.defaultClient() {
     return MailUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/upload.php',
+      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
       appId: 'dreamenglishacademy',
-      key: 'a7a995d9c499128351d827eaad7285bcc891919b',
     );
   }
 
@@ -4444,10 +4477,16 @@ class MailUploadClient {
     required String filename,
   }) async {
     final uri = Uri.parse(endpoint);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await user.getIdToken(true);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Uid': user.uid,
+      })
       ..fields['app_id'] = appId
       ..files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
@@ -4476,10 +4515,16 @@ class MailUploadClient {
     required String filename,
   }) async {
     final uri = Uri.parse(endpoint);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await user.getIdToken(true);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Uid': user.uid,
+      })
       ..fields['app_id'] = appId
       ..files.add(
         await http.MultipartFile.fromPath('file', path, filename: filename),

@@ -5,6 +5,8 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'fcm_service.dart';
+
 /// Background handler for notification taps/actions (Android).
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) async {
@@ -356,7 +358,7 @@ class NotificationService {
     // If user tapped "Dismiss" we do nothing (just closes notif).
     if (actionId == 'DISMISS') return;
 
-    // Only snooze actions need payload data.
+    // Most actions need payload.
     if (payload == null || payload.isEmpty) return;
 
     Map<String, dynamic> data;
@@ -366,7 +368,15 @@ class NotificationService {
       return;
     }
 
-    if (data['type'] != 'session') return;
+    final type = (data['type'] ?? '').toString().trim().toLowerCase();
+
+    // Normal notification tap (non-action button): open target screen.
+    if (actionId.isEmpty) {
+      await FCMService.I.handleLocalNotificationTapPayload(data);
+      return;
+    }
+
+    if (type != 'session') return;
 
     final sessionStartStr = (data['sessionStart'] ?? '').toString();
     final classId = (data['classId'] ?? '').toString();

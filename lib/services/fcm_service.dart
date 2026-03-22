@@ -9,9 +9,17 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../admin/admin_classes.dart';
+import '../admin/admin_payments.dart';
+import '../admin/admin_teacher_reminders_screen.dart';
 import '../admin/admin_teacher_mail_thread_screen.dart'; // keep (project safety)
+import '../learner/learner_booking_screen.dart';
+import '../learner/learner_courses_screen.dart';
+import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../main.dart'; // appNavigatorKey + messengerKey
+import '../teacher/teacher_reminder.dart';
+import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail_thread_screen.dart';
 import 'mail_thread_by_id_screen.dart'; // safe fallback only
 import 'route_state.dart';
@@ -33,12 +41,16 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class FCMService {
   FCMService._();
   static final FCMService I = FCMService._();
+  static String? _lastSavedUid;
+  static String? _lastSavedToken;
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 
   bool _localInited = false;
+  bool _initialized = false;
+  final Set<String> _handledTapKeys = <String>{};
 
   static const String chMessages = 'ch_messages';
   static const String chReminders = 'ch_reminders';
@@ -53,12 +65,18 @@ class FCMService {
     final token = await FirebaseMessaging.instance.getToken();
 
     if (token != null && token.isNotEmpty) {
+      if (_lastSavedUid == uid && _lastSavedToken == token) return;
       await saveTokenToDatabase(token);
+      _lastSavedUid = uid;
+      _lastSavedToken = token;
     }
   }
 
   /// Call once in main()
   Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
+
     await _requestPermission();
     await _ensureLocalInit();
 
@@ -78,6 +96,8 @@ class FCMService {
 
     _messaging.onTokenRefresh.listen((newToken) async {
       await saveTokenToDatabase(newToken);
+      _lastSavedUid = FirebaseAuth.instance.currentUser?.uid;
+      _lastSavedToken = newToken;
     });
 
     // Foreground push
@@ -203,6 +223,8 @@ class FCMService {
   }
 
   Future<void> _showFromRemoteMessage(RemoteMessage message) async {
+    if (kIsWeb) return;
+
     final data = Map<String, dynamic>.from(message.data);
     final type = (data['type'] ?? '').toString().toLowerCase();
 
@@ -225,7 +247,15 @@ class FCMService {
       channelName = 'Mail';
     }
 
-    int notifId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final String seed = [
+      (data['type'] ?? '').toString(),
+      (data['threadId'] ?? '').toString(),
+      (data['reminderId'] ?? '').toString(),
+      (data['courseId'] ?? '').toString(),
+      (message.messageId ?? '').toString(),
+      DateTime.now().millisecondsSinceEpoch.toString(),
+    ].join('|');
+    final int notifId = seed.hashCode.abs() % 2147483647;
 
     await _local.show(
       id: notifId,
@@ -277,8 +307,16 @@ class FCMService {
   }
 
   Future<String> _fetchCurrentUserRole() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
     if (uid == null || uid.trim().isEmpty) return '';
+
+    try {
+      final token = await user?.getIdTokenResult(true);
+      final claimRole = token?.claims?['role'];
+      final normalizedClaimRole = _normalizeRole(claimRole);
+      if (normalizedClaimRole.isNotEmpty) return normalizedClaimRole;
+    } catch (_) {}
 
     try {
       final snap = await FirebaseDatabase.instance.ref('users/$uid/role').get();
@@ -359,7 +397,7 @@ class FCMService {
     if (threadId.isEmpty || peerUid.isEmpty) return;
     if (RouteState.currentMailThreadId == threadId) return;
 
-    final nav = appNavigatorKey.currentState;
+    final nav = await _waitForNavigator();
     if (nav == null) return;
 
     final targetName = '/mail/thread/$threadId';
@@ -443,36 +481,199 @@ class FCMService {
     );
   }
 
+  Future<NavigatorState?> _waitForNavigator() async {
+    for (int i = 0; i < 8; i++) {
+      final nav = appNavigatorKey.currentState;
+      if (nav != null) return nav;
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+    }
+    return appNavigatorKey.currentState;
+  }
+
+  Future<void> _openReminderByRole(Map<String, dynamic> data) async {
+    final role = await _fetchCurrentUserRole();
+    final route = (data['route'] ?? '').toString().trim().toLowerCase();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (role == 'teacher' || route == 'teacher_reminders') {
+      nav.push(
+        MaterialPageRoute(builder: (_) => const TeacherReminderScreen()),
+      );
+      return;
+    }
+
+    if (role == 'learner' || route == 'learner') {
+      nav.push(
+        MaterialPageRoute(builder: (_) => const LearnerRemindersListScreen()),
+      );
+      return;
+    }
+
+    if (role == 'admin') {
+      nav.push(
+        MaterialPageRoute(builder: (_) => const AdminTeacherRemindersScreen()),
+      );
+    }
+  }
+
+  Future<void> _openBookingByRole(Map<String, dynamic> data) async {
+    final role = await _fetchCurrentUserRole();
+    final targetRole = _normalizeRole(data['targetRole']);
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (role == 'admin' || targetRole == 'admin') {
+      nav.push(MaterialPageRoute(builder: (_) => const AdminClassesScreen()));
+      return;
+    }
+
+    if (role == 'teacher' || targetRole == 'teacher') {
+      nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
+      return;
+    }
+
+    final courseId = (data['courseId'] ?? '').toString().trim();
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            LearnerBookingScreen(courseId: courseId.isEmpty ? null : courseId),
+      ),
+    );
+  }
+
+  Future<void> _openPaymentByRole(Map<String, dynamic> data) async {
+    final role = await _fetchCurrentUserRole();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (role == 'admin') {
+      nav.push(MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()));
+      return;
+    }
+
+    final courseKey = (data['courseId'] ?? data['courseKey'] ?? '')
+        .toString()
+        .trim();
+
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => LearnerCoursesScreen(
+          initialCourseKey: courseKey.isEmpty ? null : courseKey,
+        ),
+      ),
+    );
+  }
+
+  String _payloadAction(Map<String, dynamic> data) {
+    final route = (data['route'] ?? '').toString().trim().toLowerCase();
+    final type = (data['type'] ?? '').toString().trim().toLowerCase();
+
+    if (route == 'mail_thread' || type == 'mail' || type == 'email') {
+      return 'mail';
+    }
+    if (route == 'teacher_reminders' || type == 'reminder') {
+      return 'reminder';
+    }
+    if (type == 'booking') {
+      return 'booking';
+    }
+    if (type == 'payment') {
+      return 'payment';
+    }
+    return '';
+  }
+
+  String _tapDedupKey(Map<String, dynamic> data) {
+    final action = _payloadAction(data);
+    if (action.isEmpty) return '';
+
+    final id = [
+      action,
+      (data['threadId'] ?? '').toString(),
+      (data['reminderId'] ?? '').toString(),
+      (data['courseId'] ?? '').toString(),
+      (data['teacherUid'] ?? '').toString(),
+      (data['learnerUid'] ?? '').toString(),
+      (data['time'] ?? '').toString(),
+      (data['dayKey'] ?? '').toString(),
+    ].join('|');
+
+    return id;
+  }
+
   void _handleNotificationTapPayload(String payload) {
     Map<String, dynamic> data;
     try {
-      data = jsonDecode(payload) as Map<String, dynamic>;
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map) return;
+      data = Map<String, dynamic>.from(decoded);
     } catch (_) {
       return;
     }
 
-    final type = (data['type'] ?? '').toString().toLowerCase();
-
-    // Mail
-    if (type == 'mail' || type == 'email') {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await _openMailNotificationByRole(data);
-      });
+    final dedupKey = _tapDedupKey(data);
+    if (dedupKey.isNotEmpty && _handledTapKeys.contains(dedupKey)) {
       return;
     }
 
-    // Payments
-    if (type == 'payment') {
-      void go() {
-        final nav = appNavigatorKey.currentState;
-        if (nav == null) return;
-        nav.pushNamed('/payments');
+    if (dedupKey.isNotEmpty) {
+      _handledTapKeys.add(dedupKey);
+      if (_handledTapKeys.length > 60) {
+        _handledTapKeys.remove(_handledTapKeys.first);
       }
+    }
 
-      WidgetsBinding.instance.addPostFrameCallback((_) => go());
+    final action = _payloadAction(data);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (action == 'mail') {
+        await _openMailNotificationByRole(data);
+        return;
+      }
+      if (action == 'reminder') {
+        await _openReminderByRole(data);
+        return;
+      }
+      if (action == 'booking') {
+        await _openBookingByRole(data);
+        return;
+      }
+      if (action == 'payment') {
+        await _openPaymentByRole(data);
+      }
+    });
+  }
+
+  Future<void> handleLocalNotificationTapPayload(
+    Map<String, dynamic> data,
+  ) async {
+    final type = (data['type'] ?? '').toString().trim().toLowerCase();
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+
+    if (type == 'session') {
+      final role = await _fetchCurrentUserRole();
+      if (role == 'teacher') {
+        nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
+      } else {
+        final classId = (data['classId'] ?? '').toString();
+        final maybeCourseId = classId.split('_').first.trim();
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => LearnerBookingScreen(
+              courseId: maybeCourseId.isEmpty ? null : maybeCourseId,
+            ),
+          ),
+        );
+      }
       return;
     }
 
-    return;
+    if (type == 'coach') {
+      nav.push(
+        MaterialPageRoute(builder: (_) => const LearnerRemindersListScreen()),
+      );
+    }
   }
 }

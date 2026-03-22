@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -8,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 
@@ -30,12 +30,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   String _genreFilter = 'all';
   String _sortBy = 'updated_desc';
 
-  static const String _secret = 'my_super_secret_key';
   static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
 
   static const String _deleteUrl =
-      'https://www.yourbridgeschool.com/api/admin/delete_item.php';
+      'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
 
   static const List<String> _genreOptions = [
     'Adventure',
@@ -87,11 +86,6 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     super.dispose();
   }
 
-  String _sha1(String s) {
-    final bytes = utf8.encode(s);
-    return crypto.sha1.convert(bytes).toString();
-  }
-
   String _safeFolderName(String value) {
     final cleaned = value
         .trim()
@@ -137,8 +131,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     final picked = result.files.single;
     final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
+    req.headers.addAll(await BackendApi.authHeaders());
 
-    req.fields['key'] = _sha1(_secret);
     req.fields['root'] = 'stories';
     req.fields['path'] = folderPath;
 
@@ -189,9 +183,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   }
 
   Future<void> _deleteFromServer({required String folderPath}) async {
+    final headers = await BackendApi.authHeaders();
     final response = await http.post(
       Uri.parse(_deleteUrl),
-      body: {'key': _sha1(_secret), 'root': 'stories', 'path': folderPath},
+      headers: headers,
+      body: {'root': 'stories', 'path': folderPath},
     );
 
     final raw = response.body.trim();

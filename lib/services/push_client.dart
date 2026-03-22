@@ -2,16 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// Calls your PHP endpoint: https://www.yourbridgeschool.com/app/push.php
+import 'backend_api.dart';
+
 class PushClient {
-  // ✅ Use the FINAL working URL (with www)
-  static const String _endpoint =
-      'https://www.yourbridgeschool.com/app/push.php';
-
-  // ✅ Must match your push.php $SHARED_SECRET exactly
-  static const String _secret =
-      'dea_2026_SUPER_SECRET_9f2b7c3e1a8d4c6f7a9b0c2d';
-
   static const Duration _timeout = Duration(seconds: 12);
 
   static Map<String, String> _stringifyData(Map<String, dynamic> data) {
@@ -40,13 +33,12 @@ class PushClient {
       'data': _stringifyData(data),
     };
 
+    final headers = await BackendApi.authHeaders(json: true);
+
     final res = await http
         .post(
-          Uri.parse(_endpoint),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-App-Secret': _secret, // ✅ your PHP checks this header
-          },
+          BackendApi.uri('push_secure.php'),
+          headers: headers,
           body: jsonEncode(body),
         )
         .timeout(_timeout);
@@ -82,13 +74,12 @@ class PushClient {
       'data': _stringifyData(data),
     };
 
+    final headers = await BackendApi.authHeaders(json: true);
+
     final res = await http
         .post(
-          Uri.parse(_endpoint),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-App-Secret': _secret,
-          },
+          BackendApi.uri('push_secure.php'),
+          headers: headers,
           body: jsonEncode(body),
         )
         .timeout(_timeout);

@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -8,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 
@@ -70,18 +70,17 @@ class _FileBrowser extends StatefulWidget {
 
 class _FileBrowserState extends State<_FileBrowser>
     with AutomaticKeepAliveClientMixin {
-  static const String secret = 'my_super_secret_key';
   static const String baseDomain = 'https://www.yourbridgeschool.com';
   static const String listUrl =
-      'https://www.yourbridgeschool.com/api/admin/list_items.php';
+      'https://www.yourbridgeschool.com/app/secure/list_items_secure.php';
   static const String createFolderUrl =
-      'https://www.yourbridgeschool.com/api/admin/create_folder.php';
+      'https://www.yourbridgeschool.com/app/secure/create_folder_secure.php';
   static const String uploadUrl =
-      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
   static const String renameUrl =
-      'https://www.yourbridgeschool.com/api/admin/rename_item.php';
+      'https://www.yourbridgeschool.com/app/secure/rename_item_secure.php';
   static const String deleteUrl =
-      'https://www.yourbridgeschool.com/api/admin/delete_item.php';
+      'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
 
   List<Map<String, dynamic>> items = [];
   String path = '';
@@ -90,11 +89,6 @@ class _FileBrowserState extends State<_FileBrowser>
 
   @override
   bool get wantKeepAlive => true;
-
-  String sha1(String s) {
-    final bytes = utf8.encode(s);
-    return crypto.sha1.convert(bytes).toString();
-  }
 
   String _joinPath(String parent, String name) {
     if (parent.trim().isEmpty) return name;
@@ -117,7 +111,8 @@ class _FileBrowserState extends State<_FileBrowser>
     required String url,
     required Map<String, String> body,
   }) async {
-    final r = await http.post(Uri.parse(url), body: body);
+    final headers = await BackendApi.authHeaders();
+    final r = await http.post(Uri.parse(url), body: body, headers: headers);
 
     final raw = r.body.trim();
     if (!raw.startsWith('{')) {
@@ -144,7 +139,7 @@ class _FileBrowserState extends State<_FileBrowser>
     try {
       final data = await _postForm(
         url: listUrl,
-        body: {'key': sha1(secret), 'root': widget.root, 'path': path},
+        body: {'root': widget.root, 'path': path},
       );
 
       if (!mounted) return;
@@ -230,7 +225,6 @@ class _FileBrowserState extends State<_FileBrowser>
                   final data = await _postForm(
                     url: createFolderUrl,
                     body: {
-                      'key': sha1(secret),
                       'root': widget.root,
                       'parent': path,
                       'folder': folderName,
@@ -295,7 +289,6 @@ class _FileBrowserState extends State<_FileBrowser>
                   final data = await _postForm(
                     url: renameUrl,
                     body: {
-                      'key': sha1(secret),
                       'root': widget.root,
                       'path': _joinPath(path, oldName),
                       'new_name': newName,
@@ -364,11 +357,7 @@ class _FileBrowserState extends State<_FileBrowser>
     try {
       final data = await _postForm(
         url: deleteUrl,
-        body: {
-          'key': sha1(secret),
-          'root': widget.root,
-          'path': _joinPath(path, itemName),
-        },
+        body: {'root': widget.root, 'path': _joinPath(path, itemName)},
       );
 
       if (data['success'] == true) {
@@ -402,7 +391,7 @@ class _FileBrowserState extends State<_FileBrowser>
       final picked = result.files.single;
 
       final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
-      req.fields['key'] = sha1(secret);
+      req.headers.addAll(await BackendApi.authHeaders());
       req.fields['root'] = widget.root;
       req.fields['path'] = path;
 
@@ -713,9 +702,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   String _categoryFilter = 'all';
   String _sortBy = 'updated_desc';
 
-  static const String _secret = 'my_super_secret_key';
   static const String _uploadUrl =
-      'https://www.yourbridgeschool.com/api/admin/upload_file.php';
+      'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
 
   DatabaseReference get _gamesRef => _db.child('games');
 
@@ -726,11 +714,6 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  String _sha1(String s) {
-    final bytes = utf8.encode(s);
-    return crypto.sha1.convert(bytes).toString();
   }
 
   String _safeFolderName(String value) {
@@ -761,8 +744,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
     final picked = result.files.single;
     final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
+    req.headers.addAll(await BackendApi.authHeaders());
 
-    req.fields['key'] = _sha1(_secret);
     req.fields['root'] = 'games';
     req.fields['path'] =
         'library/$ownerUid/$gameUid-${_safeFolderName(gameName)}';

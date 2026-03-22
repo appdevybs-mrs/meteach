@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/ybs_busy_logo.dart';
+import '../services/backend_api.dart';
 
 enum _LeaveChoice { save, discard, cancel }
 
@@ -65,12 +66,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   VideoPlayerController? _videoController;
   bool _videoReady = false;
-
-  static const String _uploadEndpoint =
-      'https://www.yourbridgeschool.com/app/upload.php';
-
-  static const String _uploadKeySha1 =
-      'a7a995d9c499128351d827eaad7285bcc891919b';
 
   static final RegExp _specialRegex = RegExp(
     r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]',
@@ -411,10 +406,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final user = _auth.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
+    final request = http.MultipartRequest(
+      'POST',
+      BackendApi.uri('upload_secure.php'),
+    );
+    final authHeaders = await BackendApi.authHeaders();
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
-    request.fields['key'] = _uploadKeySha1;
+    request.headers.addAll(authHeaders);
     request.fields['app_id'] = _teacherAppId(user.uid);
 
     if (kIsWeb) {
@@ -709,6 +708,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 await currentUser.updatePassword(newCtrl.text.trim());
 
                 if (!mounted) return;
+                if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Password updated ✅')),

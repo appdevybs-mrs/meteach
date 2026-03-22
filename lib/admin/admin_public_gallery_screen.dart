@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
+import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 
 class AdminPublicGalleryScreen extends StatefulWidget {
@@ -26,12 +27,6 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
   static const mainText = Color(0xFF2D2D2D);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
-
-  static const String _uploadEndpoint =
-      'https://www.yourbridgeschool.com/app/upload.php';
-
-  static const String _uploadKeySha1 =
-      'a7a995d9c499128351d827eaad7285bcc891919b';
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -101,10 +96,14 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
+    final request = http.MultipartRequest(
+      'POST',
+      BackendApi.uri('upload_secure.php'),
+    );
+    final authHeaders = await BackendApi.authHeaders();
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
-    request.fields['key'] = _uploadKeySha1;
+    request.headers.addAll(authHeaders);
     request.fields['app_id'] = _adminAppId(user.uid);
 
     if (kIsWeb) {
@@ -1106,12 +1105,6 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
 
-  static const String _uploadEndpoint =
-      'https://www.yourbridgeschool.com/app/upload.php';
-
-  static const String _uploadKeySha1 =
-      'a7a995d9c499128351d827eaad7285bcc891919b';
-
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool _uploadingPhoto = false;
@@ -1157,10 +1150,14 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
+    final request = http.MultipartRequest(
+      'POST',
+      BackendApi.uri('upload_secure.php'),
+    );
+    final authHeaders = await BackendApi.authHeaders();
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
-    request.fields['key'] = _uploadKeySha1;
+    request.headers.addAll(authHeaders);
     request.fields['app_id'] = _adminAppId(user.uid);
 
     if (kIsWeb) {

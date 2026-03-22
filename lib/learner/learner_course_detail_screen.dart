@@ -741,8 +741,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
       _attendanceAll = all;
 
+      if (!mounted) return;
       setState(() => _busy = false);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
         _busy = false;

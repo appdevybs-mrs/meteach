@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -1554,29 +1555,32 @@ class ReminderUploadClient {
   ReminderUploadClient({
     required this.endpoint,
     required this.appId,
-    required this.key,
     http.Client? httpClient,
   }) : _http = httpClient ?? http.Client();
 
   final String endpoint;
   final String appId;
-  final String key;
   final http.Client _http;
 
   factory ReminderUploadClient.defaultClient() {
     return ReminderUploadClient(
-      endpoint: 'https://www.yourbridgeschool.com/app/upload.php',
+      endpoint: 'https://www.yourbridgeschool.com/app/secure/upload_secure.php',
       appId: 'dreamenglishacademy',
-      key: 'a7a995d9c499128351d827eaad7285bcc891919b',
     );
   }
 
   Future<String> uploadFile({required File file}) async {
     final uri = Uri.parse(endpoint);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await user.getIdToken(true);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
-      ..fields['key'] = key
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Uid': user.uid,
+      })
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 

@@ -13,7 +13,7 @@ class MailInboxScreen extends StatefulWidget {
 
 class _MailInboxScreenState extends State<MailInboxScreen> {
   final _db = FirebaseDatabase.instance;
-  String get _meUid => FirebaseAuth.instance.currentUser!.uid;
+  String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   DatabaseReference get _indexRef => _db.ref('mail_index');
 
