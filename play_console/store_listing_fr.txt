@@ -1,0 +1,17 @@
+NOM DE L'APPLICATION
+Taqyim DZ
+
+DESCRIPTION COURTE (80 max)
+Edition securisee des carnets de notes pour enseignants algeriens.
+
+DESCRIPTION COMPLETE
+Taqyim DZ aide les enseignants en Algerie a modifier rapidement et en toute securite les carnets de notes Excel officiels proteges.
+
+Fonctionnalites principales:
+- Ouverture des fichiers .xlsx proteges
+- Edition limitee aux cellules autorisees (notes/remarques)
+- Regles de remarques selon intervalles de notes
+- Validation des notes manquantes ou invalides
+- Export avec preservation de la structure du classeur
+- Reouverture des classeurs et sauvegardes locales
+- Interface en arabe, francais et anglais

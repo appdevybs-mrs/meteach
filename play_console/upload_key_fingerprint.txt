@@ -1,0 +1,26 @@
+Alias name: upload
+Creation date: Mar 22, 2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=Seddik Bouyakoub, OU=Intilak, O=Intilak, L=Algiers, ST=Algiers, C=DZ
+Issuer: CN=Seddik Bouyakoub, OU=Intilak, O=Intilak, L=Algiers, ST=Algiers, C=DZ
+Serial number: 680cd8938905facf
+Valid from: Sun Mar 22 20:48:34 CET 2026 until: Thu Aug 07 20:48:34 CET 2053
+Certificate fingerprints:
+	 SHA1: 98:91:66:71:E6:78:FE:99:37:B8:50:67:B2:86:B0:20:FC:4C:2D:A1
+	 SHA256: B6:0D:FD:90:0B:70:E3:A6:8E:9D:12:46:8A:B8:6E:6B:53:FE:F4:2C:AD:A2:FD:77:D0:5C:AC:09:BE:EB:B3:65
+Signature algorithm name: SHA256withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 8C 14 DA EE 1A 9C C1 24   CC 48 F7 B5 06 29 8D D9  .......$.H...)..
+0010: 3E 8A 70 CB                                        >.p.
+]
+]
+

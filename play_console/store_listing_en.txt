@@ -1,0 +1,19 @@
+APP NAME
+Taqyim DZ
+
+SHORT DESCRIPTION (80 max)
+Safe gradebook editing for Algerian teachers.
+
+FULL DESCRIPTION
+Taqyim DZ helps teachers in Algeria edit official protected Excel gradebooks faster and safely.
+
+Key features:
+- Open protected .xlsx gradebooks
+- Edit only allowed score and remark fields
+- Create score-to-remark rules and apply in bulk
+- Validate missing or invalid scores before export
+- Export with workbook structure preservation
+- Reopen saved local workbooks and backups
+- Works in Arabic, French, and English
+
+Designed for teacher workflows: quick editing, fewer mistakes, and reliable export compatibility.

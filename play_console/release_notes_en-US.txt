@@ -1,0 +1,6 @@
+Initial public release of Taqyim DZ.
+
+- Safe editing of protected official gradebook files
+- Bulk remark rules and validation tools
+- Arabic, French, and English interface
+- Local backups and workbook reopen support
