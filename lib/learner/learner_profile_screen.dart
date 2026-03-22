@@ -10,6 +10,9 @@ import 'package:http/http.dart' as http;
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
+import '../shared/ybs_busy_logo.dart';
+
+enum _LeaveChoice { save, discard, cancel }
 
 class _BioChoice {
   final String ar;
@@ -55,6 +58,19 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   String? _profilePhotoUrl;
   final List<String> _photoUrls = [];
+
+  String _initialFirstName = '';
+  String _initialLastName = '';
+  String _initialPhone1 = '';
+  String _initialPhone2 = '';
+  String _initialDob = '';
+  String _initialAboutMe = '';
+  String _initialProfilePhotoUrl = '';
+  List<String> _initialPhotoUrls = const [];
+  Set<String> _initialHobbiesAr = const <String>{};
+  Set<String> _initialLearningAr = const <String>{};
+  Set<String> _initialTraitsAr = const <String>{};
+  String _initialGoalAr = '';
 
   static const int _maxExtraPhotos = 6;
 
@@ -721,6 +737,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       }
 
       await _loadSmallStats();
+      _captureInitialState();
     } catch (e) {
       _error = toHumanError(e);
     } finally {
@@ -728,14 +745,14 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     }
   }
 
-  Future<void> _save() async {
+  Future<bool> _save({bool showSuccessSnackBar = true}) async {
     FocusScope.of(context).unfocus();
 
     setState(() {
       _error = null;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return false;
 
     setState(() => _busy = true);
 
@@ -756,15 +773,127 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       await _usersRef.child(_uid).update(updates);
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Profile updated ✅')));
+      if (!mounted) return true;
+      if (showSuccessSnackBar) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Profile updated ✅')));
+      }
       await _load();
+      return true;
     } catch (e) {
       if (mounted) setState(() => _error = toHumanError(e));
+      return false;
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _captureInitialState() {
+    _initialFirstName = _fn.text.trim();
+    _initialLastName = _ln.text.trim();
+    _initialPhone1 = _phone1.text.trim();
+    _initialPhone2 = _phone2.text.trim();
+    _initialDob = _dob.text.trim();
+    _initialAboutMe = _aboutMe.text.trim();
+    _initialProfilePhotoUrl = (_profilePhotoUrl ?? '').trim();
+    _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
+    _initialHobbiesAr = Set<String>.from(_selectedHobbiesAr);
+    _initialLearningAr = Set<String>.from(_selectedLearningAr);
+    _initialTraitsAr = Set<String>.from(_selectedTraitsAr);
+    _initialGoalAr = (_selectedGoalAr ?? '').trim();
+  }
+
+  bool get _hasUnsavedChanges {
+    if (_fn.text.trim() != _initialFirstName) return true;
+    if (_ln.text.trim() != _initialLastName) return true;
+    if (_phone1.text.trim() != _initialPhone1) return true;
+    if (_phone2.text.trim() != _initialPhone2) return true;
+    if (_dob.text.trim() != _initialDob) return true;
+    if (_aboutMe.text.trim() != _initialAboutMe) return true;
+    if ((_profilePhotoUrl ?? '').trim() != _initialProfilePhotoUrl) return true;
+    if (!listEquals(
+      _photoUrls.map((e) => e.trim()).toList(),
+      _initialPhotoUrls,
+    )) {
+      return true;
+    }
+    if (!setEquals(_selectedHobbiesAr, _initialHobbiesAr)) return true;
+    if (!setEquals(_selectedLearningAr, _initialLearningAr)) return true;
+    if (!setEquals(_selectedTraitsAr, _initialTraitsAr)) return true;
+    if ((_selectedGoalAr ?? '').trim() != _initialGoalAr) return true;
+    return false;
+  }
+
+  Future<_LeaveChoice> _askUnsavedChangesAction() async {
+    final p = palette;
+    final choice = await showDialog<_LeaveChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: p.cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          'Unsaved changes',
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          'You have profile changes. Save before leaving or discard them?',
+          style: TextStyle(color: p.text.withOpacity(0.8)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LeaveChoice.cancel),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LeaveChoice.discard),
+            child: Text(
+              'Discard',
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: p.accent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, _LeaveChoice.save),
+            child: const Text('Save & exit'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _LeaveChoice.cancel;
+  }
+
+  Future<void> _handleBackNavigation() async {
+    if (_busy || !_hasUnsavedChanges) {
+      if (!_busy && mounted) Navigator.of(context).pop();
+      return;
+    }
+
+    final choice = await _askUnsavedChangesAction();
+    if (!mounted) return;
+
+    if (choice == _LeaveChoice.discard) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    if (choice == _LeaveChoice.save) {
+      final saved = await _save(showSuccessSnackBar: false);
+      if (saved && mounted) {
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -1631,9 +1760,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                        child: YbsBusyLogo(
+                          size: 16,
                           color: Colors.white,
+                          strokeWidth: 2,
                         ),
                       )
                     : const Icon(Icons.add_a_photo_rounded),
@@ -1753,7 +1883,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   border: Border.all(color: p.border),
                 ),
                 child: _uploadingExtraPhotos
-                    ? Center(child: CircularProgressIndicator(color: p.primary))
+                    ? Center(child: YbsBusyLogo(color: p.primary))
                     : Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1946,23 +2076,6 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.save_rounded),
-                  label: const Text('Save'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: p.accent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  onPressed: _busy ? null : _save,
-                ),
-              ),
             ],
           ),
         ),
@@ -1991,80 +2104,99 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        backgroundColor: p.appBg,
-        resizeToAvoidBottomInset: true,
-        appBar: AppBar(
-          backgroundColor: p.cardBg,
-          elevation: 0,
-          surfaceTintColor: p.cardBg,
-          iconTheme: IconThemeData(color: p.primary),
-          title: Text(
-            'My Profile',
-            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Refresh',
-              icon: Icon(Icons.refresh_rounded, color: p.accent),
-              onPressed: _busy ? null : _load,
+      child: PopScope(
+        canPop: !_hasUnsavedChanges && !_busy,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop || !mounted || _busy) return;
+          await _handleBackNavigation();
+        },
+        child: Scaffold(
+          backgroundColor: p.appBg,
+          resizeToAvoidBottomInset: true,
+          appBar: AppBar(
+            backgroundColor: p.cardBg,
+            elevation: 0,
+            surfaceTintColor: p.cardBg,
+            iconTheme: IconThemeData(color: p.primary),
+            title: Text(
+              'My Profile',
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
             ),
-          ],
-          bottom: TabBar(
-            dividerColor: Colors.transparent,
-            labelColor: p.primary,
-            unselectedLabelColor: p.text.withOpacity(0.62),
-            indicator: UnderlineTabIndicator(
-              borderSide: BorderSide(color: p.accent, width: 3),
-              insets: const EdgeInsets.symmetric(horizontal: 20),
-            ),
-            tabs: const [
-              Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),
-              Tab(icon: Icon(Icons.perm_media_rounded), text: 'Media & Bio'),
+            actions: [
+              IconButton(
+                tooltip: 'Save',
+                onPressed: _busy ? null : _save,
+                icon: _busy
+                    ? Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: YbsBusyLogo(size: 18, color: p.accent),
+                      )
+                    : Icon(Icons.save_rounded, color: p.accent),
+              ),
+              IconButton(
+                tooltip: 'Refresh',
+                icon: Icon(Icons.refresh_rounded, color: p.accent),
+                onPressed: _busy ? null : _load,
+              ),
             ],
+            bottom: TabBar(
+              dividerColor: Colors.transparent,
+              labelColor: p.primary,
+              unselectedLabelColor: p.text.withOpacity(0.62),
+              indicator: UnderlineTabIndicator(
+                borderSide: BorderSide(color: p.accent, width: 3),
+                insets: const EdgeInsets.symmetric(horizontal: 20),
+              ),
+              tabs: const [
+                Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),
+                Tab(icon: Icon(Icons.perm_media_rounded), text: 'Media & Bio'),
+              ],
+            ),
           ),
-        ),
-        body: SafeArea(
-          child: WatermarkBackground(
-            child: _busy
-                ? Center(child: CircularProgressIndicator(color: p.primary))
-                : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: p.border.withOpacity(0.85)),
-                        ),
-                        child: Text(
-                          _error!,
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontWeight: FontWeight.w800,
+          body: SafeArea(
+            child: WatermarkBackground(
+              child: _busy
+                  ? Center(child: YbsBusyLogo(color: p.primary))
+                  : _error != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: p.cardBg,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
                           ),
-                          textAlign: TextAlign.center,
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ),
+                    )
+                  : Form(
+                      key: _formKey,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      child: TabBarView(
+                        children: [
+                          _buildCredentialsTab(
+                            email: email,
+                            serial: serial,
+                            role: role,
+                            status: status,
+                          ),
+                          _buildMediaTab(),
+                        ],
+                      ),
                     ),
-                  )
-                : Form(
-                    key: _formKey,
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    child: TabBarView(
-                      children: [
-                        _buildCredentialsTab(
-                          email: email,
-                          serial: serial,
-                          role: role,
-                          status: status,
-                        ),
-                        _buildMediaTab(),
-                      ],
-                    ),
-                  ),
+            ),
           ),
         ),
       ),

@@ -11,6 +11,9 @@ import 'package:video_player/video_player.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/ybs_busy_logo.dart';
+
+enum _LeaveChoice { save, discard, cancel }
 
 class TeacherProfileScreen extends StatefulWidget {
   const TeacherProfileScreen({super.key});
@@ -50,6 +53,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   final List<String> _photoUrls = [];
   String? _introVideoUrl;
+
+  String _initialFirstName = '';
+  String _initialLastName = '';
+  String _initialPhone1 = '';
+  String _initialPhone2 = '';
+  String _initialDob = '';
+  String _initialGoogleMeetUrl = '';
+  List<String> _initialPhotoUrls = const [];
+  String _initialIntroVideoUrl = '';
 
   VideoPlayerController? _videoController;
   bool _videoReady = false;
@@ -161,6 +173,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       } else {
         await _disposeVideoController();
       }
+
+      _captureInitialState();
     } catch (e) {
       _error = toHumanError(e);
     } finally {
@@ -243,7 +257,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (mounted) setState(() {});
   }
 
-  Future<void> _save() async {
+  Future<bool> _save({bool showSuccessMessage = true}) async {
     FocusScope.of(context).unfocus();
 
     setState(() {
@@ -252,7 +266,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     });
 
     final formState = _formKey.currentState;
-    if (formState != null && !formState.validate()) return;
+    if (formState != null && !formState.validate()) return false;
 
     setState(() => _busy = true);
 
@@ -274,15 +288,119 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       });
 
       if (mounted) {
-        setState(() => _ok = 'Profile saved successfully ✅');
+        setState(() {
+          _ok = showSuccessMessage ? 'Profile saved successfully ✅' : null;
+        });
+        _captureInitialState();
       }
+      return true;
     } catch (e) {
       if (mounted) {
         setState(() => _error = toHumanError(e));
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() => _busy = false);
+      }
+    }
+  }
+
+  void _captureInitialState() {
+    _initialFirstName = _firstNameCtrl.text.trim();
+    _initialLastName = _lastNameCtrl.text.trim();
+    _initialPhone1 = _phone1Ctrl.text.trim();
+    _initialPhone2 = _phone2Ctrl.text.trim();
+    _initialDob = _dobCtrl.text.trim();
+    _initialGoogleMeetUrl = _googleMeetUrlCtrl.text.trim();
+    _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
+    _initialIntroVideoUrl = (_introVideoUrl ?? '').trim();
+  }
+
+  bool get _hasUnsavedChanges {
+    if (_firstNameCtrl.text.trim() != _initialFirstName) return true;
+    if (_lastNameCtrl.text.trim() != _initialLastName) return true;
+    if (_phone1Ctrl.text.trim() != _initialPhone1) return true;
+    if (_phone2Ctrl.text.trim() != _initialPhone2) return true;
+    if (_dobCtrl.text.trim() != _initialDob) return true;
+    if (_googleMeetUrlCtrl.text.trim() != _initialGoogleMeetUrl) return true;
+    if (!listEquals(
+      _photoUrls.map((e) => e.trim()).toList(),
+      _initialPhotoUrls,
+    )) {
+      return true;
+    }
+    if ((_introVideoUrl ?? '').trim() != _initialIntroVideoUrl) return true;
+    return false;
+  }
+
+  Future<_LeaveChoice> _askUnsavedChangesAction() async {
+    final choice = await showDialog<_LeaveChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: p.cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          'Unsaved changes',
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          'You have profile changes. Save before leaving or discard them?',
+          style: TextStyle(color: p.text.withOpacity(0.8)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LeaveChoice.cancel),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LeaveChoice.discard),
+            child: Text(
+              'Discard',
+              style: TextStyle(
+                color: Colors.red.shade700,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: p.accent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, _LeaveChoice.save),
+            child: const Text('Save & exit'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _LeaveChoice.cancel;
+  }
+
+  Future<void> _handleBackNavigation() async {
+    if (_busy || !_hasUnsavedChanges) {
+      if (!_busy && mounted) Navigator.of(context).pop();
+      return;
+    }
+
+    final choice = await _askUnsavedChangesAction();
+    if (!mounted) return;
+
+    if (choice == _LeaveChoice.discard) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    if (choice == _LeaveChoice.save) {
+      final saved = await _save(showSuccessMessage: false);
+      if (saved && mounted) {
+        Navigator.of(context).pop();
       }
     }
   }
@@ -940,9 +1058,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     border: Border.all(color: p.border),
                   ),
                   child: _uploadingPhotos
-                      ? Center(
-                          child: CircularProgressIndicator(color: p.accent),
-                        )
+                      ? Center(child: YbsBusyLogo(color: p.accent))
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -1036,9 +1152,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       ? SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                          child: YbsBusyLogo(
+                            size: 18,
                             color: p.primary,
+                            strokeWidth: 2,
                           ),
                         )
                       : const Icon(Icons.upload_rounded),
@@ -1118,9 +1235,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         : const Center(
                             child: Padding(
                               padding: EdgeInsets.all(20),
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                              ),
+                              child: YbsBusyLogo(color: Colors.white),
                             ),
                           ),
                   ),
@@ -1153,9 +1268,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         ? SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                            child: YbsBusyLogo(
+                              size: 18,
                               color: p.primary,
+                              strokeWidth: 2,
                             ),
                           )
                         : const Icon(Icons.swap_horiz_rounded),
@@ -1561,107 +1677,108 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: p.appBg,
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: p.cardBg,
-        elevation: 0,
-        surfaceTintColor: p.cardBg,
-        iconTheme: IconThemeData(color: p.primary),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Teacher Profile',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Professional profile and media',
-              style: TextStyle(
-                color: p.text.withOpacity(0.65),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: Icon(Icons.refresh_rounded, color: p.accent),
-            onPressed: _busy ? null : _loadProfile,
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: p.primary,
-          unselectedLabelColor: p.text.withOpacity(0.65),
-          indicatorColor: p.accent,
-          tabs: const [
-            Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),
-            Tab(icon: Icon(Icons.perm_media_rounded), text: 'Profile Media'),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: p.accent,
-        foregroundColor: Colors.white,
-        onPressed: _busy ? null : _save,
-        icon: _busy
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
+    return PopScope(
+      canPop: !_hasUnsavedChanges && !_busy,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || !mounted || _busy) return;
+        await _handleBackNavigation();
+      },
+      child: Scaffold(
+        backgroundColor: p.appBg,
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          backgroundColor: p.cardBg,
+          elevation: 0,
+          surfaceTintColor: p.cardBg,
+          iconTheme: IconThemeData(color: p.primary),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Teacher Profile',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
                 ),
-              )
-            : const Icon(Icons.save_rounded),
-        label: Text(_busy ? 'Saving...' : 'Save Profile'),
-      ),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: 0.045,
-                  child: Center(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.76,
-                      child: Image.asset(
-                        'assets/images/ybs_logo.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Professional profile and media',
+                style: TextStyle(
+                  color: p.text.withOpacity(0.65),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Save',
+              onPressed: _busy ? null : _save,
+              icon: _busy
+                  ? Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: YbsBusyLogo(size: 18, color: p.accent),
+                    )
+                  : Icon(Icons.save_rounded, color: p.accent),
+            ),
+            IconButton(
+              tooltip: 'Refresh',
+              icon: Icon(Icons.refresh_rounded, color: p.accent),
+              onPressed: _busy ? null : _loadProfile,
+            ),
+          ],
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: p.primary,
+            unselectedLabelColor: p.text.withOpacity(0.65),
+            indicatorColor: p.accent,
+            tabs: const [
+              Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),
+              Tab(icon: Icon(Icons.perm_media_rounded), text: 'Profile Media'),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.045,
+                    child: Center(
+                      child: FractionallySizedBox(
+                        widthFactor: 0.76,
+                        child: Image.asset(
+                          'assets/images/ybs_logo.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Column(
-              children: [
-                if (_busy)
-                  LinearProgressIndicator(
-                    color: p.accent,
-                    backgroundColor: p.soft,
+              Column(
+                children: [
+                  if (_busy)
+                    LinearProgressIndicator(
+                      color: p.accent,
+                      backgroundColor: p.soft,
+                    ),
+                  _statusBanner(),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [_buildCredentialsTab(), _buildMediaTab()],
+                    ),
                   ),
-                _statusBanner(),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [_buildCredentialsTab(), _buildMediaTab()],
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

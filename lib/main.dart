@@ -16,6 +16,7 @@ import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
 import 'shared/human_error.dart';
+import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
 import 'package:video_player/video_player.dart';
 
@@ -940,7 +941,7 @@ class _JoinOnlineCircleEntryButtonState
                 if (!snap.hasData) {
                   return const SizedBox(
                     height: 260,
-                    child: Center(child: CircularProgressIndicator()),
+                    child: Center(child: YbsBusyLogo()),
                   );
                 }
 
@@ -1807,7 +1808,7 @@ class _PublicGalleryViewerVideoState extends State<_PublicGalleryViewerVideo> {
       return const SizedBox(
         width: 40,
         height: 40,
-        child: CircularProgressIndicator(color: Colors.white),
+        child: YbsBusyLogo(size: 36, color: Colors.white),
       );
     }
 
@@ -2477,7 +2478,7 @@ class _CoursesByCategory extends StatelessWidget {
           return const CardShell(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 10),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: YbsBusyLogo()),
             ),
           );
         }
@@ -3079,7 +3080,7 @@ class _ForceUpdateGateState extends State<ForceUpdateGate> {
   @override
   Widget build(BuildContext context) {
     if (_myBuild == null || _myVersion == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: YbsBusyLogo()));
     }
 
     final platformKey = kIsWeb
