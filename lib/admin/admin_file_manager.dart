@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 
 class AdminFileManager extends StatefulWidget {
@@ -50,13 +50,8 @@ class _AdminFileManagerState extends State<AdminFileManager>
       body: TabBarView(
         controller: _tabs,
         children: const [
-          _FileBrowser(
-            key: PageStorageKey('courses_tab'),
-            root: 'courses',
-          ),
-          _AdminGamesManager(
-            key: PageStorageKey('games_tab'),
-          ),
+          _FileBrowser(key: PageStorageKey('courses_tab'), root: 'courses'),
+          _AdminGamesManager(key: PageStorageKey('games_tab')),
         ],
       ),
     );
@@ -106,10 +101,7 @@ class _FileBrowserState extends State<_FileBrowser>
     return '$parent/$name';
   }
 
-  String _publicUrlForItem({
-    required String itemName,
-    required bool isFolder,
-  }) {
+  String _publicUrlForItem({required String itemName, required bool isFolder}) {
     final joined = _joinPath(path, itemName);
     final encodedSegments = joined
         .split('/')
@@ -152,11 +144,7 @@ class _FileBrowserState extends State<_FileBrowser>
     try {
       final data = await _postForm(
         url: listUrl,
-        body: {
-          'key': sha1(secret),
-          'root': widget.root,
-          'path': path,
-        },
+        body: {'key': sha1(secret), 'root': widget.root, 'path': path},
       );
 
       if (!mounted) return;
@@ -203,9 +191,9 @@ class _FileBrowserState extends State<_FileBrowser>
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(message))));
   }
 
   Future<void> _copyText(String text, String label) async {
@@ -223,9 +211,7 @@ class _FileBrowserState extends State<_FileBrowser>
           title: const Text('Create Folder'),
           content: TextField(
             controller: c,
-            decoration: const InputDecoration(
-              hintText: 'Folder name',
-            ),
+            decoration: const InputDecoration(hintText: 'Folder name'),
           ),
           actions: [
             TextButton(
@@ -323,9 +309,7 @@ class _FileBrowserState extends State<_FileBrowser>
                     await load(silent: true);
                     _showSnack('Renamed successfully');
                   } else {
-                    _showSnack(
-                      (data['message'] ?? 'Rename failed').toString(),
-                    );
+                    _showSnack((data['message'] ?? 'Rename failed').toString());
                   }
                 } catch (e) {
                   if (!mounted) return;
@@ -345,33 +329,34 @@ class _FileBrowserState extends State<_FileBrowser>
     final itemName = (item['name'] ?? '').toString();
     final isFolder = (item['type'] ?? '') == 'folder';
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: Text(isFolder ? 'Delete Folder?' : 'Delete File?'),
-          content: Text(
-            isFolder
-                ? 'Delete "$itemName" and everything inside it?'
-                : 'Delete "$itemName"?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) {
+            return AlertDialog(
+              title: Text(isFolder ? 'Delete Folder?' : 'Delete File?'),
+              content: Text(
+                isFolder
+                    ? 'Delete "$itemName" and everything inside it?'
+                    : 'Delete "$itemName"?',
               ),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    ) ??
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
         false;
 
     if (!ok) return;
@@ -437,11 +422,7 @@ class _FileBrowserState extends State<_FileBrowser>
         }
 
         req.files.add(
-          http.MultipartFile.fromBytes(
-            'file',
-            bytes,
-            filename: picked.name,
-          ),
+          http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
         );
       }
 
@@ -582,11 +563,7 @@ class _FileBrowserState extends State<_FileBrowser>
         isFolder ? Icons.folder_rounded : Icons.insert_drive_file_rounded,
         color: isFolder ? Colors.amber[700] : Colors.blueGrey,
       ),
-      title: Text(
-        itemName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(itemName, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         isFolder ? 'Folder' : 'File',
         maxLines: 1,
@@ -658,24 +635,24 @@ class _FileBrowserState extends State<_FileBrowser>
                   ? const Center(child: CircularProgressIndicator())
                   : items.isEmpty
                   ? ListView(
-                children: const [
-                  SizedBox(height: 120),
-                  Center(
-                    child: Text(
-                      'No files or folders here',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ),
-                ],
-              )
+                      children: const [
+                        SizedBox(height: 120),
+                        Center(
+                          child: Text(
+                            'No files or folders here',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
                   : ListView.separated(
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) => _buildItemTile(items[i]),
-              ),
+                      itemCount: items.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (_, i) => _buildItemTile(items[i]),
+                    ),
             ),
           ),
         ],
@@ -698,10 +675,10 @@ class _FileBrowserState extends State<_FileBrowser>
                   onPressed: isUploading ? null : _uploadFile,
                   icon: isUploading
                       ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.upload_file_rounded),
                   label: Text(isUploading ? 'Uploading...' : 'Upload File'),
                 ),
@@ -788,7 +765,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     req.fields['key'] = _sha1(_secret);
     req.fields['root'] = 'games';
     req.fields['path'] =
-    'library/$ownerUid/$gameUid-${_safeFolderName(gameName)}';
+        'library/$ownerUid/$gameUid-${_safeFolderName(gameName)}';
 
     if (picked.path != null && picked.path!.isNotEmpty) {
       req.files.add(
@@ -805,11 +782,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       }
 
       req.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: picked.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
       );
     }
 
@@ -862,7 +835,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       final value = entry.value;
       if (value is! Map) continue;
 
-      final game = Map<String, dynamic>.from(value as Map);
+      final game = Map<String, dynamic>.from(value);
       final tags = game['tags'];
 
       if (tags is List) {
@@ -898,7 +871,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       final value = entry.value;
       if (value is! Map) continue;
 
-      final game = Map<String, dynamic>.from(value as Map);
+      final game = Map<String, dynamic>.from(value);
       final category = (game['category'] ?? '').toString().trim();
       if (category.isNotEmpty) out.add(category);
     }
@@ -914,9 +887,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
     if (link.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This game has no link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('This game has no link.')));
       return;
     }
 
@@ -931,27 +904,28 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   }
 
   Future<void> _deleteGame(String gameId) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Delete game'),
-          content: const Text(
-            'Are you sure you want to delete this game from the games node?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    ) ??
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) {
+            return AlertDialog(
+              title: const Text('Delete game'),
+              content: const Text(
+                'Are you sure you want to delete this game from the games node?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
         false;
 
     if (!ok) return;
@@ -965,7 +939,11 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete game: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not delete game. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -995,7 +973,11 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to duplicate game: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -1026,7 +1008,11 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update game: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not update game. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -1098,10 +1084,12 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
         bool localUploadingThumb = false;
 
         String uploadedUrl = (existingGame?['link'] ?? '').toString().trim();
-        String uploadedThumbnail =
-        (existingGame?['thumbnail'] ?? '').toString().trim();
-        String selectedStatus =
-        (existingGame?['status'] ?? 'ready').toString().trim();
+        String uploadedThumbnail = (existingGame?['thumbnail'] ?? '')
+            .toString()
+            .trim();
+        String selectedStatus = (existingGame?['status'] ?? 'ready')
+            .toString()
+            .trim();
 
         return StatefulBuilder(
           builder: (context, setLocalState) {
@@ -1122,7 +1110,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               if (uid == null || uid.isEmpty || user == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Could not load admin details.')),
+                  const SnackBar(
+                    content: Text('Could not load admin details.'),
+                  ),
                 );
                 return;
               }
@@ -1164,7 +1154,11 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload game file.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -1179,7 +1173,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               if (uid == null || uid.isEmpty || user == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Could not load admin details.')),
+                  const SnackBar(
+                    content: Text('Could not load admin details.'),
+                  ),
                 );
                 return;
               }
@@ -1188,7 +1184,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               if (gameName.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Enter the game name before uploading thumbnail.'),
+                    content: Text(
+                      'Enter the game name before uploading thumbnail.',
+                    ),
                   ),
                 );
                 return;
@@ -1221,7 +1219,11 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Thumbnail upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload thumbnail.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -1273,24 +1275,31 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               if (currentUser == null || uid == null || uid.isEmpty) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Could not load admin details.')),
+                  const SnackBar(
+                    content: Text('Could not load admin details.'),
+                  ),
                 );
                 return;
               }
 
-              final firstName =
-              (currentUser['first_name'] ?? '').toString().trim();
-              final lastName =
-              (currentUser['last_name'] ?? '').toString().trim();
+              final firstName = (currentUser['first_name'] ?? '')
+                  .toString()
+                  .trim();
+              final lastName = (currentUser['last_name'] ?? '')
+                  .toString()
+                  .trim();
               final email = (currentUser['email'] ?? '').toString().trim();
               final serial = (currentUser['serial'] ?? '').toString().trim();
               final now = ServerValue.timestamp;
 
-              final tagsToSave = chosenTags
-                  .map((e) => e.trim())
-                  .where((e) => e.isNotEmpty)
-                  .toList()
-                ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+              final tagsToSave =
+                  chosenTags
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList()
+                    ..sort(
+                      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+                    );
 
               setLocalState(() => localSaving = true);
               if (mounted) {
@@ -1298,31 +1307,40 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               }
 
               try {
-                final ref =
-                isEdit ? _gamesRef.child(gameId!) : _gamesRef.child(draftGameUid);
+                final ref = isEdit
+                    ? _gamesRef.child(gameId)
+                    : _gamesRef.child(draftGameUid);
 
-                final oldTeacherUid =
-                (existingGame?['teacherUid'] ?? '').toString().trim();
+                final oldTeacherUid = (existingGame?['teacherUid'] ?? '')
+                    .toString()
+                    .trim();
                 final oldTeacherFirst =
-                (existingGame?['teacherFirstName'] ?? '').toString().trim();
-                final oldTeacherLast =
-                (existingGame?['teacherLastName'] ?? '').toString().trim();
-                final oldTeacherEmail =
-                (existingGame?['teacherEmail'] ?? '').toString().trim();
-                final oldTeacherSerial =
-                (existingGame?['teacherSerial'] ?? '').toString().trim();
+                    (existingGame?['teacherFirstName'] ?? '').toString().trim();
+                final oldTeacherLast = (existingGame?['teacherLastName'] ?? '')
+                    .toString()
+                    .trim();
+                final oldTeacherEmail = (existingGame?['teacherEmail'] ?? '')
+                    .toString()
+                    .trim();
+                final oldTeacherSerial = (existingGame?['teacherSerial'] ?? '')
+                    .toString()
+                    .trim();
 
                 final data = <String, dynamic>{
                   'gameUid': ref.key ?? draftGameUid,
                   'teacherUid': oldTeacherUid.isNotEmpty ? oldTeacherUid : uid,
-                  'teacherFirstName':
-                  oldTeacherFirst.isNotEmpty ? oldTeacherFirst : firstName,
-                  'teacherLastName':
-                  oldTeacherLast.isNotEmpty ? oldTeacherLast : lastName,
-                  'teacherEmail':
-                  oldTeacherEmail.isNotEmpty ? oldTeacherEmail : email,
-                  'teacherSerial':
-                  oldTeacherSerial.isNotEmpty ? oldTeacherSerial : serial,
+                  'teacherFirstName': oldTeacherFirst.isNotEmpty
+                      ? oldTeacherFirst
+                      : firstName,
+                  'teacherLastName': oldTeacherLast.isNotEmpty
+                      ? oldTeacherLast
+                      : lastName,
+                  'teacherEmail': oldTeacherEmail.isNotEmpty
+                      ? oldTeacherEmail
+                      : email,
+                  'teacherSerial': oldTeacherSerial.isNotEmpty
+                      ? oldTeacherSerial
+                      : serial,
                   'adminUid': uid,
                   'adminFirstName': firstName,
                   'adminLastName': lastName,
@@ -1345,7 +1363,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   data['createdAt'] = now;
                 } else {
                   data['createdAt'] =
-                      existingGame?['createdAt'] ?? ServerValue.timestamp;
+                      existingGame['createdAt'] ?? ServerValue.timestamp;
                 }
 
                 await ref.update(data);
@@ -1365,7 +1383,14 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to save game: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(
+                        e,
+                        fallback: 'Could not save game. Try again.',
+                      ),
+                    ),
+                  ),
                 );
               } finally {
                 if (mounted) {
@@ -1456,8 +1481,13 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: const ['draft', 'ready', 'hidden', 'archived']
-                            .contains(selectedStatus)
+                        initialValue:
+                            const [
+                              'draft',
+                              'ready',
+                              'hidden',
+                              'archived',
+                            ].contains(selectedStatus)
                             ? selectedStatus
                             : 'ready',
                         decoration: const InputDecoration(
@@ -1465,10 +1495,22 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
-                          DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-                          DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                          DropdownMenuItem(
+                            value: 'draft',
+                            child: Text('Draft'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ready',
+                            child: Text('Ready'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'hidden',
+                            child: Text('Hidden'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'archived',
+                            child: Text('Archived'),
+                          ),
                         ],
                         onChanged: (value) {
                           if (value == null) return;
@@ -1526,7 +1568,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1536,8 +1580,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingGame ? null : uploadGameFile,
+                                    onPressed: localUploadingGame
+                                        ? null
+                                        : uploadGameFile,
                                     icon: const Icon(Icons.sync_rounded),
                                     label: const Text('Replace File'),
                                   ),
@@ -1550,16 +1595,17 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingGame ? null : uploadGameFile,
+                                onPressed: localUploadingGame
+                                    ? null
+                                    : uploadGameFile,
                                 icon: localUploadingGame
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.upload_file_rounded),
                                 label: Text(
                                   localUploadingGame
@@ -1598,11 +1644,13 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                   height: 140,
                                   width: double.infinity,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  errorBuilder: (_, _, _) => Container(
                                     height: 140,
                                     alignment: Alignment.center,
                                     color: Colors.grey.shade100,
-                                    child: const Text('Could not load thumbnail'),
+                                    child: const Text(
+                                      'Could not load thumbnail',
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1617,9 +1665,13 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Thumbnail link copied'),
+                                          content: Text(
+                                            'Thumbnail link copied',
+                                          ),
                                         ),
                                       );
                                     },
@@ -1627,8 +1679,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingThumb ? null : uploadThumbnail,
+                                    onPressed: localUploadingThumb
+                                        ? null
+                                        : uploadThumbnail,
                                     icon: const Icon(Icons.image_rounded),
                                     label: const Text('Replace Thumbnail'),
                                   ),
@@ -1641,16 +1694,17 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingThumb ? null : uploadThumbnail,
+                                onPressed: localUploadingThumb
+                                    ? null
+                                    : uploadThumbnail,
                                 icon: localUploadingThumb
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.upload_rounded),
                                 label: Text(
                                   localUploadingThumb
@@ -1706,22 +1760,22 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                               onSelected: localSaving
                                   ? null
                                   : (value) {
-                                setLocalState(() {
-                                  if (value) {
-                                    chosenTags.add(tag);
-                                  } else {
-                                    chosenTags.remove(tag);
-                                  }
-                                });
-                              },
+                                      setLocalState(() {
+                                        if (value) {
+                                          chosenTags.add(tag);
+                                        } else {
+                                          chosenTags.remove(tag);
+                                        }
+                                      });
+                                    },
                               onDeleted: localSaving
                                   ? null
                                   : () {
-                                setLocalState(() {
-                                  selectedTags.remove(tag);
-                                  chosenTags.remove(tag);
-                                });
-                              },
+                                      setLocalState(() {
+                                        selectedTags.remove(tag);
+                                        chosenTags.remove(tag);
+                                      });
+                                    },
                             );
                           }).toList(),
                         )
@@ -1834,9 +1888,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () => _openGame(game),
         child: Column(
@@ -1848,7 +1900,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 height: 110,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+                errorBuilder: (_, _, _) => Container(
                   height: 110,
                   color: Colors.grey.shade100,
                   alignment: Alignment.center,
@@ -1861,10 +1913,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 width: double.infinity,
                 color: Colors.grey.shade100,
                 alignment: Alignment.center,
-                child: const Icon(
-                  Icons.sports_esports_rounded,
-                  size: 36,
-                ),
+                child: const Icon(Icons.sports_esports_rounded, size: 36),
               ),
             Expanded(
               child: Padding(
@@ -1995,14 +2044,20 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       final game = entry.value;
 
       final name = (game['name'] ?? '').toString().toLowerCase().trim();
-      final description =
-      (game['description'] ?? '').toString().toLowerCase().trim();
+      final description = (game['description'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
       final category = (game['category'] ?? '').toString().toLowerCase().trim();
       final level = (game['level'] ?? '').toString().toLowerCase().trim();
-      final status = (game['status'] ?? 'ready').toString().toLowerCase().trim();
+      final status = (game['status'] ?? 'ready')
+          .toString()
+          .toLowerCase()
+          .trim();
       final tags = _tagsFromGame(game).map((e) => e.toLowerCase()).join(' ');
 
-      final matchesSearch = _searchQuery.isEmpty ||
+      final matchesSearch =
+          _searchQuery.isEmpty ||
           name.contains(_searchQuery) ||
           description.contains(_searchQuery) ||
           category.contains(_searchQuery) ||
@@ -2012,8 +2067,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       final matchesStatus =
           _statusFilter == 'all' || status == _statusFilter.toLowerCase();
 
-      final matchesCategory = _categoryFilter == 'all' ||
-          category == _categoryFilter.toLowerCase();
+      final matchesCategory =
+          _categoryFilter == 'all' || category == _categoryFilter.toLowerCase();
 
       return matchesSearch && matchesStatus && matchesCategory;
     }).toList();
@@ -2021,33 +2076,36 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     filtered.sort((a, b) {
       switch (_sortBy) {
         case 'name_asc':
-          return (a.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((b.value['name'] ?? '').toString().toLowerCase());
+          return (a.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (b.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'name_desc':
-          return (b.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((a.value['name'] ?? '').toString().toLowerCase());
+          return (b.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (a.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'created_desc':
-          return _toInt(b.value['createdAt'])
-              .compareTo(_toInt(a.value['createdAt']));
+          return _toInt(
+            b.value['createdAt'],
+          ).compareTo(_toInt(a.value['createdAt']));
         case 'created_asc':
-          return _toInt(a.value['createdAt'])
-              .compareTo(_toInt(b.value['createdAt']));
+          return _toInt(
+            a.value['createdAt'],
+          ).compareTo(_toInt(b.value['createdAt']));
         case 'updated_asc':
-          return _toInt(a.value['updatedAt'])
-              .compareTo(_toInt(b.value['updatedAt']));
+          return _toInt(
+            a.value['updatedAt'],
+          ).compareTo(_toInt(b.value['updatedAt']));
         case 'updated_desc':
         default:
-          return _toInt(b.value['updatedAt'])
-              .compareTo(_toInt(a.value['updatedAt']));
+          return _toInt(
+            b.value['updatedAt'],
+          ).compareTo(_toInt(a.value['updatedAt']));
       }
     });
 
     return filtered;
   }
+
   Widget _buildFilterBar(List<String> categories) {
     final categoryItems = ['all', ...categories];
 
@@ -2068,14 +2126,14 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               suffixIcon: _searchController.text.isEmpty
                   ? null
                   : IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() {
-                    _searchQuery = '';
-                  });
-                },
-                icon: const Icon(Icons.clear_rounded),
-              ),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                      icon: const Icon(Icons.clear_rounded),
+                    ),
               border: const OutlineInputBorder(),
             ),
           ),
@@ -2084,7 +2142,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _statusFilter,
+                  initialValue: _statusFilter,
                   decoration: const InputDecoration(
                     labelText: 'Status',
                     border: OutlineInputBorder(),
@@ -2094,7 +2152,10 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                     DropdownMenuItem(value: 'draft', child: Text('Draft')),
                     DropdownMenuItem(value: 'ready', child: Text('Ready')),
                     DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-                    DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                    DropdownMenuItem(
+                      value: 'archived',
+                      child: Text('Archived'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value == null) return;
@@ -2107,7 +2168,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               const SizedBox(width: 10),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _categoryFilter,
+                  initialValue: _categoryFilter,
                   decoration: const InputDecoration(
                     labelText: 'Category',
                     border: OutlineInputBorder(),
@@ -2115,10 +2176,10 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   items: categoryItems
                       .map(
                         (e) => DropdownMenuItem(
-                      value: e,
-                      child: Text(e == 'all' ? 'All' : e),
-                    ),
-                  )
+                          value: e,
+                          child: Text(e == 'all' ? 'All' : e),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) {
                     if (value == null) return;
@@ -2132,16 +2193,28 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: _sortBy,
+            initialValue: _sortBy,
             decoration: const InputDecoration(
               labelText: 'Sort by',
               border: OutlineInputBorder(),
             ),
             items: const [
-              DropdownMenuItem(value: 'updated_desc', child: Text('Recently updated')),
-              DropdownMenuItem(value: 'updated_asc', child: Text('Oldest updated')),
-              DropdownMenuItem(value: 'created_desc', child: Text('Newest created')),
-              DropdownMenuItem(value: 'created_asc', child: Text('Oldest created')),
+              DropdownMenuItem(
+                value: 'updated_desc',
+                child: Text('Recently updated'),
+              ),
+              DropdownMenuItem(
+                value: 'updated_asc',
+                child: Text('Oldest updated'),
+              ),
+              DropdownMenuItem(
+                value: 'created_desc',
+                child: Text('Newest created'),
+              ),
+              DropdownMenuItem(
+                value: 'created_asc',
+                child: Text('Oldest created'),
+              ),
               DropdownMenuItem(value: 'name_asc', child: Text('Name A-Z')),
               DropdownMenuItem(value: 'name_desc', child: Text('Name Z-A')),
             ],
@@ -2157,7 +2230,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     );
   }
 
-  int _adminOwnedGamesCount(List<MapEntry<String, Map<String, dynamic>>> items) {
+  int _adminOwnedGamesCount(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
     final uid = _myUid;
     if (uid == null || uid.isEmpty) return 0;
 
@@ -2176,9 +2251,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
             ? null
-            : () => _showGameForm(
-          knownTags: const <String>[],
-        ),
+            : () => _showGameForm(knownTags: const <String>[]),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Game'),
       ),
@@ -2201,10 +2274,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.sports_esports_rounded,
-                      size: 48,
-                    ),
+                    const Icon(Icons.sports_esports_rounded, size: 48),
                     const SizedBox(height: 12),
                     const Text(
                       'No games added yet.',
@@ -2239,7 +2309,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
             final gameValue = entry.value;
 
             final game = gameValue is Map
-                ? Map<String, dynamic>.from(gameValue as Map)
+                ? Map<String, dynamic>.from(gameValue)
                 : <String, dynamic>{};
 
             return MapEntry(gameId, game);
@@ -2273,41 +2343,41 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   },
                   child: visibleItems.isEmpty
                       ? ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                    children: const [
-                      Center(
-                        child: Text(
-                          'No games match your filters.',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                          children: const [
+                            Center(
+                              child: Text(
+                                'No games match your filters.',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
                       : GridView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.56,
-                    ),
-                    itemCount: visibleItems.length,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.56,
+                              ),
+                          itemCount: visibleItems.length,
 
-
-                    itemBuilder: (context, index) {
-                      final item = visibleItems[index];
-                      return _buildGameCard(
-                        gameId: item.key,
-                        game: item.value,
-                        knownTags: knownTags,
-                      );
-                    },
-                  ),
+                          itemBuilder: (context, index) {
+                            final item = visibleItems[index];
+                            return _buildGameCard(
+                              gameId: item.key,
+                              game: item.value,
+                              knownTags: knownTags,
+                            );
+                          },
+                        ),
                 ),
               ),
             ],

@@ -38,13 +38,7 @@ enum AppThemeMode {
   cocoa,
 }
 
-enum AppFontMode {
-  system,
-  modern,
-  elegant,
-  rounded,
-  mono,
-}
+enum AppFontMode { system, modern, elegant, rounded, mono }
 
 class AppPalette {
   const AppPalette({
@@ -179,10 +173,7 @@ class AppThemeController extends ChangeNotifier {
           color: p.text.withOpacity(0.55),
           fontFamily: fontFamily,
         ),
-        labelStyle: TextStyle(
-          color: p.text,
-          fontFamily: fontFamily,
-        ),
+        labelStyle: TextStyle(color: p.text, fontFamily: fontFamily),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: p.border),
@@ -204,14 +195,14 @@ class AppThemeController extends ChangeNotifier {
         backgroundColor: p.cardBg,
         indicatorColor: p.soft,
         labelTextStyle: WidgetStateProperty.resolveWith(
-              (states) => TextStyle(
+          (states) => TextStyle(
             color: states.contains(WidgetState.selected) ? p.primary : p.text,
             fontWeight: FontWeight.w700,
             fontFamily: fontFamily,
           ),
         ),
         iconTheme: WidgetStateProperty.resolveWith(
-              (states) => IconThemeData(
+          (states) => IconThemeData(
             color: states.contains(WidgetState.selected) ? p.primary : p.text,
           ),
         ),
@@ -282,12 +273,12 @@ class AppThemeController extends ChangeNotifier {
     final rawFont = prefs.getString(_fontPrefsKey);
 
     _mode = AppThemeMode.values.firstWhere(
-          (e) => e.name == rawTheme,
+      (e) => e.name == rawTheme,
       orElse: () => AppThemeMode.navy,
     );
 
     _fontMode = AppFontMode.values.firstWhere(
-          (e) => e.name == rawFont,
+      (e) => e.name == rawFont,
       orElse: () => AppFontMode.system,
     );
 

@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class TeacherLearnerGalleryScreen extends StatefulWidget {
   const TeacherLearnerGalleryScreen({
@@ -96,10 +97,7 @@ class _TeacherLearnerGalleryScreenState
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse(_uploadEndpoint),
-    );
+    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
     request.fields['key'] = _uploadKeySha1;
@@ -112,11 +110,7 @@ class _TeacherLearnerGalleryScreenState
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
       );
     } else {
       final path = file.path;
@@ -125,11 +119,7 @@ class _TeacherLearnerGalleryScreenState
       }
 
       request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          path,
-          filename: file.name,
-        ),
+        await http.MultipartFile.fromPath('file', path, filename: file.name),
       );
     }
 
@@ -145,7 +135,9 @@ class _TeacherLearnerGalleryScreenState
     final decoded = jsonDecode(responseBody);
     if (decoded is! Map || decoded['success'] != true) {
       throw Exception(
-        decoded is Map ? (decoded['message'] ?? 'Upload failed') : 'Upload failed',
+        decoded is Map
+            ? (decoded['message'] ?? 'Upload failed')
+            : 'Upload failed',
       );
     }
 
@@ -203,10 +195,7 @@ class _TeacherLearnerGalleryScreenState
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
 
-      await _saveGalleryItem(
-        type: 'photo',
-        url: url,
-      );
+      await _saveGalleryItem(type: 'photo', url: url);
 
       if (!mounted) return;
       setState(() {
@@ -215,7 +204,7 @@ class _TeacherLearnerGalleryScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     } finally {
       if (!mounted) return;
@@ -247,10 +236,7 @@ class _TeacherLearnerGalleryScreenState
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
 
-      await _saveGalleryItem(
-        type: 'video',
-        url: url,
-      );
+      await _saveGalleryItem(type: 'video', url: url);
 
       if (!mounted) return;
       setState(() {
@@ -259,7 +245,7 @@ class _TeacherLearnerGalleryScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     } finally {
       if (!mounted) return;
@@ -278,10 +264,7 @@ class _TeacherLearnerGalleryScreenState
         backgroundColor: p.cardBg,
         title: Text(
           'Delete item',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         content: Text(
           'Do you want to remove this gallery item for this learner?',
@@ -297,10 +280,7 @@ class _TeacherLearnerGalleryScreenState
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
             ),
           ),
           ElevatedButton(
@@ -335,7 +315,7 @@ class _TeacherLearnerGalleryScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     }
   }
@@ -366,10 +346,7 @@ class _TeacherLearnerGalleryScreenState
       if (val is! Map) return;
 
       final m = val.map((k, vv) => MapEntry(k.toString(), vv));
-      out.add({
-        'id': key.toString(),
-        ...m,
-      });
+      out.add({'id': key.toString(), ...m});
     });
 
     out.sort((a, b) {
@@ -401,8 +378,8 @@ class _TeacherLearnerGalleryScreenState
           onDelete: itemId.isEmpty
               ? null
               : () async {
-            await _deleteItem(itemId);
-          },
+                  await _deleteItem(itemId);
+                },
         ),
       ),
     );
@@ -441,10 +418,7 @@ class _TeacherLearnerGalleryScreenState
     );
   }
 
-  Widget _statChip({
-    required String text,
-    required IconData icon,
-  }) {
+  Widget _statChip({required String text, required IconData icon}) {
     final p = palette;
 
     return Container(
@@ -524,10 +498,14 @@ class _TeacherLearnerGalleryScreenState
           builder: (context, snap) {
             final items = _itemsFromSnapshot(snap.data?.snapshot.value);
             final photoCount = items
-                .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'photo')
+                .where(
+                  (e) => (e['type'] ?? '').toString().toLowerCase() == 'photo',
+                )
                 .length;
             final videoCount = items
-                .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'video')
+                .where(
+                  (e) => (e['type'] ?? '').toString().toLowerCase() == 'video',
+                )
                 .length;
 
             return ListView(
@@ -537,10 +515,7 @@ class _TeacherLearnerGalleryScreenState
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [
-                        p.primary,
-                        p.primary.withOpacity(0.88),
-                      ],
+                      colors: [p.primary, p.primary.withOpacity(0.88)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -624,13 +599,13 @@ class _TeacherLearnerGalleryScreenState
                       child: ElevatedButton.icon(
                         icon: _uploadingPhoto
                             ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
                             : const Icon(Icons.add_photo_alternate_rounded),
                         label: Text(
                           _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
@@ -653,10 +628,12 @@ class _TeacherLearnerGalleryScreenState
                       child: OutlinedButton.icon(
                         icon: _uploadingVideo
                             ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
                             : const Icon(Icons.video_call_rounded),
                         label: Text(
                           _uploadingVideo ? 'Uploading...' : 'Upload Video',
@@ -757,20 +734,23 @@ class _TeacherLearnerGalleryScreenState
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.88,
-                    ),
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.88,
+                        ),
                     itemBuilder: (context, index) {
                       final item = items[index];
-                      final type =
-                      (item['type'] ?? '').toString().trim().toLowerCase();
+                      final type = (item['type'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
                       final url = (item['url'] ?? '').toString().trim();
                       final createdAt = _fmtDate(item['createdAt']);
-                      final itemTeacherName =
-                      (item['teacherName'] ?? '').toString().trim();
+                      final itemTeacherName = (item['teacherName'] ?? '')
+                          .toString()
+                          .trim();
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(18),
@@ -779,7 +759,9 @@ class _TeacherLearnerGalleryScreenState
                           decoration: BoxDecoration(
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: p.border.withOpacity(0.85)),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.03),
@@ -804,12 +786,14 @@ class _TeacherLearnerGalleryScreenState
                                         Image.network(
                                           url,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Container(
+                                          errorBuilder: (_, _, _) => Container(
                                             color: p.soft,
                                             alignment: Alignment.center,
                                             child: Icon(
                                               Icons.broken_image_outlined,
-                                              color: p.primary.withOpacity(0.55),
+                                              color: p.primary.withOpacity(
+                                                0.55,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -822,23 +806,29 @@ class _TeacherLearnerGalleryScreenState
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(0.58),
-                                            borderRadius:
-                                            BorderRadius.circular(12),
+                                            color: Colors.black.withOpacity(
+                                              0.58,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Icon(
                                                 type == 'video'
-                                                    ? Icons.play_circle_fill_rounded
+                                                    ? Icons
+                                                          .play_circle_fill_rounded
                                                     : Icons.photo_rounded,
                                                 color: Colors.white,
                                                 size: 14,
                                               ),
                                               const SizedBox(width: 6),
                                               Text(
-                                                type == 'video' ? 'Video' : 'Photo',
+                                                type == 'video'
+                                                    ? 'Video'
+                                                    : 'Photo',
                                                 style: const TextStyle(
                                                   color: Colors.white,
                                                   fontWeight: FontWeight.w900,
@@ -854,7 +844,12 @@ class _TeacherLearnerGalleryScreenState
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                                padding: const EdgeInsets.fromLTRB(
+                                  10,
+                                  10,
+                                  10,
+                                  12,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -1221,10 +1216,12 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
-                      thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 12),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
                     ),
                     child: Slider(
                       min: 0,
@@ -1233,11 +1230,11 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
                           : duration.inMilliseconds.toDouble(),
                       value: position.inMilliseconds
                           .clamp(
-                        0,
-                        duration.inMilliseconds <= 0
-                            ? 1
-                            : duration.inMilliseconds,
-                      )
+                            0,
+                            duration.inMilliseconds <= 0
+                                ? 1
+                                : duration.inMilliseconds,
+                          )
                           .toDouble(),
                       activeColor: p.accent,
                       inactiveColor: Colors.white24,
@@ -1324,8 +1321,9 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = appThemeController.palette;
     final isVideo = type.trim().toLowerCase() == 'video';
-    final displayTeacher =
-    teacherName.trim().isEmpty ? 'Teacher' : teacherName.trim();
+    final displayTeacher = teacherName.trim().isEmpty
+        ? 'Teacher'
+        : teacherName.trim();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1351,10 +1349,7 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
                   Navigator.of(context).pop(true);
                 }
               },
-              icon: Icon(
-                Icons.delete_outline_rounded,
-                color: p.accent,
-              ),
+              icon: Icon(Icons.delete_outline_rounded, color: p.accent),
             ),
         ],
       ),
@@ -1372,23 +1367,23 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
                       child: isVideo
                           ? _TeacherVideoPreviewCard(url: url)
                           : InteractiveViewer(
-                        minScale: 0.8,
-                        maxScale: 4,
-                        child: Image.network(
-                          url,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const SizedBox(
-                            height: 260,
-                            child: Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white,
-                                size: 44,
+                              minScale: 0.8,
+                              maxScale: 4,
+                              child: Image.network(
+                                url,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => const SizedBox(
+                                  height: 260,
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white,
+                                      size: 44,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
                     ),
                     Container(
                       width: double.infinity,

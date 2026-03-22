@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 
 class AdminAttendanceOverviewScreen extends StatefulWidget {
   const AdminAttendanceOverviewScreen({super.key});
@@ -63,21 +64,28 @@ class _AdminAttendanceOverviewScreenState
 
   String _safeStr(dynamic v) => (v ?? '').toString().trim();
 
+  Map<String, dynamic> _safeMap(dynamic value) {
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return <String, dynamic>{};
+  }
+
   bool _isWithinRange(DateTime date) {
     final d = _dateOnly(date);
     return !d.isBefore(_fromDate) && !d.isAfter(_toDate);
   }
 
   String _teacherFromClassRecord(
-      Map<String, dynamic> rec,
-      Map<String, dynamic> classMap,
-      ) {
+    Map<String, dynamic> rec,
+    Map<String, dynamic> classMap,
+  ) {
     final recTeacher = _safeStr(rec['teacherName']);
     if (recTeacher.isNotEmpty) return recTeacher;
 
     final cur = classMap['instructor_current'];
     if (cur is Map) {
-      final curMap = Map<String, dynamic>.from(cur);
+      final curMap = _safeMap(cur);
       final name = _safeStr(curMap['name']);
       if (name.isNotEmpty) return name;
     }
@@ -186,10 +194,8 @@ class _AdminAttendanceOverviewScreenState
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => AdminAttendanceDetailsScreen(
-          title: title,
-          rows: filtered,
-        ),
+        builder: (_) =>
+            AdminAttendanceDetailsScreen(title: title, rows: filtered),
       ),
     );
   }
@@ -199,7 +205,7 @@ class _AdminAttendanceOverviewScreenState
       MaterialPageRoute(
         builder: (_) => AdminMissingAttendanceScreen(
           title:
-          'Missing Attendance (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})',
+              'Missing Attendance (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})',
           rows: _missingRows,
         ),
       ),
@@ -226,20 +232,21 @@ class _AdminAttendanceOverviewScreenState
       final Map<String, String> userNameByUid = {};
 
       // classId -> uid -> {name, serial}
-      final Map<String, Map<String, Map<String, String>>> classLearnersByClassId = {};
+      final Map<String, Map<String, Map<String, String>>>
+      classLearnersByClassId = {};
 
       final usersSnap = await _db.child('users').get();
       if (usersSnap.exists && usersSnap.value is Map) {
-        final usersMap = Map<dynamic, dynamic>.from(usersSnap.value as Map);
+        final usersMap = _safeMap(usersSnap.value);
 
         for (final entry in usersMap.entries) {
           final uid = entry.key.toString();
           final val = entry.value;
           if (val is! Map) continue;
 
-          final m = Map<String, dynamic>.from(val as Map);
+          final m = _safeMap(val);
           final full =
-          '${_safeStr(m['first_name'])} ${_safeStr(m['last_name'])}'.trim();
+              '${_safeStr(m['first_name'])} ${_safeStr(m['last_name'])}'.trim();
           userNameByUid[uid] = full.isEmpty ? 'Learner' : full;
         }
       }
@@ -249,79 +256,308 @@ class _AdminAttendanceOverviewScreenState
       // =========================
       final classesSnap = await _db.child('classes').get();
       if (classesSnap.exists && classesSnap.value is Map) {
-        final classesMap = Map<dynamic, dynamic>.from(classesSnap.value as Map);
+        final classesMap = _safeMap(classesSnap.value);
 
         for (final classEntry in classesMap.entries) {
-          final classId = classEntry.key.toString();
-          final classVal = classEntry.value;
-          if (classVal is! Map) continue;
+          try {
+            final classId = classEntry.key.toString();
+            final classVal = classEntry.value;
+            if (classVal is! Map) continue;
 
-          final classMap = Map<String, dynamic>.from(classVal as Map);
-          final classTitle = _classTitleFromClassMap(classMap);
+            final classMap = _safeMap(classVal);
+            final classTitle = _classTitleFromClassMap(classMap);
 
-          // roster cache
-          final rawLearners = classMap['learners'];
-          final Map<String, Map<String, String>> roster = {};
-          if (rawLearners is Map) {
-            final lm = Map<dynamic, dynamic>.from(rawLearners);
-            for (final learnerEntry in lm.entries) {
-              final uid = learnerEntry.key.toString();
-              final value = learnerEntry.value;
+            // roster cache
+            final rawLearners = classMap['learners'];
+            final Map<String, Map<String, String>> roster = {};
+            if (rawLearners is Map) {
+              final lm = _safeMap(rawLearners);
+              for (final learnerEntry in lm.entries) {
+                final uid = learnerEntry.key.toString();
+                final value = learnerEntry.value;
 
-              if (value is Map) {
-                final mm = Map<String, dynamic>.from(value as Map);
-                roster[uid] = {
-                  'name': _safeStr(mm['name']),
-                  'serial': _safeStr(mm['serial']),
-                };
-              } else {
-                roster[uid] = {
-                  'name': '',
-                  'serial': '',
-                };
+                if (value is Map) {
+                  final mm = _safeMap(value);
+                  roster[uid] = {
+                    'name': _safeStr(mm['name']),
+                    'serial': _safeStr(mm['serial']),
+                  };
+                } else {
+                  roster[uid] = {'name': '', 'serial': ''};
+                }
               }
             }
-          }
-          classLearnersByClassId[classId] = roster;
+            classLearnersByClassId[classId] = roster;
 
-          // attendance dates map
-          final Set<String> attendanceDates = {};
-          final attendance = classMap['attendance'];
-          if (attendance is Map) {
-            final attendanceMap = Map<dynamic, dynamic>.from(attendance);
+            // attendance dates map
+            final Set<String> attendanceDates = {};
+            final attendance = classMap['attendance'];
+            if (attendance is Map) {
+              final attendanceMap = _safeMap(attendance);
 
-            for (final attEntry in attendanceMap.entries) {
-              final recVal = attEntry.value;
+              for (final attEntry in attendanceMap.entries) {
+                try {
+                  final recVal = attEntry.value;
+                  if (recVal is! Map) continue;
+
+                  final rec = _safeMap(recVal);
+                  final dateStr = _safeStr(rec['date']);
+                  final date = _parseYmd(dateStr);
+                  if (date == null) continue;
+
+                  attendanceDates.add(dateStr);
+
+                  if (!_isWithinRange(date)) continue;
+
+                  final teacherName = _teacherFromClassRecord(rec, classMap);
+
+                  int present = 0;
+                  int absent = 0;
+
+                  final presentMapRaw = rec['present'];
+                  final absentMapRaw = rec['absent'];
+
+                  Map<String, dynamic> presentMap = {};
+                  Map<String, dynamic> absentMap = {};
+
+                  if (presentMapRaw is Map) {
+                    presentMap = _safeMap(presentMapRaw);
+                    present = presentMap.length;
+                  }
+
+                  if (absentMapRaw is Map) {
+                    absentMap = _safeMap(absentMapRaw);
+                    absent = absentMap.length;
+                  }
+
+                  final item = _StatsBucket(
+                    sessions: 1,
+                    present: present,
+                    absent: absent,
+                  );
+
+                  total = total + item;
+                  inClass = inClass + item;
+
+                  final classRoster = classLearnersByClassId[classId] ?? {};
+
+                  for (final uid in presentMap.keys) {
+                    final learnerUid = uid.toString();
+                    final rosterInfo =
+                        classRoster[learnerUid] ?? const <String, String>{};
+
+                    final rosterName = _safeStr(rosterInfo['name']);
+                    final rosterSerial = _safeStr(rosterInfo['serial']);
+                    final userName = _safeStr(userNameByUid[learnerUid]);
+
+                    final resolvedName = rosterName.isNotEmpty
+                        ? rosterName
+                        : (userName.isNotEmpty
+                              ? userName
+                              : (rosterSerial.isNotEmpty
+                                    ? rosterSerial
+                                    : 'Learner'));
+
+                    rangeRows.add(
+                      _AttendanceDetailRow(
+                        learnerUid: learnerUid,
+                        learnerName: resolvedName,
+                        learnerSerial: rosterSerial,
+                        status: 'present',
+                        teacherName: teacherName,
+                        classOrCourseTitle: classTitle,
+                        classId: classId,
+                        source: 'In-class',
+                        dateStr: dateStr,
+                      ),
+                    );
+                  }
+
+                  for (final uid in absentMap.keys) {
+                    final learnerUid = uid.toString();
+                    final rosterInfo =
+                        classRoster[learnerUid] ?? const <String, String>{};
+
+                    final rosterName = _safeStr(rosterInfo['name']);
+                    final rosterSerial = _safeStr(rosterInfo['serial']);
+                    final userName = _safeStr(userNameByUid[learnerUid]);
+
+                    final resolvedName = rosterName.isNotEmpty
+                        ? rosterName
+                        : (userName.isNotEmpty
+                              ? userName
+                              : (rosterSerial.isNotEmpty
+                                    ? rosterSerial
+                                    : 'Learner'));
+
+                    rangeRows.add(
+                      _AttendanceDetailRow(
+                        learnerUid: learnerUid,
+                        learnerName: resolvedName,
+                        learnerSerial: rosterSerial,
+                        status: 'absent',
+                        teacherName: teacherName,
+                        classOrCourseTitle: classTitle,
+                        classId: classId,
+                        source: 'In-class',
+                        dateStr: dateStr,
+                      ),
+                    );
+                  }
+                } catch (_) {}
+              }
+            }
+
+            // Missing attendance detection
+            final schedule = classMap['schedule'] is Map
+                ? _safeMap(classMap['schedule'])
+                : <String, dynamic>{};
+
+            final firstSessionDateStr = _safeStr(
+              schedule['first_session_date'],
+            );
+            final firstSessionDate = _parseYmd(firstSessionDateStr);
+
+            final sessionsRaw = schedule['sessions'] is List
+                ? List<dynamic>.from(schedule['sessions'])
+                : <dynamic>[];
+            final sessionsCount = (() {
+              final raw = schedule['sessions_count'];
+              if (raw is int) return raw;
+              if (raw is num) return raw.toInt();
+              return int.tryParse(raw?.toString() ?? '') ?? 0;
+            })();
+
+            final teacherName = _teacherFromClassRecord(
+              const <String, dynamic>{},
+              classMap,
+            );
+            final learnerCount = roster.length;
+
+            if (firstSessionDate != null &&
+                sessionsRaw.isNotEmpty &&
+                sessionsCount > 0) {
+              final DateTime endDate = _toDate.isAfter(now) ? now : _toDate;
+
+              int occurrencesBuilt = 0;
+              DateTime cursor = firstSessionDate;
+
+              while (!cursor.isAfter(endDate) &&
+                  occurrencesBuilt < sessionsCount) {
+                final dateOnlyCursor = _dateOnly(cursor);
+
+                for (final item in sessionsRaw) {
+                  if (occurrencesBuilt >= sessionsCount) break;
+
+                  if (item is! Map) continue;
+                  final sm = _safeMap(item);
+
+                  final day = _safeStr(sm['day']);
+                  final startTime = _safeStr(sm['start_time']);
+                  final durationMin = _safeStr(sm['duration_min']);
+
+                  final weekday = _weekdayFromShort(day);
+                  if (weekday == -1) continue;
+
+                  if (dateOnlyCursor.weekday != weekday) continue;
+
+                  occurrencesBuilt++;
+
+                  if (dateOnlyCursor.isBefore(_fromDate) ||
+                      dateOnlyCursor.isAfter(endDate)) {
+                    continue;
+                  }
+
+                  final dateKey = _dateStr(dateOnlyCursor);
+                  if (attendanceDates.contains(dateKey)) {
+                    continue;
+                  }
+
+                  missingRows.add(
+                    _MissingAttendanceRow(
+                      classId: classId,
+                      classTitle: classTitle,
+                      teacherName: teacherName,
+                      dateStr: dateKey,
+                      startTime: startTime,
+                      durationMin: durationMin,
+                      learnerCount: learnerCount,
+                    ),
+                  );
+                }
+
+                cursor = cursor.add(const Duration(days: 1));
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      // =========================
+      // ONLINE ATTENDANCE
+      // =========================
+      try {
+        final onlineSnap = await _db.child('online_attendance').get();
+        if (onlineSnap.exists && onlineSnap.value is Map) {
+          final onlineMap = _safeMap(onlineSnap.value);
+
+          for (final entry in onlineMap.entries) {
+            try {
+              final recVal = entry.value;
               if (recVal is! Map) continue;
 
-              final rec = Map<String, dynamic>.from(recVal as Map);
-              final dateStr = _safeStr(rec['date']);
-              final date = _parseYmd(dateStr);
+              final rec = _safeMap(recVal);
+              final dayKey = _safeStr(rec['dayKey']);
+              final date = _parseYmd(dayKey);
               if (date == null) continue;
-
-              attendanceDates.add(dateStr);
-
               if (!_isWithinRange(date)) continue;
 
-              final teacherName = _teacherFromClassRecord(rec, classMap);
+              final teacherName = _safeStr(rec['teacherName']).isNotEmpty
+                  ? _safeStr(rec['teacherName'])
+                  : 'Teacher';
+
+              final classOrCourseTitle = _courseTitleFromOnlineRecord(rec);
 
               int present = 0;
               int absent = 0;
 
-              final presentMapRaw = rec['present'];
-              final absentMapRaw = rec['absent'];
-
-              Map<dynamic, dynamic> presentMap = {};
-              Map<dynamic, dynamic> absentMap = {};
-
-              if (presentMapRaw is Map) {
-                presentMap = Map<dynamic, dynamic>.from(presentMapRaw);
-                present = presentMap.length;
+              final learnersRaw = rec['learners'];
+              Map<String, dynamic> learnersMap = {};
+              if (learnersRaw is Map) {
+                learnersMap = _safeMap(learnersRaw);
               }
 
-              if (absentMapRaw is Map) {
-                absentMap = Map<dynamic, dynamic>.from(absentMapRaw);
-                absent = absentMap.length;
+              for (final learnerEntry in learnersMap.entries) {
+                final learnerUid = learnerEntry.key.toString();
+                final learnerVal = learnerEntry.value;
+
+                bool isPresent = false;
+                if (learnerVal is Map) {
+                  final learnerMap = _safeMap(learnerVal);
+                  isPresent = learnerMap['present'] == true;
+                }
+
+                if (isPresent) {
+                  present++;
+                } else {
+                  absent++;
+                }
+
+                final userName = _safeStr(userNameByUid[learnerUid]);
+
+                rangeRows.add(
+                  _AttendanceDetailRow(
+                    learnerUid: learnerUid,
+                    learnerName: userName.isNotEmpty ? userName : 'Learner',
+                    learnerSerial: '',
+                    status: isPresent ? 'present' : 'absent',
+                    teacherName: teacherName,
+                    classOrCourseTitle: classOrCourseTitle,
+                    classId: '',
+                    source: 'Online',
+                    dateStr: dayKey,
+                  ),
+                );
               }
 
               final item = _StatsBucket(
@@ -331,223 +567,11 @@ class _AdminAttendanceOverviewScreenState
               );
 
               total = total + item;
-              inClass = inClass + item;
-
-              final classRoster = classLearnersByClassId[classId] ?? {};
-
-              for (final uid in presentMap.keys) {
-                final learnerUid = uid.toString();
-                final rosterInfo =
-                    classRoster[learnerUid] ?? const <String, String>{};
-
-                final rosterName = _safeStr(rosterInfo['name']);
-                final rosterSerial = _safeStr(rosterInfo['serial']);
-                final userName = _safeStr(userNameByUid[learnerUid]);
-
-                final resolvedName = rosterName.isNotEmpty
-                    ? rosterName
-                    : (userName.isNotEmpty
-                    ? userName
-                    : (rosterSerial.isNotEmpty ? rosterSerial : 'Learner'));
-
-                rangeRows.add(
-                  _AttendanceDetailRow(
-                    learnerUid: learnerUid,
-                    learnerName: resolvedName,
-                    learnerSerial: rosterSerial,
-                    status: 'present',
-                    teacherName: teacherName,
-                    classOrCourseTitle: classTitle,
-                    classId: classId,
-                    source: 'In-class',
-                    dateStr: dateStr,
-                  ),
-                );
-              }
-
-              for (final uid in absentMap.keys) {
-                final learnerUid = uid.toString();
-                final rosterInfo =
-                    classRoster[learnerUid] ?? const <String, String>{};
-
-                final rosterName = _safeStr(rosterInfo['name']);
-                final rosterSerial = _safeStr(rosterInfo['serial']);
-                final userName = _safeStr(userNameByUid[learnerUid]);
-
-                final resolvedName = rosterName.isNotEmpty
-                    ? rosterName
-                    : (userName.isNotEmpty
-                    ? userName
-                    : (rosterSerial.isNotEmpty ? rosterSerial : 'Learner'));
-
-                rangeRows.add(
-                  _AttendanceDetailRow(
-                    learnerUid: learnerUid,
-                    learnerName: resolvedName,
-                    learnerSerial: rosterSerial,
-                    status: 'absent',
-                    teacherName: teacherName,
-                    classOrCourseTitle: classTitle,
-                    classId: classId,
-                    source: 'In-class',
-                    dateStr: dateStr,
-                  ),
-                );
-              }
-            }
-          }
-
-          // Missing attendance detection
-          final schedule =
-          classMap['schedule'] is Map ? Map<String, dynamic>.from(classMap['schedule']) : <String, dynamic>{};
-
-          final firstSessionDateStr = _safeStr(schedule['first_session_date']);
-          final firstSessionDate = _parseYmd(firstSessionDateStr);
-
-          final sessionsRaw =
-          schedule['sessions'] is List ? List<dynamic>.from(schedule['sessions']) : <dynamic>[];
-          final sessionsCount = (() {
-            final raw = schedule['sessions_count'];
-            if (raw is int) return raw;
-            if (raw is num) return raw.toInt();
-            return int.tryParse(raw?.toString() ?? '') ?? 0;
-          })();
-
-          final teacherName = _teacherFromClassRecord(const <String, dynamic>{}, classMap);
-          final learnerCount = roster.length;
-
-          if (firstSessionDate != null &&
-              sessionsRaw.isNotEmpty &&
-              sessionsCount > 0) {
-            final DateTime endDate = _toDate.isAfter(now) ? now : _toDate;
-
-            int occurrencesBuilt = 0;
-            DateTime cursor = firstSessionDate;
-
-            while (!cursor.isAfter(endDate) && occurrencesBuilt < sessionsCount) {
-              final dateOnlyCursor = _dateOnly(cursor);
-
-              for (final item in sessionsRaw) {
-                if (occurrencesBuilt >= sessionsCount) break;
-
-                if (item is! Map) continue;
-                final sm = Map<String, dynamic>.from(item as Map);
-
-                final day = _safeStr(sm['day']);
-                final startTime = _safeStr(sm['start_time']);
-                final durationMin = _safeStr(sm['duration_min']);
-
-                final weekday = _weekdayFromShort(day);
-                if (weekday == -1) continue;
-
-                if (dateOnlyCursor.weekday != weekday) continue;
-
-                occurrencesBuilt++;
-
-                if (dateOnlyCursor.isBefore(_fromDate) || dateOnlyCursor.isAfter(endDate)) {
-                  continue;
-                }
-
-                final dateKey = _dateStr(dateOnlyCursor);
-                if (attendanceDates.contains(dateKey)) {
-                  continue;
-                }
-
-                missingRows.add(
-                  _MissingAttendanceRow(
-                    classId: classId,
-                    classTitle: classTitle,
-                    teacherName: teacherName,
-                    dateStr: dateKey,
-                    startTime: startTime,
-                    durationMin: durationMin,
-                    learnerCount: learnerCount,
-                  ),
-                );
-              }
-
-              cursor = cursor.add(const Duration(days: 1));
-            }
+              online = online + item;
+            } catch (_) {}
           }
         }
-      }
-
-      // =========================
-      // ONLINE ATTENDANCE
-      // =========================
-      final onlineSnap = await _db.child('online_attendance').get();
-      if (onlineSnap.exists && onlineSnap.value is Map) {
-        final onlineMap = Map<dynamic, dynamic>.from(onlineSnap.value as Map);
-
-        for (final entry in onlineMap.entries) {
-          final recVal = entry.value;
-          if (recVal is! Map) continue;
-
-          final rec = Map<String, dynamic>.from(recVal as Map);
-          final dayKey = _safeStr(rec['dayKey']);
-          final date = _parseYmd(dayKey);
-          if (date == null) continue;
-          if (!_isWithinRange(date)) continue;
-
-          final teacherName = _safeStr(rec['teacherName']).isNotEmpty
-              ? _safeStr(rec['teacherName'])
-              : 'Teacher';
-
-          final classOrCourseTitle = _courseTitleFromOnlineRecord(rec);
-
-          int present = 0;
-          int absent = 0;
-
-          final learnersRaw = rec['learners'];
-          Map<dynamic, dynamic> learnersMap = {};
-          if (learnersRaw is Map) {
-            learnersMap = Map<dynamic, dynamic>.from(learnersRaw);
-          }
-
-          for (final learnerEntry in learnersMap.entries) {
-            final learnerUid = learnerEntry.key.toString();
-            final learnerVal = learnerEntry.value;
-
-            bool isPresent = false;
-            if (learnerVal is Map) {
-              final learnerMap =
-              learnerVal.map((k, v) => MapEntry(k.toString(), v));
-              isPresent = learnerMap['present'] == true;
-            }
-
-            if (isPresent) {
-              present++;
-            } else {
-              absent++;
-            }
-
-            final userName = _safeStr(userNameByUid[learnerUid]);
-
-            rangeRows.add(
-              _AttendanceDetailRow(
-                learnerUid: learnerUid,
-                learnerName: userName.isNotEmpty ? userName : 'Learner',
-                learnerSerial: '',
-                status: isPresent ? 'present' : 'absent',
-                teacherName: teacherName,
-                classOrCourseTitle: classOrCourseTitle,
-                classId: '',
-                source: 'Online',
-                dateStr: dayKey,
-              ),
-            );
-          }
-
-          final item = _StatsBucket(
-            sessions: 1,
-            present: present,
-            absent: absent,
-          );
-
-          total = total + item;
-          online = online + item;
-        }
-      }
+      } catch (_) {}
 
       if (!mounted) return;
       setState(() {
@@ -561,7 +585,10 @@ class _AdminAttendanceOverviewScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(
+          e,
+          fallback: 'Could not load attendance overview. Please try again.',
+        );
         _loading = false;
       });
     }
@@ -731,10 +758,8 @@ class _AdminAttendanceOverviewScreenState
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: () => _openDetails(
-                  title: '$title - All',
-                  rows: rows,
-                ),
+                onPressed: () =>
+                    _openDetails(title: '$title - All', rows: rows),
                 icon: const Icon(Icons.list_alt_rounded),
                 label: const Text('View All'),
               ),
@@ -837,7 +862,8 @@ class _AdminAttendanceOverviewScreenState
               Expanded(
                 child: _miniStat(
                   label: 'Teachers',
-                  value: '${_missingRows.map((e) => e.teacherName).toSet().length}',
+                  value:
+                      '${_missingRows.map((e) => e.teacherName).toSet().length}',
                   icon: Icons.badge_rounded,
                 ),
               ),
@@ -1049,7 +1075,8 @@ class _AdminAttendanceOverviewScreenState
 
   @override
   Widget build(BuildContext context) {
-    final rangeTitle = 'Selected Range (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})';
+    final rangeTitle =
+        'Selected Range (${_dateStr(_fromDate)} → ${_dateStr(_toDate)})';
 
     return Scaffold(
       backgroundColor: appBg,
@@ -1060,10 +1087,7 @@ class _AdminAttendanceOverviewScreenState
         iconTheme: const IconThemeData(color: primaryBlue),
         title: const Text(
           'Attendance Overview',
-          style: TextStyle(
-            color: primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -1079,63 +1103,63 @@ class _AdminAttendanceOverviewScreenState
           : _error != null
           ? _errorState()
           : ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          _rangePickerCard(),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _topCard(
-                  title: 'Present',
-                  value: '${rangeStats.present}',
-                  icon: Icons.check_circle_rounded,
-                  onTap: () => _openDetails(
-                    title: '$rangeTitle - Present',
-                    rows: _rangeRows,
-                    statusFilter: 'present',
-                  ),
+              padding: const EdgeInsets.all(14),
+              children: [
+                _rangePickerCard(),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _topCard(
+                        title: 'Present',
+                        value: '${rangeStats.present}',
+                        icon: Icons.check_circle_rounded,
+                        onTap: () => _openDetails(
+                          title: '$rangeTitle - Present',
+                          rows: _rangeRows,
+                          statusFilter: 'present',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _topCard(
+                        title: 'Absent',
+                        value: '${rangeStats.absent}',
+                        icon: Icons.cancel_rounded,
+                        onTap: () => _openDetails(
+                          title: '$rangeTitle - Absent',
+                          rows: _rangeRows,
+                          statusFilter: 'absent',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _topCard(
+                        title: 'Records',
+                        value: '${_rangeRows.length}',
+                        icon: Icons.event_rounded,
+                        onTap: () => _openDetails(
+                          title: '$rangeTitle - All',
+                          rows: _rangeRows,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _topCard(
-                  title: 'Absent',
-                  value: '${rangeStats.absent}',
-                  icon: Icons.cancel_rounded,
-                  onTap: () => _openDetails(
-                    title: '$rangeTitle - Absent',
-                    rows: _rangeRows,
-                    statusFilter: 'absent',
-                  ),
+                const SizedBox(height: 14),
+                _summarySection(
+                  title: rangeTitle,
+                  data: rangeStats,
+                  inClass: rangeInClass,
+                  online: rangeOnline,
+                  rows: _rangeRows,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _topCard(
-                  title: 'Records',
-                  value: '${_rangeRows.length}',
-                  icon: Icons.event_rounded,
-                  onTap: () => _openDetails(
-                    title: '$rangeTitle - All',
-                    rows: _rangeRows,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _summarySection(
-            title: rangeTitle,
-            data: rangeStats,
-            inClass: rangeInClass,
-            online: rangeOnline,
-            rows: _rangeRows,
-          ),
-          const SizedBox(height: 14),
-          _missingSection(),
-        ],
-      ),
+                const SizedBox(height: 14),
+                _missingSection(),
+              ],
+            ),
     );
   }
 }
@@ -1187,103 +1211,103 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
       ),
       body: sorted.isEmpty
           ? const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            'No attendance details found.',
-            style: TextStyle(
-              color: mainText,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      )
-          : ListView.builder(
-        padding: const EdgeInsets.all(14),
-        itemCount: sorted.length,
-        itemBuilder: (_, i) {
-          final row = sorted[i];
-          final color = _statusColor(row.status);
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: uiBorder.withOpacity(0.85)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: color.withOpacity(0.10),
-                      child: Icon(
-                        row.status == 'present'
-                            ? Icons.check
-                            : Icons.close,
-                        color: color,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        row.learnerName,
-                        style: const TextStyle(
-                          color: primaryBlue,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: color.withOpacity(0.25),
-                        ),
-                      ),
-                      child: Text(
-                        row.status == 'present' ? 'Present' : 'Absent',
-                        style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'No attendance details found.',
+                  style: TextStyle(
+                    color: mainText,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                const SizedBox(height: 10),
-                _detailLine('Teacher', row.teacherName),
-                const SizedBox(height: 4),
-                _detailLine('Class / Course', row.classOrCourseTitle),
-                if (row.classId.trim().isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  _detailLine('Class ID', row.classId),
-                ],
-                if (row.learnerSerial.trim().isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  _detailLine('Serial', row.learnerSerial),
-                ],
-                const SizedBox(height: 4),
-                _detailLine('Source', row.source),
-                const SizedBox(height: 4),
-                _detailLine('Date', row.dateStr),
-              ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(14),
+              itemCount: sorted.length,
+              itemBuilder: (_, i) {
+                final row = sorted[i];
+                final color = _statusColor(row.status);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: color.withOpacity(0.10),
+                            child: Icon(
+                              row.status == 'present'
+                                  ? Icons.check
+                                  : Icons.close,
+                              color: color,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              row.learnerName,
+                              style: const TextStyle(
+                                color: primaryBlue,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: color.withOpacity(0.25),
+                              ),
+                            ),
+                            child: Text(
+                              row.status == 'present' ? 'Present' : 'Absent',
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _detailLine('Teacher', row.teacherName),
+                      const SizedBox(height: 4),
+                      _detailLine('Class / Course', row.classOrCourseTitle),
+                      if (row.classId.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _detailLine('Class ID', row.classId),
+                      ],
+                      if (row.learnerSerial.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _detailLine('Serial', row.learnerSerial),
+                      ],
+                      const SizedBox(height: 4),
+                      _detailLine('Source', row.source),
+                      const SizedBox(height: 4),
+                      _detailLine('Date', row.dateStr),
+                    ],
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 
@@ -1358,71 +1382,79 @@ class AdminMissingAttendanceScreen extends StatelessWidget {
       ),
       body: sorted.isEmpty
           ? const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            'No missing attendance found.',
-            style: TextStyle(
-              color: mainText,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      )
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'No missing attendance found.',
+                  style: TextStyle(
+                    color: mainText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            )
           : ListView.builder(
-        padding: const EdgeInsets.all(14),
-        itemCount: sorted.length,
-        itemBuilder: (_, i) {
-          final row = sorted[i];
+              padding: const EdgeInsets.all(14),
+              itemCount: sorted.length,
+              itemBuilder: (_, i) {
+                final row = sorted[i];
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: uiBorder.withOpacity(0.85)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Attendance not submitted',
-                        style: TextStyle(
-                          color: primaryBlue,
-                          fontWeight: FontWeight.w900,
-                        ),
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Attendance not submitted',
+                              style: TextStyle(
+                                color: primaryBlue,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _detailLine('Class / Course', row.classTitle),
-                const SizedBox(height: 4),
-                _detailLine('Class ID', row.classId),
-                const SizedBox(height: 4),
-                _detailLine('Teacher', row.teacherName),
-                const SizedBox(height: 4),
-                _detailLine('Date', row.dateStr),
-                const SizedBox(height: 4),
-                _detailLine('Time', row.startTime.isEmpty ? '-' : row.startTime),
-                const SizedBox(height: 4),
-                _detailLine(
-                  'Duration',
-                  row.durationMin.isEmpty ? '-' : '${row.durationMin} min',
-                ),
-                const SizedBox(height: 4),
-                _detailLine('Learners', '${row.learnerCount}'),
-              ],
+                      const SizedBox(height: 10),
+                      _detailLine('Class / Course', row.classTitle),
+                      const SizedBox(height: 4),
+                      _detailLine('Class ID', row.classId),
+                      const SizedBox(height: 4),
+                      _detailLine('Teacher', row.teacherName),
+                      const SizedBox(height: 4),
+                      _detailLine('Date', row.dateStr),
+                      const SizedBox(height: 4),
+                      _detailLine(
+                        'Time',
+                        row.startTime.isEmpty ? '-' : row.startTime,
+                      ),
+                      const SizedBox(height: 4),
+                      _detailLine(
+                        'Duration',
+                        row.durationMin.isEmpty
+                            ? '-'
+                            : '${row.durationMin} min',
+                      ),
+                      const SizedBox(height: 4),
+                      _detailLine('Learners', '${row.learnerCount}'),
+                    ],
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 

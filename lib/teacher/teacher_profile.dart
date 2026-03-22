@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   const TeacherProfileScreen({super.key});
@@ -61,8 +60,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   static const String _uploadKeySha1 =
       'a7a995d9c499128351d827eaad7285bcc891919b';
 
-  static final RegExp _specialRegex =
-  RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]');
+  static final RegExp _specialRegex = RegExp(
+    r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]',
+  );
 
   @override
   void initState() {
@@ -162,7 +162,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         await _disposeVideoController();
       }
     } catch (e) {
-      _error = e.toString();
+      _error = toHumanError(e);
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -278,7 +278,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString());
+        setState(() => _error = toHumanError(e));
       }
     } finally {
       if (mounted) {
@@ -293,10 +293,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final user = _auth.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse(_uploadEndpoint),
-    );
+    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
     request.fields['key'] = _uploadKeySha1;
@@ -309,11 +306,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
       );
     } else {
       final path = file.path;
@@ -322,11 +315,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
 
       request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          path,
-          filename: file.name,
-        ),
+        await http.MultipartFile.fromPath('file', path, filename: file.name),
       );
     }
 
@@ -342,7 +331,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final decoded = jsonDecode(responseBody);
     if (decoded is! Map || decoded['success'] != true) {
       throw Exception(
-        decoded is Map ? (decoded['message'] ?? 'Upload failed') : 'Upload failed',
+        decoded is Map
+            ? (decoded['message'] ?? 'Upload failed')
+            : 'Upload failed',
       );
     }
 
@@ -360,9 +351,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final remaining = _maxPhotos - _photoUrls.length;
     if (remaining <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You already reached the 6 photo limit.'),
-        ),
+        const SnackBar(content: Text('You already reached the 6 photo limit.')),
       );
       return;
     }
@@ -397,7 +386,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString());
+        setState(() => _error = toHumanError(e));
       }
     } finally {
       if (mounted) {
@@ -438,7 +427,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = e.toString());
+        setState(() => _error = toHumanError(e));
       }
     } finally {
       if (mounted) {
@@ -506,32 +495,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: p.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(
           title,
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         content: Text(
           message,
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w600),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
             ),
           ),
           ElevatedButton(
@@ -554,9 +532,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   Future<void> _showChangePasswordSheet() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('You must be logged in.')));
       return;
     }
 
@@ -623,18 +601,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   msg = 'Current password is incorrect.';
                 }
                 if (e.code == 'requires-recent-login') {
-                  msg = 'Please log in again, then retry changing your password.';
+                  msg =
+                      'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(msg)),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(msg)));
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.toString())),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(toHumanError(e))));
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
@@ -677,7 +656,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         controller: currentCtrl,
                         obscure: obscureCurrent,
                         onToggle: () => setModalState(
-                              () => obscureCurrent = !obscureCurrent,
+                          () => obscureCurrent = !obscureCurrent,
                         ),
                         validator: (v) => (v ?? '').isEmpty
                             ? 'Current password is required'
@@ -689,9 +668,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         label: 'New password',
                         controller: newCtrl,
                         obscure: obscureNew,
-                        onToggle: () => setModalState(
-                              () => obscureNew = !obscureNew,
-                        ),
+                        onToggle: () =>
+                            setModalState(() => obscureNew = !obscureNew),
                         validator: _newPasswordValidator,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
@@ -701,7 +679,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         controller: confirmCtrl,
                         obscure: obscureConfirm,
                         onToggle: () => setModalState(
-                              () => obscureConfirm = !obscureConfirm,
+                          () => obscureConfirm = !obscureConfirm,
                         ),
                         validator: (v) {
                           final value = (v ?? '').trim();
@@ -747,20 +725,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     confirmCtrl.dispose();
   }
 
-  InputDecoration _dec(
-      String label, {
-        Widget? suffixIcon,
-        String? hintText,
-      }) {
+  InputDecoration _dec(String label, {Widget? suffixIcon, String? hintText}) {
     return InputDecoration(
       labelText: label,
       hintText: hintText,
       filled: true,
       fillColor: p.cardBg,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: p.border.withOpacity(0.95)),
@@ -918,7 +890,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         width: 110,
                         height: 110,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (_, _, _) => Container(
                           width: 110,
                           height: 110,
                           color: p.soft,
@@ -955,7 +927,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             }),
             if (_photoUrls.length < _maxPhotos)
               InkWell(
-                onTap: (_uploadingPhotos || _busy) ? null : _pickAndUploadPhotos,
+                onTap: (_uploadingPhotos || _busy)
+                    ? null
+                    : _pickAndUploadPhotos,
                 borderRadius: BorderRadius.circular(18),
                 child: Container(
                   width: 110,
@@ -967,25 +941,25 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   ),
                   child: _uploadingPhotos
                       ? Center(
-                    child: CircularProgressIndicator(color: p.accent),
-                  )
+                          child: CircularProgressIndicator(color: p.accent),
+                        )
                       : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.add_photo_alternate_outlined,
-                        color: p.primary,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Add photo',
-                        style: TextStyle(
-                          color: p.primary,
-                          fontWeight: FontWeight.w800,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_photo_alternate_outlined,
+                              color: p.primary,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Add photo',
+                              style: TextStyle(
+                                color: p.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
           ],
@@ -1060,13 +1034,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 OutlinedButton.icon(
                   icon: _uploadingVideo
                       ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: p.primary,
-                    ),
-                  )
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: p.primary,
+                          ),
+                        )
                       : const Icon(Icons.upload_rounded),
                   label: Text(
                     _uploadingVideo ? 'Uploading...' : 'Upload intro video',
@@ -1082,8 +1056,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed:
-                  (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+                  onPressed: (_uploadingVideo || _busy)
+                      ? null
+                      : _pickAndUploadVideo,
                 ),
               ],
             ),
@@ -1112,42 +1087,42 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         : 16 / 9,
                     child: _videoReady && _videoController != null
                         ? Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        VideoPlayer(_videoController!),
-                        Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.black26,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            final controller = _videoController!;
-                            if (controller.value.isPlaying) {
-                              controller.pause();
-                            } else {
-                              controller.play();
-                            }
-                            setState(() {});
-                          },
-                          iconSize: 60,
-                          color: Colors.white,
-                          icon: Icon(
-                            _videoController!.value.isPlaying
-                                ? Icons.pause_circle_filled_rounded
-                                : Icons.play_circle_fill_rounded,
-                          ),
-                        ),
-                      ],
-                    )
+                            alignment: Alignment.center,
+                            children: [
+                              VideoPlayer(_videoController!),
+                              Container(
+                                decoration: const BoxDecoration(
+                                  color: Colors.black26,
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () {
+                                  final controller = _videoController!;
+                                  if (controller.value.isPlaying) {
+                                    controller.pause();
+                                  } else {
+                                    controller.play();
+                                  }
+                                  setState(() {});
+                                },
+                                iconSize: 60,
+                                color: Colors.white,
+                                icon: Icon(
+                                  _videoController!.value.isPlaying
+                                      ? Icons.pause_circle_filled_rounded
+                                      : Icons.play_circle_fill_rounded,
+                                ),
+                              ),
+                            ],
+                          )
                         : const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -1176,13 +1151,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   OutlinedButton.icon(
                     icon: _uploadingVideo
                         ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: p.primary,
-                      ),
-                    )
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: p.primary,
+                            ),
+                          )
                         : const Icon(Icons.swap_horiz_rounded),
                     label: Text(
                       _uploadingVideo ? 'Uploading...' : 'Replace video',
@@ -1194,8 +1169,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed:
-                    (_uploadingVideo || _busy) ? null : _pickAndUploadVideo,
+                    onPressed: (_uploadingVideo || _busy)
+                        ? null
+                        : _pickAndUploadVideo,
                   ),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -1285,9 +1261,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   controller: _lastNameCtrl,
                   decoration: _dec('Last name'),
                   onChanged: (_) => _formKey.currentState?.validate(),
-                  validator: (v) => (v ?? '').trim().isEmpty
-                      ? 'Last name is required'
-                      : null,
+                  validator: (v) =>
+                      (v ?? '').trim().isEmpty ? 'Last name is required' : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -1345,7 +1320,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       return 'Enter a valid URL';
                     }
 
-                    if (uri.scheme != 'https' || uri.host != 'meet.google.com') {
+                    if (uri.scheme != 'https' ||
+                        uri.host != 'meet.google.com') {
                       return 'Use a valid Google Meet link';
                     }
 
@@ -1384,7 +1360,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Widget _heroCard() {
     final fullName =
-    '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim();
+        '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim();
     final displayName = fullName.isEmpty ? 'Teacher Profile' : fullName;
     final subtitle = _roleReadOnly.isEmpty ? 'Teacher' : _roleReadOnly;
 
@@ -1392,10 +1368,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1420,9 +1393,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ),
             child: Center(
               child: Text(
-                displayName.isNotEmpty
-                    ? displayName[0].toUpperCase()
-                    : 'T',
+                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'T',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
@@ -1479,10 +1450,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
-  Widget _heroPill({
-    required IconData icon,
-    required String text,
-  }) {
+  Widget _heroPill({required IconData icon, required String text}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -1562,12 +1530,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final Color bg = isError
         ? const Color(0xFFFFEBEE)
         : p.soft.withOpacity(0.75);
-    final Color border = isError
-        ? const Color(0xFFFFCDD2)
-        : p.border;
-    final Color textColor = isError
-        ? const Color(0xFFC62828)
-        : p.primary;
+    final Color border = isError ? const Color(0xFFFFCDD2) : p.border;
+    final Color textColor = isError ? const Color(0xFFC62828) : p.primary;
     final IconData icon = isError
         ? Icons.error_outline_rounded
         : Icons.check_circle_rounded;
@@ -1587,10 +1551,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           Expanded(
             child: Text(
               isError ? _error! : _ok!,
-              style: TextStyle(
-                color: textColor,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -1643,14 +1604,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           unselectedLabelColor: p.text.withOpacity(0.65),
           indicatorColor: p.accent,
           tabs: const [
-            Tab(
-              icon: Icon(Icons.badge_rounded),
-              text: 'Credentials',
-            ),
-            Tab(
-              icon: Icon(Icons.perm_media_rounded),
-              text: 'Profile Media',
-            ),
+            Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),
+            Tab(icon: Icon(Icons.perm_media_rounded), text: 'Profile Media'),
           ],
         ),
       ),
@@ -1660,13 +1615,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         onPressed: _busy ? null : _save,
         icon: _busy
             ? const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white,
-          ),
-        )
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
             : const Icon(Icons.save_rounded),
         label: Text(_busy ? 'Saving...' : 'Save Profile'),
       ),
@@ -1683,7 +1638,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       child: Image.asset(
                         'assets/images/ybs_logo.png',
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
                       ),
                     ),
                   ),
@@ -1701,10 +1656,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
-                    children: [
-                      _buildCredentialsTab(),
-                      _buildMediaTab(),
-                    ],
+                    children: [_buildCredentialsTab(), _buildMediaTab()],
                   ),
                 ),
               ],

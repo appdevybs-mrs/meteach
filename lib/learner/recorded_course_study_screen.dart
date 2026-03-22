@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import 'recorded_video_player_screen.dart';
 
@@ -39,7 +40,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   List<_RecordedUnit> _units = <_RecordedUnit>[];
   final Map<String, _RecordedProgress> _progressBySessionId =
-  <String, _RecordedProgress>{};
+      <String, _RecordedProgress>{};
 
   final Set<String> _expandedUnitIds = <String>{};
 
@@ -100,7 +101,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       }
 
       final Map<String, _RecordedProgress> progressById =
-      <String, _RecordedProgress>{};
+          <String, _RecordedProgress>{};
       if (progressSnap.value is Map) {
         final rawMap = Map<String, dynamic>.from(progressSnap.value as Map);
         for (final entry in rawMap.entries) {
@@ -145,7 +146,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -208,8 +209,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   String get _title {
     return (widget.courseData['title'] ??
-        widget.courseData['course_title'] ??
-        'Recorded Course')
+            widget.courseData['course_title'] ??
+            'Recorded Course')
         .toString();
   }
 
@@ -469,9 +470,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   int _countCompletedInUnit(_RecordedUnit unit) {
@@ -545,7 +546,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     _InfoTile(
                       icon: Icons.trending_up_rounded,
                       title: 'Progress',
-                      value: '$progressPct% ($_completedSessions/$_totalSessions)',
+                      value:
+                          '$progressPct% ($_completedSessions/$_totalSessions)',
                     ),
                     _InfoTile(
                       icon: style.icon,
@@ -569,7 +571,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       icon: Icons.rule_folder_outlined,
                       title: 'Session rule',
                       value:
-                      'Finish either the Video or the Read content to mark the session as completed and unlock the next session.',
+                          'Finish either the Video or the Read content to mark the session as completed and unlock the next session.',
                       iconColor: const Color(0xFF4F46E5),
                     ),
                     if (_durationMonths > 0)
@@ -577,7 +579,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         icon: Icons.calendar_month_rounded,
                         title: 'Access duration',
                         value:
-                        '$_durationMonths month${_durationMonths == 1 ? '' : 's'}',
+                            '$_durationMonths month${_durationMonths == 1 ? '' : 's'}',
                       ),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -685,9 +687,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               ),
               _SessionBadge(
-                label: isCompleted
-                    ? 'Done'
-                    : (isUnlocked ? 'Open' : 'Locked'),
+                label: isCompleted ? 'Done' : (isUnlocked ? 'Open' : 'Locked'),
                 fg: accent,
                 bg: isCompleted
                     ? const Color(0xFFDCFCE7)
@@ -730,7 +730,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
               _StatusMiniPill(
                 label: requiresMaterials
-                    ? (progress.materialsCompleted ? 'Read done' : 'Read pending')
+                    ? (progress.materialsCompleted
+                          ? 'Read done'
+                          : 'Read pending')
                     : 'No read',
                 fg: progress.materialsCompleted
                     ? const Color(0xFF15803D)
@@ -1071,36 +1073,34 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFFECACA)),
-            ),
-            child: Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFFB91C1C),
-                fontWeight: FontWeight.w800,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFFECACA)),
+                  ),
+                  child: Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFB91C1C),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadAll,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
+                children: [_buildUnitsList()],
               ),
             ),
-          ),
-        ),
-      )
-          : RefreshIndicator(
-        onRefresh: _loadAll,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
-          children: [
-            _buildUnitsList(),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1131,11 +1131,7 @@ class _InfoTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            size: 18,
-            color: iconColor ?? const Color(0xFF4F46E5),
-          ),
+          Icon(icon, size: 18, color: iconColor ?? const Color(0xFF4F46E5)),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1290,8 +1286,7 @@ class _RecordedProgress {
       materialsCompleted: materialsCompleted ?? this.materialsCompleted,
       completed: completed ?? this.completed,
       videoCompletedAt: videoCompletedAt ?? this.videoCompletedAt,
-      materialsCompletedAt:
-      materialsCompletedAt ?? this.materialsCompletedAt,
+      materialsCompletedAt: materialsCompletedAt ?? this.materialsCompletedAt,
     );
   }
 
@@ -1340,8 +1335,9 @@ class _RecordedUnit {
   }
 
   factory _RecordedUnit.fromMap(Map<String, dynamic> map) {
-    final rawSessions =
-    _RecordedCourseStudyScreenState._asListOfMaps(map['sessions']);
+    final rawSessions = _RecordedCourseStudyScreenState._asListOfMaps(
+      map['sessions'],
+    );
     final sessions = rawSessions
         .map((e) => _RecordedSession.fromMap(e))
         .toList();
@@ -1382,8 +1378,9 @@ class _RecordedSession {
       title: (map['title'] ?? '').toString(),
       objective: (map['objective'] ?? '').toString(),
       order: _RecordedCourseStudyScreenState._asInt(map['order']),
-      sessionNumber:
-      _RecordedCourseStudyScreenState._asInt(map['sessionNumber']),
+      sessionNumber: _RecordedCourseStudyScreenState._asInt(
+        map['sessionNumber'],
+      ),
       videoUrl: (map['videoUrl'] ?? '').toString(),
       materialsUrl: (map['materialsUrl'] ?? '').toString(),
     );

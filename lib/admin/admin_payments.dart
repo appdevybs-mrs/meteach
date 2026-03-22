@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../shared/human_error.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
   const AdminPaymentsScreen({super.key});
@@ -29,7 +30,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+      SnackBar(
+        content: Text(humanizeUiMessage(msg)),
+        duration: const Duration(milliseconds: 900),
+      ),
     );
   }
 
@@ -149,23 +153,31 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     return _normalizeVariantKey(variantKey) == 'flexible';
   }
 
-  static String _extractVariantKeyFromLearnerCourseNode(Map<String, dynamic> node) {
-    return _normalizeVariantKey(_readFirstNonEmpty(node, [
-      'variantKey',
-      'variant_key',
-      'deliveryKey',
-      'delivery_key',
-      'variant',
-    ]));
+  static String _extractVariantKeyFromLearnerCourseNode(
+    Map<String, dynamic> node,
+  ) {
+    return _normalizeVariantKey(
+      _readFirstNonEmpty(node, [
+        'variantKey',
+        'variant_key',
+        'deliveryKey',
+        'delivery_key',
+        'variant',
+      ]),
+    );
   }
 
-  static String _extractStudyModeFromLearnerCourseNode(Map<String, dynamic> node) {
-    return _normalizeStudyMode(_readFirstNonEmpty(node, [
-      'studyMode',
-      'study_mode',
-      'privateStudyMode',
-      'private_study_mode',
-    ]));
+  static String _extractStudyModeFromLearnerCourseNode(
+    Map<String, dynamic> node,
+  ) {
+    return _normalizeStudyMode(
+      _readFirstNonEmpty(node, [
+        'studyMode',
+        'study_mode',
+        'privateStudyMode',
+        'private_study_mode',
+      ]),
+    );
   }
 
   String _fmtDateFromMs(dynamic ms) {
@@ -269,7 +281,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   }
 
   static int _parseTotalSessions(String duration) {
-    final m = RegExp(r'(\d+)\s*sessions', caseSensitive: false).firstMatch(duration);
+    final m = RegExp(
+      r'(\d+)\s*sessions',
+      caseSensitive: false,
+    ).firstMatch(duration);
     if (m == null) return 0;
     return int.tryParse(m.group(1) ?? '') ?? 0;
   }
@@ -298,7 +313,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     }
 
     if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
-    if (totalSessions > 0 && sessionsPaid == totalSessions && pricePerLevel > 0) {
+    if (totalSessions > 0 &&
+        sessionsPaid == totalSessions &&
+        pricePerLevel > 0) {
       return pricePerLevel;
     }
     if (totalSessions > 0 && pricePerLevel > 0) {
@@ -311,7 +328,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     required String uid,
     required String courseKey,
   }) async {
-    final sumRef = _usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+    final sumRef = _usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child('payment_summary');
     final oldSnap = await sumRef.get();
     final oldRaw = oldSnap.value;
     final oldSum = oldRaw is Map
@@ -344,7 +365,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         final paidAt = _asInt(m['paidAt']);
         final method = (m['method'] ?? '').toString();
         final remind = _asInt(m['remindBeforeSession']);
-        final variantKey = _normalizeVariantKey((m['variantKey'] ?? '').toString());
+        final variantKey = _normalizeVariantKey(
+          (m['variantKey'] ?? '').toString(),
+        );
 
         totalPaid += amount;
         if (_variantUsesSessions(variantKey)) {
@@ -364,12 +387,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
     int remindBeforeSession = 0;
     if (_variantUsesReminder(lastVariantKey)) {
-      remindBeforeSession = (lastRemind > 0) ? lastRemind : _asInt(oldSum['remindBeforeSession']);
+      remindBeforeSession = (lastRemind > 0)
+          ? lastRemind
+          : _asInt(oldSum['remindBeforeSession']);
       if (sessionsTotal <= 0) {
         remindBeforeSession = 0;
       } else {
         if (remindBeforeSession <= 0) remindBeforeSession = sessionsTotal;
-        if (remindBeforeSession > sessionsTotal) remindBeforeSession = sessionsTotal;
+        if (remindBeforeSession > sessionsTotal)
+          remindBeforeSession = sessionsTotal;
       }
     }
 
@@ -398,7 +424,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     if (!_variantUsesExpiry(v)) return;
 
     final accessNode = v == 'recorded' ? 'recorded_access' : 'flexible_access';
-    final accessRef = _usersRef.child(uid).child('courses').child(courseKey).child(accessNode);
+    final accessRef = _usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child(accessNode);
 
     await accessRef.update({
       'expiresAt': expiresAt,
@@ -418,7 +448,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     if (!_variantUsesExpiry(v)) return;
 
     final accessNode = v == 'recorded' ? 'recorded_access' : 'flexible_access';
-    final accessRef = _usersRef.child(uid).child('courses').child(courseKey).child(accessNode);
+    final accessRef = _usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child(accessNode);
 
     final snap = await _paymentsRef.orderByChild('uid').equalTo(uid).get();
     final raw = snap.value;
@@ -436,15 +470,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         final p = payVal.map((k, v) => MapEntry(k.toString(), v));
         if ((p['courseKey'] ?? '').toString() != courseKey) continue;
 
-        final payVariant = _normalizeVariantKey((p['variantKey'] ?? '').toString());
+        final payVariant = _normalizeVariantKey(
+          (p['variantKey'] ?? '').toString(),
+        );
         if (payVariant != v) continue;
 
         final paidAt = _asInt(p['paidAt']);
         if (paidAt >= latestPaidAt) {
           latestPaidAt = paidAt;
           latestExpiresAt = _asInt(p['expiresAt']);
-          latestMonths =
-          v == 'recorded' ? _asInt(p['durationMonths']) : _asInt(p['expiryMonths']);
+          latestMonths = v == 'recorded'
+              ? _asInt(p['durationMonths'])
+              : _asInt(p['expiryMonths']);
           latestPaymentId = entry.key.toString();
         }
       }
@@ -481,9 +518,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       final val = entry.value;
       if (val is! Map) continue;
       final m = val.map((k, v) => MapEntry(k.toString(), v));
-      final existingVariant = _normalizeVariantKey((m['variantKey'] ?? '').toString());
+      final existingVariant = _normalizeVariantKey(
+        (m['variantKey'] ?? '').toString(),
+      );
 
-      final sameBase = (m['uid'] ?? '') == uid &&
+      final sameBase =
+          (m['uid'] ?? '') == uid &&
           (m['courseKey'] ?? '') == courseKey &&
           _asInt(m['amount']) == amount &&
           (m['dayKey'] ?? '') == dayKey &&
@@ -504,7 +544,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     required String uid,
     required String courseKey,
   }) async {
-    final snap = await _usersRef.child(uid).child('courses').child(courseKey).get();
+    final snap = await _usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .get();
     final raw = snap.value;
     if (raw is! Map) {
       return {
@@ -515,7 +559,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       };
     }
 
-    final node = raw.map((k, v) => MapEntry(k.toString(), v)).cast<String, dynamic>();
+    final node = raw
+        .map((k, v) => MapEntry(k.toString(), v))
+        .cast<String, dynamic>();
     final variantKey = _extractVariantKeyFromLearnerCourseNode(node);
     final studyMode = _extractStudyModeFromLearnerCourseNode(node);
 
@@ -523,7 +569,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       'variantKey': variantKey,
       'studyMode': studyMode,
       'studyModeLabel': studyMode.isEmpty ? '' : _studyModeLabel(studyMode),
-      'variantLabel': _variantLabel(variantKey: variantKey, studyMode: studyMode),
+      'variantLabel': _variantLabel(
+        variantKey: variantKey,
+        studyMode: studyMode,
+      ),
     };
   }
 
@@ -535,10 +584,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       stream: _paymentsRef.onValue,
       builder: (context, snap) {
         if (snap.hasError) {
-          return const Scaffold(body: Center(child: Text('Error loading payments.')));
+          return const Scaffold(
+            body: Center(child: Text('Error loading payments.')),
+          );
         }
         if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         final raw = snap.data?.snapshot.value;
@@ -553,7 +606,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           });
         }
 
-        all.sort((a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])));
+        all.sort(
+          (a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])),
+        );
 
         final monthsSet = <String>{};
         for (final p in all) {
@@ -562,7 +617,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         }
         final months = monthsSet.toList()..sort((a, b) => b.compareTo(a));
 
-        if (_selectedMonthYyyyMm != null && !monthsSet.contains(_selectedMonthYyyyMm)) {
+        if (_selectedMonthYyyyMm != null &&
+            !monthsSet.contains(_selectedMonthYyyyMm)) {
           _selectedMonthYyyyMm = null;
         }
 
@@ -570,44 +626,62 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         final searchFiltered = s.isEmpty
             ? all
             : all.where((p) {
-          final learnerName = (p['learner_name'] ?? '').toString().toLowerCase();
-          final serial = (p['learner_serial'] ?? '').toString().toLowerCase();
-          final code = (p['course_code'] ?? '').toString().toLowerCase();
-          final title = (p['course_title'] ?? '').toString().toLowerCase();
-          final teacher = (p['teacherName'] ?? '').toString().toLowerCase();
-          final notes = (p['notes'] ?? '').toString().toLowerCase();
-          final paidDate = _fmtDateFromMs(p['paidAt']).toLowerCase();
-          final startDate = (p['startDate'] ?? '').toString().toLowerCase();
-          final expiryDate = _fmtDateFromMs(p['expiresAt']).toLowerCase();
-          final variant = _variantLabel(
-            variantKey: (p['variantKey'] ?? '').toString(),
-            studyMode: (p['studyMode'] ?? '').toString(),
-          ).toLowerCase();
+                final learnerName = (p['learner_name'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final serial = (p['learner_serial'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final code = (p['course_code'] ?? '').toString().toLowerCase();
+                final title = (p['course_title'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final teacher = (p['teacherName'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final notes = (p['notes'] ?? '').toString().toLowerCase();
+                final paidDate = _fmtDateFromMs(p['paidAt']).toLowerCase();
+                final startDate = (p['startDate'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final expiryDate = _fmtDateFromMs(p['expiresAt']).toLowerCase();
+                final variant = _variantLabel(
+                  variantKey: (p['variantKey'] ?? '').toString(),
+                  studyMode: (p['studyMode'] ?? '').toString(),
+                ).toLowerCase();
 
-          return learnerName.contains(s) ||
-              serial.contains(s) ||
-              code.contains(s) ||
-              title.contains(s) ||
-              teacher.contains(s) ||
-              notes.contains(s) ||
-              paidDate.contains(s) ||
-              startDate.contains(s) ||
-              expiryDate.contains(s) ||
-              variant.contains(s);
-        }).toList();
+                return learnerName.contains(s) ||
+                    serial.contains(s) ||
+                    code.contains(s) ||
+                    title.contains(s) ||
+                    teacher.contains(s) ||
+                    notes.contains(s) ||
+                    paidDate.contains(s) ||
+                    startDate.contains(s) ||
+                    expiryDate.contains(s) ||
+                    variant.contains(s);
+              }).toList();
 
         final visible = (_selectedMonthYyyyMm == null)
             ? searchFiltered
             : searchFiltered
-            .where((p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm)
-            .toList();
+                  .where(
+                    (p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm,
+                  )
+                  .toList();
 
         final today = _todayYmd();
-        final todayTotal = _sumAmount(all.where((p) => (p['dayKey'] ?? '') == today));
+        final todayTotal = _sumAmount(
+          all.where((p) => (p['dayKey'] ?? '') == today),
+        );
         final visibleTotal = _sumAmount(visible);
-        final monthTotal = _sumAmount((_selectedMonthYyyyMm == null)
-            ? all
-            : all.where((p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm));
+        final monthTotal = _sumAmount(
+          (_selectedMonthYyyyMm == null)
+              ? all
+              : all.where(
+                  (p) => _fmtMonthFromMs(p['paidAt']) == _selectedMonthYyyyMm,
+                ),
+        );
 
         int selectedTotal = 0;
         int selectedCount = 0;
@@ -650,7 +724,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             backgroundColor: Colors.white,
             elevation: 0,
             surfaceTintColor: Colors.white,
-            iconTheme: const IconThemeData(color: AdminPaymentsScreen.primaryBlue),
+            iconTheme: const IconThemeData(
+              color: AdminPaymentsScreen.primaryBlue,
+            ),
             title: const Text(
               'Payments',
               style: TextStyle(
@@ -666,7 +742,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               const SizedBox(width: 8),
               IconButton(
                 tooltip: 'Add payment',
-                icon: const Icon(Icons.add_card_rounded, color: AdminPaymentsScreen.actionOrange),
+                icon: const Icon(
+                  Icons.add_card_rounded,
+                  color: AdminPaymentsScreen.actionOrange,
+                ),
                 onPressed: () => _openAddPaymentDialog(),
               ),
               const SizedBox(width: 6),
@@ -680,7 +759,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 child: TextField(
                   onChanged: (v) => setState(() => _search = v),
                   decoration: InputDecoration(
-                    hintText: 'Search: learner, serial, variant, teacher, course, notes, dates…',
+                    hintText:
+                        'Search: learner, serial, variant, teacher, course, notes, dates…',
                     prefixIcon: const Icon(Icons.search),
                     filled: true,
                     fillColor: AdminPaymentsScreen.appBg,
@@ -688,8 +768,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       borderRadius: BorderRadius.circular(14),
                       borderSide: BorderSide.none,
                     ),
-                    contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                 ),
               ),
@@ -709,7 +791,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             child: Text('All'),
                           ),
                           ...months.map(
-                                (m) => DropdownMenuItem<String?>(
+                            (m) => DropdownMenuItem<String?>(
                               value: m,
                               child: Text(m),
                             ),
@@ -734,13 +816,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         const SizedBox(width: 8),
                         _Pill(
                           icon: Icons.check_circle_rounded,
-                          text: 'Selected ($selectedCount): ${_fmtMoneyDa(selectedTotal)}',
-                          color: AdminPaymentsScreen.actionOrange.withOpacity(0.18),
-                          borderColor: AdminPaymentsScreen.actionOrange.withOpacity(0.35),
+                          text:
+                              'Selected ($selectedCount): ${_fmtMoneyDa(selectedTotal)}',
+                          color: AdminPaymentsScreen.actionOrange.withOpacity(
+                            0.18,
+                          ),
+                          borderColor: AdminPaymentsScreen.actionOrange
+                              .withOpacity(0.35),
                         ),
                         IconButton(
                           tooltip: 'Clear selection',
-                          onPressed: () => setState(() => _selectedPaymentIds.clear()),
+                          onPressed: () =>
+                              setState(() => _selectedPaymentIds.clear()),
                           icon: const Icon(Icons.close, size: 18),
                         ),
                       ],
@@ -762,8 +849,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final tableWidth =
-                    constraints.maxWidth < 1300 ? 1300.0 : constraints.maxWidth;
+                    final tableWidth = constraints.maxWidth < 1300
+                        ? 1300.0
+                        : constraints.maxWidth;
 
                     if (visible.isEmpty) {
                       return const Center(child: Text('No payments found.'));
@@ -779,57 +867,84 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             Container(
                               color: Colors.white,
                               alignment: Alignment.center,
-                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                10,
+                                12,
+                                10,
+                              ),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(maxWidth: tableWidth),
+                                constraints: BoxConstraints(
+                                  maxWidth: tableWidth,
+                                ),
                                 child: const _TableHeaderRow(),
                               ),
                             ),
-                            Divider(height: 1, color: Colors.black.withOpacity(0.07)),
+                            Divider(
+                              height: 1,
+                              color: Colors.black.withOpacity(0.07),
+                            ),
                             Expanded(
                               child: ListView.separated(
                                 padding: const EdgeInsets.fromLTRB(0, 0, 0, 18),
                                 itemCount: visible.length,
-                                separatorBuilder: (_, __) =>
-                                    Divider(height: 1, color: Colors.black.withOpacity(0.07)),
+                                separatorBuilder: (_, _) => Divider(
+                                  height: 1,
+                                  color: Colors.black.withOpacity(0.07),
+                                ),
                                 itemBuilder: (context, i) {
                                   final p = visible[i];
                                   final idx = i + 1;
 
-                                  final paymentId = (p['paymentId'] ?? '').toString();
-                                  final isSelected = _selectedPaymentIds.contains(paymentId);
+                                  final paymentId = (p['paymentId'] ?? '')
+                                      .toString();
+                                  final isSelected = _selectedPaymentIds
+                                      .contains(paymentId);
 
                                   final paidDate = _fmtDateFromMs(p['paidAt']);
-                                  final startDate = (p['startDate'] ?? '').toString();
-                                  final expiresAt = _fmtDateFromMs(p['expiresAt']);
-                                  final learnerName = (p['learner_name'] ?? '').toString();
+                                  final startDate = (p['startDate'] ?? '')
+                                      .toString();
+                                  final expiresAt = _fmtDateFromMs(
+                                    p['expiresAt'],
+                                  );
+                                  final learnerName = (p['learner_name'] ?? '')
+                                      .toString();
                                   final amount = _asInt(p['amount']);
-                                  final teacher = (p['teacherName'] ?? '').toString();
-                                  final courseTitle = (p['course_title'] ?? '').toString();
+                                  final teacher = (p['teacherName'] ?? '')
+                                      .toString();
+                                  final courseTitle = (p['course_title'] ?? '')
+                                      .toString();
                                   final notes = (p['notes'] ?? '').toString();
                                   final variantText = _variantLabel(
-                                    variantKey: (p['variantKey'] ?? '').toString(),
-                                    studyMode: (p['studyMode'] ?? '').toString(),
+                                    variantKey: (p['variantKey'] ?? '')
+                                        .toString(),
+                                    studyMode: (p['studyMode'] ?? '')
+                                        .toString(),
                                   );
 
-                                  final detail = _variantIsRecorded(
-                                    (p['variantKey'] ?? '').toString(),
-                                  )
+                                  final detail =
+                                      _variantIsRecorded(
+                                        (p['variantKey'] ?? '').toString(),
+                                      )
                                       ? 'Months: ${_asInt(p['durationMonths'])}'
                                       : _variantUsesSessions(
-                                    (p['variantKey'] ?? '').toString(),
-                                  )
+                                          (p['variantKey'] ?? '').toString(),
+                                        )
                                       ? 'Sessions: ${_asInt(p['sessionsPaid'])}'
                                       : '—';
 
                                   final baseRowBg = (i % 2 == 0)
                                       ? Colors.white
-                                      : AdminPaymentsScreen.appBg.withOpacity(0.7);
+                                      : AdminPaymentsScreen.appBg.withOpacity(
+                                          0.7,
+                                        );
                                   final rowBg = isSelected
-                                      ? AdminPaymentsScreen.actionOrange.withOpacity(0.14)
+                                      ? AdminPaymentsScreen.actionOrange
+                                            .withOpacity(0.14)
                                       : baseRowBg;
 
-                                  final selectionMode = _selectedPaymentIds.isNotEmpty;
+                                  final selectionMode =
+                                      _selectedPaymentIds.isNotEmpty;
 
                                   return InkWell(
                                     onLongPress: () => setState(() {
@@ -843,7 +958,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                       if (selectionMode) {
                                         setState(() {
                                           if (isSelected) {
-                                            _selectedPaymentIds.remove(paymentId);
+                                            _selectedPaymentIds.remove(
+                                              paymentId,
+                                            );
                                           } else {
                                             _selectedPaymentIds.add(paymentId);
                                           }
@@ -864,38 +981,75 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                             width: 34,
                                             child: Center(
                                               child: AnimatedSwitcher(
-                                                duration:
-                                                const Duration(milliseconds: 120),
+                                                duration: const Duration(
+                                                  milliseconds: 120,
+                                                ),
                                                 child: isSelected
                                                     ? const Icon(
-                                                  Icons.check_circle,
-                                                  size: 18,
-                                                  color: AdminPaymentsScreen.actionOrange,
-                                                )
+                                                        Icons.check_circle,
+                                                        size: 18,
+                                                        color:
+                                                            AdminPaymentsScreen
+                                                                .actionOrange,
+                                                      )
                                                     : Icon(
-                                                  Icons.radio_button_unchecked,
-                                                  size: 18,
-                                                  color: AdminPaymentsScreen.primaryBlue
-                                                      .withOpacity(0.25),
-                                                ),
+                                                        Icons
+                                                            .radio_button_unchecked,
+                                                        size: 18,
+                                                        color:
+                                                            AdminPaymentsScreen
+                                                                .primaryBlue
+                                                                .withOpacity(
+                                                                  0.25,
+                                                                ),
+                                                      ),
                                               ),
                                             ),
                                           ),
-                                          _cell('#$idx', flex: 1, isStrong: true),
-                                          _cell(paidDate.isEmpty ? '—' : paidDate, flex: 2),
-                                          _cell(learnerName.isEmpty ? '—' : learnerName, flex: 3),
+                                          _cell(
+                                            '#$idx',
+                                            flex: 1,
+                                            isStrong: true,
+                                          ),
+                                          _cell(
+                                            paidDate.isEmpty ? '—' : paidDate,
+                                            flex: 2,
+                                          ),
+                                          _cell(
+                                            learnerName.isEmpty
+                                                ? '—'
+                                                : learnerName,
+                                            flex: 3,
+                                          ),
                                           _cell(variantText, flex: 2),
-                                          _cell('$amount', flex: 2, isStrong: true),
+                                          _cell(
+                                            '$amount',
+                                            flex: 2,
+                                            isStrong: true,
+                                          ),
                                           _cell(detail, flex: 2),
-                                          _cell(teacher.isEmpty ? '—' : teacher, flex: 3),
-                                          _cell(courseTitle.isEmpty ? '—' : courseTitle, flex: 3),
+                                          _cell(
+                                            teacher.isEmpty ? '—' : teacher,
+                                            flex: 3,
+                                          ),
+                                          _cell(
+                                            courseTitle.isEmpty
+                                                ? '—'
+                                                : courseTitle,
+                                            flex: 3,
+                                          ),
                                           _cell(
                                             startDate.isNotEmpty
                                                 ? startDate
-                                                : (expiresAt.isNotEmpty ? expiresAt : '—'),
+                                                : (expiresAt.isNotEmpty
+                                                      ? expiresAt
+                                                      : '—'),
                                             flex: 2,
                                           ),
-                                          _cell(notes.isEmpty ? '—' : notes, flex: 4),
+                                          _cell(
+                                            notes.isEmpty ? '—' : notes,
+                                            flex: 4,
+                                          ),
                                           SizedBox(
                                             width: 40,
                                             child: Align(
@@ -904,16 +1058,23 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                                 tooltip: 'Actions',
                                                 onSelected: (a) async {
                                                   if (a == 'edit') {
-                                                    await _openEditPaymentDialog(p);
+                                                    await _openEditPaymentDialog(
+                                                      p,
+                                                    );
                                                   } else if (a == 'delete') {
                                                     await _deletePayment(p);
                                                   }
                                                 },
                                                 itemBuilder: (_) => const [
-                                                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                                  PopupMenuItem(
+                                                    value: 'edit',
+                                                    child: Text('Edit'),
+                                                  ),
                                                   PopupMenuDivider(),
                                                   PopupMenuItem(
-                                                      value: 'delete', child: Text('Delete')),
+                                                    value: 'delete',
+                                                    child: Text('Delete'),
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -950,7 +1111,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontWeight: isStrong ? FontWeight.w900 : FontWeight.w700,
-            color: AdminPaymentsScreen.primaryBlue.withOpacity(isStrong ? 1 : 0.85),
+            color: AdminPaymentsScreen.primaryBlue.withOpacity(
+              isStrong ? 1 : 0.85,
+            ),
             fontSize: 12.5,
           ),
         ),
@@ -1010,10 +1173,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         pickedStudyModeLabel = study['studyModeLabel'] ?? '';
       }
 
-      final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+      final totalSessions = _parseTotalSessions(
+        (pickedCourse['duration'] ?? '').toString(),
+      );
 
       if (_variantUsesSessions(pickedVariantKey)) {
-        sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
+        sessionsPaid = (totalSessions >= 8)
+            ? 8
+            : (totalSessions > 0 ? totalSessions : 8);
       } else {
         sessionsPaid = 0;
       }
@@ -1045,7 +1212,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
-          final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+          final totalSessions = _parseTotalSessions(
+            (pickedCourse['duration'] ?? '').toString(),
+          );
           final maxSessions = _maxSessionsFromCourse(pickedCourse);
           final usesTeacher = _variantUsesTeacher(pickedVariantKey);
           final usesSessions = _variantUsesSessions(pickedVariantKey);
@@ -1060,11 +1229,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
           final expiryPreviewMs = usesExpiry
               ? _addMonthsToMs(
-            expiryPreviewBaseMs,
-            isRecorded ? durationMonths : expiryMonths,
-          )
+                  expiryPreviewBaseMs,
+                  isRecorded ? durationMonths : expiryMonths,
+                )
               : 0;
-          final expiryPreviewYmd = usesExpiry ? _fmtDateFromMs(expiryPreviewMs) : '';
+          final expiryPreviewYmd = usesExpiry
+              ? _fmtDateFromMs(expiryPreviewMs)
+              : '';
 
           return AlertDialog(
             title: const Text('Add payment'),
@@ -1079,7 +1250,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         pickedUid = uid;
                         pickedLearner = learnerMap;
 
-                        final coursesSnap = await _usersRef.child(uid).child('courses').get();
+                        final coursesSnap = await _usersRef
+                            .child(uid)
+                            .child('courses')
+                            .get();
                         final coursesVal = coursesSnap.value;
 
                         pickedCourseKey = null;
@@ -1090,26 +1264,32 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         pickedStudyModeLabel = '';
 
                         if (coursesVal is Map) {
-                          final keys = coursesVal.keys
-                              .map((e) => e.toString())
-                              .where((k) => k.startsWith('course_'))
-                              .toList()
-                            ..sort();
+                          final keys =
+                              coursesVal.keys
+                                  .map((e) => e.toString())
+                                  .where((k) => k.startsWith('course_'))
+                                  .toList()
+                                ..sort();
 
                           if (keys.isNotEmpty) {
                             pickedCourseKey = keys.first;
                             final firstNode = coursesVal[pickedCourseKey];
                             if (firstNode is Map) {
-                              final node = firstNode.map((k, v) => MapEntry(k.toString(), v));
+                              final node = firstNode.map(
+                                (k, v) => MapEntry(k.toString(), v),
+                              );
                               pickedCourseId = (node['id'] ?? '').toString();
-                              pickedVariantKey = _extractVariantKeyFromLearnerCourseNode(
-                                node.cast<String, dynamic>(),
-                              );
-                              pickedStudyMode = _extractStudyModeFromLearnerCourseNode(
-                                node.cast<String, dynamic>(),
-                              );
-                              pickedStudyModeLabel =
-                              pickedStudyMode.isEmpty ? '' : _studyModeLabel(pickedStudyMode);
+                              pickedVariantKey =
+                                  _extractVariantKeyFromLearnerCourseNode(
+                                    node.cast<String, dynamic>(),
+                                  );
+                              pickedStudyMode =
+                                  _extractStudyModeFromLearnerCourseNode(
+                                    node.cast<String, dynamic>(),
+                                  );
+                              pickedStudyModeLabel = pickedStudyMode.isEmpty
+                                  ? ''
+                                  : _studyModeLabel(pickedStudyMode);
                             }
                           }
                         }
@@ -1163,7 +1343,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const _MiniHint('Pick learner first.')
                     else
                       FutureBuilder<DataSnapshot>(
-                        future: _usersRef.child(pickedUid!).child('courses').get(),
+                        future: _usersRef
+                            .child(pickedUid!)
+                            .child('courses')
+                            .get(),
                         builder: (context, snap) {
                           final v = snap.data?.value;
                           final keys = <String>[];
@@ -1177,19 +1360,30 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               final key = k.toString();
                               if (!key.startsWith('course_')) return;
                               if (val is Map) {
-                                final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
-                                final code = (m['course_code'] ?? '').toString().trim();
-                                final title = (m['title'] ?? '').toString().trim();
-                                final variantKey = _extractVariantKeyFromLearnerCourseNode(
-                                  m.cast<String, dynamic>(),
+                                final m = val.map(
+                                  (kk, vv) => MapEntry(kk.toString(), vv),
                                 );
-                                final studyMode = _extractStudyModeFromLearnerCourseNode(
-                                  m.cast<String, dynamic>(),
-                                );
+                                final code = (m['course_code'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final title = (m['title'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final variantKey =
+                                    _extractVariantKeyFromLearnerCourseNode(
+                                      m.cast<String, dynamic>(),
+                                    );
+                                final studyMode =
+                                    _extractStudyModeFromLearnerCourseNode(
+                                      m.cast<String, dynamic>(),
+                                    );
                                 final label = [
                                   if (code.isNotEmpty) code,
                                   if (title.isNotEmpty) title,
-                                  _variantLabel(variantKey: variantKey, studyMode: studyMode),
+                                  _variantLabel(
+                                    variantKey: variantKey,
+                                    studyMode: studyMode,
+                                  ),
                                 ].join(' — ');
                                 keys.add(key);
                                 labelByKey[key] = label;
@@ -1201,27 +1395,37 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           }
                           keys.sort();
 
-                          if (keys.isEmpty) return const _MiniHint('Learner has no courses.');
+                          if (keys.isEmpty)
+                            return const _MiniHint('Learner has no courses.');
 
                           pickedCourseKey ??= keys.first;
 
                           return DropdownButtonFormField<String>(
-                            value: pickedCourseKey,
-                            decoration: const InputDecoration(labelText: 'Course'),
+                            initialValue: pickedCourseKey,
+                            decoration: const InputDecoration(
+                              labelText: 'Course',
+                            ),
                             items: keys
-                                .map((k) => DropdownMenuItem(
-                              value: k,
-                              child: Text(labelByKey[k] ?? k),
-                            ))
+                                .map(
+                                  (k) => DropdownMenuItem(
+                                    value: k,
+                                    child: Text(labelByKey[k] ?? k),
+                                  ),
+                                )
                                 .toList(),
                             onChanged: (v) async {
                               pickedCourseKey = v;
                               pickedCourseId = (v == null) ? null : idByKey[v];
                               pickedCourse = {};
-                              pickedVariantKey = v == null ? '' : (variantByKey[v] ?? '');
-                              pickedStudyMode = v == null ? '' : (studyModeByKey[v] ?? '');
-                              pickedStudyModeLabel =
-                              pickedStudyMode.isEmpty ? '' : _studyModeLabel(pickedStudyMode);
+                              pickedVariantKey = v == null
+                                  ? ''
+                                  : (variantByKey[v] ?? '');
+                              pickedStudyMode = v == null
+                                  ? ''
+                                  : (studyModeByKey[v] ?? '');
+                              pickedStudyModeLabel = pickedStudyMode.isEmpty
+                                  ? ''
+                                  : _studyModeLabel(pickedStudyMode);
 
                               await loadCourseAndDefaults();
                               setD(() {});
@@ -1238,7 +1442,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         decoration: BoxDecoration(
                           color: AdminPaymentsScreen.appBg,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.black.withOpacity(0.06)),
+                          border: Border.all(
+                            color: Colors.black.withOpacity(0.06),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -1247,7 +1453,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             Expanded(
                               child: Text(
                                 'Study type: ${_variantLabel(variantKey: pickedVariantKey, studyMode: pickedStudyMode)}',
-                                style: const TextStyle(fontWeight: FontWeight.w800),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ],
@@ -1286,7 +1494,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           ).toString();
 
                           if (usesReminder) {
-                            if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
+                            if (remindBeforeSession <= 0)
+                              remindBeforeSession = sessionsPaid;
                             if (remindBeforeSession > sessionsPaid) {
                               remindBeforeSession = sessionsPaid;
                             }
@@ -1300,7 +1509,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     if (usesReminder) ...[
                       _NumberPickerRow(
                         label: 'Reminder when left',
-                        value: (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession),
+                        value: (remindBeforeSession <= 0
+                            ? sessionsPaid
+                            : remindBeforeSession),
                         min: 1,
                         max: (sessionsPaid > 0 ? sessionsPaid : 1),
                         onChanged: (v) => setD(() => remindBeforeSession = v),
@@ -1319,7 +1530,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: expiryPreviewYmd.isEmpty ? '—' : expiryPreviewYmd,
+                        value: expiryPreviewYmd.isEmpty
+                            ? '—'
+                            : expiryPreviewYmd,
                       ),
                       const SizedBox(height: 10),
                     ],
@@ -1345,16 +1558,20 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: expiryPreviewYmd.isEmpty ? '—' : expiryPreviewYmd,
+                        value: expiryPreviewYmd.isEmpty
+                            ? '—'
+                            : expiryPreviewYmd,
                       ),
                       const SizedBox(height: 10),
                     ],
 
                     DropdownButtonFormField<String>(
-                      value: method,
+                      initialValue: method,
                       decoration: const InputDecoration(labelText: 'Method'),
                       items: _methods
-                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                          .map(
+                            (m) => DropdownMenuItem(value: m, child: Text(m)),
+                          )
                           .toList(),
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
@@ -1362,13 +1579,17 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     TextFormField(
                       controller: amountC,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Fee (editable)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Fee (editable)',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: notesC,
                       maxLines: 2,
-                      decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Notes (optional)',
+                      ),
                     ),
                   ],
                 ),
@@ -1383,142 +1604,177 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 onPressed: isSaving
                     ? null
                     : () async {
-                  if (pickedUid == null) {
-                    _toast('Pick learner first.');
-                    return;
-                  }
-                  if (pickedCourseKey == null || pickedCourseKey!.trim().isEmpty) {
-                    _toast('Pick course.');
-                    return;
-                  }
+                        if (pickedUid == null) {
+                          _toast('Pick learner first.');
+                          return;
+                        }
+                        if (pickedCourseKey == null ||
+                            pickedCourseKey!.trim().isEmpty) {
+                          _toast('Pick course.');
+                          return;
+                        }
 
-                  final fee = int.tryParse(amountC.text.trim()) ?? 0;
-                  if (fee <= 0) {
-                    _toast('Fee must be > 0');
-                    return;
-                  }
+                        final fee = int.tryParse(amountC.text.trim()) ?? 0;
+                        if (fee <= 0) {
+                          _toast('Fee must be > 0');
+                          return;
+                        }
 
-                  final paidAtMs = _ymdToMs(paidDateYmd);
-                  if (paidAtMs <= 0) {
-                    _toast('Invalid paid date.');
-                    return;
-                  }
+                        final paidAtMs = _ymdToMs(paidDateYmd);
+                        if (paidAtMs <= 0) {
+                          _toast('Invalid paid date.');
+                          return;
+                        }
 
-                  final usesTeacher = _variantUsesTeacher(pickedVariantKey);
-                  final usesSessions = _variantUsesSessions(pickedVariantKey);
-                  final usesReminder = _variantUsesReminder(pickedVariantKey);
-                  final usesStartDate = _variantUsesStartDate(pickedVariantKey);
-                  final usesExpiry = _variantUsesExpiry(pickedVariantKey);
+                        final usesTeacher = _variantUsesTeacher(
+                          pickedVariantKey,
+                        );
+                        final usesSessions = _variantUsesSessions(
+                          pickedVariantKey,
+                        );
+                        final usesReminder = _variantUsesReminder(
+                          pickedVariantKey,
+                        );
+                        final usesStartDate = _variantUsesStartDate(
+                          pickedVariantKey,
+                        );
+                        final usesExpiry = _variantUsesExpiry(pickedVariantKey);
 
-                  final startDateMs = _ymdToMs(startDateYmd);
-                  final monthsForExpiry =
-                  _variantIsRecorded(pickedVariantKey) ? durationMonths : expiryMonths;
-                  final expiryBaseMs =
-                  _variantIsFlexible(pickedVariantKey) ? startDateMs : paidAtMs;
-                  final expiresAt =
-                  usesExpiry ? _addMonthsToMs(expiryBaseMs, monthsForExpiry) : 0;
+                        final startDateMs = _ymdToMs(startDateYmd);
+                        final monthsForExpiry =
+                            _variantIsRecorded(pickedVariantKey)
+                            ? durationMonths
+                            : expiryMonths;
+                        final expiryBaseMs =
+                            _variantIsFlexible(pickedVariantKey)
+                            ? startDateMs
+                            : paidAtMs;
+                        final expiresAt = usesExpiry
+                            ? _addMonthsToMs(expiryBaseMs, monthsForExpiry)
+                            : 0;
 
-                  setD(() => isSaving = true);
+                        setD(() => isSaving = true);
 
-                  try {
-                    final dayKey = paidDateYmd;
-                    final dup = await _isDuplicatePayment(
-                      uid: pickedUid!,
-                      courseKey: pickedCourseKey!,
-                      variantKey: pickedVariantKey,
-                      sessionsPaid: usesSessions ? sessionsPaid : 0,
-                      durationMonths: _variantIsRecorded(pickedVariantKey) ? durationMonths : 0,
-                      amount: fee,
-                      dayKey: dayKey,
-                    );
-                    if (dup) {
-                      setD(() => isSaving = false);
-                      _toast('Duplicate payment blocked ✅');
-                      return;
-                    }
+                        try {
+                          final dayKey = paidDateYmd;
+                          final dup = await _isDuplicatePayment(
+                            uid: pickedUid!,
+                            courseKey: pickedCourseKey!,
+                            variantKey: pickedVariantKey,
+                            sessionsPaid: usesSessions ? sessionsPaid : 0,
+                            durationMonths: _variantIsRecorded(pickedVariantKey)
+                                ? durationMonths
+                                : 0,
+                            amount: fee,
+                            dayKey: dayKey,
+                          );
+                          if (dup) {
+                            setD(() => isSaving = false);
+                            _toast('Duplicate payment blocked ✅');
+                            return;
+                          }
 
-                    final newRef = _paymentsRef.push();
-                    final paymentId = newRef.key!;
+                          final newRef = _paymentsRef.push();
+                          final paymentId = newRef.key!;
 
-                    final courseCode = (pickedCourse['course_code'] ?? '').toString();
-                    final courseTitle = (pickedCourse['title'] ?? '').toString();
-                    final learnerName =
-                    '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
-                        .trim();
-                    final learnerSerial = (pickedLearner['serial'] ?? '').toString();
+                          final courseCode = (pickedCourse['course_code'] ?? '')
+                              .toString();
+                          final courseTitle = (pickedCourse['title'] ?? '')
+                              .toString();
+                          final learnerName =
+                              '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
+                                  .trim();
+                          final learnerSerial = (pickedLearner['serial'] ?? '')
+                              .toString();
 
-                    final remind =
-                    usesReminder ? (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession) : 0;
+                          final remind = usesReminder
+                              ? (remindBeforeSession <= 0
+                                    ? sessionsPaid
+                                    : remindBeforeSession)
+                              : 0;
 
-                    final monthKey = paidDateYmd.substring(0, 7);
+                          final monthKey = paidDateYmd.substring(0, 7);
 
-                    await newRef.set({
-                      'uid': pickedUid,
-                      'courseKey': pickedCourseKey,
-                      'course_id': pickedCourseId ?? '',
-                      'course_code': courseCode,
-                      'course_title': courseTitle,
-                      'variantKey': pickedVariantKey,
-                      'variantLabel':
-                      _variantLabel(variantKey: pickedVariantKey, studyMode: pickedStudyMode),
-                      'studyMode': pickedStudyMode,
-                      'studyModeLabel': pickedStudyModeLabel,
-                      'sessionsPaid': usesSessions ? sessionsPaid : null,
-                      'remindBeforeSession': usesReminder ? remind : null,
-                      'durationMonths':
-                      _variantIsRecorded(pickedVariantKey) ? durationMonths : null,
-                      'expiryMonths':
-                      _variantIsFlexible(pickedVariantKey) ? expiryMonths : null,
-                      'expiresAt': usesExpiry ? expiresAt : null,
-                      'amount': fee,
-                      'method': method,
-                      'teacherId': usesTeacher ? (selectedTeacherUid ?? '') : null,
-                      'teacherName': usesTeacher ? (selectedTeacherName ?? '') : null,
-                      'startDate': usesStartDate ? startDateYmd : null,
-                      'notes': notesC.text.trim(),
-                      'paidAt': paidAtMs,
-                      'createdAt': ServerValue.timestamp,
-                      'learner_name': learnerName,
-                      'learner_serial': learnerSerial,
-                      'dayKey': dayKey,
-                      'monthKey': monthKey,
-                    });
+                          await newRef.set({
+                            'uid': pickedUid,
+                            'courseKey': pickedCourseKey,
+                            'course_id': pickedCourseId ?? '',
+                            'course_code': courseCode,
+                            'course_title': courseTitle,
+                            'variantKey': pickedVariantKey,
+                            'variantLabel': _variantLabel(
+                              variantKey: pickedVariantKey,
+                              studyMode: pickedStudyMode,
+                            ),
+                            'studyMode': pickedStudyMode,
+                            'studyModeLabel': pickedStudyModeLabel,
+                            'sessionsPaid': usesSessions ? sessionsPaid : null,
+                            'remindBeforeSession': usesReminder ? remind : null,
+                            'durationMonths':
+                                _variantIsRecorded(pickedVariantKey)
+                                ? durationMonths
+                                : null,
+                            'expiryMonths': _variantIsFlexible(pickedVariantKey)
+                                ? expiryMonths
+                                : null,
+                            'expiresAt': usesExpiry ? expiresAt : null,
+                            'amount': fee,
+                            'method': method,
+                            'teacherId': usesTeacher
+                                ? (selectedTeacherUid ?? '')
+                                : null,
+                            'teacherName': usesTeacher
+                                ? (selectedTeacherName ?? '')
+                                : null,
+                            'startDate': usesStartDate ? startDateYmd : null,
+                            'notes': notesC.text.trim(),
+                            'paidAt': paidAtMs,
+                            'createdAt': ServerValue.timestamp,
+                            'learner_name': learnerName,
+                            'learner_serial': learnerSerial,
+                            'dayKey': dayKey,
+                            'monthKey': monthKey,
+                          });
 
-                    await _rebuildLearnerSummaryFromPayments(
-                      uid: pickedUid!,
-                      courseKey: pickedCourseKey!,
-                    );
+                          await _rebuildLearnerSummaryFromPayments(
+                            uid: pickedUid!,
+                            courseKey: pickedCourseKey!,
+                          );
 
-                    if (usesExpiry) {
-                      await _writeVariantAccess(
-                        uid: pickedUid!,
-                        courseKey: pickedCourseKey!,
-                        variantKey: pickedVariantKey,
-                        expiresAt: expiresAt,
-                        months: monthsForExpiry,
-                        paymentId: paymentId,
-                      );
-                    }
+                          if (usesExpiry) {
+                            await _writeVariantAccess(
+                              uid: pickedUid!,
+                              courseKey: pickedCourseKey!,
+                              variantKey: pickedVariantKey,
+                              expiresAt: expiresAt,
+                              months: monthsForExpiry,
+                              paymentId: paymentId,
+                            );
+                          }
 
-                    await _sendPaymentReceiptMail(
-                      learnerUid: pickedUid!,
-                      learnerName: learnerName.isEmpty ? 'Learner' : learnerName,
-                      courseTitle: courseTitle,
-                      amount: fee,
-                      sessionsPaid: usesSessions ? sessionsPaid : 0,
-                      paidDateYmd: paidDateYmd,
-                      variantKey: pickedVariantKey,
-                      durationMonths: _variantIsRecorded(pickedVariantKey) ? durationMonths : 0,
-                      expiresAt: expiresAt,
-                    );
+                          await _sendPaymentReceiptMail(
+                            learnerUid: pickedUid!,
+                            learnerName: learnerName.isEmpty
+                                ? 'Learner'
+                                : learnerName,
+                            courseTitle: courseTitle,
+                            amount: fee,
+                            sessionsPaid: usesSessions ? sessionsPaid : 0,
+                            paidDateYmd: paidDateYmd,
+                            variantKey: pickedVariantKey,
+                            durationMonths: _variantIsRecorded(pickedVariantKey)
+                                ? durationMonths
+                                : 0,
+                            expiresAt: expiresAt,
+                          );
 
-                    if (context.mounted) Navigator.pop(context);
-                    _toast('Payment saved ✅');
-                  } catch (e) {
-                    setD(() => isSaving = false);
-                    _toast('Failed: $e');
-                  }
-                },
+                          if (context.mounted) Navigator.pop(context);
+                          _toast('Payment saved ✅');
+                        } catch (e) {
+                          setD(() => isSaving = false);
+                          _toast(toHumanError(e));
+                        }
+                      },
                 child: Text(isSaving ? 'Saving…' : 'Save'),
               ),
             ],
@@ -1552,7 +1808,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     int durationMonths = _asInt(p['durationMonths']);
     final existingExpiresAt = _asInt(p['expiresAt']);
     final paidDateSeed = _fmtDateFromMs(p['paidAt']);
-    final paidMsSeed = _ymdToMs(paidDateSeed.isEmpty ? _todayYmd() : paidDateSeed);
+    final paidMsSeed = _ymdToMs(
+      paidDateSeed.isEmpty ? _todayYmd() : paidDateSeed,
+    );
 
     if (_variantIsFlexible(variantKey) && expiryMonths <= 0) {
       final inferred = _monthsBetweenMs(paidMsSeed, existingExpiresAt);
@@ -1597,11 +1855,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
           final previewExpiryMs = usesExpiry
               ? _addMonthsToMs(
-            previewExpiryBaseMs,
-            isRecorded ? durationMonths : expiryMonths,
-          )
+                  previewExpiryBaseMs,
+                  isRecorded ? durationMonths : expiryMonths,
+                )
               : 0;
-          final previewExpiryYmd = usesExpiry ? _fmtDateFromMs(previewExpiryMs) : '';
+          final previewExpiryYmd = usesExpiry
+              ? _fmtDateFromMs(previewExpiryMs)
+              : '';
 
           return AlertDialog(
             title: Text(titleName),
@@ -1672,7 +1932,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: 60,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder && remindBeforeSession > sessionsPaid) {
+                          if (usesReminder &&
+                              remindBeforeSession > sessionsPaid) {
                             remindBeforeSession = sessionsPaid;
                           }
                           setD(() {});
@@ -1703,7 +1964,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: previewExpiryYmd.isEmpty ? '—' : previewExpiryYmd,
+                        value: previewExpiryYmd.isEmpty
+                            ? '—'
+                            : previewExpiryYmd,
                       ),
                       const SizedBox(height: 10),
                     ],
@@ -1719,16 +1982,20 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: previewExpiryYmd.isEmpty ? '—' : previewExpiryYmd,
+                        value: previewExpiryYmd.isEmpty
+                            ? '—'
+                            : previewExpiryYmd,
                       ),
                       const SizedBox(height: 10),
                     ],
 
                     DropdownButtonFormField<String>(
-                      value: method,
+                      initialValue: method,
                       decoration: const InputDecoration(labelText: 'Method'),
                       items: _methods
-                          .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                          .map(
+                            (m) => DropdownMenuItem(value: m, child: Text(m)),
+                          )
                           .toList(),
                       onChanged: (v) => setD(() => method = v ?? method),
                     ),
@@ -1749,83 +2016,98 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 onPressed: isSaving
                     ? null
                     : () async {
-                  final fee = int.tryParse(amountC.text.trim()) ?? 0;
-                  if (fee <= 0) {
-                    _toast('Fee must be > 0');
-                    return;
-                  }
+                        final fee = int.tryParse(amountC.text.trim()) ?? 0;
+                        if (fee <= 0) {
+                          _toast('Fee must be > 0');
+                          return;
+                        }
 
-                  final paidAtMs = _ymdToMs(paidDateYmd);
-                  if (paidAtMs <= 0) {
-                    _toast('Invalid paid date.');
-                    return;
-                  }
+                        final paidAtMs = _ymdToMs(paidDateYmd);
+                        if (paidAtMs <= 0) {
+                          _toast('Invalid paid date.');
+                          return;
+                        }
 
-                  setD(() => isSaving = true);
+                        setD(() => isSaving = true);
 
-                  try {
-                    final monthKey = paidDateYmd.substring(0, 7);
-                    final usesExpiry = _variantUsesExpiry(variantKey);
-                    final startDateMs = _ymdToMs(startDateYmd);
-                    final monthsForExpiry =
-                    _variantIsRecorded(variantKey) ? durationMonths : expiryMonths;
-                    final expiryBaseMs =
-                    _variantIsFlexible(variantKey) ? startDateMs : paidAtMs;
-                    final expiresAt =
-                    usesExpiry ? _addMonthsToMs(expiryBaseMs, monthsForExpiry) : 0;
+                        try {
+                          final monthKey = paidDateYmd.substring(0, 7);
+                          final usesExpiry = _variantUsesExpiry(variantKey);
+                          final startDateMs = _ymdToMs(startDateYmd);
+                          final monthsForExpiry = _variantIsRecorded(variantKey)
+                              ? durationMonths
+                              : expiryMonths;
+                          final expiryBaseMs = _variantIsFlexible(variantKey)
+                              ? startDateMs
+                              : paidAtMs;
+                          final expiresAt = usesExpiry
+                              ? _addMonthsToMs(expiryBaseMs, monthsForExpiry)
+                              : 0;
 
-                    await _paymentsRef.child(paymentId).update({
-                      'sessionsPaid': _variantUsesSessions(variantKey) ? sessionsPaid : null,
-                      'remindBeforeSession':
-                      _variantUsesReminder(variantKey) ? remindBeforeSession : null,
-                      'method': method,
-                      'amount': fee,
-                      'teacherId':
-                      _variantUsesTeacher(variantKey) ? (selectedTeacherUid ?? '') : null,
-                      'teacherName':
-                      _variantUsesTeacher(variantKey) ? (selectedTeacherName ?? '') : null,
-                      'startDate':
-                      _variantUsesStartDate(variantKey) ? startDateYmd : null,
-                      'expiryMonths':
-                      _variantIsFlexible(variantKey) ? expiryMonths : null,
-                      'durationMonths':
-                      _variantIsRecorded(variantKey) ? durationMonths : null,
-                      'expiresAt': usesExpiry ? expiresAt : null,
-                      'notes': notesC.text.trim(),
-                      'paidAt': paidAtMs,
-                      'dayKey': paidDateYmd,
-                      'monthKey': monthKey,
-                      'updatedAt': ServerValue.timestamp,
-                    });
+                          await _paymentsRef.child(paymentId).update({
+                            'sessionsPaid': _variantUsesSessions(variantKey)
+                                ? sessionsPaid
+                                : null,
+                            'remindBeforeSession':
+                                _variantUsesReminder(variantKey)
+                                ? remindBeforeSession
+                                : null,
+                            'method': method,
+                            'amount': fee,
+                            'teacherId': _variantUsesTeacher(variantKey)
+                                ? (selectedTeacherUid ?? '')
+                                : null,
+                            'teacherName': _variantUsesTeacher(variantKey)
+                                ? (selectedTeacherName ?? '')
+                                : null,
+                            'startDate': _variantUsesStartDate(variantKey)
+                                ? startDateYmd
+                                : null,
+                            'expiryMonths': _variantIsFlexible(variantKey)
+                                ? expiryMonths
+                                : null,
+                            'durationMonths': _variantIsRecorded(variantKey)
+                                ? durationMonths
+                                : null,
+                            'expiresAt': usesExpiry ? expiresAt : null,
+                            'notes': notesC.text.trim(),
+                            'paidAt': paidAtMs,
+                            'dayKey': paidDateYmd,
+                            'monthKey': monthKey,
+                            'updatedAt': ServerValue.timestamp,
+                          });
 
-                    if (oldUid.isNotEmpty && oldCourseKey.isNotEmpty) {
-                      await _rebuildLearnerSummaryFromPayments(
-                        uid: oldUid,
-                        courseKey: oldCourseKey,
-                      );
-                      if (_variantUsesExpiry(variantKey)) {
-                        await _rebuildVariantAccessFromPayments(
-                          uid: oldUid,
-                          courseKey: oldCourseKey,
-                          variantKey: variantKey,
-                        );
-                      }
-                    }
+                          if (oldUid.isNotEmpty && oldCourseKey.isNotEmpty) {
+                            await _rebuildLearnerSummaryFromPayments(
+                              uid: oldUid,
+                              courseKey: oldCourseKey,
+                            );
+                            if (_variantUsesExpiry(variantKey)) {
+                              await _rebuildVariantAccessFromPayments(
+                                uid: oldUid,
+                                courseKey: oldCourseKey,
+                                variantKey: variantKey,
+                              );
+                            }
+                          }
 
-                    if (context.mounted) Navigator.pop(context);
-                    _toast('Updated ✅');
-                  } catch (e) {
-                    setD(() => isSaving = false);
-                    _toast('Failed: $e');
-                  }
-                },
+                          if (context.mounted) Navigator.pop(context);
+                          _toast('Updated ✅');
+                        } catch (e) {
+                          setD(() => isSaving = false);
+                          _toast(toHumanError(e));
+                        }
+                      },
                 child: Text(isSaving ? 'Saving…' : 'Save'),
-              )
+              ),
             ],
           );
         },
@@ -1837,21 +2119,27 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final paymentId = (p['paymentId'] ?? '').toString();
     if (paymentId.isEmpty) return;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete payment?'),
-        content: const Text('This will delete the payment record and rebuild learner payment data.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete payment?'),
+            content: const Text(
+              'This will delete the payment record and rebuild learner payment data.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -1861,10 +2149,15 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
       final uid = (p['uid'] ?? '').toString().trim();
       final courseKey = (p['courseKey'] ?? '').toString().trim();
-      final variantKey = _normalizeVariantKey((p['variantKey'] ?? '').toString());
+      final variantKey = _normalizeVariantKey(
+        (p['variantKey'] ?? '').toString(),
+      );
 
       if (uid.isNotEmpty && courseKey.isNotEmpty) {
-        await _rebuildLearnerSummaryFromPayments(uid: uid, courseKey: courseKey);
+        await _rebuildLearnerSummaryFromPayments(
+          uid: uid,
+          courseKey: courseKey,
+        );
         if (_variantUsesExpiry(variantKey)) {
           await _rebuildVariantAccessFromPayments(
             uid: uid,
@@ -1877,7 +2170,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       setState(() => _selectedPaymentIds.remove(paymentId));
       _toast('Deleted ✅');
     } catch (e) {
-      _toast('Failed: $e');
+      _toast(toHumanError(e));
     }
   }
 }
@@ -1906,12 +2199,18 @@ class _Pill extends StatelessWidget {
       decoration: BoxDecoration(
         color: color ?? AdminPaymentsScreen.appBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor ?? Colors.black.withOpacity(0.06)),
+        border: Border.all(
+          color: borderColor ?? Colors.black.withOpacity(0.06),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85)),
+          Icon(
+            icon,
+            size: 16,
+            color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85),
+          ),
           const SizedBox(width: 8),
           Text(
             text,
@@ -1997,7 +2296,12 @@ class _TableHeaderRow extends StatelessWidget {
         flex: flex,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text(t, maxLines: 1, overflow: TextOverflow.ellipsis, style: s(strong)),
+          child: Text(
+            t,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: s(strong),
+          ),
         ),
       );
     }
@@ -2047,7 +2351,9 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
     final full = '$first $last'.trim();
     if (full.isNotEmpty) return full;
 
-    final name = (m['name'] ?? m['full_name'] ?? m['fullName'] ?? '').toString().trim();
+    final name = (m['name'] ?? m['full_name'] ?? m['fullName'] ?? '')
+        .toString()
+        .trim();
     if (name.isNotEmpty) return name;
 
     final email = (m['email'] ?? '').toString().trim();
@@ -2087,7 +2393,7 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
         }
 
         return DropdownButtonFormField<String>(
-          value: effectiveUid,
+          initialValue: effectiveUid,
           decoration: const InputDecoration(labelText: 'Teacher'),
           items: [
             const DropdownMenuItem<String>(
@@ -2109,7 +2415,7 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
               return;
             }
             final found = teachers.firstWhere(
-                  (t) => t['uid'] == uid,
+              (t) => t['uid'] == uid,
               orElse: () => {'uid': uid, 'name': uid},
             );
             onChanged(uid, found['name'] ?? uid);
@@ -2123,13 +2429,11 @@ class _TeacherDropdownFromUsers extends StatelessWidget {
 // ------------------ Learner autocomplete ------------------
 
 class _LearnerAutocomplete extends StatefulWidget {
-  const _LearnerAutocomplete({
-    required this.usersRef,
-    required this.onPicked,
-  });
+  const _LearnerAutocomplete({required this.usersRef, required this.onPicked});
 
   final DatabaseReference usersRef;
-  final Future<void> Function(String uid, Map<String, dynamic> learnerMap) onPicked;
+  final Future<void> Function(String uid, Map<String, dynamic> learnerMap)
+  onPicked;
 
   @override
   State<_LearnerAutocomplete> createState() => _LearnerAutocompleteState();
@@ -2170,24 +2474,24 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
           final role = (m['role'] ?? '').toString().toLowerCase().trim();
           if (role != 'learner') return;
 
-          final name =
-          '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'.trim().toLowerCase();
+          final name = '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'
+              .trim()
+              .toLowerCase();
           final email = (m['email'] ?? '').toString().toLowerCase();
           final serial = (m['serial'] ?? '').toString().toLowerCase();
 
           if (name.contains(q) || email.contains(q) || serial.contains(q)) {
-            out.add({
-              'uid': uid.toString(),
-              ...m,
-            });
+            out.add({'uid': uid.toString(), ...m});
           }
         }
       });
     }
 
-    out.sort((a, b) => ('${a['first_name']} ${a['last_name']}')
-        .toString()
-        .compareTo('${b['first_name']} ${b['last_name']}'));
+    out.sort(
+      (a, b) => ('${a['first_name']} ${a['last_name']}').toString().compareTo(
+        '${b['first_name']} ${b['last_name']}',
+      ),
+    );
 
     setState(() => _results = out.take(8).toList());
   }
@@ -2219,16 +2523,24 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, _) =>
                   Divider(height: 1, color: Colors.black.withOpacity(0.06)),
               itemBuilder: (context, i) {
                 final r = _results[i];
-                final name = '${(r['first_name'] ?? '')} ${(r['last_name'] ?? '')}'.trim();
+                final name =
+                    '${(r['first_name'] ?? '')} ${(r['last_name'] ?? '')}'
+                        .trim();
                 final serial = (r['serial'] ?? '').toString();
                 return ListTile(
                   dense: true,
-                  title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                  subtitle: Text(serial, style: TextStyle(color: Colors.black.withOpacity(0.6))),
+                  title: Text(
+                    name,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  subtitle: Text(
+                    serial,
+                    style: TextStyle(color: Colors.black.withOpacity(0.6)),
+                  ),
                   onTap: () async {
                     _c.text = name;
                     setState(() => _results = []);
@@ -2254,17 +2566,17 @@ class _MiniHint extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Text(
         text,
-        style: TextStyle(color: Colors.black.withOpacity(0.6), fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: Colors.black.withOpacity(0.6),
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
 }
 
 class _InfoLine extends StatelessWidget {
-  const _InfoLine({
-    required this.label,
-    required this.value,
-  });
+  const _InfoLine({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -2281,10 +2593,7 @@ class _InfoLine extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.w900),
-          ),
+          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.w900)),
           Expanded(
             child: Text(
               value,
@@ -2319,7 +2628,12 @@ class _NumberPickerRow extends StatelessWidget {
 
     return Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900))),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
         IconButton(
           tooltip: 'Minus',
           onPressed: () => onChanged(clamp(value - 1)),
@@ -2410,7 +2724,8 @@ Future<void> _sendPaymentReceiptMail({
   final subject = 'Payment receipt';
   final now = DateTime.now().millisecondsSinceEpoch;
 
-  String body = '✅ Payment received\n'
+  String body =
+      '✅ Payment received\n'
       'Course: $courseTitle\n'
       'Amount: $amount DA\n'
       'Paid date: $paidDateYmd\n';
@@ -2520,7 +2835,9 @@ Future<void> _sendPaymentReceiptMail({
 
   await indexRef.child(learnerUid).child(threadId).runTransaction((cur) {
     final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-    final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
+    final oldUnread = (m['unreadCount'] is num)
+        ? (m['unreadCount'] as num).toInt()
+        : 0;
 
     m['subject'] = subject;
     m['updatedAt'] = now;

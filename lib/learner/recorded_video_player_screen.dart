@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import '../shared/human_error.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
   const RecordedVideoPlayerScreen({
@@ -210,7 +211,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -364,7 +365,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Video completed. This session video is now marked done.'),
+        content: Text(
+          'Video completed. This session video is now marked done.',
+        ),
       ),
     );
   }
@@ -471,10 +474,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 children: [
                   const Text(
                     'Session Notes',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 17,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -526,9 +526,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _notes = nextNotes;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Notes saved.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Notes saved.')));
   }
 
   void _startHideControlsTimer() {
@@ -678,9 +678,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             const SizedBox(height: 10),
             Container(
               width: double.infinity,
-              constraints: BoxConstraints(
-                maxHeight: isLandscape ? 120 : 150,
-              ),
+              constraints: BoxConstraints(maxHeight: isLandscape ? 120 : 150),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
@@ -728,7 +726,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               Icon(
                 icon,
                 size: 18,
-                color: onPressed == null ? Colors.grey : const Color(0xFF1A2B48),
+                color: onPressed == null
+                    ? Colors.grey
+                    : const Color(0xFF1A2B48),
               ),
               const SizedBox(width: 6),
               Text(
@@ -736,7 +736,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: onPressed == null ? Colors.grey : const Color(0xFF1A2B48),
+                  color: onPressed == null
+                      ? Colors.grey
+                      : const Color(0xFF1A2B48),
                 ),
               ),
             ],
@@ -786,7 +788,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               )
             else
               AspectRatio(
-                aspectRatio: value.aspectRatio <= 0 ? 16 / 9 : value.aspectRatio,
+                aspectRatio: value.aspectRatio <= 0
+                    ? 16 / 9
+                    : value.aspectRatio,
                 child: VideoPlayer(controller),
               ),
             if (_showControls)
@@ -805,7 +809,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                                 IconButton(
                                   onPressed: _toggleFullscreen,
                                   color: Colors.white,
-                                  icon: const Icon(Icons.fullscreen_exit_rounded),
+                                  icon: const Icon(
+                                    Icons.fullscreen_exit_rounded,
+                                  ),
                                 ),
                               const Spacer(),
                               IconButton(
@@ -997,10 +1003,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 9,
-            child: _buildVideoArea(isLandscape: true),
-          ),
+          Expanded(flex: 9, child: _buildVideoArea(isLandscape: true)),
           const SizedBox(width: 10),
           Expanded(
             flex: 5,
@@ -1058,8 +1061,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         value: _isFullscreen
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.light.copyWith(
-          statusBarColor: Colors.transparent,
-        ),
+                statusBarColor: Colors.transparent,
+              ),
         child: Scaffold(
           backgroundColor: _isFullscreen
               ? Colors.black
@@ -1071,10 +1074,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               ? _buildErrorState()
               : _initialized
               ? (_isFullscreen
-              ? _buildFullscreenLayout()
-              : (isLandscape
-              ? _buildLandscapeLayout()
-              : _buildPortraitLayout()))
+                    ? _buildFullscreenLayout()
+                    : (isLandscape
+                          ? _buildLandscapeLayout()
+                          : _buildPortraitLayout()))
               : const Center(child: CircularProgressIndicator()),
         ),
       ),

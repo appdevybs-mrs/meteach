@@ -3,6 +3,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+import '../shared/human_error.dart';
+
 import 'teacher_mail_thread_screen.dart';
 
 class TeacherMailScreen extends StatefulWidget {
@@ -44,7 +46,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   String _normalizeRole(dynamic raw) {
@@ -59,17 +63,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       return 'admin';
     }
 
-    if (s == 'teacher' ||
-        s == 'teach' ||
-        s == 'instructor' ||
-        s == 'prof') {
+    if (s == 'teacher' || s == 'teach' || s == 'instructor' || s == 'prof') {
       return 'teacher';
     }
 
-    if (s == 'learner' ||
-        s == 'lerner' ||
-        s == 'student' ||
-        s == 'pupil') {
+    if (s == 'learner' || s == 'lerner' || s == 'student' || s == 'pupil') {
       return 'learner';
     }
 
@@ -95,18 +93,25 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         String resolvedRole = 'learner';
 
         if (snap.exists && snap.value is Map) {
-          final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+          final m = (snap.value as Map).map(
+            (k, v) => MapEntry(k.toString(), v),
+          );
 
-          final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+          final fn = (m['first_name'] ?? m['firstName'] ?? '')
+              .toString()
+              .trim();
           final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
           final email = (m['email'] ?? '').toString().trim();
 
           final full = ('$fn $ln').trim();
-          resolvedName = full.isNotEmpty ? full : (email.isNotEmpty ? email : 'User');
+          resolvedName = full.isNotEmpty
+              ? full
+              : (email.isNotEmpty ? email : 'User');
           resolvedRole = _normalizeRole(m['role']);
         }
 
-        final changed = _nameCache[uid] != resolvedName || _roleCache[uid] != resolvedRole;
+        final changed =
+            _nameCache[uid] != resolvedName || _roleCache[uid] != resolvedRole;
         _nameCache[uid] = resolvedName;
         _roleCache[uid] = resolvedRole;
 
@@ -114,7 +119,8 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           setState(() {});
         }
       } catch (_) {
-        final changed = !_nameCache.containsKey(uid) || !_roleCache.containsKey(uid);
+        final changed =
+            !_nameCache.containsKey(uid) || !_roleCache.containsKey(uid);
         _nameCache.putIfAbsent(uid, () => 'User');
         _roleCache.putIfAbsent(uid, () => 'learner');
 
@@ -194,7 +200,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           if (innerK.trim().isEmpty || innerV == null) return;
 
           if (innerV is Map) {
-            final innerMap = innerV.map((kk, vvv) => MapEntry(kk.toString(), vvv));
+            final innerMap = innerV.map(
+              (kk, vvv) => MapEntry(kk.toString(), vvv),
+            );
             if (_looksLikeThreadObject(innerMap)) {
               addIfThreadObject(innerK, innerV);
             }
@@ -363,26 +371,27 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   Future<void> _deleteThreadForMe(_TopicRow row) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete topic?'),
-        content: const Text(
-          'This deletes only for you.\nThe other side can still see it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete topic?'),
+            content: const Text(
+              'This deletes only for you.\nThe other side can still see it.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -429,7 +438,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         subject: r.subject,
       );
     } catch (e) {
-      _snack('Failed: $e');
+      _snack(toHumanError(e));
     }
   }
 
@@ -497,13 +506,15 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                     RadioListTile<String>(
                       value: 'approved',
                       groupValue: status,
-                      onChanged: (v) => setLocal(() => status = v ?? 'approved'),
+                      onChanged: (v) =>
+                          setLocal(() => status = v ?? 'approved'),
                       title: const Text('Approved ✅'),
                     ),
                     RadioListTile<String>(
                       value: 'needs_work',
                       groupValue: status,
-                      onChanged: (v) => setLocal(() => status = v ?? 'needs_work'),
+                      onChanged: (v) =>
+                          setLocal(() => status = v ?? 'needs_work'),
                       title: const Text('Needs work 🔁'),
                     ),
                   ],
@@ -549,10 +560,14 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       final Map<String, dynamic> updates = {
         'mail_threads/$threadId/updatedAt': now,
         'mail_threads/$threadId/lastMessage': preview,
-        if (teacherUid.isNotEmpty) 'mail_index/$teacherUid/$threadId/updatedAt': now,
-        if (teacherUid.isNotEmpty) 'mail_index/$teacherUid/$threadId/lastMessage': preview,
-        if (learnerUid.isNotEmpty) 'mail_index/$learnerUid/$threadId/updatedAt': now,
-        if (learnerUid.isNotEmpty) 'mail_index/$learnerUid/$threadId/lastMessage': preview,
+        if (teacherUid.isNotEmpty)
+          'mail_index/$teacherUid/$threadId/updatedAt': now,
+        if (teacherUid.isNotEmpty)
+          'mail_index/$teacherUid/$threadId/lastMessage': preview,
+        if (learnerUid.isNotEmpty)
+          'mail_index/$learnerUid/$threadId/updatedAt': now,
+        if (learnerUid.isNotEmpty)
+          'mail_index/$learnerUid/$threadId/lastMessage': preview,
       };
 
       await _db.ref().update(updates);
@@ -603,12 +618,17 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           usersVal.forEach((uid, vv) {
             if (uid == null || vv == null || vv is! Map) return;
             final m = vv.map((k, v) => MapEntry(k.toString(), v));
-            final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-            final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+            final fn = (m['first_name'] ?? m['firstName'] ?? '')
+                .toString()
+                .trim();
+            final ln = (m['last_name'] ?? m['lastName'] ?? '')
+                .toString()
+                .trim();
             final email = (m['email'] ?? '').toString().trim();
             final n = ('$fn $ln').trim();
-            nameByUid[uid.toString()] =
-            n.isNotEmpty ? n : (email.isNotEmpty ? email : uid.toString());
+            nameByUid[uid.toString()] = n.isNotEmpty
+                ? n
+                : (email.isNotEmpty ? email : uid.toString());
           });
         }
 
@@ -678,12 +698,17 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           usersVal.forEach((uid, vv) {
             if (uid == null || vv == null || vv is! Map) return;
             final m = vv.map((k, v) => MapEntry(k.toString(), v));
-            final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-            final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+            final fn = (m['first_name'] ?? m['firstName'] ?? '')
+                .toString()
+                .trim();
+            final ln = (m['last_name'] ?? m['lastName'] ?? '')
+                .toString()
+                .trim();
             final email = (m['email'] ?? '').toString().trim();
             final n = ('$fn $ln').trim();
-            nameByUid[uid.toString()] =
-            n.isNotEmpty ? n : (email.isNotEmpty ? email : uid.toString());
+            nameByUid[uid.toString()] = n.isNotEmpty
+                ? n
+                : (email.isNotEmpty ? email : uid.toString());
           });
         }
 
@@ -695,7 +720,8 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           if (learnerUid.isEmpty) continue;
           if (learnerUid == _meUid) continue;
 
-          final learnerName = nameByUid[learnerUid] ??
+          final learnerName =
+              nameByUid[learnerUid] ??
               (entry.value is Map
                   ? (((entry.value as Map)['name'] ?? '').toString())
                   : 'Learner');
@@ -818,11 +844,15 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 row: r,
                 timeLabel: _timeLabel(r.updatedAtMs),
                 onDelete: () => _deleteThreadForMe(r),
-                onReview: (r.type == 'homework') ? () => _tryOpenHomeworkReview(r) : null,
+                onReview: (r.type == 'homework')
+                    ? () => _tryOpenHomeworkReview(r)
+                    : null,
                 onOpen: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
-                      settings: RouteSettings(name: '/mail/thread/${r.threadId}'),
+                      settings: RouteSettings(
+                        name: '/mail/thread/${r.threadId}',
+                      ),
                       builder: (_) => TeacherMailThreadScreen(
                         threadId: r.threadId,
                         peerUid: r.peerUid,
@@ -865,16 +895,19 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           suffixIcon: (_q.isEmpty)
               ? null
               : IconButton(
-            tooltip: 'Clear',
-            icon: const Icon(Icons.close_rounded),
-            onPressed: () {
-              _searchDebounce?.cancel();
-              _searchC.clear();
-              setState(() => _q = '');
-            },
-          ),
+                  tooltip: 'Clear',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () {
+                    _searchDebounce?.cancel();
+                    _searchC.clear();
+                    setState(() => _q = '');
+                  },
+                ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 16,
+          ),
         ),
         onChanged: (v) {
           _searchDebounce?.cancel();
@@ -916,7 +949,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
         ),
         indicatorSize: TabBarIndicatorSize.tab,
         labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        unselectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
         tabs: [
           Tab(text: 'Learners ($learnersCount)'),
           Tab(text: 'Teachers ($teachersCount)'),
@@ -974,8 +1010,14 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               }
             }
 
-            final learnersCount = _countGroupsForTab(allRows, _InboxTabRole.learners);
-            final teachersCount = _countGroupsForTab(allRows, _InboxTabRole.teachers);
+            final learnersCount = _countGroupsForTab(
+              allRows,
+              _InboxTabRole.learners,
+            );
+            final teachersCount = _countGroupsForTab(
+              allRows,
+              _InboxTabRole.teachers,
+            );
             final adminCount = _countGroupsForTab(allRows, _InboxTabRole.admin);
 
             return Column(
@@ -1083,7 +1125,10 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
                   widget.displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
                 ),
               ),
               if (widget.latestTime.isNotEmpty) ...[
@@ -1126,8 +1171,6 @@ class _ThreadTile extends StatelessWidget {
   final VoidCallback? onReview;
   final VoidCallback onOpen;
 
-
-
   List<String> _hwParts(String subject) {
     var s = subject.trim();
     if (s.toUpperCase().startsWith('[HW]')) {
@@ -1143,8 +1186,12 @@ class _ThreadTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final subject = row.subject.trim().isEmpty ? '(No topic)' : row.subject.trim();
-    final preview = row.lastMessage.trim().isEmpty ? '(No messages yet)' : row.lastMessage.trim();
+    final subject = row.subject.trim().isEmpty
+        ? '(No topic)'
+        : row.subject.trim();
+    final preview = row.lastMessage.trim().isEmpty
+        ? '(No messages yet)'
+        : row.lastMessage.trim();
 
     final isHomework = row.type == 'homework';
     final parts = _hwParts(subject);
@@ -1155,14 +1202,14 @@ class _ThreadTile extends StatelessWidget {
     final bgColor = isHomework
         ? Colors.orange.withOpacity(row.unreadCount > 0 ? 0.10 : 0.07)
         : (row.unreadCount > 0
-        ? scheme.primary.withOpacity(0.05)
-        : scheme.surfaceContainerHighest.withOpacity(0.45));
+              ? scheme.primary.withOpacity(0.05)
+              : scheme.surfaceContainerHighest.withOpacity(0.45));
 
     final borderColor = isHomework
         ? Colors.orange.withOpacity(0.28)
         : (row.unreadCount > 0
-        ? scheme.primary.withOpacity(0.18)
-        : scheme.outline.withOpacity(0.10));
+              ? scheme.primary.withOpacity(0.18)
+              : scheme.outline.withOpacity(0.10));
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -1200,7 +1247,10 @@ class _ThreadTile extends StatelessWidget {
                   children: [
                     if (isHomework) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.orange.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(999),
@@ -1220,7 +1270,9 @@ class _ThreadTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontWeight: row.unreadCount > 0 ? FontWeight.w900 : FontWeight.w800,
+                          fontWeight: row.unreadCount > 0
+                              ? FontWeight.w900
+                              : FontWeight.w800,
                           fontSize: 15,
                           color: Colors.black.withOpacity(0.88),
                         ),
@@ -1228,7 +1280,10 @@ class _ThreadTile extends StatelessWidget {
                       if (hwDate.isNotEmpty || hwExtra.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          [hwDate, hwExtra].where((e) => e.isNotEmpty).join(' • '),
+                          [
+                            hwDate,
+                            hwExtra,
+                          ].where((e) => e.isNotEmpty).join(' • '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -1244,7 +1299,9 @@ class _ThreadTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontWeight: row.unreadCount > 0 ? FontWeight.w900 : FontWeight.w800,
+                          fontWeight: row.unreadCount > 0
+                              ? FontWeight.w900
+                              : FontWeight.w800,
                           fontSize: 14.5,
                         ),
                       ),
@@ -1393,7 +1450,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
       final meVal = meSnap.value;
       if (meVal is Map) {
         final mm = meVal.map((k, v) => MapEntry(k.toString(), v));
-        final fn = (mm['first_name'] ?? mm['firstName'] ?? '').toString().trim();
+        final fn = (mm['first_name'] ?? mm['firstName'] ?? '')
+            .toString()
+            .trim();
         final ln = (mm['last_name'] ?? mm['lastName'] ?? '').toString().trim();
         final full = '$fn $ln'.trim();
         if (full.isNotEmpty) _teacherName = full;
@@ -1412,20 +1471,32 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           final m = vv.map((k, v) => MapEntry(k.toString(), v));
 
           final role = _normalizeRole(m['role']);
-          final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+          final fn = (m['first_name'] ?? m['firstName'] ?? '')
+              .toString()
+              .trim();
           final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
           final email = (m['email'] ?? '').toString().trim();
 
           final name = ('$fn $ln').trim();
-          final display = name.isNotEmpty ? name : (email.isNotEmpty ? email : uid.toString());
+          final display = name.isNotEmpty
+              ? name
+              : (email.isNotEmpty ? email : uid.toString());
 
           final u = uid.toString();
           nameByUid[u] = display;
 
           if (role == 'admin') {
-            admins.add(_RecipientRow(uid: u, name: display, type: _RecipientType.admin));
+            admins.add(
+              _RecipientRow(uid: u, name: display, type: _RecipientType.admin),
+            );
           } else if (role == 'teacher' && u != widget.meUid) {
-            teachers.add(_RecipientRow(uid: u, name: display, type: _RecipientType.teacher));
+            teachers.add(
+              _RecipientRow(
+                uid: u,
+                name: display,
+                type: _RecipientType.teacher,
+              ),
+            );
           }
         });
       }
@@ -1449,9 +1520,10 @@ class _ComposeSheetState extends State<_ComposeSheet> {
           }
           if (tUid != widget.meUid) return;
 
-          final title = (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId)
-              .toString()
-              .trim();
+          final title =
+              (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId)
+                  .toString()
+                  .trim();
           myClasses.add(
             _ClassRow(
               classId: classId.toString(),
@@ -1487,7 +1559,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
 
-      myClasses.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      myClasses.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
 
       if (!mounted) return;
       setState(() {
@@ -1608,8 +1682,14 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   ),
                   child: SegmentedButton<_ComposeMode>(
                     segments: const [
-                      ButtonSegment(value: _ComposeMode.single, label: Text('Single')),
-                      ButtonSegment(value: _ComposeMode.classGroup, label: Text('Whole class')),
+                      ButtonSegment(
+                        value: _ComposeMode.single,
+                        label: Text('Single'),
+                      ),
+                      ButtonSegment(
+                        value: _ComposeMode.classGroup,
+                        label: Text('Whole class'),
+                      ),
                     ],
                     selected: {_mode},
                     onSelectionChanged: (s) => setState(() => _mode = s.first),
@@ -1619,7 +1699,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                 if (_mode == _ComposeMode.single)
                   Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: scheme.outline.withOpacity(0.35)),
+                      border: Border.all(
+                        color: scheme.outline.withOpacity(0.35),
+                      ),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     padding: const EdgeInsets.all(12),
@@ -1664,13 +1746,16 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                               itemCount: _recipients.length,
                               itemBuilder: (context, index) {
                                 final r = _recipients[index];
-                                final checked = _pickedRecipientUids.contains(r.uid);
+                                final checked = _pickedRecipientUids.contains(
+                                  r.uid,
+                                );
 
                                 return CheckboxListTile(
                                   value: checked,
                                   dense: true,
                                   contentPadding: EdgeInsets.zero,
-                                  controlAffinity: ListTileControlAffinity.leading,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
                                   title: Text('${prefixFor(r.type)}${r.name}'),
                                   onChanged: (v) {
                                     setState(() {
@@ -1681,12 +1766,15 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                                         _pickedRecipientUids.remove(r.uid);
                                         if (_picked?.uid == r.uid) {
                                           _picked = _recipients
-                                              .where((x) => _pickedRecipientUids.contains(x.uid))
+                                              .where(
+                                                (x) => _pickedRecipientUids
+                                                    .contains(x.uid),
+                                              )
                                               .cast<_RecipientRow?>()
                                               .firstWhere(
                                                 (x) => x != null,
-                                            orElse: () => null,
-                                          );
+                                                orElse: () => null,
+                                              );
                                         }
                                       }
                                     });
@@ -1701,7 +1789,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   )
                 else
                   DropdownButtonFormField<_ClassRow>(
-                    value: _pickedClass,
+                    initialValue: _pickedClass,
                     items: _classes.map((c) {
                       return DropdownMenuItem<_ClassRow>(
                         value: c,
@@ -1751,7 +1839,9 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                     onPressed: _submit,
                     icon: const Icon(Icons.send_rounded),
                     label: Text(
-                      _mode == _ComposeMode.classGroup ? 'Send to class' : 'Create and send',
+                      _mode == _ComposeMode.classGroup
+                          ? 'Send to class'
+                          : 'Create and send',
                     ),
                   ),
                 ),
@@ -1765,6 +1855,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 }
 
 enum _ComposeMode { single, classGroup }
+
 enum _RecipientType { admin, teacher, learner }
 
 class _RecipientRow {

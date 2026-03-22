@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 
 class TeacherGamesScreen extends StatefulWidget {
@@ -113,7 +113,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     req.fields['key'] = _sha1(_secret);
     req.fields['root'] = 'games';
     req.fields['path'] =
-    'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
+        'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
 
     if (picked.path != null && picked.path!.isNotEmpty) {
       req.files.add(
@@ -130,11 +130,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       }
 
       req.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: picked.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
       );
     }
 
@@ -230,7 +226,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       final value = entry.value;
       if (value is! Map) continue;
 
-      final game = Map<String, dynamic>.from(value as Map);
+      final game = Map<String, dynamic>.from(value);
       final tags = game['tags'];
 
       if (tags is List) {
@@ -266,7 +262,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       final value = entry.value;
       if (value is! Map) continue;
 
-      final game = Map<String, dynamic>.from(value as Map);
+      final game = Map<String, dynamic>.from(value);
       final category = (game['category'] ?? '').toString().trim();
       if (category.isNotEmpty) out.add(category);
     }
@@ -287,9 +283,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This game has no link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('This game has no link.')));
       return;
     }
 
@@ -304,27 +300,28 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   }
 
   Future<void> _deleteGame(String gameId, Map<String, dynamic> game) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Delete game'),
-          content: const Text(
-            'Are you sure you want to delete this game and its uploaded files?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    ) ??
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) {
+            return AlertDialog(
+              title: const Text('Delete game'),
+              content: const Text(
+                'Are you sure you want to delete this game and its uploaded files?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
         false;
 
     if (!ok) return;
@@ -351,7 +348,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete game: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not delete game. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -393,7 +394,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to duplicate game: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -426,7 +431,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update game: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not update game. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -498,10 +507,12 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         bool localUploadingThumb = false;
 
         String uploadedUrl = (existingGame?['link'] ?? '').toString().trim();
-        String uploadedThumbnail =
-        (existingGame?['thumbnail'] ?? '').toString().trim();
-        String selectedStatus =
-        (existingGame?['status'] ?? 'ready').toString().trim();
+        String uploadedThumbnail = (existingGame?['thumbnail'] ?? '')
+            .toString()
+            .trim();
+        String selectedStatus = (existingGame?['status'] ?? 'ready')
+            .toString()
+            .trim();
 
         return StatefulBuilder(
           builder: (context, setLocalState) {
@@ -562,7 +573,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload game file.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -619,7 +634,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Thumbnail upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload thumbnail.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -691,11 +710,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final serial = (teacher['serial'] ?? '').toString().trim();
               final now = ServerValue.timestamp;
 
-              final tagsToSave = chosenTags
-                  .map((e) => e.trim())
-                  .where((e) => e.isNotEmpty)
-                  .toList()
-                ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+              final tagsToSave =
+                  chosenTags
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList()
+                    ..sort(
+                      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+                    );
 
               setLocalState(() => localSaving = true);
               if (mounted) {
@@ -703,8 +725,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               }
 
               try {
-                final ref =
-                isEdit ? _gamesRef.child(gameId!) : _gamesRef.child(draftGameUid);
+                final ref = isEdit
+                    ? _gamesRef.child(gameId)
+                    : _gamesRef.child(draftGameUid);
 
                 final data = <String, dynamic>{
                   'gameUid': ref.key ?? draftGameUid,
@@ -731,7 +754,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   data['createdAt'] = now;
                 } else {
                   data['createdAt'] =
-                      existingGame?['createdAt'] ?? ServerValue.timestamp;
+                      existingGame['createdAt'] ?? ServerValue.timestamp;
                 }
 
                 await ref.update(data);
@@ -751,7 +774,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to save game: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(
+                        e,
+                        fallback: 'Could not save game. Try again.',
+                      ),
+                    ),
+                  ),
                 );
               } finally {
                 if (mounted) {
@@ -815,9 +845,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _categoryOptions.contains(
-                          categoryController.text.trim(),
-                        )
+                        initialValue:
+                            _categoryOptions.contains(
+                              categoryController.text.trim(),
+                            )
                             ? categoryController.text.trim()
                             : null,
                         decoration: const InputDecoration(
@@ -827,10 +858,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         items: _categoryOptions
                             .map(
                               (item) => DropdownMenuItem<String>(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) {
                           if (value == null) return;
@@ -841,7 +872,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _levelOptions.contains(levelController.text.trim())
+                        initialValue:
+                            _levelOptions.contains(levelController.text.trim())
                             ? levelController.text.trim()
                             : null,
                         decoration: const InputDecoration(
@@ -851,10 +883,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         items: _levelOptions
                             .map(
                               (item) => DropdownMenuItem<String>(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) {
                           if (value == null) return;
@@ -916,22 +948,22 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                               onSelected: localSaving
                                   ? null
                                   : (value) {
-                                setLocalState(() {
-                                  if (value) {
-                                    chosenTags.add(tag);
-                                  } else {
-                                    chosenTags.remove(tag);
-                                  }
-                                });
-                              },
+                                      setLocalState(() {
+                                        if (value) {
+                                          chosenTags.add(tag);
+                                        } else {
+                                          chosenTags.remove(tag);
+                                        }
+                                      });
+                                    },
                               onDeleted: localSaving
                                   ? null
                                   : () {
-                                setLocalState(() {
-                                  selectedTags.remove(tag);
-                                  chosenTags.remove(tag);
-                                });
-                              },
+                                      setLocalState(() {
+                                        selectedTags.remove(tag);
+                                        chosenTags.remove(tag);
+                                      });
+                                    },
                             );
                           }).toList(),
                         )
@@ -942,8 +974,13 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: const ['draft', 'ready', 'hidden', 'archived']
-                            .contains(selectedStatus)
+                        initialValue:
+                            const [
+                              'draft',
+                              'ready',
+                              'hidden',
+                              'archived',
+                            ].contains(selectedStatus)
                             ? selectedStatus
                             : 'ready',
                         decoration: const InputDecoration(
@@ -951,9 +988,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
-                          DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                          DropdownMenuItem(
+                            value: 'draft',
+                            child: Text('Draft'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ready',
+                            child: Text('Ready'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'hidden',
+                            child: Text('Hidden'),
+                          ),
                           DropdownMenuItem(
                             value: 'archived',
                             child: Text('Archived'),
@@ -1015,7 +1061,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1025,8 +1073,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingGame ? null : uploadGameFile,
+                                    onPressed: localUploadingGame
+                                        ? null
+                                        : uploadGameFile,
                                     icon: const Icon(Icons.sync_rounded),
                                     label: const Text('Replace File'),
                                   ),
@@ -1039,16 +1088,17 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingGame ? null : uploadGameFile,
+                                onPressed: localUploadingGame
+                                    ? null
+                                    : uploadGameFile,
                                 icon: localUploadingGame
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.upload_file_rounded),
                                 label: Text(
                                   localUploadingGame
@@ -1087,11 +1137,13 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                   height: 140,
                                   width: double.infinity,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  errorBuilder: (_, _, _) => Container(
                                     height: 140,
                                     alignment: Alignment.center,
                                     color: Colors.grey.shade100,
-                                    child: const Text('Could not load thumbnail'),
+                                    child: const Text(
+                                      'Could not load thumbnail',
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1106,10 +1158,13 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content:
-                                          Text('Thumbnail link copied'),
+                                          content: Text(
+                                            'Thumbnail link copied',
+                                          ),
                                         ),
                                       );
                                     },
@@ -1117,8 +1172,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingThumb ? null : uploadThumbnail,
+                                    onPressed: localUploadingThumb
+                                        ? null
+                                        : uploadThumbnail,
                                     icon: const Icon(Icons.image_rounded),
                                     label: const Text('Replace Thumbnail'),
                                   ),
@@ -1131,16 +1187,17 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingThumb ? null : uploadThumbnail,
+                                onPressed: localUploadingThumb
+                                    ? null
+                                    : uploadThumbnail,
                                 icon: localUploadingThumb
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.upload_rounded),
                                 label: Text(
                                   localUploadingThumb
@@ -1250,18 +1307,12 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       decoration: BoxDecoration(
         color: backgroundColor ?? cs.primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: borderColor ?? cs.primary.withOpacity(0.12),
-        ),
+        border: Border.all(color: borderColor ?? cs.primary.withOpacity(0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 15,
-            color: iconColor ?? cs.primary,
-          ),
+          Icon(icon, size: 15, color: iconColor ?? cs.primary),
           const SizedBox(width: 6),
           Text(
             text,
@@ -1317,7 +1368,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         child: Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 10,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(14),
@@ -1327,19 +1381,19 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 color: cs.primary.withOpacity(0.10),
                 child: thumbnail.isNotEmpty
                     ? Image.network(
-                  thumbnail,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.sports_esports_rounded,
-                    color: cs.primary,
-                    size: 24,
-                  ),
-                )
+                        thumbnail,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Icon(
+                          Icons.sports_esports_rounded,
+                          color: cs.primary,
+                          size: 24,
+                        ),
+                      )
                     : Icon(
-                  Icons.sports_esports_rounded,
-                  color: cs.primary,
-                  size: 24,
-                ),
+                        Icons.sports_esports_rounded,
+                        color: cs.primary,
+                        size: 24,
+                      ),
               ),
             ),
             title: Text(
@@ -1361,7 +1415,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.70),
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                        0.70,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1390,16 +1446,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                           icon: Icons.bar_chart_rounded,
                           text: level,
                         ),
-                      ...tags.take(2).map(
+                      ...tags
+                          .take(2)
+                          .map(
                             (tag) => _buildMiniInfoChip(
-                          context: context,
-                          icon: Icons.sell_rounded,
-                          text: tag,
-                          backgroundColor: cs.secondary.withOpacity(0.08),
-                          borderColor: cs.secondary.withOpacity(0.14),
-                          iconColor: cs.secondary,
-                        ),
-                      ),
+                              context: context,
+                              icon: Icons.sell_rounded,
+                              text: tag,
+                              backgroundColor: cs.secondary.withOpacity(0.08),
+                              borderColor: cs.secondary.withOpacity(0.14),
+                              iconColor: cs.secondary,
+                            ),
+                          ),
                     ],
                   ),
                 ],
@@ -1414,7 +1472,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     height: 180,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       height: 180,
                       alignment: Alignment.center,
                       color: cs.primary.withOpacity(0.06),
@@ -1428,52 +1486,53 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 ),
                 const SizedBox(height: 14),
               ],
-              if (category.isNotEmpty || level.isNotEmpty || durationMinutes > 0)
-                ...[
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (category.isNotEmpty)
-                          Chip(
-                            label: Text(category),
-                            avatar: Icon(
-                              Icons.category_rounded,
-                              size: 18,
-                              color: cs.primary,
-                            ),
-                            backgroundColor: cs.primary.withOpacity(0.08),
-                            side: BorderSide(color: cs.primary.withOpacity(0.12)),
+              if (category.isNotEmpty ||
+                  level.isNotEmpty ||
+                  durationMinutes > 0) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (category.isNotEmpty)
+                        Chip(
+                          label: Text(category),
+                          avatar: Icon(
+                            Icons.category_rounded,
+                            size: 18,
+                            color: cs.primary,
                           ),
-                        if (level.isNotEmpty)
-                          Chip(
-                            label: Text(level),
-                            avatar: Icon(
-                              Icons.bar_chart_rounded,
-                              size: 18,
-                              color: cs.primary,
-                            ),
-                            backgroundColor: cs.primary.withOpacity(0.08),
-                            side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                        ),
+                      if (level.isNotEmpty)
+                        Chip(
+                          label: Text(level),
+                          avatar: Icon(
+                            Icons.bar_chart_rounded,
+                            size: 18,
+                            color: cs.primary,
                           ),
-                        if (durationMinutes > 0)
-                          Chip(
-                            label: Text('$durationMinutes min'),
-                            avatar: Icon(
-                              Icons.schedule_rounded,
-                              size: 18,
-                              color: cs.primary,
-                            ),
-                            backgroundColor: cs.primary.withOpacity(0.08),
-                            side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                        ),
+                      if (durationMinutes > 0)
+                        Chip(
+                          label: Text('$durationMinutes min'),
+                          avatar: Icon(
+                            Icons.schedule_rounded,
+                            size: 18,
+                            color: cs.primary,
                           ),
-                      ],
-                    ),
+                          backgroundColor: cs.primary.withOpacity(0.08),
+                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-                ],
+                ),
+                const SizedBox(height: 14),
+              ],
               if (tags.isNotEmpty) ...[
                 Align(
                   alignment: Alignment.centerLeft,
@@ -1494,13 +1553,13 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     children: tags
                         .map(
                           (tag) => Chip(
-                        label: Text(tag),
-                        backgroundColor: cs.secondary.withOpacity(0.08),
-                        side: BorderSide(
-                          color: cs.secondary.withOpacity(0.14),
-                        ),
-                      ),
-                    )
+                            label: Text(tag),
+                            backgroundColor: cs.secondary.withOpacity(0.08),
+                            side: BorderSide(
+                              color: cs.secondary.withOpacity(0.14),
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -1571,8 +1630,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   child: Text(
                     teacherNotes,
                     style: TextStyle(
-                      color:
-                      theme.textTheme.bodyMedium?.color?.withOpacity(0.78),
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                        0.78,
+                      ),
                       fontWeight: FontWeight.w600,
                       height: 1.45,
                     ),
@@ -1627,27 +1687,21 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     ),
                   if (canEdit)
                     OutlinedButton.icon(
-                      onPressed: () => _duplicateGame(
-                        gameId: gameId,
-                        existingGame: game,
-                      ),
+                      onPressed: () =>
+                          _duplicateGame(gameId: gameId, existingGame: game),
                       icon: const Icon(Icons.copy_rounded),
                       label: const Text('Duplicate'),
                     ),
                   if (canEdit)
                     OutlinedButton.icon(
-                      onPressed: () => _toggleArchive(
-                        gameId: gameId,
-                        game: game,
-                      ),
+                      onPressed: () =>
+                          _toggleArchive(gameId: gameId, game: game),
                       icon: Icon(
                         status == 'archived'
                             ? Icons.unarchive_rounded
                             : Icons.archive_rounded,
                       ),
-                      label: Text(
-                        status == 'archived' ? 'Restore' : 'Archive',
-                      ),
+                      label: Text(status == 'archived' ? 'Restore' : 'Archive'),
                     ),
                   if (canEdit)
                     OutlinedButton.icon(
@@ -1671,14 +1725,20 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       final game = entry.value;
 
       final name = (game['name'] ?? '').toString().toLowerCase().trim();
-      final description =
-      (game['description'] ?? '').toString().toLowerCase().trim();
+      final description = (game['description'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
       final category = (game['category'] ?? '').toString().toLowerCase().trim();
       final level = (game['level'] ?? '').toString().toLowerCase().trim();
-      final status = (game['status'] ?? 'ready').toString().toLowerCase().trim();
+      final status = (game['status'] ?? 'ready')
+          .toString()
+          .toLowerCase()
+          .trim();
       final tags = _tagsFromGame(game).map((e) => e.toLowerCase()).join(' ');
 
-      final matchesSearch = _searchQuery.isEmpty ||
+      final matchesSearch =
+          _searchQuery.isEmpty ||
           name.contains(_searchQuery) ||
           description.contains(_searchQuery) ||
           category.contains(_searchQuery) ||
@@ -1688,8 +1748,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       final matchesStatus =
           _statusFilter == 'all' || status == _statusFilter.toLowerCase();
 
-      final matchesCategory = _categoryFilter == 'all' ||
-          category == _categoryFilter.toLowerCase();
+      final matchesCategory =
+          _categoryFilter == 'all' || category == _categoryFilter.toLowerCase();
 
       return matchesSearch && matchesStatus && matchesCategory;
     }).toList();
@@ -1697,28 +1757,30 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     filtered.sort((a, b) {
       switch (_sortBy) {
         case 'name_asc':
-          return (a.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((b.value['name'] ?? '').toString().toLowerCase());
+          return (a.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (b.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'name_desc':
-          return (b.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((a.value['name'] ?? '').toString().toLowerCase());
+          return (b.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (a.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'created_desc':
-          return _toInt(b.value['createdAt'])
-              .compareTo(_toInt(a.value['createdAt']));
+          return _toInt(
+            b.value['createdAt'],
+          ).compareTo(_toInt(a.value['createdAt']));
         case 'created_asc':
-          return _toInt(a.value['createdAt'])
-              .compareTo(_toInt(b.value['createdAt']));
+          return _toInt(
+            a.value['createdAt'],
+          ).compareTo(_toInt(b.value['createdAt']));
         case 'updated_asc':
-          return _toInt(a.value['updatedAt'])
-              .compareTo(_toInt(b.value['updatedAt']));
+          return _toInt(
+            a.value['updatedAt'],
+          ).compareTo(_toInt(b.value['updatedAt']));
         case 'updated_desc':
         default:
-          return _toInt(b.value['updatedAt'])
-              .compareTo(_toInt(a.value['updatedAt']));
+          return _toInt(
+            b.value['updatedAt'],
+          ).compareTo(_toInt(a.value['updatedAt']));
       }
     });
 
@@ -1761,16 +1823,16 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {
-                      _searchQuery = '';
-                    });
-                  },
-                  icon: const Icon(Icons.clear_rounded),
-                ),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                        icon: const Icon(Icons.clear_rounded),
+                      ),
                 filled: true,
-                fillColor: cs.surfaceVariant.withOpacity(0.35),
+                fillColor: cs.surfaceContainerHighest.withOpacity(0.35),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
@@ -1790,7 +1852,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _statusFilter,
+                    initialValue: _statusFilter,
                     decoration: const InputDecoration(
                       labelText: 'Status',
                       border: OutlineInputBorder(),
@@ -1800,7 +1862,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                       DropdownMenuItem(value: 'draft', child: Text('Draft')),
                       DropdownMenuItem(value: 'ready', child: Text('Ready')),
                       DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
-                      DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                      DropdownMenuItem(
+                        value: 'archived',
+                        child: Text('Archived'),
+                      ),
                     ],
                     onChanged: (value) {
                       if (value == null) return;
@@ -1813,7 +1878,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _categoryFilter,
+                    initialValue: _categoryFilter,
                     decoration: const InputDecoration(
                       labelText: 'Category',
                       border: OutlineInputBorder(),
@@ -1821,10 +1886,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     items: categoryItems
                         .map(
                           (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e == 'all' ? 'All' : e),
-                      ),
-                    )
+                            value: e,
+                            child: Text(e == 'all' ? 'All' : e),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) {
                       if (value == null) return;
@@ -1838,7 +1903,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: _sortBy,
+              initialValue: _sortBy,
               decoration: const InputDecoration(
                 labelText: 'Sort by',
                 border: OutlineInputBorder(),
@@ -1886,15 +1951,11 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Games'),
-      ),
+      appBar: AppBar(title: const Text('Games')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
             ? null
-            : () => _showGameForm(
-          knownTags: const <String>[],
-        ),
+            : () => _showGameForm(knownTags: const <String>[]),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Game'),
       ),
@@ -1966,7 +2027,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             final gameValue = entry.value;
 
             final game = gameValue is Map
-                ? Map<String, dynamic>.from(gameValue as Map)
+                ? Map<String, dynamic>.from(gameValue)
                 : <String, dynamic>{};
 
             return MapEntry(gameId, game);
@@ -2000,34 +2061,34 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   },
                   child: visibleItems.isEmpty
                       ? ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                    children: [
-                      Center(
-                        child: Text(
-                          'No games match your filters.',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: theme.textTheme.bodyMedium?.color
-                                ?.withOpacity(0.65),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                          children: [
+                            Center(
+                              child: Text(
+                                'No games match your filters.',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.textTheme.bodyMedium?.color
+                                      ?.withOpacity(0.65),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
                       : ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    itemCount: visibleItems.length,
-                    itemBuilder: (context, index) {
-                      final item = visibleItems[index];
-                      return _buildGameCard(
-                        gameId: item.key,
-                        game: item.value,
-                        knownTags: knownTags,
-                      );
-                    },
-                  ),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          itemCount: visibleItems.length,
+                          itemBuilder: (context, index) {
+                            final item = visibleItems[index];
+                            return _buildGameCard(
+                              gameId: item.key,
+                              game: item.value,
+                              knownTags: knownTags,
+                            );
+                          },
+                        ),
                 ),
               ),
             ],

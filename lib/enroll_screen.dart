@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'shared/human_error.dart';
 
 /// ===== Brand Colors (from your palette) =====
 class Brand {
@@ -341,11 +342,11 @@ class _EnrollScreenState extends State<EnrollScreen> {
           .cast<EnrollDeliveryOption?>()
           .firstWhere(
             (e) => e?.isSelectable == true,
-        orElse: () => deliveryOptions.first,
-      );
+            orElse: () => deliveryOptions.first,
+          );
       selectedDeliveryKey = firstSelectable?.key;
       _currentDeliveryIndex = deliveryOptions.indexWhere(
-            (e) => e.key == selectedDeliveryKey,
+        (e) => e.key == selectedDeliveryKey,
       );
       if (_currentDeliveryIndex < 0) _currentDeliveryIndex = 0;
     }
@@ -357,8 +358,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
   }
 
   List<EnrollDeliveryOption> _dedupeNormalizedOptions(
-      List<EnrollDeliveryOption> input,
-      ) {
+    List<EnrollDeliveryOption> input,
+  ) {
     final Map<String, EnrollDeliveryOption> byKey = {};
 
     for (final item in input) {
@@ -374,7 +375,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
       final existingFee = existing.fee ?? 0;
       final newFee = item.fee ?? 0;
 
-      final shouldReplace = newFee > existingFee ||
+      final shouldReplace =
+          newFee > existingFee ||
           (!existing.enabled && item.enabled) ||
           (existing.shortLabelEn.trim().isEmpty &&
               item.shortLabelEn.trim().isNotEmpty);
@@ -519,7 +521,14 @@ class _EnrollScreenState extends State<EnrollScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to enroll: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(
+              e,
+              fallback: 'Could not complete enrollment. Try again.',
+            ),
+          ),
+        ),
       );
       setState(() => saving = false);
     }
@@ -671,7 +680,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
                         if (deliveryOptions.isEmpty)
                           const _InfoBanner(
                             text:
-                            'No study options are available for this course right now.',
+                                'No study options are available for this course right now.',
                           )
                         else ...[
                           _DeliveryCarousel(
@@ -717,8 +726,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
                             onChanged: saving
                                 ? null
                                 : (v) => setState(
-                                  () => _privateStudyMode = v ?? 'online',
-                            ),
+                                    () => _privateStudyMode = v ?? 'online',
+                                  ),
                           ),
                         ],
                       ),
@@ -804,7 +813,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
                           const _InfoBanner(
                             text:
-                            'We will contact you soon to confirm your subscription.',
+                                'We will contact you soon to confirm your subscription.',
                           ),
                         ],
                       ),
@@ -817,10 +826,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: _BottomActionBar(
-                saving: saving,
-                onSubmit: _submit,
-              ),
+              child: _BottomActionBar(saving: saving, onSubmit: _submit),
             ),
           ],
         ),
@@ -872,21 +878,21 @@ class _DeliveryCarousel extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: selected
                       ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Brand.primaryBlue,
-                      Brand.primaryBlue.withOpacity(0.92),
-                    ],
-                  )
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Brand.primaryBlue,
+                            Brand.primaryBlue.withOpacity(0.92),
+                          ],
+                        )
                       : LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withOpacity(0.98),
-                      Colors.white.withOpacity(0.92),
-                    ],
-                  ),
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.white.withOpacity(0.98),
+                            Colors.white.withOpacity(0.92),
+                          ],
+                        ),
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
                     color: selected ? Brand.accentCyan : Brand.uiBorder,
@@ -960,10 +966,7 @@ class _DeliveryCarousel extends StatelessWidget {
 }
 
 class _CarouselDots extends StatelessWidget {
-  const _CarouselDots({
-    required this.count,
-    required this.activeIndex,
-  });
+  const _CarouselDots({required this.count, required this.activeIndex});
 
   final int count;
   final int activeIndex;
@@ -999,8 +1002,14 @@ class _DeliveryExplanation extends StatelessWidget {
       case 'inclass':
         return const [
           _FeatureItem(Icons.event_rounded, '📅 جدول ثابت وواضح'),
-          _FeatureItem(Icons.groups_rounded, '👥 تعلم مع مجموعة في نفس المستوى'),
-          _FeatureItem(Icons.school_rounded, '🏫 بيئة تعليمية منظمة داخل القسم'),
+          _FeatureItem(
+            Icons.groups_rounded,
+            '👥 تعلم مع مجموعة في نفس المستوى',
+          ),
+          _FeatureItem(
+            Icons.school_rounded,
+            '🏫 بيئة تعليمية منظمة داخل القسم',
+          ),
           _FeatureItem(Icons.trending_up_rounded, '📈 تقدم خطوة بخطوة'),
         ];
 
@@ -1015,7 +1024,10 @@ class _DeliveryExplanation extends StatelessWidget {
       case 'private':
         return const [
           _FeatureItem(Icons.person_rounded, '👤 حصص فردية 1 to 1'),
-          _FeatureItem(Icons.track_changes_rounded, '🎯 برنامج حسب مستواك وهدفك'),
+          _FeatureItem(
+            Icons.track_changes_rounded,
+            '🎯 برنامج حسب مستواك وهدفك',
+          ),
           _FeatureItem(Icons.flash_on_rounded, '⚡ تقدم أسرع وتركيز أكبر'),
           _FeatureItem(Icons.swap_horiz_rounded, '📍 أونلاين أو حضوري'),
         ];
@@ -1023,7 +1035,10 @@ class _DeliveryExplanation extends StatelessWidget {
       case 'recorded':
         return const [
           _FeatureItem(Icons.video_library_rounded, '🎥 دورة كاملة مسجلة'),
-          _FeatureItem(Icons.self_improvement_rounded, '📚 تعلم ذاتي وبالسرعة المناسبة'),
+          _FeatureItem(
+            Icons.self_improvement_rounded,
+            '📚 تعلم ذاتي وبالسرعة المناسبة',
+          ),
           _FeatureItem(Icons.replay_rounded, '🔁 أعد مشاهدة الدروس وقتما تشاء'),
           _FeatureItem(Icons.access_time_rounded, '🕒 ادرس في أي وقت'),
         ];
@@ -1142,10 +1157,7 @@ class _FeatureTag extends StatelessWidget {
 }
 
 class _StudyModeSelector extends StatelessWidget {
-  const _StudyModeSelector({
-    required this.value,
-    required this.onChanged,
-  });
+  const _StudyModeSelector({required this.value, required this.onChanged});
 
   final String value;
   final ValueChanged<String?>? onChanged;
@@ -1153,7 +1165,7 @@ class _StudyModeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: normalizeStudyMode(value).isEmpty
+      initialValue: normalizeStudyMode(value).isEmpty
           ? 'online'
           : normalizeStudyMode(value),
       decoration: InputDecoration(
@@ -1174,14 +1186,8 @@ class _StudyModeSelector extends StatelessWidget {
         ),
       ),
       items: const [
-        DropdownMenuItem(
-          value: 'online',
-          child: Text('Online'),
-        ),
-        DropdownMenuItem(
-          value: 'inclass',
-          child: Text('In-Class'),
-        ),
+        DropdownMenuItem(value: 'online', child: Text('Online')),
+        DropdownMenuItem(value: 'inclass', child: Text('In-Class')),
       ],
       onChanged: onChanged,
     );
@@ -1189,10 +1195,7 @@ class _StudyModeSelector extends StatelessWidget {
 }
 
 class _SelectedOptionSummary extends StatelessWidget {
-  const _SelectedOptionSummary({
-    required this.option,
-    required this.studyMode,
-  });
+  const _SelectedOptionSummary({required this.option, required this.studyMode});
 
   final EnrollDeliveryOption option;
   final String studyMode;
@@ -1204,8 +1207,9 @@ class _SelectedOptionSummary extends StatelessWidget {
         : 'Lifetime access.';
 
     final modeText = option.requiresStudyMode ? studyModeLabel(studyMode) : '';
-    final modeTextAr =
-    option.requiresStudyMode ? studyModeLabelAr(studyMode) : '';
+    final modeTextAr = option.requiresStudyMode
+        ? studyModeLabelAr(studyMode)
+        : '';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1377,7 +1381,7 @@ class _MascotHeader extends StatelessWidget {
               child: Image.asset(
                 'assets/images/character.png',
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Icon(
+                errorBuilder: (_, _, _) => Icon(
                   Icons.person_rounded,
                   color: Brand.primaryBlue,
                   size: compact ? 30 : 34,
@@ -1497,10 +1501,7 @@ class _InfoBanner extends StatelessWidget {
 }
 
 class _BottomActionBar extends StatelessWidget {
-  const _BottomActionBar({
-    required this.saving,
-    required this.onSubmit,
-  });
+  const _BottomActionBar({required this.saving, required this.onSubmit});
 
   final bool saving;
   final VoidCallback onSubmit;
@@ -1513,12 +1514,7 @@ class _BottomActionBar extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            12,
-            16,
-            12 + mq.padding.bottom,
-          ),
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + mq.padding.bottom),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.78),
             border: Border(
@@ -1543,8 +1539,9 @@ class _BottomActionBar extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: Brand.primaryBlue,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor:
-                    Brand.primaryBlue.withOpacity(0.55),
+                    disabledBackgroundColor: Brand.primaryBlue.withOpacity(
+                      0.55,
+                    ),
                     disabledForegroundColor: Colors.white.withOpacity(0.9),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -1552,13 +1549,13 @@ class _BottomActionBar extends StatelessWidget {
                   ),
                   icon: saving
                       ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
                       : const Icon(Icons.check_circle_rounded),
                   label: Text(
                     saving ? 'Saving...' : 'Submit enrollment',

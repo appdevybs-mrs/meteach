@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 
 class PaymentDialogShared {
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
@@ -82,7 +83,10 @@ class PaymentDialogShared {
 
   static void _snack(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+      SnackBar(
+        content: Text(humanizeUiMessage(msg)),
+        duration: const Duration(milliseconds: 900),
+      ),
     );
   }
 
@@ -94,7 +98,10 @@ class PaymentDialogShared {
   }
 
   static int _parseTotalSessions(String duration) {
-    final m = RegExp(r'(\d+)\s*sessions', caseSensitive: false).firstMatch(duration);
+    final m = RegExp(
+      r'(\d+)\s*sessions',
+      caseSensitive: false,
+    ).firstMatch(duration);
     if (m == null) return 0;
     return int.tryParse(m.group(1) ?? '') ?? 0;
   }
@@ -117,7 +124,9 @@ class PaymentDialogShared {
     }
 
     if (sessionsPaid == 8 && pricePerMonth > 0) return pricePerMonth;
-    if (totalSessions > 0 && sessionsPaid == totalSessions && pricePerLevel > 0) {
+    if (totalSessions > 0 &&
+        sessionsPaid == totalSessions &&
+        pricePerLevel > 0) {
       return pricePerLevel;
     }
     if (totalSessions > 0 && pricePerLevel > 0) {
@@ -137,7 +146,9 @@ class PaymentDialogShared {
     final full = '$first $last'.trim();
     if (full.isNotEmpty) return full;
 
-    final name = (m['name'] ?? m['full_name'] ?? m['fullName'] ?? '').toString().trim();
+    final name = (m['name'] ?? m['full_name'] ?? m['fullName'] ?? '')
+        .toString()
+        .trim();
     if (name.isNotEmpty) return name;
 
     final email = (m['email'] ?? '').toString().trim();
@@ -146,7 +157,9 @@ class PaymentDialogShared {
     return uid;
   }
 
-  static Future<Map<String, String>> _loadTeachers(DatabaseReference usersRef) async {
+  static Future<Map<String, String>> _loadTeachers(
+    DatabaseReference usersRef,
+  ) async {
     final teachers = <String, String>{};
     final allUsersSnap = await usersRef.get();
     final allUsersVal = allUsersSnap.value;
@@ -304,8 +317,8 @@ class PaymentDialogShared {
   }
 
   static Map<String, String> _extractStudyFieldsFromLearnerCourseNode(
-      Map<String, dynamic> node,
-      ) {
+    Map<String, dynamic> node,
+  ) {
     final rawDeliveryKey = _readFirstNonEmpty(node, [
       'deliveryKey',
       'delivery_key',
@@ -358,7 +371,11 @@ class PaymentDialogShared {
     required String uid,
     required String courseKey,
   }) async {
-    final snap = await usersRef.child(uid).child('courses').child(courseKey).get();
+    final snap = await usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .get();
     final raw = snap.value;
     if (raw is! Map) {
       return {
@@ -371,7 +388,9 @@ class PaymentDialogShared {
       };
     }
 
-    final node = raw.map((k, v) => MapEntry(k.toString(), v)).cast<String, dynamic>();
+    final node = raw
+        .map((k, v) => MapEntry(k.toString(), v))
+        .cast<String, dynamic>();
     return _extractStudyFieldsFromLearnerCourseNode(node);
   }
 
@@ -385,14 +404,21 @@ class PaymentDialogShared {
     final paymentsRef = db.ref('payments');
     final usersRef = db.ref('users');
 
-    final sumRef = usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+    final sumRef = usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child('payment_summary');
     final sumSnap = await sumRef.get();
     final sumRaw = sumSnap.value;
     final oldSum = sumRaw is Map
         ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
         : <String, dynamic>{};
 
-    final allForUidSnap = await paymentsRef.orderByChild('uid').equalTo(uid).get();
+    final allForUidSnap = await paymentsRef
+        .orderByChild('uid')
+        .equalTo(uid)
+        .get();
     final allForUidRaw = allForUidSnap.value;
 
     int totalPaid = 0;
@@ -416,7 +442,9 @@ class PaymentDialogShared {
         final amount = _asInt(p['amount']);
         final sp = _asInt(p['sessionsPaid']);
         final paidAt = _asInt(p['paidAt']);
-        final variantKey = _normalizeDeliveryKey((p['variantKey'] ?? '').toString());
+        final variantKey = _normalizeDeliveryKey(
+          (p['variantKey'] ?? '').toString(),
+        );
 
         totalPaid += amount;
         if (_variantUsesSessions(variantKey)) {
@@ -436,7 +464,9 @@ class PaymentDialogShared {
 
     int remind = 0;
     if (_variantUsesReminder(latestVariantKey)) {
-      remind = latestRemind > 0 ? latestRemind : _asInt(oldSum['remindBeforeSession']);
+      remind = latestRemind > 0
+          ? latestRemind
+          : _asInt(oldSum['remindBeforeSession']);
       if (sessionsPaidTotal <= 0) {
         remind = 0;
       } else {
@@ -469,7 +499,11 @@ class PaymentDialogShared {
     required int lastAmount,
     required int remindBeforeSession,
   }) async {
-    final sumRef = usersRef.child(uid).child('courses').child(courseKey).child('payment_summary');
+    final sumRef = usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child('payment_summary');
 
     await sumRef.runTransaction((current) {
       final cur = current is Map
@@ -485,8 +519,8 @@ class PaymentDialogShared {
       final remind = remindBeforeSession <= 0
           ? newSessionsPaidTotal
           : (remindBeforeSession > newSessionsPaidTotal
-          ? newSessionsPaidTotal
-          : remindBeforeSession);
+                ? newSessionsPaidTotal
+                : remindBeforeSession);
 
       return Transaction.success({
         ...cur,
@@ -515,9 +549,16 @@ class PaymentDialogShared {
     if (!_variantUsesExpiry(v)) return;
 
     final accessNode = v == 'recorded' ? 'recorded_access' : 'flexible_access';
-    final accessRef = usersRef.child(uid).child('courses').child(courseKey).child(accessNode);
+    final accessRef = usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child(accessNode);
 
-    final allForUidSnap = await paymentsRef.orderByChild('uid').equalTo(uid).get();
+    final allForUidSnap = await paymentsRef
+        .orderByChild('uid')
+        .equalTo(uid)
+        .get();
     final allForUidRaw = allForUidSnap.value;
 
     int latestPaidAt = 0;
@@ -532,7 +573,9 @@ class PaymentDialogShared {
         final p = payVal.map((k, v) => MapEntry(k.toString(), v));
         if ((p['courseKey'] ?? '').toString() != courseKey) return;
 
-        final payVariant = _normalizeDeliveryKey((p['variantKey'] ?? '').toString());
+        final payVariant = _normalizeDeliveryKey(
+          (p['variantKey'] ?? '').toString(),
+        );
         if (payVariant != v) return;
 
         final paidAt = _asInt(p['paidAt']);
@@ -574,7 +617,11 @@ class PaymentDialogShared {
     if (!_variantUsesExpiry(v)) return;
 
     final accessNode = v == 'recorded' ? 'recorded_access' : 'flexible_access';
-    final accessRef = usersRef.child(uid).child('courses').child(courseKey).child(accessNode);
+    final accessRef = usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .child(accessNode);
 
     await accessRef.update({
       'expiresAt': expiresAt,
@@ -650,28 +697,36 @@ class PaymentDialogShared {
     final paymentId = (payment['paymentId'] ?? '').toString().trim();
     final uid = (payment['uid'] ?? '').toString().trim();
     final courseKey = (payment['courseKey'] ?? '').toString().trim();
-    final variantKey = _normalizeDeliveryKey((payment['variantKey'] ?? '').toString());
+    final variantKey = _normalizeDeliveryKey(
+      (payment['variantKey'] ?? '').toString(),
+    );
 
     if (paymentId.isEmpty || uid.isEmpty || courseKey.isEmpty) {
       _snack(context, 'Cannot delete: missing paymentId/uid/courseKey');
       return;
     }
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete payment?'),
-        content: const Text('This will remove the payment and update learner payment data.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete payment?'),
+            content: const Text(
+              'This will remove the payment and update learner payment data.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -713,7 +768,9 @@ class PaymentDialogShared {
 
     final teachers = await _loadTeachers(usersRef);
 
-    String variantKey = _normalizeDeliveryKey((payment['variantKey'] ?? '').toString());
+    String variantKey = _normalizeDeliveryKey(
+      (payment['variantKey'] ?? '').toString(),
+    );
     final uid = (payment['uid'] ?? '').toString().trim();
     final courseKey = (payment['courseKey'] ?? '').toString().trim();
 
@@ -723,7 +780,9 @@ class PaymentDialogShared {
         uid: uid,
         courseKey: courseKey,
       );
-      variantKey = _normalizeDeliveryKey((study['variantKey'] ?? '').toString());
+      variantKey = _normalizeDeliveryKey(
+        (study['variantKey'] ?? '').toString(),
+      );
     }
 
     int sessionsPaid = _asInt(payment['sessionsPaid']);
@@ -738,8 +797,12 @@ class PaymentDialogShared {
     int durationMonths = _asInt(payment['durationMonths']);
 
     String method = (payment['method'] ?? _methods.first).toString();
-    final amountC = TextEditingController(text: _asInt(payment['amount']).toString());
-    final notesC = TextEditingController(text: (payment['notes'] ?? '').toString());
+    final amountC = TextEditingController(
+      text: _asInt(payment['amount']).toString(),
+    );
+    final notesC = TextEditingController(
+      text: (payment['notes'] ?? '').toString(),
+    );
 
     String paidDateYmd = _fmtDateFromMs(payment['paidAt']);
     if (paidDateYmd.trim().isEmpty) paidDateYmd = _todayYmd();
@@ -759,7 +822,8 @@ class PaymentDialogShared {
     }
 
     if (_variantIsFlexible(variantKey) && expiryMonths <= 0) expiryMonths = 1;
-    if (_variantIsRecorded(variantKey) && durationMonths <= 0) durationMonths = 1;
+    if (_variantIsRecorded(variantKey) && durationMonths <= 0)
+      durationMonths = 1;
 
     String? teacherUid = (payment['teacherId'] ?? '').toString().trim();
     if (teacherUid.isEmpty) teacherUid = null;
@@ -782,13 +846,14 @@ class PaymentDialogShared {
 
           final expiryPreviewMs = usesExpiry
               ? _addMonthsToMs(
-            expiryPreviewBaseMs,
-            isRecorded ? durationMonths : expiryMonths,
-          )
+                  expiryPreviewBaseMs,
+                  isRecorded ? durationMonths : expiryMonths,
+                )
               : 0;
 
-          final expiryPreviewYmd =
-          usesExpiry ? _fmtDateFromMs(expiryPreviewMs) : '';
+          final expiryPreviewYmd = usesExpiry
+              ? _fmtDateFromMs(expiryPreviewMs)
+              : '';
 
           return AlertDialog(
             title: const Text('Edit payment'),
@@ -877,7 +942,8 @@ class PaymentDialogShared {
                         max: 60,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder && remindBeforeSession > sessionsPaid) {
+                          if (usesReminder &&
+                              remindBeforeSession > sessionsPaid) {
                             remindBeforeSession = sessionsPaid;
                           }
                           setD(() {});
@@ -889,7 +955,9 @@ class PaymentDialogShared {
                     if (usesReminder) ...[
                       _NumberPickerRow(
                         label: 'Reminder (how many sessions left)',
-                        value: remindBeforeSession <= 0 ? 1 : remindBeforeSession,
+                        value: remindBeforeSession <= 0
+                            ? 1
+                            : remindBeforeSession,
                         min: 1,
                         max: sessionsPaid > 0 ? sessionsPaid : 1,
                         onChanged: (v) => setD(() => remindBeforeSession = v),
@@ -908,7 +976,9 @@ class PaymentDialogShared {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: expiryPreviewYmd.isEmpty ? '—' : expiryPreviewYmd,
+                        value: expiryPreviewYmd.isEmpty
+                            ? '—'
+                            : expiryPreviewYmd,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -924,7 +994,9 @@ class PaymentDialogShared {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: expiryPreviewYmd.isEmpty ? '—' : expiryPreviewYmd,
+                        value: expiryPreviewYmd.isEmpty
+                            ? '—'
+                            : expiryPreviewYmd,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -954,7 +1026,10 @@ class PaymentDialogShared {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 onPressed: () async {
                   final fee = int.tryParse(amountC.text.trim()) ?? 0;
@@ -975,12 +1050,16 @@ class PaymentDialogShared {
                   final usesExpiry = _variantUsesExpiry(variantKey);
                   final usesStartDate = _variantUsesStartDate(variantKey);
 
-          final startDateMs = _ymdToMs(startDateYmd);
-          final monthsForExpiry = _variantIsRecorded(variantKey) ? durationMonths : expiryMonths;
-          final expiryBaseMs = _variantIsFlexible(variantKey) ? startDateMs : paidAtMs;
-          final nextExpiresAt = usesExpiry
-          ? _addMonthsToMs(expiryBaseMs, monthsForExpiry)
-              : 0;
+                  final startDateMs = _ymdToMs(startDateYmd);
+                  final monthsForExpiry = _variantIsRecorded(variantKey)
+                      ? durationMonths
+                      : expiryMonths;
+                  final expiryBaseMs = _variantIsFlexible(variantKey)
+                      ? startDateMs
+                      : paidAtMs;
+                  final nextExpiresAt = usesExpiry
+                      ? _addMonthsToMs(expiryBaseMs, monthsForExpiry)
+                      : 0;
 
                   if (usesExpiry && nextExpiresAt <= 0) {
                     _snack(context, 'Invalid expiry months.');
@@ -990,14 +1069,20 @@ class PaymentDialogShared {
                   try {
                     await paymentsRef.child(paymentId).update({
                       'sessionsPaid': usesSessions ? sessionsPaid : null,
-                      'remindBeforeSession': usesReminder ? remindBeforeSession : null,
+                      'remindBeforeSession': usesReminder
+                          ? remindBeforeSession
+                          : null,
                       'method': method,
                       'amount': fee,
                       'teacherId': usesTeacher ? (teacherUid ?? '') : null,
                       'teacherName': usesTeacher ? teacherName : null,
                       'startDate': usesStartDate ? startDateYmd : null,
-                      'expiryMonths': _variantIsFlexible(variantKey) ? expiryMonths : null,
-                      'durationMonths': _variantIsRecorded(variantKey) ? durationMonths : null,
+                      'expiryMonths': _variantIsFlexible(variantKey)
+                          ? expiryMonths
+                          : null,
+                      'durationMonths': _variantIsRecorded(variantKey)
+                          ? durationMonths
+                          : null,
                       'expiresAt': usesExpiry ? nextExpiresAt : null,
                       'notes': notesC.text.trim(),
                       'paidAt': paidAtMs,
@@ -1024,7 +1109,7 @@ class PaymentDialogShared {
                     if (context.mounted) Navigator.pop(context);
                     _snack(context, 'Updated ✅');
                   } catch (e) {
-                    _snack(context, 'Failed: $e');
+                    _snack(context, toHumanError(e));
                   }
                 },
                 child: const Text('Save'),
@@ -1115,11 +1200,17 @@ class PaymentDialogShared {
         };
       }
 
-      final variantKey = _normalizeDeliveryKey((pickedStudyFields['variantKey'] ?? '').toString());
-      final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+      final variantKey = _normalizeDeliveryKey(
+        (pickedStudyFields['variantKey'] ?? '').toString(),
+      );
+      final totalSessions = _parseTotalSessions(
+        (pickedCourse['duration'] ?? '').toString(),
+      );
 
       if (_variantUsesSessions(variantKey)) {
-        sessionsPaid = (totalSessions >= 8) ? 8 : (totalSessions > 0 ? totalSessions : 8);
+        sessionsPaid = (totalSessions >= 8)
+            ? 8
+            : (totalSessions > 0 ? totalSessions : 8);
       } else {
         sessionsPaid = 0;
       }
@@ -1153,13 +1244,13 @@ class PaymentDialogShared {
 
     if (pickedCourse.isNotEmpty && pickedCourseId != null) {
       if (pickedUid != null &&
-          pickedUid!.trim().isNotEmpty &&
+          pickedUid.trim().isNotEmpty &&
           pickedCourseKey != null &&
-          pickedCourseKey!.trim().isNotEmpty) {
+          pickedCourseKey.trim().isNotEmpty) {
         pickedStudyFields = await _loadStudyFieldsForLearnerCourse(
           usersRef: usersRef,
-          uid: pickedUid!,
-          courseKey: pickedCourseKey!,
+          uid: pickedUid,
+          courseKey: pickedCourseKey,
         );
       }
       await loadCourseAndDefaults();
@@ -1171,8 +1262,12 @@ class PaymentDialogShared {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setD) {
-          final variantKey = _normalizeDeliveryKey((pickedStudyFields['variantKey'] ?? '').toString());
-          final totalSessions = _parseTotalSessions((pickedCourse['duration'] ?? '').toString());
+          final variantKey = _normalizeDeliveryKey(
+            (pickedStudyFields['variantKey'] ?? '').toString(),
+          );
+          final totalSessions = _parseTotalSessions(
+            (pickedCourse['duration'] ?? '').toString(),
+          );
           final maxSessions = totalSessions > 0 ? totalSessions : 24;
 
           final usesTeacher = _variantUsesTeacher(variantKey);
@@ -1184,8 +1279,10 @@ class PaymentDialogShared {
           final isFlexible = _variantIsFlexible(variantKey);
 
           final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
-          final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '').trim();
-          final studyModeLabel = (pickedStudyFields['studyModeLabel'] ?? '').trim();
+          final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '')
+              .trim();
+          final studyModeLabel = (pickedStudyFields['studyModeLabel'] ?? '')
+              .trim();
 
           String studyInfoText = '';
           if (variantLabel.isNotEmpty) {
@@ -1202,11 +1299,13 @@ class PaymentDialogShared {
 
           final previewExpiresAt = usesExpiry
               ? _addMonthsToMs(
-            previewBaseMs,
-            isRecorded ? durationMonths : expiryMonths,
-          )
+                  previewBaseMs,
+                  isRecorded ? durationMonths : expiryMonths,
+                )
               : 0;
-          final previewExpiresYmd = usesExpiry ? _fmtDateFromMs(previewExpiresAt) : '';
+          final previewExpiresYmd = usesExpiry
+              ? _fmtDateFromMs(previewExpiresAt)
+              : '';
 
           return AlertDialog(
             title: const Text('Add payment'),
@@ -1222,7 +1321,10 @@ class PaymentDialogShared {
                           pickedUid = uid;
                           pickedLearner = learnerMap;
 
-                          final coursesSnap = await usersRef.child(uid).child('courses').get();
+                          final coursesSnap = await usersRef
+                              .child(uid)
+                              .child('courses')
+                              .get();
                           final coursesVal = coursesSnap.value;
 
                           pickedCourseKey = null;
@@ -1238,21 +1340,25 @@ class PaymentDialogShared {
                           };
 
                           if (coursesVal is Map) {
-                            final keys = coursesVal.keys
-                                .map((e) => e.toString())
-                                .where((k) => k.startsWith('course_'))
-                                .toList()
-                              ..sort();
+                            final keys =
+                                coursesVal.keys
+                                    .map((e) => e.toString())
+                                    .where((k) => k.startsWith('course_'))
+                                    .toList()
+                                  ..sort();
 
                             if (keys.isNotEmpty) {
                               pickedCourseKey = keys.first;
                               final firstNode = coursesVal[pickedCourseKey];
                               if (firstNode is Map) {
-                                final node = firstNode.map((k, v) => MapEntry(k.toString(), v));
-                                pickedCourseId = (node['id'] ?? '').toString();
-                                pickedStudyFields = _extractStudyFieldsFromLearnerCourseNode(
-                                  node.cast<String, dynamic>(),
+                                final node = firstNode.map(
+                                  (k, v) => MapEntry(k.toString(), v),
                                 );
+                                pickedCourseId = (node['id'] ?? '').toString();
+                                pickedStudyFields =
+                                    _extractStudyFieldsFromLearnerCourseNode(
+                                      node.cast<String, dynamic>(),
+                                    );
                               }
                             }
                           }
@@ -1266,7 +1372,10 @@ class PaymentDialogShared {
                         const _MiniHint('Pick learner first.')
                       else
                         FutureBuilder<DataSnapshot>(
-                          future: usersRef.child(pickedUid!).child('courses').get(),
+                          future: usersRef
+                              .child(pickedUid!)
+                              .child('courses')
+                              .get(),
                           builder: (context, snap) {
                             final v = snap.data?.value;
                             final keys = <String>[];
@@ -1279,13 +1388,21 @@ class PaymentDialogShared {
                                 final key = k.toString();
                                 if (!key.startsWith('course_')) return;
                                 if (val is Map) {
-                                  final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
-                                  final code = (m['course_code'] ?? '').toString().trim();
-                                  final title = (m['title'] ?? '').toString().trim();
-                                  final variant = _extractStudyFieldsFromLearnerCourseNode(
-                                    m.cast<String, dynamic>(),
+                                  final m = val.map(
+                                    (kk, vv) => MapEntry(kk.toString(), vv),
                                   );
-                                  final variantLabel = (variant['variantLabel'] ?? '').trim();
+                                  final code = (m['course_code'] ?? '')
+                                      .toString()
+                                      .trim();
+                                  final title = (m['title'] ?? '')
+                                      .toString()
+                                      .trim();
+                                  final variant =
+                                      _extractStudyFieldsFromLearnerCourseNode(
+                                        m.cast<String, dynamic>(),
+                                      );
+                                  final variantLabel =
+                                      (variant['variantLabel'] ?? '').trim();
 
                                   final pieces = <String>[
                                     if (code.isNotEmpty) code,
@@ -1294,7 +1411,9 @@ class PaymentDialogShared {
                                   ];
 
                                   keys.add(key);
-                                  labelByKey[key] = pieces.isEmpty ? key : pieces.join(' — ');
+                                  labelByKey[key] = pieces.isEmpty
+                                      ? key
+                                      : pieces.join(' — ');
                                   idByKey[key] = (m['id'] ?? '').toString();
                                   studyByKey[key] = variant;
                                 }
@@ -1302,45 +1421,51 @@ class PaymentDialogShared {
                             }
 
                             keys.sort();
-                            pickedCourseKey ??= keys.isNotEmpty ? keys.first : null;
+                            pickedCourseKey ??= keys.isNotEmpty
+                                ? keys.first
+                                : null;
 
                             if (keys.isEmpty) {
                               return const _MiniHint('Learner has no courses.');
                             }
 
                             return DropdownButtonFormField<String>(
-                              value: pickedCourseKey,
-                              decoration: const InputDecoration(labelText: 'Course'),
+                              initialValue: pickedCourseKey,
+                              decoration: const InputDecoration(
+                                labelText: 'Course',
+                              ),
                               items: keys
                                   .map(
                                     (k) => DropdownMenuItem(
-                                  value: k,
-                                  child: Text(labelByKey[k] ?? k),
-                                ),
-                              )
+                                      value: k,
+                                      child: Text(labelByKey[k] ?? k),
+                                    ),
+                                  )
                                   .toList(),
                               onChanged: (v) async {
                                 pickedCourseKey = v;
-                                pickedCourseId = (v == null) ? null : idByKey[v];
+                                pickedCourseId = (v == null)
+                                    ? null
+                                    : idByKey[v];
                                 pickedCourse = {};
                                 pickedStudyFields = v == null
                                     ? {
-                                  'deliveryKey': '',
-                                  'deliveryLabel': '',
-                                  'studyMode': '',
-                                  'studyModeLabel': '',
-                                  'variantKey': '',
-                                  'variantLabel': '',
-                                }
+                                        'deliveryKey': '',
+                                        'deliveryLabel': '',
+                                        'studyMode': '',
+                                        'studyModeLabel': '',
+                                        'variantKey': '',
+                                        'variantLabel': '',
+                                      }
                                     : (studyByKey[v] ??
-                                    {
-                                      'deliveryKey': '',
-                                      'deliveryLabel': '',
-                                      'studyMode': '',
-                                      'studyModeLabel': '',
-                                      'variantKey': '',
-                                      'variantLabel': '',
-                                    });
+                                          {
+                                            'deliveryKey': '',
+                                            'deliveryLabel': '',
+                                            'studyMode': '',
+                                            'studyModeLabel': '',
+                                            'variantKey': '',
+                                            'variantLabel': '',
+                                          });
 
                                 await loadCourseAndDefaults();
                                 setD(() {});
@@ -1358,7 +1483,9 @@ class PaymentDialogShared {
                         decoration: BoxDecoration(
                           color: const Color(0xFFF4F7F9),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.black.withOpacity(0.06)),
+                          border: Border.all(
+                            color: Colors.black.withOpacity(0.06),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -1367,7 +1494,9 @@ class PaymentDialogShared {
                             Expanded(
                               child: Text(
                                 'Study type: $studyInfoText',
-                                style: const TextStyle(fontWeight: FontWeight.w800),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
                           ],
@@ -1442,7 +1571,9 @@ class PaymentDialogShared {
                         },
                         onChanged: (v) => setD(() {
                           selectedTeacherUid = v;
-                          selectedTeacherName = (v == null) ? '' : (teachers[v] ?? '');
+                          selectedTeacherName = (v == null)
+                              ? ''
+                              : (teachers[v] ?? '');
                         }),
                       ),
                       const SizedBox(height: 12),
@@ -1457,8 +1588,12 @@ class PaymentDialogShared {
                         onChanged: (v) {
                           sessionsPaid = v;
 
-                          final pricePerMonth = _asInt(pickedCourse['price_per_month']);
-                          final pricePerLevel = _asInt(pickedCourse['price_per_level']);
+                          final pricePerMonth = _asInt(
+                            pickedCourse['price_per_month'],
+                          );
+                          final pricePerLevel = _asInt(
+                            pickedCourse['price_per_level'],
+                          );
 
                           amountC.text = _defaultAmountForVariant(
                             variantKey: variantKey,
@@ -1470,7 +1605,8 @@ class PaymentDialogShared {
                           ).toString();
 
                           if (usesReminder) {
-                            if (remindBeforeSession <= 0) remindBeforeSession = sessionsPaid;
+                            if (remindBeforeSession <= 0)
+                              remindBeforeSession = sessionsPaid;
                             if (remindBeforeSession > sessionsPaid) {
                               remindBeforeSession = sessionsPaid;
                             }
@@ -1485,7 +1621,9 @@ class PaymentDialogShared {
                     if (usesReminder) ...[
                       _NumberPickerRow(
                         label: 'Reminder (before session)',
-                        value: (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession),
+                        value: (remindBeforeSession <= 0
+                            ? sessionsPaid
+                            : remindBeforeSession),
                         min: 1,
                         max: sessionsPaid > 0 ? sessionsPaid : 1,
                         onChanged: (v) => setD(() => remindBeforeSession = v),
@@ -1504,7 +1642,9 @@ class PaymentDialogShared {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: previewExpiresYmd.isEmpty ? '—' : previewExpiresYmd,
+                        value: previewExpiresYmd.isEmpty
+                            ? '—'
+                            : previewExpiresYmd,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -1518,8 +1658,12 @@ class PaymentDialogShared {
                         onChanged: (v) {
                           durationMonths = v;
 
-                          final pricePerMonth = _asInt(pickedCourse['price_per_month']);
-                          final pricePerLevel = _asInt(pickedCourse['price_per_level']);
+                          final pricePerMonth = _asInt(
+                            pickedCourse['price_per_month'],
+                          );
+                          final pricePerLevel = _asInt(
+                            pickedCourse['price_per_level'],
+                          );
 
                           amountC.text = _defaultAmountForVariant(
                             variantKey: variantKey,
@@ -1536,7 +1680,9 @@ class PaymentDialogShared {
                       const SizedBox(height: 10),
                       _InfoLine(
                         label: 'Expires on',
-                        value: previewExpiresYmd.isEmpty ? '—' : previewExpiresYmd,
+                        value: previewExpiresYmd.isEmpty
+                            ? '—'
+                            : previewExpiresYmd,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -1566,18 +1712,23 @@ class PaymentDialogShared {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 onPressed: () async {
                   if (pickedUid == null) {
                     _snack(context, 'Pick learner first.');
                     return;
                   }
-                  if (pickedCourseKey == null || pickedCourseKey!.trim().isEmpty) {
+                  if (pickedCourseKey == null ||
+                      pickedCourseKey!.trim().isEmpty) {
                     _snack(context, 'Pick course.');
                     return;
                   }
-                  if (pickedCourseId == null || pickedCourseId!.trim().isEmpty) {
+                  if (pickedCourseId == null ||
+                      pickedCourseId!.trim().isEmpty) {
                     _snack(context, 'Missing courseId.');
                     return;
                   }
@@ -1595,42 +1746,63 @@ class PaymentDialogShared {
                   }
 
                   final learnerName =
-                  '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
-                      .trim();
-                  final learnerSerial = (pickedLearner['serial'] ?? '').toString();
+                      '${(pickedLearner['first_name'] ?? '')} ${(pickedLearner['last_name'] ?? '')}'
+                          .trim();
+                  final learnerSerial = (pickedLearner['serial'] ?? '')
+                      .toString();
 
-                  final courseCode = (pickedCourse['course_code'] ?? '').toString();
+                  final courseCode = (pickedCourse['course_code'] ?? '')
+                      .toString();
                   final courseTitle = (pickedCourse['title'] ?? '').toString();
 
-                  final deliveryKey = (pickedStudyFields['deliveryKey'] ?? '').trim();
-                  final deliveryLabel = (pickedStudyFields['deliveryLabel'] ?? '').trim();
-                  final studyMode = (pickedStudyFields['studyMode'] ?? '').trim();
-                  final studyModeLabel = (pickedStudyFields['studyModeLabel'] ?? '').trim();
-                  final normalizedVariantKey =
-                  _normalizeDeliveryKey((pickedStudyFields['variantKey'] ?? '').trim());
-                  final variantLabel = (pickedStudyFields['variantLabel'] ?? '').trim();
+                  final deliveryKey = (pickedStudyFields['deliveryKey'] ?? '')
+                      .trim();
+                  final deliveryLabel =
+                      (pickedStudyFields['deliveryLabel'] ?? '').trim();
+                  final studyMode = (pickedStudyFields['studyMode'] ?? '')
+                      .trim();
+                  final studyModeLabel =
+                      (pickedStudyFields['studyModeLabel'] ?? '').trim();
+                  final normalizedVariantKey = _normalizeDeliveryKey(
+                    (pickedStudyFields['variantKey'] ?? '').trim(),
+                  );
+                  final variantLabel = (pickedStudyFields['variantLabel'] ?? '')
+                      .trim();
 
                   final usesTeacher = _variantUsesTeacher(normalizedVariantKey);
-                  final usesSessions = _variantUsesSessions(normalizedVariantKey);
-                  final usesReminder = _variantUsesReminder(normalizedVariantKey);
+                  final usesSessions = _variantUsesSessions(
+                    normalizedVariantKey,
+                  );
+                  final usesReminder = _variantUsesReminder(
+                    normalizedVariantKey,
+                  );
                   final usesExpiry = _variantUsesExpiry(normalizedVariantKey);
-                  final usesStartDate = _variantUsesStartDate(normalizedVariantKey);
+                  final usesStartDate = _variantUsesStartDate(
+                    normalizedVariantKey,
+                  );
 
                   final startDateMs = _ymdToMs(startDateYmd);
                   final monthsForExpiry =
-                  _variantIsRecorded(normalizedVariantKey) ? durationMonths : expiryMonths;
-                  final expiryBaseMs =
-                  _variantIsFlexible(normalizedVariantKey) ? startDateMs : paidAtMs;
-                  final expiresAt =
-                  usesExpiry ? _addMonthsToMs(expiryBaseMs, monthsForExpiry) : 0;
+                      _variantIsRecorded(normalizedVariantKey)
+                      ? durationMonths
+                      : expiryMonths;
+                  final expiryBaseMs = _variantIsFlexible(normalizedVariantKey)
+                      ? startDateMs
+                      : paidAtMs;
+                  final expiresAt = usesExpiry
+                      ? _addMonthsToMs(expiryBaseMs, monthsForExpiry)
+                      : 0;
 
                   if (usesExpiry && expiresAt <= 0) {
                     _snack(context, 'Invalid expiry months.');
                     return;
                   }
 
-                  final remind =
-                  usesReminder ? (remindBeforeSession <= 0 ? sessionsPaid : remindBeforeSession) : 0;
+                  final remind = usesReminder
+                      ? (remindBeforeSession <= 0
+                            ? sessionsPaid
+                            : remindBeforeSession)
+                      : 0;
 
                   try {
                     final newRef = paymentsRef.push();
@@ -1649,12 +1821,18 @@ class PaymentDialogShared {
                       'amount': fee,
                       'method': method,
 
-                      'teacherId': usesTeacher ? (selectedTeacherUid ?? '') : null,
+                      'teacherId': usesTeacher
+                          ? (selectedTeacherUid ?? '')
+                          : null,
                       'teacherName': usesTeacher ? selectedTeacherName : null,
 
                       'startDate': usesStartDate ? startDateYmd : null,
-                      'expiryMonths': _variantIsFlexible(normalizedVariantKey) ? expiryMonths : null,
-                      'durationMonths': _variantIsRecorded(normalizedVariantKey) ? durationMonths : null,
+                      'expiryMonths': _variantIsFlexible(normalizedVariantKey)
+                          ? expiryMonths
+                          : null,
+                      'durationMonths': _variantIsRecorded(normalizedVariantKey)
+                          ? durationMonths
+                          : null,
                       'expiresAt': usesExpiry ? expiresAt : null,
                       'notes': notesC.text.trim(),
 
@@ -1696,7 +1874,7 @@ class PaymentDialogShared {
                     if (context.mounted) Navigator.pop(context);
                     _snack(context, 'Payment saved ✅');
                   } catch (e) {
-                    _snack(context, 'Failed: $e');
+                    _snack(context, toHumanError(e));
                   }
                 },
                 child: const Text('Save'),
@@ -1728,7 +1906,10 @@ class PaymentDialogShared {
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
       ),
     );
   }
@@ -1740,7 +1921,7 @@ class PaymentDialogShared {
     required ValueChanged<T?> onChanged,
   }) {
     return DropdownButtonFormField<T>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: label,
         filled: true,
@@ -1749,7 +1930,10 @@ class PaymentDialogShared {
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 12,
+        ),
       ),
       items: items.entries
           .map((e) => DropdownMenuItem<T>(value: e.key, child: Text(e.value)))
@@ -1783,10 +1967,7 @@ class _MiniHint extends StatelessWidget {
 }
 
 class _InfoLine extends StatelessWidget {
-  const _InfoLine({
-    required this.label,
-    required this.value,
-  });
+  const _InfoLine({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -1803,10 +1984,7 @@ class _InfoLine extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.w900),
-          ),
+          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.w900)),
           Expanded(
             child: Text(
               value,
@@ -1886,7 +2064,10 @@ class _NumberPickerRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
         ),
         IconButton(
           tooltip: 'Minus',
@@ -1912,13 +2093,11 @@ class _NumberPickerRow extends StatelessWidget {
 }
 
 class _LearnerAutocomplete extends StatefulWidget {
-  const _LearnerAutocomplete({
-    required this.usersRef,
-    required this.onPicked,
-  });
+  const _LearnerAutocomplete({required this.usersRef, required this.onPicked});
 
   final DatabaseReference usersRef;
-  final Future<void> Function(String uid, Map<String, dynamic> learnerMap) onPicked;
+  final Future<void> Function(String uid, Map<String, dynamic> learnerMap)
+  onPicked;
 
   @override
   State<_LearnerAutocomplete> createState() => _LearnerAutocompleteState();
@@ -1959,8 +2138,9 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
           final role = (m['role'] ?? '').toString().toLowerCase().trim();
           if (role != 'learner') return;
 
-          final name =
-          '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'.trim().toLowerCase();
+          final name = '${(m['first_name'] ?? '')} ${(m['last_name'] ?? '')}'
+              .trim()
+              .toLowerCase();
           final email = (m['email'] ?? '').toString().toLowerCase();
           final serial = (m['serial'] ?? '').toString().toLowerCase();
 
@@ -1972,8 +2152,9 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
     }
 
     out.sort(
-          (a, b) => ('${a['first_name']} ${a['last_name']}')
-          .compareTo('${b['first_name']} ${b['last_name']}'),
+      (a, b) => ('${a['first_name']} ${a['last_name']}').compareTo(
+        '${b['first_name']} ${b['last_name']}',
+      ),
     );
 
     setState(() => _results = out.take(8).toList());
@@ -2012,11 +2193,13 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, _) =>
                   Divider(height: 1, color: Colors.black.withOpacity(0.06)),
               itemBuilder: (context, i) {
                 final r = _results[i];
-                final name = '${(r['first_name'] ?? '')} ${(r['last_name'] ?? '')}'.trim();
+                final name =
+                    '${(r['first_name'] ?? '')} ${(r['last_name'] ?? '')}'
+                        .trim();
                 final serial = (r['serial'] ?? '').toString();
 
                 return ListTile(

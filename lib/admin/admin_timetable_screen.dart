@@ -108,8 +108,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   }
 
   int _learnersCountOf(Map<String, dynamic> cls) {
-    final learners =
-    (cls["learners"] is Map) ? Map<dynamic, dynamic>.from(cls["learners"]) : null;
+    final learners = (cls["learners"] is Map)
+        ? Map<dynamic, dynamic>.from(cls["learners"])
+        : null;
     return learners?.length ?? 0;
   }
 
@@ -185,13 +186,14 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
   }
 
   String _studyTypeLabelOf(Map<String, dynamic> cls) {
-    final explicit = (cls["studyModeLabel"] ??
-        cls["study_mode_label"] ??
-        cls["deliveryLabel"] ??
-        cls["delivery_label"] ??
-        '')
-        .toString()
-        .trim();
+    final explicit =
+        (cls["studyModeLabel"] ??
+                cls["study_mode_label"] ??
+                cls["deliveryLabel"] ??
+                cls["delivery_label"] ??
+                '')
+            .toString()
+            .trim();
     if (explicit.isNotEmpty) return explicit;
 
     final variantKey = _variantKeyOf(cls);
@@ -298,9 +300,16 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     required String instructorName,
     required String classId,
   }) {
-    final base = _classHslForTeacher(instructorName: instructorName, classId: classId);
-    final c1 = base.withLightness((base.lightness + 0.10).clamp(0.0, 1.0)).toColor();
-    final c2 = base.withLightness((base.lightness - 0.05).clamp(0.0, 1.0)).toColor();
+    final base = _classHslForTeacher(
+      instructorName: instructorName,
+      classId: classId,
+    );
+    final c1 = base
+        .withLightness((base.lightness + 0.10).clamp(0.0, 1.0))
+        .toColor();
+    final c2 = base
+        .withLightness((base.lightness - 0.05).clamp(0.0, 1.0))
+        .toColor();
     return LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
@@ -312,8 +321,13 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     required String instructorName,
     required String classId,
   }) {
-    final base = _classHslForTeacher(instructorName: instructorName, classId: classId);
-    return base.withLightness((base.lightness - 0.12).clamp(0.0, 1.0)).toColor();
+    final base = _classHslForTeacher(
+      instructorName: instructorName,
+      classId: classId,
+    );
+    return base
+        .withLightness((base.lightness - 0.12).clamp(0.0, 1.0))
+        .toColor();
   }
 
   // -------------------- Load teachers --------------------
@@ -462,7 +476,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       if (v.isNotEmpty && v != 'other') set.add(v);
     }
     final list = set.toList()
-      ..sort((a, b) => _studyTypeFilterLabel(a).compareTo(_studyTypeFilterLabel(b)));
+      ..sort(
+        (a, b) => _studyTypeFilterLabel(a).compareTo(_studyTypeFilterLabel(b)),
+      );
     return list;
   }
 
@@ -505,16 +521,25 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                     Expanded(
                       child: Text(
                         "$code — $title",
-                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        color: (isOpen ? Colors.green : Colors.red).withOpacity(0.12),
+                        color: (isOpen ? Colors.green : Colors.red).withOpacity(
+                          0.12,
+                        ),
                         border: Border.all(
-                          color: (isOpen ? Colors.green : Colors.red).withOpacity(0.35),
+                          color: (isOpen ? Colors.green : Colors.red)
+                              .withOpacity(0.35),
                         ),
                       ),
                       child: Text(
@@ -530,22 +555,34 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                 const SizedBox(height: 10),
                 Text(
                   "Class ID: $id",
-                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   "Instructor: $instructor",
-                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   "Study type: ${studyType.isEmpty ? '-' : studyType}",
-                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   "Status: $status",
-                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Container(
@@ -582,7 +619,10 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                 const SizedBox(height: 10),
                 Text(
                   "Start: ${first.isEmpty ? "-" : first} • Learners: $learnersCount",
-                  style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 SizedBox(
@@ -633,11 +673,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     final dayColW = (w * 0.34).clamp(120.0, 180.0);
     final slotH = (w * 0.085).clamp(28.0, 44.0);
 
-    return _Sizes(
-      timeGutterW: timeGutterW,
-      dayColW: dayColW,
-      slotH: slotH,
-    );
+    return _Sizes(timeGutterW: timeGutterW, dayColW: dayColW, slotH: slotH);
   }
 
   // -------------------- Sticky Header --------------------
@@ -648,7 +684,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       child: Container(
         padding: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: Colors.grey.withOpacity(0.20))),
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.withOpacity(0.20)),
+          ),
         ),
         child: SingleChildScrollView(
           controller: _hHeaderCtrl,
@@ -663,14 +701,20 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   width: s.timeGutterW,
                   child: const Padding(
                     padding: EdgeInsets.only(left: 8),
-                    child: Text("Time", style: TextStyle(fontWeight: FontWeight.w900)),
+                    child: Text(
+                      "Time",
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ),
                 ..._weekDays.map(
-                      (d) => SizedBox(
+                  (d) => SizedBox(
                     width: s.dayColW,
                     child: Center(
-                      child: Text(d, style: const TextStyle(fontWeight: FontWeight.w900)),
+                      child: Text(
+                        d,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
                   ),
                 ),
@@ -707,8 +751,14 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       final classId = _classIdOf(cls);
       final instructor = (cls["instructor"] ?? "").toString().trim();
 
-      final gradient = _classGradient(instructorName: instructor, classId: classId);
-      final borderColor = _classBorderColor(instructorName: instructor, classId: classId);
+      final gradient = _classGradient(
+        instructorName: instructor,
+        classId: classId,
+      );
+      final borderColor = _classBorderColor(
+        instructorName: instructor,
+        classId: classId,
+      );
 
       final sched = (cls["schedule"] is Map)
           ? Map<String, dynamic>.from(cls["schedule"])
@@ -720,7 +770,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       if (sessions.isEmpty) continue;
 
       for (final sess in sessions) {
-        final m = (sess is Map) ? Map<String, dynamic>.from(sess) : <String, dynamic>{};
+        final m = (sess is Map)
+            ? Map<String, dynamic>.from(sess)
+            : <String, dynamic>{};
 
         final day = (m["day"] ?? "").toString().trim();
         final start = (m["start_time"] ?? "").toString().trim();
@@ -731,7 +783,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         final startMin = _timeToMinutes(start);
         final endMin = startMin + dur;
 
-        final visStart = startMin < _visibleStartMin ? _visibleStartMin : startMin;
+        final visStart = startMin < _visibleStartMin
+            ? _visibleStartMin
+            : startMin;
         final visEnd = endMin > _visibleEndMin ? _visibleEndMin : endMin;
         if (visEnd <= visStart) continue;
 
@@ -762,7 +816,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   borderRadius: BorderRadius.circular(10),
                   gradient: gradient,
                   border: Border.all(
-                    color: isOpen ? borderColor.withOpacity(0.70) : Colors.red.withOpacity(0.75),
+                    color: isOpen
+                        ? borderColor.withOpacity(0.70)
+                        : Colors.red.withOpacity(0.75),
                   ),
                 ),
                 child: LayoutBuilder(
@@ -855,9 +911,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   // -------------------- Compact top bar --------------------
 
-  Widget _topCompactBar({
-    required int shownCount,
-  }) {
+  Widget _topCompactBar({required int shownCount}) {
     final activeFiltersCount = [
       _teacherFilterUid != "ALL",
       _levelTitleFilter != "ALL",
@@ -884,7 +938,10 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
             if (activeFiltersCount > 0)
               Container(
                 margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
                   color: Colors.blue.withOpacity(0.10),
@@ -900,7 +957,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
               ),
             IconButton(
               tooltip: _filtersExpanded ? "Hide filters" : "Show filters",
-              onPressed: () => setState(() => _filtersExpanded = !_filtersExpanded),
+              onPressed: () =>
+                  setState(() => _filtersExpanded = !_filtersExpanded),
               icon: Icon(
                 _filtersExpanded
                     ? Icons.keyboard_arrow_up_rounded
@@ -924,7 +982,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
     final teacherDrop = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _teacherFilterUid,
+      initialValue: _teacherFilterUid,
       decoration: const InputDecoration(
         labelText: "Teacher",
         border: OutlineInputBorder(),
@@ -946,12 +1004,14 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
           );
         }),
       ],
-      onChanged: _loadingTeachers ? null : (v) => setState(() => _teacherFilterUid = v ?? "ALL"),
+      onChanged: _loadingTeachers
+          ? null
+          : (v) => setState(() => _teacherFilterUid = v ?? "ALL"),
     );
 
     final levelDrop = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _levelTitleFilter,
+      initialValue: _levelTitleFilter,
       decoration: const InputDecoration(
         labelText: "Level",
         border: OutlineInputBorder(),
@@ -960,7 +1020,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       items: [
         const DropdownMenuItem(value: "ALL", child: Text("All levels")),
         ...levelTitles.map(
-              (t) => DropdownMenuItem(
+          (t) => DropdownMenuItem(
             value: t,
             child: Text(t, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
@@ -971,7 +1031,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
     final studyTypeDrop = DropdownButtonFormField<String>(
       isExpanded: true,
-      value: _studyTypeFilter,
+      initialValue: _studyTypeFilter,
       decoration: const InputDecoration(
         labelText: "Study type",
         border: OutlineInputBorder(),
@@ -980,7 +1040,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       items: [
         const DropdownMenuItem(value: "ALL", child: Text("All study types")),
         ...studyTypes.map(
-              (t) => DropdownMenuItem(
+          (t) => DropdownMenuItem(
             value: t,
             child: Text(
               _studyTypeFilterLabel(t),
@@ -995,7 +1055,10 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
     final toggle = SwitchListTile(
       contentPadding: EdgeInsets.zero,
-      title: const Text("Only open", style: TextStyle(fontWeight: FontWeight.w800)),
+      title: const Text(
+        "Only open",
+        style: TextStyle(fontWeight: FontWeight.w800),
+      ),
       value: _showOnlyOpen,
       onChanged: (v) => setState(() => _showOnlyOpen = v),
     );
@@ -1018,8 +1081,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
     return AnimatedCrossFade(
       duration: const Duration(milliseconds: 180),
-      crossFadeState:
-      _filtersExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+      crossFadeState: _filtersExpanded
+          ? CrossFadeState.showSecond
+          : CrossFadeState.showFirst,
       firstChild: const SizedBox.shrink(),
       secondChild: Card(
         elevation: 0,
@@ -1085,7 +1149,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
             }
 
             final classes = _parseClasses(snap.data?.snapshot.value);
-            if (classes.isEmpty) return const Center(child: Text("No classes found."));
+            if (classes.isEmpty)
+              return const Center(child: Text("No classes found."));
 
             final levelTitles = _extractLevelTitles(classes);
             final studyTypes = _extractStudyTypeFilters(classes);
@@ -1121,7 +1186,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                 child: Scrollbar(
                                   controller: _hBodyCtrl,
                                   thumbVisibility: true,
-                                  notificationPredicate: (n) => n.metrics.axis == Axis.horizontal,
+                                  notificationPredicate: (n) =>
+                                      n.metrics.axis == Axis.horizontal,
                                   child: SingleChildScrollView(
                                     controller: _hBodyCtrl,
                                     scrollDirection: Axis.horizontal,
@@ -1137,29 +1203,46 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                             bottom: 0,
                                             width: s.timeGutterW,
                                             child: Column(
-                                              children: List.generate(_visibleSlots, (i) {
-                                                final minutes =
-                                                    _visibleStartMin + (i * _minutesStep);
-                                                final isHour = (minutes % 60) == 0;
+                                              children: List.generate(
+                                                _visibleSlots,
+                                                (i) {
+                                                  final minutes =
+                                                      _visibleStartMin +
+                                                      (i * _minutesStep);
+                                                  final isHour =
+                                                      (minutes % 60) == 0;
 
-                                                return SizedBox(
-                                                  height: s.slotH,
-                                                  child: Align(
-                                                    alignment: Alignment.topLeft,
-                                                    child: Padding(
-                                                      padding: const EdgeInsets.only(left: 8, top: 2),
-                                                      child: Text(
-                                                        isHour ? _minutesToLabel(minutes) : "",
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight: FontWeight.w800,
-                                                          color: Colors.grey.shade800,
+                                                  return SizedBox(
+                                                    height: s.slotH,
+                                                    child: Align(
+                                                      alignment:
+                                                          Alignment.topLeft,
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              left: 8,
+                                                              top: 2,
+                                                            ),
+                                                        child: Text(
+                                                          isHour
+                                                              ? _minutesToLabel(
+                                                                  minutes,
+                                                                )
+                                                              : "",
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: Colors
+                                                                .grey
+                                                                .shade800,
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
-                                                  ),
-                                                );
-                                              }),
+                                                  );
+                                                },
+                                              ),
                                             ),
                                           ),
                                           ..._buildBlocks(filtered, s),
@@ -1226,13 +1309,21 @@ class _TimetableGridPainter extends CustomPainter {
       final x = timeGutterW + (d * dayColW);
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), strong);
     }
-    canvas.drawLine(Offset(timeGutterW, 0), Offset(timeGutterW, size.height), strong);
+    canvas.drawLine(
+      Offset(timeGutterW, 0),
+      Offset(timeGutterW, size.height),
+      strong,
+    );
 
     for (int s = 0; s <= slots; s++) {
       final y = s * slotH;
       final minutesFromStart = s * 30;
       final isHour = (minutesFromStart % 60) == 0;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), isHour ? strong : line);
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        isHour ? strong : line,
+      );
     }
   }
 

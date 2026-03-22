@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'learner_gallery_screen.dart';
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import '../shared/session_manager.dart';
 import '../shared/watermark_background.dart';
 import 'learner_stories_screen.dart';
@@ -111,23 +112,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
-  String _norm(String s) => s.trim().toLowerCase();
-
-  bool _isAdminRole(dynamic role) {
-    final r = _norm((role ?? '').toString());
-    return r == 'admin' || r == 'administrator';
-  }
-
-  bool _isTeacherRole(dynamic role) {
-    final r = _norm((role ?? '').toString());
-    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
-  }
-
-  bool _isLearnerRole(dynamic role) {
-    final r = _norm((role ?? '').toString());
-    return r == 'learner' || r == 'student';
-  }
-
   Future<String> _myDisplayName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final email = FirebaseAuth.instance.currentUser?.email ?? '';
@@ -171,500 +155,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     return '';
   }
 
-  Future<List<_UserPick>> _loadAdmins() async {
-    final out = <_UserPick>[];
-    try {
-      final snap = await _db.child('users').get();
-      final v = snap.value;
-      if (v is! Map) return out;
-
-      final raw = Map<dynamic, dynamic>.from(v);
-      raw.forEach((uid, val) {
-        if (val is! Map) return;
-        final m = val.map((k, vv) => MapEntry(k.toString(), vv));
-        if (!_isAdminRole(m['role'])) return;
-
-        final first = (m['first_name'] ?? '').toString().trim();
-        final last = (m['last_name'] ?? '').toString().trim();
-        final full = ('$first $last').trim();
-        final name = full.isEmpty ? 'Admin' : full;
-
-        out.add(_UserPick(uid: uid.toString(), name: name, subtitle: 'Admin'));
-      });
-
-      out.sort((a, b) => a.name.compareTo(b.name));
-      return out;
-    } catch (_) {
-      return out;
-    }
-  }
-
-  Future<_ClassesAndPeers> _loadMyClassesAndPeers() async {
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me == null) {
-      return const _ClassesAndPeers(
-        classIds: [],
-        teacherUids: {},
-        classmateUids: {},
-      );
-    }
-
-    final classIds = <String>[];
-    final teacherUids = <String, String>{};
-    final classmateUids = <String, String>{};
-
-    try {
-      final snap = await _db.child('classes').get();
-      final v = snap.value;
-      if (v is! Map) {
-        return _ClassesAndPeers(
-          classIds: classIds,
-          teacherUids: teacherUids,
-          classmateUids: classmateUids,
-        );
-      }
-
-      final raw = Map<dynamic, dynamic>.from(v);
-
-      raw.forEach((classId, classVal) {
-        if (classVal is! Map) return;
-        final c = classVal.map((k, vv) => MapEntry(k.toString(), vv));
-
-        final learners = c['learners'];
-        bool imInThisClass = false;
-
-        if (learners is Map) {
-          final lm = Map<dynamic, dynamic>.from(learners);
-          if (lm.containsKey(me)) {
-            imInThisClass = true;
-          }
-
-          lm.forEach((uid, lv) {
-            final u = uid.toString();
-            if (u == me) return;
-
-            String name = 'Learner';
-            if (lv is Map) {
-              final mm = lv.map((kk, vv) => MapEntry(kk.toString(), vv));
-              final n = (mm['name'] ?? '').toString().trim();
-              final serial = (mm['serial'] ?? '').toString().trim();
-              name = n.isNotEmpty
-                  ? n
-                  : (serial.isNotEmpty ? serial : 'Learner');
-            }
-
-            if (imInThisClass) {
-              classmateUids.putIfAbsent(u, () => name);
-            }
-          });
-        }
-
-        if (!imInThisClass) return;
-
-        classIds.add(classId.toString());
-
-        final cur = c['instructor_current'];
-        if (cur is Map) {
-          final cm = cur.map((kk, vv) => MapEntry(kk.toString(), vv));
-          final tuid = (cm['uid'] ?? '').toString().trim();
-          final tname = (cm['name'] ?? '').toString().trim();
-          if (tuid.isNotEmpty) {
-            teacherUids.putIfAbsent(
-              tuid,
-              () => tname.isNotEmpty ? tname : 'Teacher',
-            );
-          }
-        }
-      });
-
-      return _ClassesAndPeers(
-        classIds: classIds,
-        teacherUids: teacherUids,
-        classmateUids: classmateUids,
-      );
-    } catch (_) {
-      return _ClassesAndPeers(
-        classIds: classIds,
-        teacherUids: teacherUids,
-        classmateUids: classmateUids,
-      );
-    }
-  }
-
-  Future<List<_UserPick>> _loadTeachersFromMyClasses() async {
-    final peers = await _loadMyClassesAndPeers();
-    if (peers.teacherUids.isEmpty) return [];
-
-    final out = <_UserPick>[];
-    final ids = peers.teacherUids.keys.toList();
-
-    for (final uid in ids) {
-      String name = peers.teacherUids[uid] ?? 'Teacher';
-      const subtitle = 'Teacher';
-
-      try {
-        final snap = await _db.child('users/$uid').get();
-        final v = snap.value;
-        if (v is Map) {
-          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-          if (_isTeacherRole(m['role'])) {
-            final first = (m['first_name'] ?? '').toString().trim();
-            final last = (m['last_name'] ?? '').toString().trim();
-            final full = ('$first $last').trim();
-            if (full.isNotEmpty) name = full;
-          }
-        }
-      } catch (_) {}
-
-      out.add(_UserPick(uid: uid, name: name, subtitle: subtitle));
-    }
-
-    out.sort((a, b) => a.name.compareTo(b.name));
-    return out;
-  }
-
-  Future<List<_UserPick>> _loadClassmates() async {
-    final peers = await _loadMyClassesAndPeers();
-    if (peers.classmateUids.isEmpty) return [];
-
-    final out = <_UserPick>[];
-
-    for (final entry in peers.classmateUids.entries) {
-      final uid = entry.key;
-      String name = entry.value;
-      const subtitle = 'Learner';
-
-      try {
-        final snap = await _db.child('users/$uid').get();
-        final v = snap.value;
-        if (v is Map) {
-          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-          if (_isLearnerRole(m['role'])) {
-            final first = (m['first_name'] ?? '').toString().trim();
-            final last = (m['last_name'] ?? '').toString().trim();
-            final full = ('$first $last').trim();
-            if (full.isNotEmpty) name = full;
-          }
-        }
-      } catch (_) {}
-
-      out.add(_UserPick(uid: uid, name: name, subtitle: subtitle));
-    }
-
-    out.sort((a, b) => a.name.compareTo(b.name));
-    return out;
-  }
-
-  Future<void> _startCallTo({
-    required String peerUid,
-    required String peerName,
-  }) async {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Call feature has been removed.')),
-    );
-  }
-
-  Future<void> _pickAndCall({
-    required String title,
-    required Future<List<_UserPick>> Function() loader,
-    required IconData icon,
-  }) async {
-    final p = palette;
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: p.appBg,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-            child: FutureBuilder<List<_UserPick>>(
-              future: loader(),
-              builder: (context, snap) {
-                final items = snap.data ?? const <_UserPick>[];
-
-                return SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: p.primary.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: p.border.withOpacity(0.9),
-                              ),
-                            ),
-                            child: Icon(icon, color: p.primary),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: p.primary,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (snap.connectionState == ConnectionState.waiting)
-                        const Padding(
-                          padding: EdgeInsets.all(18),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (items.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: p.cardBg,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: p.border.withOpacity(0.85),
-                            ),
-                          ),
-                          child: Text(
-                            'No users found.',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: p.text,
-                            ),
-                          ),
-                        )
-                      else
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight:
-                                MediaQuery.of(context).size.height * 0.55,
-                          ),
-                          child: ListView.separated(
-                            shrinkWrap: true,
-                            itemCount: items.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, i) {
-                              final it = items[i];
-
-                              return InkWell(
-                                borderRadius: BorderRadius.circular(18),
-                                onTap: () async {
-                                  Navigator.of(ctx).pop();
-                                  await _startCallTo(
-                                    peerUid: it.uid,
-                                    peerName: it.name,
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    color: p.cardBg,
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(
-                                      color: p.border.withOpacity(0.85),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      CircleAvatar(
-                                        backgroundColor: p.primary.withOpacity(
-                                          0.08,
-                                        ),
-                                        child: Text(
-                                          it.name.isNotEmpty
-                                              ? it.name[0].toUpperCase()
-                                              : '?',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: p.primary,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              it.name,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: p.primary,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              it.subtitle,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                color: p.text.withOpacity(0.62),
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: p.accent.withOpacity(0.10),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: p.accent.withOpacity(0.22),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.call_rounded,
-                                              size: 16,
-                                              color: p.accent,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              'Call',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                                color: p.accent,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openSupportSheet() async {
-    final p = palette;
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: p.appBg,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: p.cardBg,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: p.border.withOpacity(0.85)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.support_agent_rounded, color: p.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Support Call',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: p.primary,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _SupportTile(
-                  palette: p,
-                  icon: Icons.admin_panel_settings_rounded,
-                  title: 'Call Admin',
-                  subtitle: 'Choose an admin to call',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _pickAndCall(
-                      title: 'Choose Admin',
-                      loader: _loadAdmins,
-                      icon: Icons.admin_panel_settings_rounded,
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                _SupportTile(
-                  palette: p,
-                  icon: Icons.school_rounded,
-                  title: 'Call Teacher',
-                  subtitle: 'Teachers for your classes',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _pickAndCall(
-                      title: 'Choose Teacher',
-                      loader: _loadTeachersFromMyClasses,
-                      icon: Icons.school_rounded,
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                _SupportTile(
-                  palette: p,
-                  icon: Icons.groups_rounded,
-                  title: 'Call Classmate',
-                  subtitle: 'Learners in your class(es)',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _pickAndCall(
-                      title: 'Choose Classmate',
-                      loader: _loadClassmates,
-                      icon: Icons.groups_rounded,
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _openThemeSheet() {
     final p = palette;
 
@@ -693,7 +183,7 @@ class _LearnerHomeState extends State<LearnerHome> {
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: allModes.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (_, i) {
                   final mode = allModes[i];
                   final preview = appThemeController.paletteForMode(mode);
@@ -1148,7 +638,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             final value = entry.value;
             if (sessionId.isEmpty || value is! Map) continue;
 
-            final progress = Map<String, dynamic>.from(value as Map);
+            final progress = Map<String, dynamic>.from(value);
             final meta =
                 sessionMetaById[sessionId] ?? const <String, dynamic>{};
 
@@ -1696,7 +1186,7 @@ class _LearnerHeroCard extends StatelessWidget {
                 ? Image.network(
                     profilePhotoUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(
+                    errorBuilder: (_, _, _) => const Icon(
                       Icons.person_rounded,
                       color: Colors.white,
                       size: 28,
@@ -2540,6 +2030,22 @@ class _BookingTopCardState extends State<_BookingTopCard>
     return const Color(0xFFEF5350);
   }
 
+  Color _upcomingCountdownColor({
+    required double urgency,
+    required _HomePalette p,
+  }) {
+    final u = urgency.clamp(0.0, 1.0);
+
+    if (u <= 0.55) {
+      final t = u / 0.55;
+      return Color.lerp(p.primary, p.accent, t) ?? p.accent;
+    }
+
+    final t = (u - 0.55) / 0.45;
+    return Color.lerp(p.accent, const Color(0xFFD32F2F), t) ??
+        const Color(0xFFD32F2F);
+  }
+
   Color _statusColor({
     required bool canJoin,
     required bool beforeOpen,
@@ -2803,6 +2309,11 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
                 final urgency = _sessionUrgencyProgress(next.start);
                 final urgentRed = _deepRedByUrgency(urgency);
+                final upcomingColor = _upcomingCountdownColor(
+                  urgency: urgency,
+                  p: p,
+                );
+                final idleColor = beforeOpen ? upcomingColor : urgentRed;
 
                 if (meet == null) {
                   _pulseController.stop();
@@ -2811,15 +2322,15 @@ class _BookingTopCardState extends State<_BookingTopCard>
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: urgentRed.withOpacity(0.08),
+                      color: idleColor.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(
-                        color: urgentRed.withOpacity(0.95),
+                        color: idleColor.withOpacity(0.95),
                         width: 2.2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: urgentRed.withOpacity(0.18),
+                          color: idleColor.withOpacity(0.18),
                           blurRadius: 16,
                           offset: const Offset(0, 8),
                         ),
@@ -2901,15 +2412,15 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   decoration: BoxDecoration(
                     color: canJoin
                         ? statusColor.withOpacity(0.16)
-                        : urgentRed.withOpacity(0.08 + (urgency * 0.14)),
+                        : idleColor.withOpacity(0.08 + (urgency * 0.14)),
                     borderRadius: BorderRadius.circular(22),
                     border: Border.all(
-                      color: canJoin ? statusColor : urgentRed,
+                      color: canJoin ? statusColor : idleColor,
                       width: canJoin ? 2.8 : (1.8 + (urgency * 1.8)),
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: (canJoin ? statusColor : urgentRed).withOpacity(
+                        color: (canJoin ? statusColor : idleColor).withOpacity(
                           0.18 + (urgency * 0.20),
                         ),
                         blurRadius: 14 + (urgency * 10),
@@ -2927,7 +2438,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                 ? Icons.video_call_rounded
                                 : Icons.upcoming_rounded,
                             size: 18,
-                            color: canJoin ? statusColor : urgentRed,
+                            color: canJoin ? statusColor : idleColor,
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -2937,7 +2448,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                 ? 'Upcoming reserved class'
                                 : 'Join window closed',
                             style: TextStyle(
-                              color: canJoin ? statusColor : urgentRed,
+                              color: canJoin ? statusColor : idleColor,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -2966,12 +2477,12 @@ class _BookingTopCardState extends State<_BookingTopCard>
                         decoration: BoxDecoration(
                           color: canJoin
                               ? statusColor.withOpacity(0.12)
-                              : urgentRed.withOpacity(0.06 + (urgency * 0.10)),
+                              : idleColor.withOpacity(0.06 + (urgency * 0.10)),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: canJoin
                                 ? statusColor.withOpacity(0.45)
-                                : urgentRed.withOpacity(0.60),
+                                : idleColor.withOpacity(0.60),
                           ),
                         ),
                         child: Column(
@@ -2985,7 +2496,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                   : 'This join window has ended',
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
-                                color: canJoin ? statusColor : urgentRed,
+                                color: canJoin ? statusColor : idleColor,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -3000,7 +2511,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                     : 1,
                                 backgroundColor: p.soft.withOpacity(0.85),
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  canJoin ? statusColor : urgentRed,
+                                  canJoin ? statusColor : idleColor,
                                 ),
                               ),
                             ),
@@ -3168,9 +2679,13 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
       );
     }
   } catch (e) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Failed to load courses: $e')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          toHumanError(e, fallback: 'Could not load your courses right now.'),
+        ),
+      ),
+    );
     return;
   }
 
@@ -3214,7 +2729,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: courses.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
                     final c = courses[i];
                     final courseKey = (c['courseKey'] ?? '').toString();
@@ -3347,9 +2862,13 @@ Future<void> _openHomeworkCoursePicker(
       );
     }
   } catch (e) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Failed to load courses: $e')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          toHumanError(e, fallback: 'Could not load your courses right now.'),
+        ),
+      ),
+    );
     return;
   }
 
@@ -3393,7 +2912,7 @@ Future<void> _openHomeworkCoursePicker(
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: courses.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
                     final c = courses[i];
                     final courseKey = (c['courseKey'] ?? '').toString();
@@ -3508,103 +3027,6 @@ Future<void> _openHomeworkCoursePicker(
       );
     },
   );
-}
-
-class _SupportTile extends StatelessWidget {
-  const _SupportTile({
-    required this.palette,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final _HomePalette palette;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: palette.cardBg,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: palette.border.withOpacity(0.85)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: palette.primary.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: palette.primary),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: palette.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: palette.text.withOpacity(0.62),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: palette.text.withOpacity(0.45),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _UserPick {
-  const _UserPick({
-    required this.uid,
-    required this.name,
-    required this.subtitle,
-  });
-
-  final String uid;
-  final String name;
-  final String subtitle;
-}
-
-class _ClassesAndPeers {
-  const _ClassesAndPeers({
-    required this.classIds,
-    required this.teacherUids,
-    required this.classmateUids,
-  });
-
-  final List<String> classIds;
-  final Map<String, String> teacherUids;
-  final Map<String, String> classmateUids;
 }
 
 class _LearnerHomeworkHomeCard extends StatelessWidget {
@@ -4125,7 +3547,7 @@ class _LearnerDrawer extends StatelessWidget {
                                 ? Image.network(
                                     profilePhotoUrl,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const Icon(
+                                    errorBuilder: (_, _, _) => const Icon(
                                       Icons.person_rounded,
                                       color: Colors.white,
                                       size: 28,

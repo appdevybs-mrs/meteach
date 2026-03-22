@@ -75,7 +75,8 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
       body: StreamBuilder<DatabaseEvent>(
         stream: _stream,
         builder: (_, snap) {
-          if (snap.hasError) return const Center(child: Text('Failed to load inbox.'));
+          if (snap.hasError)
+            return const Center(child: Text('Failed to load inbox.'));
           final rows = _parse(snap.data?.snapshot.value);
           if (rows.isEmpty) return const Center(child: Text('Inbox is empty.'));
 
@@ -88,7 +89,9 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
               return Card(
                 child: ListTile(
-                  title: Text(item.subject.isEmpty ? '(No subject)' : item.subject),
+                  title: Text(
+                    item.subject.isEmpty ? '(No subject)' : item.subject,
+                  ),
                   subtitle: Text(
                     '${item.peerName.isEmpty ? 'User' : item.peerName}\n${item.lastMessage}',
                     maxLines: 2,
@@ -102,7 +105,10 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
                       }
                     },
                     itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'delete', child: Text('Delete (for me)')),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete (for me)'),
+                      ),
                     ],
                   ),
                   onTap: () async {
@@ -191,7 +197,11 @@ class _InboxItem {
 
 /// minimal object so your thread screen can read: teacher.fullName + teacher.email
 class _MinimalStaff {
-  _MinimalStaff({required this.firstName, required this.lastName, required this.email});
+  _MinimalStaff({
+    required this.firstName,
+    required this.lastName,
+    required this.email,
+  });
 
   final String firstName;
   final String lastName;

@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:async/async.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
@@ -72,7 +72,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
     Fluttertoast.cancel();
     Fluttertoast.showToast(
-      msg: msg,
+      msg: humanizeUiMessage(msg),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.CENTER,
       backgroundColor: Colors.black.withOpacity(0.85),
@@ -285,7 +285,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
           ),
           AnimatedBuilder(
             animation: _tab,
-            builder: (_, __) {
+            builder: (_, _) {
               final isUsersTab = _tab.index == 0;
               if (!isUsersTab) return const SizedBox.shrink();
               return IconButton(
@@ -374,7 +374,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
             statusFilter: null,
             onSearchChanged: (v) => setState(() => _search = v),
             onStatusFilterChanged: (_) {},
-            actionsBuilder: (_, __) => const [
+            actionsBuilder: (_, _) => const [
               PopupMenuItem(value: _RowAction.restore, child: Text('Restore')),
               PopupMenuDivider(),
               PopupMenuItem(
@@ -411,7 +411,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
             statusFilter: null,
             onSearchChanged: (v) => setState(() => _search = v),
             onStatusFilterChanged: (_) {},
-            actionsBuilder: (_, __) => const [
+            actionsBuilder: (_, _) => const [
               PopupMenuItem(value: _RowAction.restore, child: Text('Unblock')),
               PopupMenuDivider(),
               PopupMenuItem(
@@ -488,7 +488,7 @@ class _LearnersListState extends State<_LearnersList>
 
     Fluttertoast.cancel();
     Fluttertoast.showToast(
-      msg: msg,
+      msg: humanizeUiMessage(msg),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.CENTER,
       backgroundColor: Colors.black.withOpacity(0.85),
@@ -926,8 +926,9 @@ class _LearnersListState extends State<_LearnersList>
 
       if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
       if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
-      if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal)
+      if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal) {
         return _PayFlag.red;
+      }
       if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
       if (sessionsPaidTotal > 0) {
         final left = sessionsPaidTotal - sessionsDone;
@@ -1016,7 +1017,7 @@ class _LearnersListState extends State<_LearnersList>
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: 1 + LearnerStatus.values.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   if (i == 0) {
                     return ChoiceChip(
@@ -1129,8 +1130,9 @@ class _LearnersListState extends State<_LearnersList>
                       String compactLine2() {
                         final parts = <String>[];
                         if (l.dob.trim().isNotEmpty) parts.add('🎂 ${l.dob}');
-                        if (l.phone2.trim().isNotEmpty)
+                        if (l.phone2.trim().isNotEmpty) {
                           parts.add('📞2 ${l.phone2}');
+                        }
                         return parts.join('  •  ');
                       }
 
@@ -1446,7 +1448,7 @@ class _TopBar extends StatelessWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: filters.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   final f = filters[i];
                   return ChoiceChip(
@@ -1728,7 +1730,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 
     Fluttertoast.cancel();
     Fluttertoast.showToast(
-      msg: msg,
+      msg: humanizeUiMessage(msg),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.CENTER,
       backgroundColor: Colors.black.withOpacity(0.85),
@@ -1946,8 +1948,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         final t = (v ?? '').trim();
                         if (t.isEmpty) return 'First name is required';
                         if (t.length < 2) return 'First name is too short';
-                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t))
+                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) {
                           return 'First name has invalid characters';
+                        }
                         return null;
                       },
                     ),
@@ -1960,8 +1963,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         final t = (v ?? '').trim();
                         if (t.isEmpty) return 'Last name is required';
                         if (t.length < 2) return 'Last name is too short';
-                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t))
+                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) {
                           return 'Last name has invalid characters';
+                        }
                         return null;
                       },
                     ),
@@ -1972,8 +1976,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       validator: (v) {
                         final t = (v ?? '').trim();
                         if (t.isEmpty) return 'Date of birth is required';
-                        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t))
+                        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t)) {
                           return 'Use format YYYY-MM-DD';
+                        }
                         return null;
                       },
 
@@ -2042,8 +2047,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         final t = (v ?? '').trim();
                         if (t.isEmpty) return 'Phone number is required';
                         final digits = t.replaceAll(RegExp(r'[^0-9]'), '');
-                        if (digits.length < 9)
+                        if (digits.length < 9) {
                           return 'Phone number is too short';
+                        }
                         return null;
                       },
 
@@ -2110,8 +2116,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         validator: (v) {
                           final t = (v ?? '').trim();
                           if (t.isEmpty) return 'Password is required';
-                          if (t.length < 6)
+                          if (t.length < 6) {
                             return 'Password must be at least 6 characters';
+                          }
                           return null;
                         },
                       ),
@@ -2122,7 +2129,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
               _SectionCard(
                 title: 'Status',
                 child: DropdownButtonFormField<LearnerStatus>(
-                  value: _status,
+                  initialValue: _status,
                   decoration: InputDecoration(
                     labelText: 'Status',
                     filled: true,
@@ -2919,7 +2926,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 child: Column(
                                   children: [
                                     DropdownButtonFormField<String>(
-                                      value: variantByCourseId[id] ?? 'inclass',
+                                      initialValue:
+                                          variantByCourseId[id] ?? 'inclass',
                                       decoration: InputDecoration(
                                         labelText: 'Study type',
                                         filled: true,
@@ -2965,7 +2973,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                         'private') ...[
                                       const SizedBox(height: 8),
                                       DropdownButtonFormField<String>(
-                                        value:
+                                        initialValue:
                                             (studyModeByCourseId[id] ==
                                                     'inclass' ||
                                                 studyModeByCourseId[id] ==
@@ -3161,7 +3169,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     }
 
     return DropdownButtonFormField<String>(
-      value: _selectedCourseKey,
+      initialValue: _selectedCourseKey,
       decoration: InputDecoration(
         labelText: 'Course',
         filled: true,
@@ -3477,8 +3485,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 (kk, vv) => MapEntry(kk.toString(), vv),
                               );
                               if ((m['courseKey'] ?? '').toString() !=
-                                  courseKey)
+                                  courseKey) {
                                 return;
+                              }
                               items.add({'paymentId': k.toString(), ...m});
                             }
                           });
@@ -3490,8 +3499,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           ).compareTo(_asInt(a['paidAt'])),
                         );
 
-                        if (items.isEmpty)
+                        if (items.isEmpty) {
                           return const _MiniState(text: 'No payments yet.');
+                        }
 
                         return ListView.builder(
                           padding: EdgeInsets.zero,
@@ -3860,7 +3870,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                       ),
                     ),
                   );
-                }).toList(),
+                }),
             ],
           );
         },
@@ -4023,7 +4033,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                       ),
                     ),
                   );
-                }).toList(),
+                }),
             ],
           );
         },
@@ -4193,7 +4203,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
               ],
             );
           },

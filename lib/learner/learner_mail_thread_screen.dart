@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/push_client.dart';
 import '../services/route_state.dart';
+import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 
 class LearnerMailThreadScreen extends StatefulWidget {
@@ -32,7 +33,8 @@ class LearnerMailThreadScreen extends StatefulWidget {
   final String subject;
 
   @override
-  State<LearnerMailThreadScreen> createState() => _LearnerMailThreadScreenState();
+  State<LearnerMailThreadScreen> createState() =>
+      _LearnerMailThreadScreenState();
 }
 
 class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
@@ -41,19 +43,28 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static const Color _navyDark = Color(0xFF1C2F4A);
   static const Color _orange = Color(0xFFEC740A);
 
-  static Color _mineBubbleBg(BuildContext context, {bool isReport = false, bool isHwEval = false}) {
+  static Color _mineBubbleBg(
+    BuildContext context, {
+    bool isReport = false,
+    bool isHwEval = false,
+  }) {
     if (isReport) return Colors.deepPurple.withOpacity(0.90);
     if (isHwEval) return Colors.teal.withOpacity(0.90);
     return _navy;
   }
 
-  static Color _theirsBubbleBg(BuildContext context, {bool isReport = false, bool isHwEval = false}) {
+  static Color _theirsBubbleBg(
+    BuildContext context, {
+    bool isReport = false,
+    bool isHwEval = false,
+  }) {
     if (isReport) return Colors.deepPurple.withOpacity(0.14);
     if (isHwEval) return Colors.teal.withOpacity(0.18);
     return _orange.withOpacity(0.80);
   }
 
-  static Color _datePillBg(BuildContext context) => Colors.white.withOpacity(0.88);
+  static Color _datePillBg(BuildContext context) =>
+      Colors.white.withOpacity(0.88);
   static Color _datePillBorder(BuildContext context) => _navy.withOpacity(0.15);
   static Color _mineText(BuildContext context) => Colors.white;
   static Color _theirsText(BuildContext context) => _navyDark;
@@ -77,7 +88,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     return widget.peerName.trim();
   }
 
-  DatabaseReference get _threadRef => _db.ref('mail_threads/${widget.threadId}');
+  DatabaseReference get _threadRef =>
+      _db.ref('mail_threads/${widget.threadId}');
   DatabaseReference get _msgsRef => _db.ref('mail_messages/${widget.threadId}');
   DatabaseReference get _indexRef => _db.ref('mail_index');
   DatabaseReference get _stateRef => _db.ref('mail_state');
@@ -122,10 +134,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static const double _lockDyThreshold = 95;
   static const double _lockDeadzoneDx = 45;
 
-  bool get _composerBusy => _sending || _recStarting || _recRecording || _recUploading;
+  bool get _composerBusy =>
+      _sending || _recStarting || _recRecording || _recUploading;
   bool get _disableTextInput => _recStarting || _recRecording || _recUploading;
   bool get _disableAttachActions => _composerBusy;
-  bool get _disableSendAction => _sending || _recStarting || _recRecording || _recUploading;
+  bool get _disableSendAction =>
+      _sending || _recStarting || _recRecording || _recUploading;
   bool get _disableMicAction => _composerBusy;
 
   @override
@@ -182,7 +196,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   Future<String> _fetchDisplayName(String uid) async {
@@ -227,8 +243,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   Future<void> _markRead() async {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
-      await _stateRef.child(_meUid).child(widget.threadId).update({'lastReadAt': now});
-      await _indexRef.child(_meUid).child(widget.threadId).update({'unreadCount': 0});
+      await _stateRef.child(_meUid).child(widget.threadId).update({
+        'lastReadAt': now,
+      });
+      await _indexRef.child(_meUid).child(widget.threadId).update({
+        'unreadCount': 0,
+      });
     } catch (_) {}
   }
 
@@ -307,7 +327,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       return false;
     }
 
-    return msgs.where((m) => m.body.toLowerCase().contains(q) || attMatch(m)).toList();
+    return msgs
+        .where((m) => m.body.toLowerCase().contains(q) || attMatch(m))
+        .toList();
   }
 
   Future<void> _pickAndUploadAttachment() async {
@@ -318,7 +340,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (picked == null || picked.files.isEmpty) return;
 
       final f = picked.files.first;
-      final name = (f.name.isNotEmpty) ? f.name : 'file_${DateTime.now().millisecondsSinceEpoch}';
+      final name = (f.name.isNotEmpty)
+          ? f.name
+          : 'file_${DateTime.now().millisecondsSinceEpoch}';
 
       final client = MailUploadClient.defaultClient();
 
@@ -350,11 +374,16 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     if (_disableAttachActions) return;
 
     try {
-      final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+      final x = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
       if (x == null) return;
 
       final client = MailUploadClient.defaultClient();
-      final name = x.name.isNotEmpty ? x.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final name = x.name.isNotEmpty
+          ? x.name
+          : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
       String url;
       if (kIsWeb) {
@@ -419,7 +448,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       final msgRef = _msgsRef.push();
 
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
-      final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
+      final preview80 = preview.length > 80
+          ? preview.substring(0, 80)
+          : preview;
 
       await msgRef.set({
         'fromUid': _meUid,
@@ -446,20 +477,26 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         'deletedAt': null,
       });
 
-      await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
-        final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-        final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
+      await _indexRef
+          .child(widget.peerUid)
+          .child(widget.threadId)
+          .runTransaction((cur) {
+            final m =
+                (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+            final oldUnread = (m['unreadCount'] is num)
+                ? (m['unreadCount'] as num).toInt()
+                : 0;
 
-        m['subject'] = widget.subject;
-        m['updatedAt'] = now;
-        m['lastMessage'] = preview80;
-        m['unreadCount'] = oldUnread + 1;
-        m['peerUid'] = _meUid;
-        m['peerName'] = _meDisplayName;
-        m['deletedAt'] = null;
+            m['subject'] = widget.subject;
+            m['updatedAt'] = now;
+            m['lastMessage'] = preview80;
+            m['unreadCount'] = oldUnread + 1;
+            m['peerUid'] = _meUid;
+            m['peerName'] = _meDisplayName;
+            m['deletedAt'] = null;
 
-        return Transaction.success(m);
-      });
+            return Transaction.success(m);
+          });
 
       unawaited(_markRead());
 
@@ -537,16 +574,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           _recPath = wavPath;
 
           await _rec.start(
-            const RecordConfig(
-              encoder: AudioEncoder.wav,
-              sampleRate: 44100,
-            ),
+            const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 44100),
             path: wavPath,
           );
         }
       } else {
         final tmp = await getTemporaryDirectory();
-        final path = '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final path =
+            '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
         _recPath = path;
 
         await _rec.start(
@@ -687,8 +722,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
       final client = MailUploadClient.defaultClient();
 
-      final ext =
-      (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav')) ? 'wav' : (kIsWeb ? 'webm' : 'm4a');
+      final ext = (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav'))
+          ? 'wav'
+          : (kIsWeb ? 'webm' : 'm4a');
 
       final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
@@ -697,7 +733,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (kIsWeb) {
         final resp = await http.get(Uri.parse(pathOrUrl));
         if (resp.statusCode < 200 || resp.statusCode >= 300) {
-          throw Exception('Could not read recorded audio (HTTP ${resp.statusCode})');
+          throw Exception(
+            'Could not read recorded audio (HTTP ${resp.statusCode})',
+          );
         }
         url = await client.uploadBytes(bytes: resp.bodyBytes, filename: name);
       } else {
@@ -783,8 +821,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                     child: Image.network(
                       url,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) =>
-                      const Text('Failed to load image', style: TextStyle(color: Colors.white)),
+                      errorBuilder: (_, _, _) => const Text(
+                        'Failed to load image',
+                        style: TextStyle(color: Colors.white),
+                      ),
                       loadingBuilder: (ctx, child, prog) {
                         if (prog == null) return child;
                         return const Center(child: CircularProgressIndicator());
@@ -801,7 +841,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                      ),
                     ),
                     if ((title ?? '').trim().isNotEmpty) ...[
                       const SizedBox(width: 6),
@@ -810,7 +853,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                           title!.trim(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ],
@@ -855,7 +901,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   Future<void> _toggleReaction(_MailMsg m, String emoji) async {
     try {
-      final path = _msgsRef.child(m.id).child('reactions').child(emoji).child(_meUid);
+      final path = _msgsRef
+          .child(m.id)
+          .child('reactions')
+          .child(emoji)
+          .child(_meUid);
       final snap = await path.get();
       if (snap.exists && snap.value == true) {
         await path.remove();
@@ -897,7 +947,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                 spacing: 10,
                 runSpacing: 10,
                 children: emojis.map((e) {
-                  final selected = (m.reactions[e] ?? const <String>{}).contains(_meUid);
+                  final selected = (m.reactions[e] ?? const <String>{})
+                      .contains(_meUid);
                   return InkWell(
                     onTap: () async {
                       Navigator.pop(context);
@@ -905,12 +956,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                     },
                     borderRadius: BorderRadius.circular(999),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
-                        color: selected ? _orange.withOpacity(0.18) : Colors.grey.withOpacity(0.08),
+                        color: selected
+                            ? _orange.withOpacity(0.18)
+                            : Colors.grey.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                          color: selected ? _orange.withOpacity(0.55) : Colors.grey.withOpacity(0.18),
+                          color: selected
+                              ? _orange.withOpacity(0.55)
+                              : Colors.grey.withOpacity(0.18),
                         ),
                       ),
                       child: Text(e, style: const TextStyle(fontSize: 18)),
@@ -949,8 +1007,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         alignment: mine ? WrapAlignment.end : WrapAlignment.start,
         children: [
           ...show.map((e) {
-            final selected = (m.reactions[e.key] ?? const <String>{}).contains(_meUid);
-            final bg = selected ? _orange.withOpacity(0.12) : Colors.grey.withOpacity(0.10);
+            final selected = (m.reactions[e.key] ?? const <String>{}).contains(
+              _meUid,
+            );
+            final bg = selected
+                ? _orange.withOpacity(0.12)
+                : Colors.grey.withOpacity(0.10);
 
             return InkWell(
               borderRadius: BorderRadius.circular(999),
@@ -961,7 +1023,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   color: bg,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: selected ? _orange.withOpacity(0.38) : _navy.withOpacity(0.10),
+                    color: selected
+                        ? _orange.withOpacity(0.38)
+                        : _navy.withOpacity(0.10),
                   ),
                 ),
                 child: Text(
@@ -1101,10 +1165,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           decoration: BoxDecoration(
-            color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.34),
+            color: mine
+                ? Colors.white.withOpacity(0.10)
+                : Colors.white.withOpacity(0.34),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08),
+              color: mine
+                  ? Colors.white.withOpacity(0.12)
+                  : _navy.withOpacity(0.08),
             ),
           ),
           child: Row(
@@ -1117,11 +1185,15 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: mine ? Colors.white.withOpacity(0.16) : Colors.white.withOpacity(0.78),
+                    color: mine
+                        ? Colors.white.withOpacity(0.16)
+                        : Colors.white.withOpacity(0.78),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    (active && _isPlaying) ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    (active && _isPlaying)
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
                     color: mine ? Colors.white : _navy,
                     size: 22,
                   ),
@@ -1149,8 +1221,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       child: LinearProgressIndicator(
                         value: progress(),
                         minHeight: 4,
-                        backgroundColor:
-                        mine ? Colors.white.withOpacity(0.18) : _navy.withOpacity(0.10),
+                        backgroundColor: mine
+                            ? Colors.white.withOpacity(0.18)
+                            : _navy.withOpacity(0.10),
                       ),
                     ),
                     const SizedBox(height: 5),
@@ -1161,7 +1234,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 11,
-                            color: mine ? Colors.white.withOpacity(0.82) : _navy.withOpacity(0.70),
+                            color: mine
+                                ? Colors.white.withOpacity(0.82)
+                                : _navy.withOpacity(0.70),
                           ),
                         ),
                         const Spacer(),
@@ -1170,7 +1245,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 11,
-                            color: mine ? Colors.white.withOpacity(0.82) : _navy.withOpacity(0.70),
+                            color: mine
+                                ? Colors.white.withOpacity(0.82)
+                                : _navy.withOpacity(0.70),
                           ),
                         ),
                       ],
@@ -1182,14 +1259,21 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                         child: SliderTheme(
                           data: SliderTheme.of(context).copyWith(
                             trackHeight: 2,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 6,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 12,
+                            ),
                           ),
                           child: Slider(
-                            value: pos.inMilliseconds.clamp(0, dur.inMilliseconds).toDouble(),
+                            value: pos.inMilliseconds
+                                .clamp(0, dur.inMilliseconds)
+                                .toDouble(),
                             min: 0,
                             max: dur.inMilliseconds.toDouble(),
-                            onChanged: (v) => _seekAudio(Duration(milliseconds: v.toInt())),
+                            onChanged: (v) =>
+                                _seekAudio(Duration(milliseconds: v.toInt())),
                           ),
                         ),
                       ),
@@ -1218,10 +1302,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           constraints: const BoxConstraints(maxWidth: 230),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           decoration: BoxDecoration(
-            color: mine ? Colors.white.withOpacity(0.10) : Colors.white.withOpacity(0.30),
+            color: mine
+                ? Colors.white.withOpacity(0.10)
+                : Colors.white.withOpacity(0.30),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: mine ? Colors.white.withOpacity(0.12) : _navy.withOpacity(0.08),
+              color: mine
+                  ? Colors.white.withOpacity(0.12)
+                  : _navy.withOpacity(0.08),
             ),
           ),
           child: Row(
@@ -1248,7 +1336,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
               Icon(
                 Icons.open_in_new_rounded,
                 size: 16,
-                color: mine ? Colors.white.withOpacity(0.90) : _navy.withOpacity(0.82),
+                color: mine
+                    ? Colors.white.withOpacity(0.90)
+                    : _navy.withOpacity(0.82),
               ),
             ],
           ),
@@ -1284,7 +1374,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                 child: Image.network(
                   url,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) {
+                  errorBuilder: (_, _, _) {
                     return InkWell(
                       onTap: () => _openUrlExternal(url),
                       child: Padding(
@@ -1340,15 +1430,15 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         border: Border.all(
           color: isReport
               ? (mine
-              ? Colors.white.withOpacity(0.18)
-              : Colors.deepPurple.withOpacity(0.20))
+                    ? Colors.white.withOpacity(0.18)
+                    : Colors.deepPurple.withOpacity(0.20))
               : isHwEval
               ? (mine
-              ? Colors.white.withOpacity(0.18)
-              : Colors.teal.withOpacity(0.22))
+                    ? Colors.white.withOpacity(0.18)
+                    : Colors.teal.withOpacity(0.22))
               : (mine
-              ? Colors.white.withOpacity(0.08)
-              : _navy.withOpacity(0.06)),
+                    ? Colors.white.withOpacity(0.08)
+                    : _navy.withOpacity(0.06)),
         ),
         boxShadow: [
           BoxShadow(
@@ -1360,7 +1450,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: mine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           if (isReport && !mine) ...[
             Container(
@@ -1412,7 +1504,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             ),
           if (m.attachments.isNotEmpty) ...[
             if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
-            ...m.attachments.map((a) => _buildAttachmentWidget(m: m, a: a, mine: mine)),
+            ...m.attachments.map(
+              (a) => _buildAttachmentWidget(m: m, a: a, mine: mine),
+            ),
           ],
         ],
       ),
@@ -1421,11 +1515,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   Widget _buildMessageMeta(_MailMsg m, {required bool mine}) {
     return Padding(
-      padding: EdgeInsets.only(
-        top: 4,
-        left: mine ? 0 : 6,
-        right: mine ? 6 : 0,
-      ),
+      padding: EdgeInsets.only(top: 4, left: mine ? 0 : 6, right: mine ? 6 : 0),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1453,7 +1543,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'react', child: Text('React')),
-              PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+              PopupMenuItem(
+                value: 'delete_for_me',
+                child: Text('Delete (for me)'),
+              ),
             ],
           ),
         ],
@@ -1472,7 +1565,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   }
 
   Widget _buildRecordingBar() {
-    final showRecBar = _recStarting || _recRecording || _recLocked || _recUploading;
+    final showRecBar =
+        _recStarting || _recRecording || _recLocked || _recUploading;
     if (!showRecBar) return const SizedBox.shrink();
 
     return Container(
@@ -1497,8 +1591,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       : _recLocked
                       ? 'Recording (locked)'
                       : (_recCancelling
-                      ? 'Release to cancel'
-                      : (_recStarting ? 'Starting…' : 'Recording…')),
+                            ? 'Release to cancel'
+                            : (_recStarting ? 'Starting…' : 'Recording…')),
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     color: _navy.withOpacity(0.9),
@@ -1525,13 +1619,18 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             IconButton(
               tooltip: 'Cancel',
               onPressed: _recCancel,
-              icon: Icon(Icons.close_rounded, color: Colors.red.withOpacity(0.85)),
+              icon: Icon(
+                Icons.close_rounded,
+                color: Colors.red.withOpacity(0.85),
+              ),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: _navy,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
               onPressed: _recStopAndSend,
               child: const Text('Send'),
@@ -1550,10 +1649,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         color: _navy.withOpacity(0.35),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: const Icon(
-        Icons.mic_off_rounded,
-        color: Colors.white,
-      ),
+      child: const Icon(Icons.mic_off_rounded, color: Colors.white),
     );
   }
 
@@ -1571,7 +1667,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           borderRadius: BorderRadius.circular(18),
         ),
         child: Icon(
-          (_recRecording || _recStarting) ? Icons.mic_rounded : Icons.mic_none_rounded,
+          (_recRecording || _recStarting)
+              ? Icons.mic_rounded
+              : Icons.mic_none_rounded,
           color: Colors.white,
         ),
       ),
@@ -1591,27 +1689,36 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         iconTheme: const IconThemeData(color: _navy),
         title: _searching
             ? TextField(
-          controller: _searchC,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'Search in this thread…',
-            border: InputBorder.none,
-            hintStyle: TextStyle(
-              color: _navy.withOpacity(0.45),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          style: const TextStyle(color: _navy, fontWeight: FontWeight.w900),
-          onChanged: (_) => setState(() {}),
-        )
+                controller: _searchC,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search in this thread…',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(
+                    color: _navy.withOpacity(0.45),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: const TextStyle(
+                  color: _navy,
+                  fontWeight: FontWeight.w900,
+                ),
+                onChanged: (_) => setState(() {}),
+              )
             : Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w900, color: _navy),
-        ),
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: _navy,
+                ),
+              ),
         actions: [
           IconButton(
             tooltip: _searching ? 'Close search' : 'Search',
-            icon: Icon(_searching ? Icons.close_rounded : Icons.search_rounded, color: _navy),
+            icon: Icon(
+              _searching ? Icons.close_rounded : Icons.search_rounded,
+              color: _navy,
+            ),
             onPressed: () {
               setState(() {
                 _searching = !_searching;
@@ -1623,40 +1730,47 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         bottom: (subjectTrim.isEmpty)
             ? null
             : PreferredSize(
-          preferredSize: const Size.fromHeight(46),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                decoration: BoxDecoration(
-                  color: _orange.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _orange.withOpacity(0.35)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.topic_rounded, size: 18, color: _navy.withOpacity(0.9)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        subjectTrim,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: _navy.withOpacity(0.92),
-                        ),
+                preferredSize: const Size.fromHeight(46),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _orange.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _orange.withOpacity(0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.topic_rounded,
+                            size: 18,
+                            color: _navy.withOpacity(0.9),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              subjectTrim,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: _navy.withOpacity(0.92),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
       ),
       body: WatermarkBackground(
         child: Column(
@@ -1668,8 +1782,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   final msgsAll = _parseMessages(snap.data?.snapshot.value);
                   final msgs = _applyLocalSearch(msgsAll);
 
-                  if (msgsAll.isEmpty) return const Center(child: Text('No mail yet.'));
-                  if (msgs.isEmpty) return const Center(child: Text('No results in this thread.'));
+                  if (msgsAll.isEmpty)
+                    return const Center(child: Text('No mail yet.'));
+                  if (msgs.isEmpty)
+                    return const Center(
+                      child: Text('No results in this thread.'),
+                    );
 
                   return ListView.builder(
                     reverse: true,
@@ -1684,7 +1802,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       if (i + 1 < msgs.length) {
                         nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
                       }
-                      final showDate = (i == msgs.length - 1) || (nextDateLabel != thisDateLabel);
+                      final showDate =
+                          (i == msgs.length - 1) ||
+                          (nextDateLabel != thisDateLabel);
 
                       final grouped = _isSameSenderNearby(msgs, i);
 
@@ -1694,19 +1814,25 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                           Padding(
                             padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
                             child: Align(
-                              alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                              alignment: mine
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
                               child: GestureDetector(
                                 onLongPress: () => _openReactionsPicker(m),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment:
-                                  mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  crossAxisAlignment: mine
+                                      ? CrossAxisAlignment.end
+                                      : CrossAxisAlignment.start,
                                   children: [
                                     ConstrainedBox(
-                                      constraints: BoxConstraints(maxWidth: _messageMaxWidth(m)),
+                                      constraints: BoxConstraints(
+                                        maxWidth: _messageMaxWidth(m),
+                                      ),
                                       child: _buildMessageBubble(m, mine: mine),
                                     ),
-                                    if (m.reactions.isNotEmpty) _buildReactionsRow(m, mine: mine),
+                                    if (m.reactions.isNotEmpty)
+                                      _buildReactionsRow(m, mine: mine),
                                     _buildMessageMeta(m, mine: mine),
                                   ],
                                 ),
@@ -1736,7 +1862,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                           children: _attachments.map((a) {
                             return Chip(
                               label: Text(a['name'] ?? 'file'),
-                              onDeleted: _composerBusy ? null : () => setState(() => _attachments.remove(a)),
+                              onDeleted: _composerBusy
+                                  ? null
+                                  : () =>
+                                        setState(() => _attachments.remove(a)),
                             );
                           }).toList(),
                         ),
@@ -1748,13 +1877,23 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       children: [
                         IconButton(
                           tooltip: 'Camera',
-                          onPressed: _disableAttachActions ? null : _takePhotoAndAttach,
-                          icon: Icon(Icons.photo_camera_rounded, color: _navy.withOpacity(0.9)),
+                          onPressed: _disableAttachActions
+                              ? null
+                              : _takePhotoAndAttach,
+                          icon: Icon(
+                            Icons.photo_camera_rounded,
+                            color: _navy.withOpacity(0.9),
+                          ),
                         ),
                         IconButton(
                           tooltip: 'Attach',
-                          onPressed: _disableAttachActions ? null : _pickAndUploadAttachment,
-                          icon: Icon(Icons.attach_file, color: _navy.withOpacity(0.9)),
+                          onPressed: _disableAttachActions
+                              ? null
+                              : _pickAndUploadAttachment,
+                          icon: Icon(
+                            Icons.attach_file,
+                            color: _navy.withOpacity(0.9),
+                          ),
                         ),
                         Expanded(
                           child: TextField(
@@ -1764,20 +1903,29 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                             maxLines: 4,
                             enabled: !_disableTextInput,
                             decoration: InputDecoration(
-                              hintText: (_recRecording || _recStarting || _recUploading)
+                              hintText:
+                                  (_recRecording ||
+                                      _recStarting ||
+                                      _recUploading)
                                   ? 'Recording…'
                                   : 'Message…',
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.92),
-                              contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(18),
-                                borderSide: BorderSide(color: _navy.withOpacity(0.15)),
+                                borderSide: BorderSide(
+                                  color: _navy.withOpacity(0.15),
+                                ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(18),
-                                borderSide: BorderSide(color: _navy.withOpacity(0.12)),
+                                borderSide: BorderSide(
+                                  color: _navy.withOpacity(0.12),
+                                ),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(18),
@@ -1790,12 +1938,16 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        if (_bodyC.text.trim().isNotEmpty || _attachments.isNotEmpty)
+                        if (_bodyC.text.trim().isNotEmpty ||
+                            _attachments.isNotEmpty)
                           FilledButton(
                             style: FilledButton.styleFrom(
                               backgroundColor: _navy,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(18),
                               ),
@@ -1804,11 +1956,15 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                             child: Text(_sending ? 'Sending…' : 'Send'),
                           )
                         else
-                          (_disableMicAction ? _buildDisabledMicButton() : _buildActiveMicButton()),
+                          (_disableMicAction
+                              ? _buildDisabledMicButton()
+                              : _buildActiveMicButton()),
                       ],
                     ),
 
-                    if ((_recRecording || _recStarting) && !_recLocked && !_recUploading)
+                    if ((_recRecording || _recStarting) &&
+                        !_recLocked &&
+                        !_recUploading)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Row(
@@ -1956,7 +2112,9 @@ class MailUploadClient {
       ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
       ..fields['key'] = key
       ..fields['app_id'] = appId
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      ..files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
 
     final streamed = await _http.send(req);
     final body = await streamed.stream.bytesToString();
@@ -1985,7 +2143,9 @@ class MailUploadClient {
       ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
       ..fields['key'] = key
       ..fields['app_id'] = appId
-      ..files.add(await http.MultipartFile.fromPath('file', path, filename: filename));
+      ..files.add(
+        await http.MultipartFile.fromPath('file', path, filename: filename),
+      );
 
     final streamed = await _http.send(req);
     final body = await streamed.stream.bytesToString();

@@ -21,7 +21,7 @@ class WatermarkBackground extends StatelessWidget {
                   child: Image.asset(
                     'assets/images/ybs_logo.png',
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
               ),

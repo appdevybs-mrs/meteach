@@ -53,6 +53,9 @@ dependencies:
   audioplayers: ^6.0.0
   record: ^6.2.0
   syncfusion_flutter_pdfviewer: ^28.2.12
+  crypto: ^3.0.7
+  webview_flutter_android: ^4.10.13
+  webview_flutter_wkwebview: ^3.23.8
 dev_dependencies:
   flutter_test:
     sdk: flutter

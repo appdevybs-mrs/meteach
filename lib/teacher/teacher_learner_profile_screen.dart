@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class TeacherLearnerProfileScreen extends StatefulWidget {
   const TeacherLearnerProfileScreen({
@@ -116,8 +117,9 @@ class _TeacherLearnerProfileScreenState
         : <String, dynamic>{};
 
     final courseId = _safeStr(cls['course_id'] ?? course['id']);
-    final variantKey =
-    _safeStr(course['variantKey'] ?? course['variant']).toLowerCase();
+    final variantKey = _safeStr(
+      course['variantKey'] ?? course['variant'],
+    ).toLowerCase();
 
     final sessionIdByNumber = await _loadSessionIdByNumber(
       courseId: courseId,
@@ -298,7 +300,9 @@ class _TeacherLearnerProfileScreenState
         if (courseId.isNotEmpty) {
           try {
             final onlineSnap = await _db
-                .child('booking_progress/${widget.learnerUid}/$courseId/online_attendance')
+                .child(
+                  'booking_progress/${widget.learnerUid}/$courseId/online_attendance',
+                )
                 .get();
 
             if (onlineSnap.exists && onlineSnap.value is Map) {
@@ -324,8 +328,9 @@ class _TeacherLearnerProfileScreenState
 
       _statLessonsCovered = totalLessonsCovered;
       _statHomeworkPending = homeworkPending;
-      _statAttendancePct =
-      totalAttendance == 0 ? 0 : ((totalPresent / totalAttendance) * 100).round();
+      _statAttendancePct = totalAttendance == 0
+          ? 0
+          : ((totalPresent / totalAttendance) * 100).round();
     } catch (_) {}
   }
 
@@ -369,7 +374,7 @@ class _TeacherLearnerProfileScreenState
 
       await _loadSmallStats();
     } catch (e) {
-      _error = e.toString();
+      _error = toHumanError(e);
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -418,10 +423,7 @@ class _TeacherLearnerProfileScreenState
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
               overflow: TextOverflow.ellipsis,
               maxLines: 2,
             ),
@@ -432,12 +434,12 @@ class _TeacherLearnerProfileScreenState
   }
 
   Widget _smallStatTile(
-      AppPalette p, {
-        required IconData icon,
-        required String label,
-        required String value,
-        Color? tint,
-      }) {
+    AppPalette p, {
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? tint,
+  }) {
     final color = tint ?? p.accent;
 
     return Container(
@@ -470,10 +472,7 @@ class _TeacherLearnerProfileScreenState
           ),
           Text(
             value,
-            style: TextStyle(
-              color: p.text,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -482,17 +481,16 @@ class _TeacherLearnerProfileScreenState
 
   Widget _buildMainProfileCard(AppPalette p) {
     final fullName = _displayName();
-    final role = _safeStr(_user['role']).isEmpty ? 'Learner' : _safeStr(_user['role']);
+    final role = _safeStr(_user['role']).isEmpty
+        ? 'Learner'
+        : _safeStr(_user['role']);
     final serial = _safeStr(_user['serial']);
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -518,19 +516,19 @@ class _TeacherLearnerProfileScreenState
             clipBehavior: Clip.antiAlias,
             child: (_profilePhotoUrl ?? '').isNotEmpty
                 ? Image.network(
-              _profilePhotoUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.person_rounded,
-                size: 56,
-                color: Colors.white,
-              ),
-            )
+                    _profilePhotoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.person_rounded,
+                      size: 56,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(
-              Icons.person_rounded,
-              size: 56,
-              color: Colors.white,
-            ),
+                    Icons.person_rounded,
+                    size: 56,
+                    color: Colors.white,
+                  ),
           ),
           const SizedBox(height: 14),
           Text(
@@ -570,10 +568,7 @@ class _TeacherLearnerProfileScreenState
     );
   }
 
-  Widget _heroChip({
-    required String text,
-    required IconData icon,
-  }) {
+  Widget _heroChip({required String text, required IconData icon}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -646,7 +641,7 @@ class _TeacherLearnerProfileScreenState
                     width: 96,
                     height: 96,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       width: 96,
                       height: 96,
                       color: p.soft,
@@ -875,7 +870,9 @@ class _TeacherLearnerProfileScreenState
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.20)),
+            border: Border.all(
+              color: const Color(0xFFEF4444).withOpacity(0.20),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -915,7 +912,9 @@ class _TeacherLearnerProfileScreenState
   @override
   Widget build(BuildContext context) {
     final p = palette;
-    final title = widget.learnerName.isEmpty ? 'Learner Profile' : widget.learnerName;
+    final title = widget.learnerName.isEmpty
+        ? 'Learner Profile'
+        : widget.learnerName;
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -926,10 +925,7 @@ class _TeacherLearnerProfileScreenState
         iconTheme: IconThemeData(color: p.primary),
         title: Text(
           title,
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -944,19 +940,19 @@ class _TeacherLearnerProfileScreenState
           : _error != null
           ? _buildErrorState(p)
           : ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildMainProfileCard(p),
-          const SizedBox(height: 14),
-          _buildExtraPhotosCard(p),
-          const SizedBox(height: 14),
-          _buildSummaryCard(p),
-          const SizedBox(height: 14),
-          _buildAboutMeCard(p),
-          const SizedBox(height: 14),
-          _buildAccountCard(p),
-        ],
-      ),
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildMainProfileCard(p),
+                const SizedBox(height: 14),
+                _buildExtraPhotosCard(p),
+                const SizedBox(height: 14),
+                _buildSummaryCard(p),
+                const SizedBox(height: 14),
+                _buildAboutMeCard(p),
+                const SizedBox(height: 14),
+                _buildAccountCard(p),
+              ],
+            ),
     );
   }
 }

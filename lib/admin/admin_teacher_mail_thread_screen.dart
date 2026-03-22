@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/push_client.dart';
 import '../services/route_state.dart';
+import '../shared/human_error.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -132,7 +133,6 @@ class _AdminTeacherMailThreadScreenState
     _ensureIndexForMe(); // so it appears in inbox even if empty
   }
 
-
   @override
   void dispose() {
     RouteState.exitMailThread(_threadId);
@@ -154,10 +154,12 @@ class _AdminTeacherMailThreadScreenState
     if (t is Map) {
       String read(dynamic key) => (t[key] ?? '').toString().trim();
 
-      final first =
-      read('first_name').isNotEmpty ? read('first_name') : read('firstName');
-      final last =
-      read('last_name').isNotEmpty ? read('last_name') : read('lastName');
+      final first = read('first_name').isNotEmpty
+          ? read('first_name')
+          : read('firstName');
+      final last = read('last_name').isNotEmpty
+          ? read('last_name')
+          : read('lastName');
 
       final full = ('$first $last').trim();
       if (full.isNotEmpty) return full;
@@ -179,12 +181,15 @@ class _AdminTeacherMailThreadScreenState
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   Future<String?> _getFcmToken(String uid) async {
-    final snap =
-    await FirebaseDatabase.instance.ref('fcm_tokens/$uid/token').get();
+    final snap = await FirebaseDatabase.instance
+        .ref('fcm_tokens/$uid/token')
+        .get();
     final token = snap.value?.toString().trim();
     if (token == null || token.isEmpty) return null;
     return token;
@@ -206,10 +211,7 @@ class _AdminTeacherMailThreadScreenState
         'createdAt': ServerValue.timestamp,
         'updatedAt': ServerValue.timestamp,
         'lastMessage': '',
-        'participants': {
-          _meUid: true,
-          widget.teacherUid: true,
-        },
+        'participants': {_meUid: true, widget.teacherUid: true},
       });
     } catch (e) {
       _snack('Mail init failed: $e');
@@ -239,9 +241,7 @@ class _AdminTeacherMailThreadScreenState
       await _stateRef.child(_meUid).child(_threadId).update({
         'lastReadAt': now,
       });
-      await _indexRef.child(_meUid).child(_threadId).update({
-        'unreadCount': 0,
-      });
+      await _indexRef.child(_meUid).child(_threadId).update({'unreadCount': 0});
     } catch (_) {}
   }
 
@@ -318,11 +318,12 @@ class _AdminTeacherMailThreadScreenState
       await _threadRef.update({'subject': s.trim()});
       setState(() => _subject = s.trim());
 
-      await _indexRef.child(_meUid).child(_threadId).update({'subject': s.trim()});
-      await _indexRef
-          .child(widget.teacherUid)
-          .child(_threadId)
-          .update({'subject': s.trim()});
+      await _indexRef.child(_meUid).child(_threadId).update({
+        'subject': s.trim(),
+      });
+      await _indexRef.child(widget.teacherUid).child(_threadId).update({
+        'subject': s.trim(),
+      });
     } catch (e) {
       _snack('Failed to set subject: $e');
     }
@@ -356,7 +357,9 @@ class _AdminTeacherMailThreadScreenState
       final msgRef = _msgsRef.push();
 
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
-      final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
+      final preview80 = preview.length > 80
+          ? preview.substring(0, 80)
+          : preview;
 
       await msgRef.set({
         'fromUid': _meUid,
@@ -369,10 +372,7 @@ class _AdminTeacherMailThreadScreenState
         'deletedFor': {},
       });
 
-      await _threadRef.update({
-        'updatedAt': now,
-        'lastMessage': preview80,
-      });
+      await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
 
       final teacherName = _teacherDisplayName();
 
@@ -388,13 +388,13 @@ class _AdminTeacherMailThreadScreenState
       });
 
       // For teacher: unread + 1 (transaction avoids race)
-      await _indexRef
-          .child(widget.teacherUid)
-          .child(_threadId)
-          .runTransaction((cur) {
+      await _indexRef.child(widget.teacherUid).child(_threadId).runTransaction((
+        cur,
+      ) {
         final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-        final oldUnread =
-        (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
+        final oldUnread = (m['unreadCount'] is num)
+            ? (m['unreadCount'] as num).toInt()
+            : 0;
 
         m['subject'] = _subject;
         m['updatedAt'] = now;
@@ -443,26 +443,27 @@ class _AdminTeacherMailThreadScreenState
   }
 
   Future<void> _deleteThreadForMe() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete conversation?'),
-        content: const Text(
-          'This will delete the conversation only for you.\nThe other user will still see it.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete conversation?'),
+            content: const Text(
+              'This will delete the conversation only for you.\nThe other user will still see it.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -470,9 +471,7 @@ class _AdminTeacherMailThreadScreenState
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
 
-      await _indexRef.child(_meUid).child(_threadId).update({
-        'deletedAt': now,
-      });
+      await _indexRef.child(_meUid).child(_threadId).update({'deletedAt': now});
 
       await _stateRef.child(_meUid).child(_threadId).remove();
 
@@ -558,8 +557,9 @@ class _AdminTeacherMailThreadScreenState
                     final mine = m.fromUid == _meUid;
 
                     return Align(
-                      alignment:
-                      mine ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment: mine
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 340),
                         child: Card(
@@ -637,7 +637,7 @@ class _AdminTeacherMailThreadScreenState
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
                                             decoration:
-                                            TextDecoration.underline,
+                                                TextDecoration.underline,
                                           ),
                                         ),
                                       ),
@@ -749,8 +749,7 @@ class _MailMsg {
     if (rawAtt is List) {
       for (final item in rawAtt) {
         if (item is Map) {
-          final mm =
-          item.map((k, v) => MapEntry(k.toString(), v.toString()));
+          final mm = item.map((k, v) => MapEntry(k.toString(), v.toString()));
           atts.add(mm);
         }
       }

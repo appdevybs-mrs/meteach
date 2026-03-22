@@ -6,15 +6,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
-  const AdminTeacherRemindersScreen({
-    super.key,
-    this.teacherUid,
-    this.teacher,
-  });
+  const AdminTeacherRemindersScreen({super.key, this.teacherUid, this.teacher});
 
   final String? teacherUid;
   final dynamic teacher;
@@ -54,8 +51,8 @@ class _AdminTeacherRemindersScreenState
     _allRemindersStream = _allRemindersRef.onValue.asBroadcastStream();
 
     if (_isSingleTeacherMode) {
-      _singleTeacherRemindersStream =
-          _singleTeacherRemindersRef.onValue.asBroadcastStream();
+      _singleTeacherRemindersStream = _singleTeacherRemindersRef.onValue
+          .asBroadcastStream();
     }
   }
 
@@ -105,7 +102,7 @@ class _AdminTeacherRemindersScreenState
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok) _snack('Could not open link');
     } catch (e) {
-      _snack('Could not open link: $e');
+      _snack(toHumanError(e, fallback: 'Could not open this link.'));
     }
   }
 
@@ -132,10 +129,12 @@ class _AdminTeacherRemindersScreenState
       final uid = k.toString().trim();
       if (uid.isEmpty) return;
 
-      final firstName =
-      (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-      final lastName =
-      (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final firstName = (m['first_name'] ?? m['firstName'] ?? '')
+          .toString()
+          .trim();
+      final lastName = (m['last_name'] ?? m['lastName'] ?? '')
+          .toString()
+          .trim();
       final fullName = ('$firstName $lastName').trim();
 
       out.add(
@@ -227,10 +226,10 @@ class _AdminTeacherRemindersScreenState
       final matchesSearch = s.isEmpty
           ? true
           : r.title.toLowerCase().contains(s) ||
-          r.description.toLowerCase().contains(s) ||
-          r.teacherName.toLowerCase().contains(s) ||
-          r.teacherEmail.toLowerCase().contains(s) ||
-          r.teacherSerial.toLowerCase().contains(s);
+                r.description.toLowerCase().contains(s) ||
+                r.teacherName.toLowerCase().contains(s) ||
+                r.teacherEmail.toLowerCase().contains(s) ||
+                r.teacherSerial.toLowerCase().contains(s);
 
       final status = r.status.toLowerCase().trim();
 
@@ -315,7 +314,12 @@ class _AdminTeacherRemindersScreenState
           _snack('Reminder added ✅');
         }
       } catch (e) {
-        _snack('Failed: $e');
+        _snack(
+          toHumanError(
+            e,
+            fallback: 'Could not create the reminder. Try again.',
+          ),
+        );
       }
 
       return;
@@ -342,9 +346,8 @@ class _AdminTeacherRemindersScreenState
 
     final created = await showDialog<_TeacherReminderDraft?>(
       context: context,
-      builder: (_) => _AddReminderDialog.mass(
-        selectedCount: selectedTeachers.length,
-      ),
+      builder: (_) =>
+          _AddReminderDialog.mass(selectedCount: selectedTeachers.length),
     );
 
     if (created == null) return;
@@ -385,7 +388,7 @@ class _AdminTeacherRemindersScreenState
       if (noPushCount > 0) {
         _snack(
           'Reminder sent to $successCount teacher(s) ✅ '
-              '($noPushCount without push token)',
+          '($noPushCount without push token)',
         );
       } else {
         _snack('Reminder sent to $successCount teacher(s) ✅');
@@ -393,19 +396,17 @@ class _AdminTeacherRemindersScreenState
     } else {
       _snack(
         'Done: $successCount sent, $failedCount failed'
-            '${noPushCount > 0 ? ' ($noPushCount without push token)' : ''}',
+        '${noPushCount > 0 ? ' ($noPushCount without push token)' : ''}',
       );
     }
   }
 
   Future<void> _deleteReminder(_ReminderRow row) async {
     try {
-      await _db
-          .ref('reminders/${row.teacherUid}/${row.reminderId}')
-          .remove();
+      await _db.ref('reminders/${row.teacherUid}/${row.reminderId}').remove();
       _snack('Deleted ✅');
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete reminder.'));
     }
   }
 
@@ -474,7 +475,7 @@ class _AdminTeacherRemindersScreenState
                 child: Image.network(
                   url,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Padding(
+                  errorBuilder: (_, _, _) => Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -573,10 +574,7 @@ class _AdminTeacherRemindersScreenState
           url,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Colors.black.withOpacity(0.55),
-            fontSize: 12,
-          ),
+          style: TextStyle(color: Colors.black.withOpacity(0.55), fontSize: 12),
         ),
       ],
     );
@@ -585,7 +583,9 @@ class _AdminTeacherRemindersScreenState
   Widget _expandedBody(TeacherReminder r) {
     final teacherLine = [
       r.teacherName.trim().isEmpty ? null : r.teacherName.trim(),
-      r.teacherSerial.trim().isEmpty ? null : 'Serial: ${r.teacherSerial.trim()}',
+      r.teacherSerial.trim().isEmpty
+          ? null
+          : 'Serial: ${r.teacherSerial.trim()}',
       r.teacherRole.trim().isEmpty ? null : 'Role: ${r.teacherRole.trim()}',
     ].whereType<String>().join(' • ');
 
@@ -689,7 +689,7 @@ class _AdminTeacherRemindersScreenState
                   selected: _statusFilter == _ReminderStatusFilter.newOnly,
                   onSelected: (_) {
                     setState(
-                          () => _statusFilter = _ReminderStatusFilter.newOnly,
+                      () => _statusFilter = _ReminderStatusFilter.newOnly,
                     );
                   },
                 ),
@@ -699,7 +699,7 @@ class _AdminTeacherRemindersScreenState
                   selected: _statusFilter == _ReminderStatusFilter.readOnly,
                   onSelected: (_) {
                     setState(
-                          () => _statusFilter = _ReminderStatusFilter.readOnly,
+                      () => _statusFilter = _ReminderStatusFilter.readOnly,
                     );
                   },
                 ),
@@ -709,7 +709,7 @@ class _AdminTeacherRemindersScreenState
                   selected: _statusFilter == _ReminderStatusFilter.doneOnly,
                   onSelected: (_) {
                     setState(
-                          () => _statusFilter = _ReminderStatusFilter.doneOnly,
+                      () => _statusFilter = _ReminderStatusFilter.doneOnly,
                     );
                   },
                 ),
@@ -733,7 +733,9 @@ class _AdminTeacherRemindersScreenState
       final bd = b.reminder.dueAtMs ?? (1 << 62);
       final c = ad.compareTo(bd);
       if (c != 0) return c;
-      return (b.reminder.createdAtMs ?? 0).compareTo(a.reminder.createdAtMs ?? 0);
+      return (b.reminder.createdAtMs ?? 0).compareTo(
+        a.reminder.createdAtMs ?? 0,
+      );
     });
 
     return ListView.builder(
@@ -745,8 +747,9 @@ class _AdminTeacherRemindersScreenState
 
         final expandedKey = '${row.teacherUid}_${row.reminderId}';
         final isExpanded = _expanded.contains(expandedKey);
-        final hasAttachment =
-            _normalizeUrl((r.attachmentUrl ?? '').trim()).isNotEmpty;
+        final hasAttachment = _normalizeUrl(
+          (r.attachmentUrl ?? '').trim(),
+        ).isNotEmpty;
 
         return Card(
           child: InkWell(
@@ -818,10 +821,7 @@ class _AdminTeacherRemindersScreenState
                           }
                         },
                         itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Text('Delete'),
-                          ),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
                         ],
                       ),
                     ],
@@ -889,8 +889,8 @@ class _AdminTeacherRemindersScreenState
         title: Text(
           _isSingleTeacherMode
               ? (teacherName.isEmpty
-              ? 'Teacher reminders'
-              : 'Reminders — $teacherName')
+                    ? 'Teacher reminders'
+                    : 'Reminders — $teacherName')
               : 'All reminders',
         ),
         actions: [
@@ -917,12 +917,7 @@ class _AdminTeacherRemindersScreenState
   }
 }
 
-enum _ReminderStatusFilter {
-  all,
-  newOnly,
-  readOnly,
-  doneOnly,
-}
+enum _ReminderStatusFilter { all, newOnly, readOnly, doneOnly }
 
 class _TeacherTarget {
   _TeacherTarget({
@@ -1061,9 +1056,7 @@ class _TeacherReminderDraft {
 }
 
 class _TeacherPickerDialog extends StatefulWidget {
-  const _TeacherPickerDialog({
-    required this.teachers,
-  });
+  const _TeacherPickerDialog({required this.teachers});
 
   final List<_TeacherTarget> teachers;
 
@@ -1083,10 +1076,10 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
       final matchesSearch = s.isEmpty
           ? true
           : t.fullName.toLowerCase().contains(s) ||
-          t.email.toLowerCase().contains(s) ||
-          t.serial.toLowerCase().contains(s) ||
-          t.phone1.toLowerCase().contains(s) ||
-          t.phone2.toLowerCase().contains(s);
+                t.email.toLowerCase().contains(s) ||
+                t.serial.toLowerCase().contains(s) ||
+                t.phone1.toLowerCase().contains(s) ||
+                t.phone2.toLowerCase().contains(s);
 
       final status = t.status.toLowerCase().trim();
       final matchesStatus = switch (_statusFilter) {
@@ -1146,7 +1139,7 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
                     selected: _statusFilter == _TeacherPickerStatusFilter.all,
                     onSelected: (_) {
                       setState(
-                            () => _statusFilter = _TeacherPickerStatusFilter.all,
+                        () => _statusFilter = _TeacherPickerStatusFilter.all,
                       );
                     },
                   ),
@@ -1154,10 +1147,10 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
                   ChoiceChip(
                     label: const Text('Active'),
                     selected:
-                    _statusFilter == _TeacherPickerStatusFilter.active,
+                        _statusFilter == _TeacherPickerStatusFilter.active,
                     onSelected: (_) {
                       setState(
-                            () => _statusFilter = _TeacherPickerStatusFilter.active,
+                        () => _statusFilter = _TeacherPickerStatusFilter.active,
                       );
                     },
                   ),
@@ -1165,10 +1158,10 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
                   ChoiceChip(
                     label: const Text('Paused'),
                     selected:
-                    _statusFilter == _TeacherPickerStatusFilter.paused,
+                        _statusFilter == _TeacherPickerStatusFilter.paused,
                     onSelected: (_) {
                       setState(
-                            () => _statusFilter = _TeacherPickerStatusFilter.paused,
+                        () => _statusFilter = _TeacherPickerStatusFilter.paused,
                       );
                     },
                   ),
@@ -1198,59 +1191,60 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
               child: filtered.isEmpty
                   ? const Center(child: Text('No teachers found.'))
                   : ListView.builder(
-                shrinkWrap: true,
-                itemCount: filtered.length,
-                itemBuilder: (_, i) {
-                  final t = filtered[i];
-                  final selected = _selected.contains(t.uid);
+                      shrinkWrap: true,
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final t = filtered[i];
+                        final selected = _selected.contains(t.uid);
 
-                  return CheckboxListTile(
-                    value: selected,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    onChanged: (v) {
-                      setState(() {
-                        if (v == true) {
-                          _selected.add(t.uid);
-                        } else {
-                          _selected.remove(t.uid);
-                        }
-                      });
-                    },
-                    title: Text(
-                      t.fullName.isEmpty ? '(No name)' : t.fullName,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (t.email.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            t.email,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        return CheckboxListTile(
+                          value: selected,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: (v) {
+                            setState(() {
+                              if (v == true) {
+                                _selected.add(t.uid);
+                              } else {
+                                _selected.remove(t.uid);
+                              }
+                            });
+                          },
+                          title: Text(
+                            t.fullName.isEmpty ? '(No name)' : t.fullName,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
-                        ],
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _MiniPill(
-                              label:
-                              t.status.isEmpty ? 'active' : t.status,
-                            ),
-                            if (t.serial.isNotEmpty)
-                              _MiniPill(label: 'Serial: ${t.serial}'),
-                            if (t.phone1.isNotEmpty)
-                              _MiniPill(label: t.phone1),
-                          ],
-                        ),
-                      ],
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (t.email.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  t.email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _MiniPill(
+                                    label: t.status.isEmpty
+                                        ? 'active'
+                                        : t.status,
+                                  ),
+                                  if (t.serial.isNotEmpty)
+                                    _MiniPill(label: 'Serial: ${t.serial}'),
+                                  if (t.phone1.isNotEmpty)
+                                    _MiniPill(label: t.phone1),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),
@@ -1264,11 +1258,11 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
           onPressed: _selected.isEmpty
               ? null
               : () {
-            final picked = widget.teachers
-                .where((t) => _selected.contains(t.uid))
-                .toList();
-            Navigator.pop(context, picked);
-          },
+                  final picked = widget.teachers
+                      .where((t) => _selected.contains(t.uid))
+                      .toList();
+                  Navigator.pop(context, picked);
+                },
           child: const Text('Continue'),
         ),
       ],
@@ -1276,11 +1270,7 @@ class _TeacherPickerDialogState extends State<_TeacherPickerDialog> {
   }
 }
 
-enum _TeacherPickerStatusFilter {
-  all,
-  active,
-  paused,
-}
+enum _TeacherPickerStatusFilter { all, active, paused }
 
 class _MiniPill extends StatelessWidget {
   const _MiniPill({required this.label});
@@ -1304,15 +1294,11 @@ class _MiniPill extends StatelessWidget {
 }
 
 class _AddReminderDialog extends StatefulWidget {
-  const _AddReminderDialog({
-    this.teacher,
-    this.selectedCount,
-  });
+  const _AddReminderDialog({this.teacher, this.selectedCount});
 
-  const _AddReminderDialog.mass({
-    required int selectedCount,
-  })  : teacher = null,
-        selectedCount = selectedCount;
+  const _AddReminderDialog.mass({required this.selectedCount})
+    : teacher = null,
+      assert(selectedCount != null);
 
   final dynamic teacher;
   final int? selectedCount;
@@ -1369,7 +1355,9 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
       if (file.path == null) return;
 
       final f = File(file.path!);
-      final url = await ReminderUploadClient.defaultClient().uploadFile(file: f);
+      final url = await ReminderUploadClient.defaultClient().uploadFile(
+        file: f,
+      );
 
       if (!mounted) return;
 
@@ -1380,7 +1368,11 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not upload attachment.'),
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -1401,8 +1393,8 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
     final teacherRole = widget.isMassMode
         ? ''
         : (widget.teacher?.role?.value ?? widget.teacher?.role ?? '')
-        .toString()
-        .trim();
+              .toString()
+              .trim();
     final teacherPhone1 = widget.isMassMode
         ? ''
         : (widget.teacher?.phone1 ?? '').toString().trim();
@@ -1427,7 +1419,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 controller: titleC,
                 decoration: const InputDecoration(labelText: 'Title *'),
                 validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
               const SizedBox(height: 10),
               TextFormField(
@@ -1475,10 +1467,10 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                     onPressed: _uploading ? null : _pickAndUploadFile,
                     icon: _uploading
                         ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.upload),
                     label: Text(_uploading ? 'Uploading…' : 'Upload'),
                   ),
@@ -1510,7 +1502,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Teacher: ${teacherName.isEmpty ? '(no name)' : teacherName}'
-                        '${teacherEmail.isEmpty ? '' : ' — $teacherEmail'}',
+                    '${teacherEmail.isEmpty ? '' : ' — $teacherEmail'}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.black.withOpacity(0.6),
@@ -1536,8 +1528,9 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 title: titleC.text,
                 description: descC.text,
                 dueAtMs: _due?.millisecondsSinceEpoch,
-                attachmentUrl:
-                _attachmentUrl.trim().isEmpty ? null : _attachmentUrl.trim(),
+                attachmentUrl: _attachmentUrl.trim().isEmpty
+                    ? null
+                    : _attachmentUrl.trim(),
                 attachmentName: _attachmentName.trim().isEmpty
                     ? null
                     : _attachmentName.trim(),

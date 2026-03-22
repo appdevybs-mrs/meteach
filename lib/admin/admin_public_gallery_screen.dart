@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
+import '../shared/human_error.dart';
+
 class AdminPublicGalleryScreen extends StatefulWidget {
   const AdminPublicGalleryScreen({super.key});
 
@@ -47,6 +49,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   String _adminName = 'Admin';
   String _learnerSearch = '';
+  bool _onlyEmptyLearnerGalleries = false;
 
   @override
   void initState() {
@@ -55,8 +58,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
     _publicGalleryStream = _galleryRef().onValue.asBroadcastStream();
     _usersStream = _db.child('users').onValue.asBroadcastStream();
-    _learnerGalleryStream =
-        _db.child('learner_gallery').onValue.asBroadcastStream();
+    _learnerGalleryStream = _db
+        .child('learner_gallery')
+        .onValue
+        .asBroadcastStream();
 
     _loadAdminName();
   }
@@ -96,10 +101,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse(_uploadEndpoint),
-    );
+    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
     request.fields['key'] = _uploadKeySha1;
@@ -112,11 +114,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
       );
     } else {
       final path = file.path;
@@ -125,11 +123,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       }
 
       request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          path,
-          filename: file.name,
-        ),
+        await http.MultipartFile.fromPath('file', path, filename: file.name),
       );
     }
 
@@ -202,10 +196,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
 
-      await _saveGalleryItem(
-        type: 'photo',
-        url: url,
-      );
+      await _saveGalleryItem(type: 'photo', url: url);
 
       if (!mounted) return;
       setState(() {
@@ -214,7 +205,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not upload photo.');
       });
     } finally {
       if (!mounted) return;
@@ -247,10 +238,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
 
-      await _saveGalleryItem(
-        type: 'video',
-        url: url,
-      );
+      await _saveGalleryItem(type: 'video', url: url);
 
       if (!mounted) return;
       setState(() {
@@ -259,7 +247,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not upload video.');
       });
     } finally {
       if (!mounted) return;
@@ -315,7 +303,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not delete item.');
       });
     }
   }
@@ -346,10 +334,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       if (val is! Map) return;
 
       final m = val.map((k, vv) => MapEntry(k.toString(), vv));
-      out.add({
-        'id': key.toString(),
-        ...m,
-      });
+      out.add({'id': key.toString(), ...m});
     });
 
     out.sort((a, b) {
@@ -379,8 +364,8 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           onDelete: itemId.isEmpty
               ? null
               : () async {
-            await _deleteItem(itemId);
-          },
+                  await _deleteItem(itemId);
+                },
         ),
       ),
     );
@@ -390,6 +375,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     return StreamBuilder<DatabaseEvent>(
       stream: _publicGalleryStream,
       builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting &&
+            _publicGalleryCache == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
         final rawValue = snap.data?.snapshot.value;
         if (rawValue != null) {
           _publicGalleryCache = rawValue;
@@ -406,13 +396,13 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   child: ElevatedButton.icon(
                     icon: _uploadingPhoto
                         ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
                         : const Icon(Icons.add_photo_alternate_rounded),
                     label: Text(
                       _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
@@ -435,10 +425,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   child: OutlinedButton.icon(
                     icon: _uploadingVideo
                         ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.video_call_rounded),
                     label: Text(
                       _uploadingVideo ? 'Uploading...' : 'Upload Video',
@@ -509,8 +499,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                 itemCount: items.length,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 12,
                   mainAxisSpacing: 12,
@@ -518,8 +507,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                 ),
                 itemBuilder: (context, index) {
                   final item = items[index];
-                  final type =
-                  (item['type'] ?? '').toString().trim().toLowerCase();
+                  final type = (item['type'] ?? '')
+                      .toString()
+                      .trim()
+                      .toLowerCase();
                   final url = (item['url'] ?? '').toString().trim();
 
                   return InkWell(
@@ -542,7 +533,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                               Image.network(
                                 url,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                                errorBuilder: (_, _, _) => Container(
                                   color: Colors.grey.shade200,
                                   alignment: Alignment.center,
                                   child: const Icon(
@@ -602,10 +593,106 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     );
   }
 
+  Map<String, String> _parseTeacherNames(dynamic value) {
+    final out = <String, String>{};
+    if (value is! Map) return out;
+
+    value.forEach((key, rawVal) {
+      if (rawVal is! Map) return;
+      final m = rawVal.map((k, vv) => MapEntry(k.toString(), vv));
+      final role = (m['role'] ?? '').toString().trim().toLowerCase();
+      if (role != 'teacher') return;
+
+      final uid = key.toString().trim();
+      if (uid.isEmpty) return;
+
+      final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final full = ('$first $last').trim();
+      final email = (m['email'] ?? '').toString().trim();
+
+      out[uid] = full.isNotEmpty ? full : (email.isNotEmpty ? email : uid);
+    });
+
+    return out;
+  }
+
+  String _resolveResponsibleTeacher(
+    Map<String, dynamic> learnerMap,
+    Map<String, String> teacherNamesByUid,
+  ) {
+    final unique = <String>{};
+    final ordered = <String>[];
+
+    void addName(String name) {
+      final n = name.trim();
+      if (n.isEmpty) return;
+      if (unique.add(n)) ordered.add(n);
+    }
+
+    final coursesRaw = learnerMap['courses'];
+    if (coursesRaw is Map) {
+      final courses = coursesRaw.map((k, v) => MapEntry(k.toString(), v));
+      for (final courseEntry in courses.entries) {
+        final rawCourse = courseEntry.value;
+        if (rawCourse is! Map) continue;
+
+        final course = rawCourse.map((k, v) => MapEntry(k.toString(), v));
+
+        addName(
+          (course['teacherName'] ?? course['instructorName'] ?? '').toString(),
+        );
+
+        final directTeacherUid =
+            (course['teacherUid'] ?? course['teacher_uid'] ?? '').toString();
+        if (directTeacherUid.trim().isNotEmpty) {
+          addName(teacherNamesByUid[directTeacherUid] ?? directTeacherUid);
+        }
+
+        final clsRaw = course['class'];
+        if (clsRaw is Map) {
+          final cls = clsRaw.map((k, v) => MapEntry(k.toString(), v));
+
+          addName(
+            (cls['teacher_name'] ??
+                    cls['instructor_name'] ??
+                    cls['teacherName'] ??
+                    cls['instructorName'] ??
+                    cls['teacher'] ??
+                    cls['instructor'] ??
+                    '')
+                .toString(),
+          );
+
+          final teacherUid = (cls['teacher_uid'] ?? cls['teacherUid'] ?? '')
+              .toString();
+          final instructorUid =
+              (cls['instructor_uid'] ?? cls['instructorUid'] ?? '').toString();
+
+          if (teacherUid.trim().isNotEmpty) {
+            addName(teacherNamesByUid[teacherUid] ?? teacherUid);
+          }
+          if (instructorUid.trim().isNotEmpty) {
+            addName(teacherNamesByUid[instructorUid] ?? instructorUid);
+          }
+        }
+      }
+    }
+
+    addName(
+      (learnerMap['teacher_name'] ?? learnerMap['instructor_name'] ?? '')
+          .toString(),
+    );
+
+    if (ordered.isEmpty) return 'Not assigned';
+    return ordered.join(', ');
+  }
+
   List<_AdminLearnerLite> _parseLearners(dynamic value) {
     if (value is! Map) return [];
 
     final out = <_AdminLearnerLite>[];
+    final teacherNamesByUid = _parseTeacherNames(value);
 
     value.forEach((key, rawVal) {
       if (rawVal is! Map) return;
@@ -622,6 +709,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       final email = (m['email'] ?? '').toString().trim();
       final phone1 = (m['phone1'] ?? '').toString().trim();
       final serial = (m['serial'] ?? '').toString().trim();
+      final responsibleTeacher = _resolveResponsibleTeacher(
+        m,
+        teacherNamesByUid,
+      );
 
       out.add(
         _AdminLearnerLite(
@@ -630,12 +721,13 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           email: email,
           phone1: phone1,
           serial: serial,
+          responsibleTeacher: responsibleTeacher,
         ),
       );
     });
 
     out.sort(
-          (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+      (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
     );
     return out;
   }
@@ -662,6 +754,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     return StreamBuilder<DatabaseEvent>(
       stream: _usersStream,
       builder: (context, usersSnap) {
+        if (usersSnap.connectionState == ConnectionState.waiting &&
+            _usersCache == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
         final usersValue = usersSnap.data?.snapshot.value;
         if (usersValue != null) {
           _usersCache = usersValue;
@@ -672,17 +769,26 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         return StreamBuilder<DatabaseEvent>(
           stream: _learnerGalleryStream,
           builder: (context, gallerySnap) {
+            if (gallerySnap.connectionState == ConnectionState.waiting &&
+                _learnerGalleryCache == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
             final galleryValue = gallerySnap.data?.snapshot.value;
             if (galleryValue != null) {
               _learnerGalleryCache = galleryValue;
             }
 
-            final counts =
-            _parseLearnerGalleryCounts(galleryValue ?? _learnerGalleryCache);
+            final counts = _parseLearnerGalleryCounts(
+              galleryValue ?? _learnerGalleryCache,
+            );
 
             final q = _learnerSearch.trim().toLowerCase();
 
             final filtered = learners.where((l) {
+              if (_onlyEmptyLearnerGalleries && (counts[l.uid] ?? 0) > 0) {
+                return false;
+              }
               if (q.isEmpty) return true;
               return l.fullName.toLowerCase().contains(q) ||
                   l.email.toLowerCase().contains(q) ||
@@ -715,6 +821,25 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   ),
                 ),
                 const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      selected: !_onlyEmptyLearnerGalleries,
+                      label: const Text('All learners'),
+                      onSelected: (_) =>
+                          setState(() => _onlyEmptyLearnerGalleries = false),
+                    ),
+                    ChoiceChip(
+                      selected: _onlyEmptyLearnerGalleries,
+                      label: const Text('No gallery only'),
+                      onSelected: (_) =>
+                          setState(() => _onlyEmptyLearnerGalleries = true),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 Text(
                   '${filtered.length} learner${filtered.length == 1 ? '' : 's'}',
                   style: const TextStyle(
@@ -742,7 +867,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                   )
                 else
                   ...filtered.map(
-                        (learner) => Padding(
+                    (learner) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _AdminLearnerGalleryCard(
                         key: ValueKey(learner.uid),
@@ -780,10 +905,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         iconTheme: const IconThemeData(color: primaryBlue),
         title: const Text(
           'Gallery',
-          style: TextStyle(
-            color: primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         bottom: TabBar(
           controller: _tab,
@@ -799,10 +921,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       body: SafeArea(
         child: TabBarView(
           controller: _tab,
-          children: [
-            _buildPublicTeasersTab(),
-            _buildLearnerGalleriesTab(),
-          ],
+          children: [_buildPublicTeasersTab(), _buildLearnerGalleriesTab()],
         ),
       ),
     );
@@ -816,6 +935,7 @@ class _AdminLearnerLite {
     required this.email,
     required this.phone1,
     required this.serial,
+    required this.responsibleTeacher,
   });
 
   final String uid;
@@ -823,6 +943,7 @@ class _AdminLearnerLite {
   final String email;
   final String phone1;
   final String serial;
+  final String responsibleTeacher;
 }
 
 class _AdminLearnerGalleryCard extends StatelessWidget {
@@ -917,6 +1038,17 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Teacher: ${learner.responsibleTeacher}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: mainText.withOpacity(0.72),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -942,10 +1074,7 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: primaryBlue,
-                ),
+                const Icon(Icons.chevron_right_rounded, color: primaryBlue),
               ],
             ),
           ],
@@ -1028,10 +1157,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse(_uploadEndpoint),
-    );
+    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
     request.fields['key'] = _uploadKeySha1;
@@ -1044,11 +1170,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
       );
     } else {
       final path = file.path;
@@ -1057,11 +1179,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       }
 
       request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          path,
-          filename: file.name,
-        ),
+        await http.MultipartFile.fromPath('file', path, filename: file.name),
       );
     }
 
@@ -1141,10 +1259,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
 
-      await _saveGalleryItem(
-        type: 'photo',
-        url: url,
-      );
+      await _saveGalleryItem(type: 'photo', url: url);
 
       if (!mounted) return;
       setState(() {
@@ -1153,7 +1268,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not upload photo.');
       });
     } finally {
       if (!mounted) return;
@@ -1186,10 +1301,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
 
-      await _saveGalleryItem(
-        type: 'video',
-        url: url,
-      );
+      await _saveGalleryItem(type: 'video', url: url);
 
       if (!mounted) return;
       setState(() {
@@ -1198,7 +1310,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not upload video.');
       });
     } finally {
       if (!mounted) return;
@@ -1254,7 +1366,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not delete gallery item.');
       });
     }
   }
@@ -1285,10 +1397,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
       if (val is! Map) return;
 
       final m = val.map((k, vv) => MapEntry(k.toString(), vv));
-      out.add({
-        'id': key.toString(),
-        ...m,
-      });
+      out.add({'id': key.toString(), ...m});
     });
 
     out.sort((a, b) {
@@ -1329,8 +1438,8 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
           onDelete: itemId.isEmpty
               ? null
               : () async {
-            await _deleteItem(itemId);
-          },
+                  await _deleteItem(itemId);
+                },
         ),
       ),
     );
@@ -1361,12 +1470,12 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
             final photoCount = items
                 .where(
                   (e) => (e['type'] ?? '').toString().toLowerCase() == 'photo',
-            )
+                )
                 .length;
             final videoCount = items
                 .where(
                   (e) => (e['type'] ?? '').toString().toLowerCase() == 'video',
-            )
+                )
                 .length;
 
             return ListView(
@@ -1418,13 +1527,13 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                       child: ElevatedButton.icon(
                         icon: _uploadingPhoto
                             ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
                             : const Icon(Icons.add_photo_alternate_rounded),
                         label: Text(
                           _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
@@ -1447,12 +1556,12 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                       child: OutlinedButton.icon(
                         icon: _uploadingVideo
                             ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
                             : const Icon(Icons.video_call_rounded),
                         label: Text(
                           _uploadingVideo ? 'Uploading...' : 'Upload Video',
@@ -1524,16 +1633,18 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.92,
-                    ),
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.92,
+                        ),
                     itemBuilder: (context, index) {
                       final item = items[index];
-                      final type =
-                      (item['type'] ?? '').toString().trim().toLowerCase();
+                      final type = (item['type'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
                       final url = (item['url'] ?? '').toString().trim();
                       final createdAt = _fmtDate(item['createdAt']);
                       final uploader = _displayUploader(item);
@@ -1545,8 +1656,9 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
-                            border:
-                            Border.all(color: uiBorder.withOpacity(0.85)),
+                            border: Border.all(
+                              color: uiBorder.withOpacity(0.85),
+                            ),
                           ),
                           child: Column(
                             children: [
@@ -1564,14 +1676,13 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                         Image.network(
                                           url,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              Container(
-                                                color: Colors.grey.shade200,
-                                                alignment: Alignment.center,
-                                                child: const Icon(
-                                                  Icons.broken_image_outlined,
-                                                ),
-                                              ),
+                                          errorBuilder: (_, _, _) => Container(
+                                            color: Colors.grey.shade200,
+                                            alignment: Alignment.center,
+                                            child: const Icon(
+                                              Icons.broken_image_outlined,
+                                            ),
+                                          ),
                                         ),
                                       Positioned(
                                         left: 8,
@@ -1582,10 +1693,12 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color:
-                                            Colors.black.withOpacity(0.58),
-                                            borderRadius:
-                                            BorderRadius.circular(12),
+                                            color: Colors.black.withOpacity(
+                                              0.58,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -1593,7 +1706,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                               Icon(
                                                 type == 'video'
                                                     ? Icons
-                                                    .play_circle_fill_rounded
+                                                          .play_circle_fill_rounded
                                                     : Icons.photo_rounded,
                                                 color: Colors.white,
                                                 size: 14,
@@ -1618,8 +1731,12 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                 ),
                               ),
                               Padding(
-                                padding:
-                                const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                                padding: const EdgeInsets.fromLTRB(
+                                  10,
+                                  10,
+                                  10,
+                                  12,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -1792,9 +1909,7 @@ class _AdminVideoTileState extends State<_AdminVideoTile> {
             child: VideoPlayer(_controller!),
           ),
         ),
-        Container(
-          color: Colors.black.withOpacity(0.18),
-        ),
+        Container(color: Colors.black.withOpacity(0.18)),
         const Center(
           child: Icon(
             Icons.play_circle_fill_rounded,
@@ -1975,10 +2090,12 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
-                      thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 12),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
                     ),
                     child: Slider(
                       min: 0,
@@ -1987,11 +2104,11 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
                           : duration.inMilliseconds.toDouble(),
                       value: position.inMilliseconds
                           .clamp(
-                        0,
-                        duration.inMilliseconds <= 0
-                            ? 1
-                            : duration.inMilliseconds,
-                      )
+                            0,
+                            duration.inMilliseconds <= 0
+                                ? 1
+                                : duration.inMilliseconds,
+                          )
                           .toDouble(),
                       activeColor: Colors.white,
                       inactiveColor: Colors.white24,
@@ -2073,8 +2190,9 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = type.trim().toLowerCase() == 'video';
-    final displayUploader =
-    uploaderName.trim().isEmpty ? 'Admin' : uploaderName.trim();
+    final displayUploader = uploaderName.trim().isEmpty
+        ? 'Admin'
+        : uploaderName.trim();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -2121,23 +2239,23 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
                       child: isVideo
                           ? _AdminVideoPreviewCard(url: url)
                           : InteractiveViewer(
-                        minScale: 0.8,
-                        maxScale: 4,
-                        child: Image.network(
-                          url,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const SizedBox(
-                            height: 260,
-                            child: Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white,
-                                size: 44,
+                              minScale: 0.8,
+                              maxScale: 4,
+                              child: Image.network(
+                                url,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => const SizedBox(
+                                  height: 260,
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white,
+                                      size: 44,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
                     ),
                     Container(
                       width: double.infinity,
@@ -2222,8 +2340,9 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = type.trim().toLowerCase() == 'video';
-    final displayUploader =
-    uploaderName.trim().isEmpty ? 'Admin' : uploaderName.trim();
+    final displayUploader = uploaderName.trim().isEmpty
+        ? 'Admin'
+        : uploaderName.trim();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -2270,23 +2389,23 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
                       child: isVideo
                           ? _AdminVideoPreviewCard(url: url)
                           : InteractiveViewer(
-                        minScale: 0.8,
-                        maxScale: 4,
-                        child: Image.network(
-                          url,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const SizedBox(
-                            height: 260,
-                            child: Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white,
-                                size: 44,
+                              minScale: 0.8,
+                              maxScale: 4,
+                              child: Image.network(
+                                url,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => const SizedBox(
+                                  height: 260,
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white,
+                                      size: 44,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
                     ),
                     Container(
                       width: double.infinity,

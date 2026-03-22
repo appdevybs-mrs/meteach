@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:async/async.dart'; // ✅ needed for StreamZip
 import 'package:shared_preferences/shared_preferences.dart';
+import '../shared/human_error.dart';
 import 'admin_contract_screen.dart';
 import 'admin_wages_screen.dart';
 import 'admin_payments.dart';
@@ -16,12 +16,10 @@ import 'admin_public_gallery_screen.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
 import '../shared/session_manager.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'admin_booking.dart';
 import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
-import 'admin_booking.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -93,9 +91,7 @@ class _AdminHomeState extends State<AdminHome> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefsRoleKey, isAdmin);
-    } catch (e) {
-      debugPrint('Error saving role mode: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -109,9 +105,7 @@ class _AdminHomeState extends State<AdminHome> {
       if (userId != null && userId.isNotEmpty) {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
       }
-    } catch (e) {
-      debugPrint("Error removing token: $e");
-    }
+    } catch (_) {}
 
     await FirebaseAuth.instance.signOut();
 
@@ -453,7 +447,7 @@ class _AdminHomeState extends State<AdminHome> {
                     child: Image.asset(
                       'assets/images/ybs_logo.png',
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -518,7 +512,7 @@ class _AdminHomeState extends State<AdminHome> {
                             child: Image.asset(
                               'assets/images/ybs_logo.png',
                               fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => Icon(
+                              errorBuilder: (_, _, _) => Icon(
                                 Icons.school_rounded,
                                 color: _roleAccent,
                               ),
@@ -1085,8 +1079,8 @@ class _LearnersDashCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final usersRef = FirebaseDatabase.instance.ref('users');
 
-    return StreamBuilder<List<DatabaseEvent>>(
-      stream: StreamZip([usersRef.onValue]),
+    return StreamBuilder<DatabaseEvent>(
+      stream: usersRef.onValue,
       builder: (context, snap) {
         int totalLearners = 0;
         int blackCount = 0;
@@ -1095,7 +1089,7 @@ class _LearnersDashCard extends StatelessWidget {
         int okCount = 0;
         int blueCount = 0;
 
-        if (!snap.hasData || snap.data!.isEmpty) {
+        if (!snap.hasData) {
           return InkWell(
             borderRadius: BorderRadius.circular(20),
             onTap: onTap,
@@ -1112,7 +1106,7 @@ class _LearnersDashCard extends StatelessWidget {
           );
         }
 
-        final usersVal = snap.data![0].snapshot.value;
+        final usersVal = snap.data!.snapshot.value;
 
         if (usersVal is Map) {
           usersVal.forEach((uid, userVal) {
@@ -1488,7 +1482,8 @@ class AdminForceUpdateAllScreen extends StatefulWidget {
       _AdminForceUpdateAllScreenState();
 }
 
-class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
+class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
+    with SingleTickerProviderStateMixin {
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
   static const appBg = Color(0xFFF4F7F9);
@@ -1508,15 +1503,37 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
   final iStoreUrlC = TextEditingController();
   final iStoreWebUrlC = TextEditingController();
 
+  // COMPANY controllers
+  final cFullNameC = TextEditingController();
+  final cPhoneC = TextEditingController();
+  final cEmailC = TextEditingController();
+  final cAccreditationC = TextEditingController();
+  final cAddressC = TextEditingController();
+
   bool loading = true;
   bool saving = false;
 
-  DatabaseReference get _root =>
+  late final TabController _tabController;
+  int _activeTab = 0;
+
+  DatabaseReference get _forceUpdateRoot =>
       FirebaseDatabase.instance.ref('appConfig/forceUpdate');
+  DatabaseReference get _companyRoot =>
+      FirebaseDatabase.instance.ref('appConfig/Company info');
+  DatabaseReference get _companyAltRoot =>
+      FirebaseDatabase.instance.ref('appConfig/companyInfo');
 
   @override
   void initState() {
     super.initState();
+
+    _tabController = TabController(length: 2, vsync: this)
+      ..addListener(() {
+        if (!_tabController.indexIsChanging && mounted) {
+          setState(() => _activeTab = _tabController.index);
+        }
+      });
+
     _loadAll();
   }
 
@@ -1533,6 +1550,14 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
     iMessageC.dispose();
     iStoreUrlC.dispose();
     iStoreWebUrlC.dispose();
+
+    cFullNameC.dispose();
+    cPhoneC.dispose();
+    cEmailC.dispose();
+    cAccreditationC.dispose();
+    cAddressC.dispose();
+
+    _tabController.dispose();
 
     super.dispose();
   }
@@ -1568,10 +1593,34 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
     };
   }
 
+  void _fillCompanyControllers(Map<String, dynamic> m) {
+    cFullNameC.text = (m['companyFullName'] ?? m['company full name'] ?? '')
+        .toString();
+    cPhoneC.text = (m['companyPhone'] ?? m['company phone'] ?? '').toString();
+    cEmailC.text = (m['companyEmail'] ?? m['company email'] ?? '').toString();
+    cAccreditationC.text =
+        (m['companyAccreditationNumber'] ??
+                m['company accreditation number'] ??
+                '')
+            .toString();
+    cAddressC.text = (m['companyAddress'] ?? m['company address'] ?? '')
+        .toString();
+  }
+
+  Map<String, dynamic> _companyControllersToMap() {
+    return {
+      'companyFullName': cFullNameC.text.trim(),
+      'companyPhone': cPhoneC.text.trim(),
+      'companyEmail': cEmailC.text.trim(),
+      'companyAccreditationNumber': cAccreditationC.text.trim(),
+      'companyAddress': cAddressC.text.trim(),
+    };
+  }
+
   Future<void> _loadAll() async {
     setState(() => loading = true);
     try {
-      final snap = await _root.get();
+      final snap = await _forceUpdateRoot.get();
       final v = snap.value;
 
       Map<String, dynamic> android = {};
@@ -1608,11 +1657,32 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
         storeUrlC: iStoreUrlC,
         storeWebUrlC: iStoreWebUrlC,
       );
+
+      Map<String, dynamic> company = {};
+      final companySnap = await _companyRoot.get();
+      if (companySnap.value is Map) {
+        company = (companySnap.value as Map).map(
+          (k, val) => MapEntry(k.toString(), val),
+        );
+      } else {
+        final altSnap = await _companyAltRoot.get();
+        if (altSnap.value is Map) {
+          company = (altSnap.value as Map).map(
+            (k, val) => MapEntry(k.toString(), val),
+          );
+        }
+      }
+
+      _fillCompanyControllers(company);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Load failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not load app configuration.'),
+          ),
+        ),
+      );
     } finally {
       if (!mounted) return;
       setState(() => loading = false);
@@ -1639,7 +1709,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
         storeWebUrlC: iStoreWebUrlC,
       );
 
-      await _root.update({
+      await _forceUpdateRoot.update({
         'allowAdminBypass': true,
         'android': android,
         'ios': ios,
@@ -1651,9 +1721,37 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       ).showSnackBar(const SnackBar(content: Text('Saved all ✅')));
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not save force-update settings.'),
+          ),
+        ),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() => saving = false);
+    }
+  }
+
+  Future<void> _saveCompany() async {
+    setState(() => saving = true);
+    try {
+      await _companyRoot.set(_companyControllersToMap());
+
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      ).showSnackBar(const SnackBar(content: Text('Company info saved ✅')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not save company information.'),
+          ),
+        ),
+      );
     } finally {
       if (!mounted) return;
       setState(() => saving = false);
@@ -1689,7 +1787,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       'This removes appConfig/forceUpdate/android.',
     );
     if (!ok) return;
-    await _root.child('android').remove();
+    await _forceUpdateRoot.child('android').remove();
     await _loadAll();
   }
 
@@ -1700,7 +1798,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       'This removes appConfig/forceUpdate/ios.',
     );
     if (!ok) return;
-    await _root.child('ios').remove();
+    await _forceUpdateRoot.child('ios').remove();
     await _loadAll();
   }
 
@@ -1711,9 +1809,20 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       'This removes appConfig/forceUpdate بالكامل.',
     );
     if (!ok) return;
-    await _root.remove();
+    await _forceUpdateRoot.remove();
     if (!mounted) return;
     Navigator.pop(context);
+  }
+
+  Future<void> _deleteCompany() async {
+    final ok = await _confirm(
+      context,
+      'Delete Company info?',
+      'This removes appConfig/Company info.',
+    );
+    if (!ok) return;
+    await _companyRoot.remove();
+    await _loadAll();
   }
 
   Widget _section({
@@ -1776,6 +1885,154 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
     );
   }
 
+  Widget _companySection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Company info',
+            style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cFullNameC,
+            decoration: const InputDecoration(labelText: 'Company full name'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cPhoneC,
+            decoration: const InputDecoration(labelText: 'Company phone'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cEmailC,
+            decoration: const InputDecoration(labelText: 'Company email'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cAccreditationC,
+            decoration: const InputDecoration(
+              labelText: 'Company accreditation number',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: cAddressC,
+            maxLines: 2,
+            decoration: const InputDecoration(labelText: 'Company address'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForceUpdateTab() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _section(
+          title: 'Android',
+          minVersionC: aMinVersionC,
+          minBuildC: aMinBuildC,
+          messageC: aMessageC,
+          storeUrlC: aStoreUrlC,
+          storeWebUrlC: aStoreWebUrlC,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: _deleteAndroid,
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Delete Android'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _section(
+          title: 'iOS',
+          minVersionC: iMinVersionC,
+          minBuildC: iMinBuildC,
+          messageC: iMessageC,
+          storeUrlC: iStoreUrlC,
+          storeWebUrlC: iStoreWebUrlC,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: _deleteIos,
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Delete iOS'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: appBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: uiBorder),
+          ),
+          child: const Text(
+            'Tip:\n- To force update, increase minBuild.\n- Example: users 75 -> set minBuild 76.\n- If you want to block by version, increase minVersion.',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompanyTab() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _companySection(),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: appBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: uiBorder),
+          ),
+          child: const Text(
+            'This data is shown when tapping the app logo on Home.',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1786,8 +2043,18 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
         title: const Text(
-          'Force Update (All)',
+          'App Config',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: primaryBlue,
+          unselectedLabelColor: primaryBlue.withOpacity(0.55),
+          indicatorColor: actionOrange,
+          tabs: const [
+            Tab(text: 'Force Update'),
+            Tab(text: 'Company Info'),
+          ],
         ),
         actions: [
           IconButton(
@@ -1813,9 +2080,13 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  onPressed: saving ? null : _deleteAll,
+                  onPressed: saving
+                      ? null
+                      : (_activeTab == 0 ? _deleteAll : _deleteCompany),
                   icon: const Icon(Icons.delete_forever_rounded),
-                  label: const Text('Delete ALL'),
+                  label: Text(
+                    _activeTab == 0 ? 'Delete ALL' : 'Delete Company',
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1829,7 +2100,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  onPressed: saving ? null : _saveAll,
+                  onPressed: saving
+                      ? null
+                      : (_activeTab == 0 ? _saveAll : _saveCompany),
                   icon: saving
                       ? const SizedBox(
                           width: 18,
@@ -1840,7 +2113,11 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
                           ),
                         )
                       : const Icon(Icons.save_rounded),
-                  label: Text(saving ? 'Saving…' : 'Save ALL'),
+                  label: Text(
+                    saving
+                        ? 'Saving…'
+                        : (_activeTab == 0 ? 'Save ALL' : 'Save Company'),
+                  ),
                 ),
               ),
             ],
@@ -1849,80 +2126,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen> {
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _section(
-                  title: 'Android',
-                  minVersionC: aMinVersionC,
-                  minBuildC: aMinBuildC,
-                  messageC: aMessageC,
-                  storeUrlC: aStoreUrlC,
-                  storeWebUrlC: aStoreWebUrlC,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: _deleteAndroid,
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Delete Android'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                _section(
-                  title: 'iOS',
-                  minVersionC: iMinVersionC,
-                  minBuildC: iMinBuildC,
-                  messageC: iMessageC,
-                  storeUrlC: iStoreUrlC,
-                  storeWebUrlC: iStoreWebUrlC,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: _deleteIos,
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Delete iOS'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: appBg,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: uiBorder),
-                  ),
-                  child: const Text(
-                    'Tip:\n- To force update, increase minBuild.\n- Example: users 75 → set minBuild 76.\n- If you want to block by version, increase minVersion.',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
+          : TabBarView(
+              controller: _tabController,
+              children: [_buildForceUpdateTab(), _buildCompanyTab()],
             ),
     );
   }

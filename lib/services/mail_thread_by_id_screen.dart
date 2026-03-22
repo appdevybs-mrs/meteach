@@ -81,7 +81,9 @@ class _MailThreadByIdScreenState extends State<MailThreadByIdScreen> {
       final myRole = _normalizeRole(roleSnap.value);
 
       // 2) Read index for this thread to get correct peer info + subject
-      final snap = await _db.ref('mail_index/${me.uid}/${widget.threadId}').get();
+      final snap = await _db
+          .ref('mail_index/${me.uid}/${widget.threadId}')
+          .get();
       final v = snap.value;
 
       String peerUid = widget.peerUid.trim();
@@ -145,10 +147,6 @@ class _MailThreadByIdScreenState extends State<MailThreadByIdScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

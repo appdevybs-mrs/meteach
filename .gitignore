@@ -43,3 +43,22 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local env and secrets
+.env
+.env.*
+*.keystore
+*.jks
+android/key.properties
+
+# Temporary and generated local files
+*.tmp
+*.temp
+*.orig
+*.rej
+firebase-debug.log
+
+# VS Code local settings
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json

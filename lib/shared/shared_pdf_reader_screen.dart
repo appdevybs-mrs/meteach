@@ -57,10 +57,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
           backgroundColor: p.cardBg,
           title: Text(
             'Go to page',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
           content: TextField(
             controller: controller,
@@ -101,9 +98,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
     if (result < 1 || result > _pageCount) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Enter a page between 1 and $_pageCount'),
-        ),
+        SnackBar(content: Text('Enter a page between 1 and $_pageCount')),
       );
       return;
     }
@@ -431,7 +426,9 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _hasDocument && _pageNumber > 1 ? _goToPreviousPage : null,
+                onPressed: _hasDocument && _pageNumber > 1
+                    ? _goToPreviousPage
+                    : null,
                 icon: const Icon(Icons.chevron_left_rounded),
                 label: const Text('Previous'),
               ),
@@ -439,7 +436,9 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: FilledButton.icon(
-                onPressed: _hasDocument && _pageNumber < _pageCount ? _goToNextPage : null,
+                onPressed: _hasDocument && _pageNumber < _pageCount
+                    ? _goToNextPage
+                    : null,
                 icon: const Icon(Icons.chevron_right_rounded),
                 label: const Text('Next'),
               ),

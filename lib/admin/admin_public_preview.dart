@@ -6,7 +6,6 @@ class AdminPublicPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ This opens the same assistant UI without AuthGate / logout logic
-    return const AssistantHome();
+    return const Scaffold(body: SafeArea(child: AssistantHome()));
   }
 }

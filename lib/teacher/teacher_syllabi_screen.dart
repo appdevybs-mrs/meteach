@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 import 'teacher_syllabus_details_screen.dart';
 
@@ -120,7 +121,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     }
   }
@@ -152,7 +153,8 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
 
       final hasUnits =
           variant['units'] is List && (variant['units'] as List).isNotEmpty;
-      final hasMeta = _readString(variant['title']).isNotEmpty ||
+      final hasMeta =
+          _readString(variant['title']).isNotEmpty ||
           _readString(variant['courseCode']).isNotEmpty ||
           _readString(variant['duration']).isNotEmpty ||
           _toInt(variant['updatedAt']) > 0;
@@ -263,51 +265,46 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
               ? Center(child: CircularProgressIndicator(color: p.accent))
               : _error != null
               ? _ErrorBox(
-            palette: p,
-            message: 'Failed to load syllabi.\n$_error',
-            onRetry: _load,
-          )
+                  palette: p,
+                  message: 'Failed to load syllabi.\n$_error',
+                  onRetry: _load,
+                )
               : _items.isEmpty
               ? _InfoBox(
-            palette: p,
-            title: 'No syllabi',
-            message: 'No syllabi are available right now.',
-            icon: Icons.info_rounded,
-          )
+                  palette: p,
+                  title: 'No syllabi',
+                  message: 'No syllabi are available right now.',
+                  icon: Icons.info_rounded,
+                )
               : ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-            children: [
-              _HeroCard(
-                palette: p,
-                totalCount: _items.length,
-              ),
-              const SizedBox(height: 14),
-              ..._items.map((it) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _SyllabusTile(
-                    palette: p,
-                    title: it.title,
-                    code: it.code,
-                    duration: it.duration,
-                    updatedLabel: _fmtDate(it.updatedAt),
-                    variants:
-                    it.variants.map(_variantLabel).toList(),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              TeacherSyllabusDetailsScreen(
-                                courseId: it.courseId,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                  children: [
+                    _HeroCard(palette: p, totalCount: _items.length),
+                    const SizedBox(height: 14),
+                    ..._items.map((it) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _SyllabusTile(
+                          palette: p,
+                          title: it.title,
+                          code: it.code,
+                          duration: it.duration,
+                          updatedLabel: _fmtDate(it.updatedAt),
+                          variants: it.variants.map(_variantLabel).toList(),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => TeacherSyllabusDetailsScreen(
+                                  courseId: it.courseId,
+                                ),
                               ),
+                            );
+                          },
                         ),
                       );
-                    },
-                  ),
-                );
-              }),
-            ],
-          ),
+                    }),
+                  ],
+                ),
         ),
       ),
     );
@@ -335,10 +332,7 @@ class _SyllabusLite {
 /* ================== UI ================== */
 
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({
-    required this.palette,
-    required this.totalCount,
-  });
+  const _HeroCard({required this.palette, required this.totalCount});
 
   final AppPalette palette;
   final int totalCount;
@@ -349,10 +343,7 @@ class _HeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -529,11 +520,11 @@ class _SyllabusTile extends StatelessWidget {
                       children: variants
                           .map(
                             (v) => _Pill(
-                          palette: palette,
-                          icon: Icons.layers_rounded,
-                          text: v,
-                        ),
-                      )
+                              palette: palette,
+                              icon: Icons.layers_rounded,
+                              text: v,
+                            ),
+                          )
                           .toList(),
                     ),
                   ],
@@ -553,11 +544,7 @@ class _SyllabusTile extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({
-    required this.palette,
-    required this.icon,
-    required this.text,
-  });
+  const _Pill({required this.palette, required this.icon, required this.text});
 
   final AppPalette palette;
   final IconData icon;

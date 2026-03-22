@@ -2,10 +2,10 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
-import '../shared/material_webview_screen.dart';
 import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
 
@@ -14,7 +14,9 @@ class LearnerStoriesScreen extends StatefulWidget {
 }
 
 class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
-  final DatabaseReference _storiesRef = FirebaseDatabase.instance.ref('stories');
+  final DatabaseReference _storiesRef = FirebaseDatabase.instance.ref(
+    'stories',
+  );
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -46,7 +48,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     );
   }
 
-  List<String> _extractAllGenres(List<MapEntry<String, Map<String, dynamic>>> items) {
+  List<String> _extractAllGenres(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
     final out = <String>{};
     for (final entry in items) {
       final genre = (entry.value['genre'] ?? '').toString().trim();
@@ -57,7 +61,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return list;
   }
 
-  List<String> _extractAllLevels(List<MapEntry<String, Map<String, dynamic>>> items) {
+  List<String> _extractAllLevels(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
     final out = <String>{};
     for (final entry in items) {
       final level = (entry.value['level'] ?? '').toString().trim();
@@ -68,7 +74,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return list;
   }
 
-  List<String> _extractAllLengths(List<MapEntry<String, Map<String, dynamic>>> items) {
+  List<String> _extractAllLengths(
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
     final out = <String>{};
     for (final entry in items) {
       final value = (entry.value['lengthApprox'] ?? '').toString().trim();
@@ -140,16 +148,29 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       if (status != 'ready') return false;
 
       final name = (story['name'] ?? '').toString().trim().toLowerCase();
-      final description = (story['description'] ?? '').toString().trim().toLowerCase();
+      final description = (story['description'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       final genre = (story['genre'] ?? '').toString().trim().toLowerCase();
       final level = (story['level'] ?? '').toString().trim().toLowerCase();
-      final lengthApprox = (story['lengthApprox'] ?? '').toString().trim().toLowerCase();
-      final scriptType = (story['scriptType'] ?? '').toString().trim().toLowerCase();
-      final authorSource = (story['authorSource'] ?? '').toString().trim().toLowerCase();
+      final lengthApprox = (story['lengthApprox'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final scriptType = (story['scriptType'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final authorSource = (story['authorSource'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       final teacher = _teacherName(story).toLowerCase();
       final tags = _tagsFromStory(story).map((e) => e.toLowerCase()).join(' ');
 
-      final matchesSearch = _searchQuery.isEmpty ||
+      final matchesSearch =
+          _searchQuery.isEmpty ||
           name.contains(_searchQuery) ||
           description.contains(_searchQuery) ||
           genre.contains(_searchQuery) ||
@@ -175,24 +196,30 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     filtered.sort((a, b) {
       switch (_sortBy) {
         case 'name_asc':
-          return (a.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((b.value['name'] ?? '').toString().toLowerCase());
+          return (a.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (b.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'name_desc':
-          return (b.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((a.value['name'] ?? '').toString().toLowerCase());
+          return (b.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (a.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'created_desc':
-          return _toInt(b.value['createdAt']).compareTo(_toInt(a.value['createdAt']));
+          return _toInt(
+            b.value['createdAt'],
+          ).compareTo(_toInt(a.value['createdAt']));
         case 'created_asc':
-          return _toInt(a.value['createdAt']).compareTo(_toInt(b.value['createdAt']));
+          return _toInt(
+            a.value['createdAt'],
+          ).compareTo(_toInt(b.value['createdAt']));
         case 'updated_asc':
-          return _toInt(a.value['updatedAt']).compareTo(_toInt(b.value['updatedAt']));
+          return _toInt(
+            a.value['updatedAt'],
+          ).compareTo(_toInt(b.value['updatedAt']));
         case 'updated_desc':
         default:
-          return _toInt(b.value['updatedAt']).compareTo(_toInt(a.value['updatedAt']));
+          return _toInt(
+            b.value['updatedAt'],
+          ).compareTo(_toInt(a.value['updatedAt']));
       }
     });
 
@@ -200,8 +227,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   }
 
   Map<String, List<Map<String, dynamic>>> _groupStoriesByGenre(
-      List<MapEntry<String, Map<String, dynamic>>> items,
-      ) {
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
     final grouped = <String, List<Map<String, dynamic>>>{};
 
     for (final entry in items) {
@@ -231,21 +258,18 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final uri = Uri.tryParse(url);
     if (uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid story link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invalid story link.')));
       return;
     }
 
-    final ok = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open browser.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open browser.')));
     }
   }
 
@@ -324,7 +348,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       width: double.infinity,
                       height: narrow ? 180 : 200,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      errorBuilder: (_, _, _) => Container(
                         height: narrow ? 180 : 200,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
@@ -345,10 +369,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     height: narrow ? 180 : 200,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          p.primary,
-                          p.accent,
-                        ],
+                        colors: [p.primary, p.accent],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -384,15 +405,20 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (genre.isNotEmpty) _detailChip(p, Icons.category_rounded, genre),
-                    if (level.isNotEmpty) _detailChip(p, Icons.bar_chart_rounded, level),
+                    if (genre.isNotEmpty)
+                      _detailChip(p, Icons.category_rounded, genre),
+                    if (level.isNotEmpty)
+                      _detailChip(p, Icons.bar_chart_rounded, level),
                     if (lengthApprox.isNotEmpty)
                       _detailChip(p, Icons.schedule_rounded, lengthApprox),
                     if (scriptType.isNotEmpty)
                       _detailChip(p, Icons.article_rounded, scriptType),
-                    if (_hasRead(story)) _detailChip(p, Icons.picture_as_pdf_rounded, 'Read'),
-                    if (_hasListen(story)) _detailChip(p, Icons.headphones_rounded, 'Listen'),
-                    if (_hasWatch(story)) _detailChip(p, Icons.ondemand_video_rounded, 'Watch'),
+                    if (_hasRead(story))
+                      _detailChip(p, Icons.picture_as_pdf_rounded, 'Read'),
+                    if (_hasListen(story))
+                      _detailChip(p, Icons.headphones_rounded, 'Listen'),
+                    if (_hasWatch(story))
+                      _detailChip(p, Icons.ondemand_video_rounded, 'Watch'),
                   ],
                 ),
                 if (authorSource.isNotEmpty) ...[
@@ -449,27 +475,27 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     children: tags
                         .map(
                           (tag) => Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: p.accent.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: p.accent.withOpacity(0.20),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: p.accent.withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: p.accent.withOpacity(0.20),
+                              ),
+                            ),
+                            child: Text(
+                              tag,
+                              style: TextStyle(
+                                color: p.accent,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          tag,
-                          style: TextStyle(
-                            color: p.accent,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    )
+                        )
                         .toList(),
                   ),
                 ],
@@ -480,9 +506,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     child: FilledButton.icon(
                       onPressed: _hasRead(story)
                           ? () {
-                        Navigator.of(ctx).pop();
-                        _openRead(story);
-                      }
+                              Navigator.of(ctx).pop();
+                              _openRead(story);
+                            }
                           : null,
                       icon: const Icon(Icons.picture_as_pdf_rounded),
                       label: const Text('Read'),
@@ -494,9 +520,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _hasListen(story)
                           ? () {
-                        Navigator.of(ctx).pop();
-                        _openListen(story);
-                      }
+                              Navigator.of(ctx).pop();
+                              _openListen(story);
+                            }
                           : null,
                       icon: const Icon(Icons.headphones_rounded),
                       label: const Text('Listen'),
@@ -509,9 +535,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         child: FilledButton.icon(
                           onPressed: _hasRead(story)
                               ? () {
-                            Navigator.of(ctx).pop();
-                            _openRead(story);
-                          }
+                                  Navigator.of(ctx).pop();
+                                  _openRead(story);
+                                }
                               : null,
                           icon: const Icon(Icons.picture_as_pdf_rounded),
                           label: const Text('Read'),
@@ -522,9 +548,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _hasListen(story)
                               ? () {
-                            Navigator.of(ctx).pop();
-                            _openListen(story);
-                          }
+                                  Navigator.of(ctx).pop();
+                                  _openListen(story);
+                                }
                               : null,
                           icon: const Icon(Icons.headphones_rounded),
                           label: const Text('Listen'),
@@ -539,9 +565,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _hasWatch(story)
                         ? () {
-                      Navigator.of(ctx).pop();
-                      _openWatch(story);
-                    }
+                            Navigator.of(ctx).pop();
+                            _openWatch(story);
+                          }
                         : null,
                     icon: const Icon(Icons.ondemand_video_rounded),
                     label: const Text('Watch'),
@@ -661,7 +687,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 ),
                 const SizedBox(height: 12),
                 ...values.map(
-                      (value) => ListTile(
+                  (value) => ListTile(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -798,8 +824,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     );
   }
 
-
-
   Widget _buildStoryCard(Map<String, dynamic> story) {
     final p = palette;
     final title = (story['name'] ?? 'Story').toString().trim();
@@ -842,10 +866,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         width: double.infinity,
                         child: thumbnail.isNotEmpty
                             ? Image.network(
-                          thumbnail,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _fallbackCover(p),
-                        )
+                                thumbnail,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => _fallbackCover(p),
+                              )
                             : _fallbackCover(p),
                       ),
                     ),
@@ -948,6 +972,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       ),
     );
   }
+
   Widget _buildGenreShelf({
     required String title,
     required List<Map<String, dynamic>> stories,
@@ -987,7 +1012,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: stories.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               return _buildStoryCard(stories[index]);
             },
@@ -1001,32 +1026,31 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.accent,
-          ],
+          colors: [p.primary, p.accent],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
       ),
       child: const Center(
-        child: Icon(
-          Icons.menu_book_rounded,
-          color: Colors.white,
-          size: 54,
-        ),
+        child: Icon(Icons.menu_book_rounded, color: Colors.white, size: 54),
       ),
     );
   }
 
-  static Widget _smallTag(_StoriesPalette p, String text, {bool isAccent = false}) {
+  static Widget _smallTag(
+    _StoriesPalette p,
+    String text, {
+    bool isAccent = false,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         color: isAccent ? p.accent.withOpacity(0.10) : p.soft,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: isAccent ? p.accent.withOpacity(0.20) : p.border.withOpacity(0.90),
+          color: isAccent
+              ? p.accent.withOpacity(0.20)
+              : p.border.withOpacity(0.90),
         ),
       ),
       child: Text(
@@ -1064,34 +1088,28 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
         elevation: 0,
         title: _showSearch
             ? TextField(
-          controller: _searchController,
-          autofocus: true,
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value.trim().toLowerCase();
-            });
-          },
-          decoration: InputDecoration(
-            hintText: 'Search stories...',
-            isDense: true,
-            border: InputBorder.none,
-            hintStyle: TextStyle(
-              color: p.text.withOpacity(0.55),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w800,
-          ),
-        )
+                controller: _searchController,
+                autofocus: true,
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value.trim().toLowerCase();
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search stories...',
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(
+                    color: p.text.withOpacity(0.55),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
+              )
             : Text(
-          'Stories',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
+                'Stories',
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+              ),
         actions: [
           IconButton(
             tooltip: _showSearch ? 'Close search' : 'Search',
@@ -1128,7 +1146,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       body: StreamBuilder<DatabaseEvent>(
         stream: _storiesRef.onValue,
         builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting && snap.data == null) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              snap.data == null) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -1172,7 +1191,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
             final storyId = entry.key.toString();
             final storyValue = entry.value;
             final story = storyValue is Map
-                ? Map<String, dynamic>.from(storyValue as Map)
+                ? Map<String, dynamic>.from(storyValue)
                 : <String, dynamic>{};
             return MapEntry(storyId, story);
           }).toList();
@@ -1294,7 +1313,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       )
                     else
                       ...groupedStories.entries.map(
-                            (entry) => Padding(
+                        (entry) => Padding(
                           padding: const EdgeInsets.only(bottom: 20),
                           child: _buildGenreShelf(
                             title: entry.key,

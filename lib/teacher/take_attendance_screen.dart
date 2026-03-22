@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 
 class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -76,7 +77,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   @override
   void initState() {
     super.initState();
-    _debugLogClassDataShape();
     _init();
   }
 
@@ -92,36 +92,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     }
     return <String, dynamic>{};
   }
-  void _debugLogClassDataShape() {
-    debugPrint('========== TAKE ATTENDANCE DEBUG START ==========');
-    debugPrint('classData runtimeType: ${widget.classData.runtimeType}');
-    debugPrint('classData keys: ${widget.classData.keys.toList()}');
 
-    for (final entry in widget.classData.entries) {
-      debugPrint(
-        'classData[${entry.key}] => type=${entry.value.runtimeType} value=${entry.value}',
-      );
-    }
-
-    final learnersNode = widget.classData['learners'];
-    debugPrint('learners runtimeType: ${learnersNode.runtimeType}');
-    debugPrint('learners value: $learnersNode');
-
-    if (learnersNode is Map) {
-      for (final entry in learnersNode.entries) {
-        debugPrint(
-          'learners[${entry.key}] => type=${entry.value.runtimeType} value=${entry.value}',
-        );
-      }
-    }
-
-    debugPrint('classId: $_classId');
-    debugPrint('courseId: $_courseId');
-    debugPrint('courseCode: $_courseCode');
-    debugPrint('courseTitle: $_courseTitle');
-    debugPrint('isEdit: $_isEdit');
-    debugPrint('========== TAKE ATTENDANCE DEBUG END ==========');
-  }
   DateTime? _parseDate(String s) {
     try {
       final parts = s.split('-');
@@ -141,12 +112,18 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   int _firstMissingPositive(Set<int> used) {
     int n = 1;
-    while (used.contains(n)) n++;
+    while (used.contains(n)) {
+      n++;
+    }
     return n;
   }
+
   Future<int> _computeNextMeetingNumber() async {
-    final snap =
-    await _db.child('classes').child(_classId).child('attendance').get();
+    final snap = await _db
+        .child('classes')
+        .child(_classId)
+        .child('attendance')
+        .get();
     if (!snap.exists) return 1;
 
     final used = <int>{};
@@ -263,26 +240,31 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       _learnerUids = learnerSet.toList()..sort();
 
       // load learners info
-      await Future.wait(_learnerUids.map((uid) async {
-        final snap = await _db.child('users').child(uid).get();
-        if (!snap.exists) {
-          _learnerInfo[uid] = {'uid': uid, 'name': uid, 'serial': ''};
-          return;
-        }
-        final m = _safeMap(snap.value);
-        final fullName =
-        "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim();
-        _learnerInfo[uid] = {
-          'uid': uid,
-          'name': fullName.isEmpty ? uid : fullName,
-          'serial': (m['serial'] ?? '').toString(),
-        };
-      }));
+      await Future.wait(
+        _learnerUids.map((uid) async {
+          final snap = await _db.child('users').child(uid).get();
+          if (!snap.exists) {
+            _learnerInfo[uid] = {'uid': uid, 'name': uid, 'serial': ''};
+            return;
+          }
+          final m = _safeMap(snap.value);
+          final fullName = "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}"
+              .trim();
+          _learnerInfo[uid] = {
+            'uid': uid,
+            'name': fullName.isEmpty ? uid : fullName,
+            'serial': (m['serial'] ?? '').toString(),
+          };
+        }),
+      );
 
       // load syllabus sessions for picker (+ include sessionNumber + snapshot fields)
       if (_courseId.isNotEmpty) {
-        final sSnap =
-        await _db.child('syllabi').child(_courseId).child('inclass').get();
+        final sSnap = await _db
+            .child('syllabi')
+            .child(_courseId)
+            .child('inclass')
+            .get();
         if (sSnap.exists && sSnap.value is Map) {
           final s = _safeMap(sSnap.value);
           final units = s['units'] as List?;
@@ -300,15 +282,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   flat.add({
                     'unitId': (unit['id'] ?? '').toString(),
                     'unitTitle':
-                    ((unit['title'] ?? '').toString().trim().isNotEmpty)
+                        ((unit['title'] ?? '').toString().trim().isNotEmpty)
                         ? (unit['title'] ?? '').toString()
                         : (unit['description'] ?? '').toString(),
                     'sessionId': (sess['id'] ?? '').toString(),
                     'title': (sess['title'] ?? '').toString(),
-                    'order':
-                    (sess['order'] is num) ? (sess['order'] as num).toInt() : 0,
-                    'unitOrder':
-                    (unit['order'] is num) ? (unit['order'] as num).toInt() : 0,
+                    'order': (sess['order'] is num)
+                        ? (sess['order'] as num).toInt()
+                        : 0,
+                    'unitOrder': (unit['order'] is num)
+                        ? (unit['order'] as num).toInt()
+                        : 0,
 
                     // snapshot fields
                     'objective': (sess['objective'] ?? '').toString(),
@@ -325,8 +309,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           }
 
           flat.sort((a, b) {
-            final cmp =
-            (a['unitOrder'] as int).compareTo(b['unitOrder'] as int);
+            final cmp = (a['unitOrder'] as int).compareTo(
+              b['unitOrder'] as int,
+            );
             return cmp != 0
                 ? cmp
                 : (a['order'] as int).compareTo(b['order'] as int);
@@ -344,30 +329,35 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           }
 
           // In edit mode: enrich syllabus items with latest missing fields
-          if (_isEdit && _taughtItems.isNotEmpty && _syllabiSessions.isNotEmpty) {
+          if (_isEdit &&
+              _taughtItems.isNotEmpty &&
+              _syllabiSessions.isNotEmpty) {
             for (int i = 0; i < _taughtItems.length; i++) {
               final item = _taughtItems[i];
               if ((item['type'] ?? 'syllabus') != 'syllabus') continue;
 
               final sid = (item['sessionId'] ?? '').toString();
               final uid = (item['unitId'] ?? '').toString();
-              final match = _syllabiSessions
-                  .where((x) => x['sessionId'] == sid && x['unitId'] == uid);
+              final match = _syllabiSessions.where(
+                (x) => x['sessionId'] == sid && x['unitId'] == uid,
+              );
 
               if (match.isNotEmpty) {
                 final s = match.first;
                 _taughtItems[i] = {
                   ...item,
-                  'unitTitle':
-                  (s['unitTitle'] ?? item['unitTitle'] ?? '').toString(),
+                  'unitTitle': (s['unitTitle'] ?? item['unitTitle'] ?? '')
+                      .toString(),
                   'title': (s['title'] ?? item['title'] ?? '').toString(),
-                  'sessionNumber': (s['sessionNumber'] ?? item['sessionNumber'] ?? 0),
-                  'objective':
-                  (item['objective'] ?? s['objective'] ?? '').toString(),
-                  'skillType':
-                  (item['skillType'] ?? s['skillType'] ?? '').toString(),
+                  'sessionNumber':
+                      (s['sessionNumber'] ?? item['sessionNumber'] ?? 0),
+                  'objective': (item['objective'] ?? s['objective'] ?? '')
+                      .toString(),
+                  'skillType': (item['skillType'] ?? s['skillType'] ?? '')
+                      .toString(),
                   'lessonHomework':
-                  (item['lessonHomework'] ?? s['homework'] ?? '').toString(),
+                      (item['lessonHomework'] ?? s['homework'] ?? '')
+                          .toString(),
                 };
               }
             }
@@ -381,11 +371,12 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       }
 
       setState(() => _busy = false);
-    } catch (e, st) {
-      debugPrint('TakeAttendanceScreen _init ERROR: $e');
-      debugPrint('$st');
+    } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(
+          e,
+          fallback: 'Could not load attendance data. Please try again.',
+        );
         _busy = false;
       });
     }
@@ -432,24 +423,24 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Future<bool> _confirmDuplicateDialog() async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Duplicate Date'),
-        content: const Text(
-          'Attendance already exists for this date. Save anyway?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Duplicate Date'),
+            content: const Text(
+              'Attendance already exists for this date. Save anyway?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Save'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
@@ -471,7 +462,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   Future<void> _openSyllabusLessonPickerToAdd() async {
     if (_syllabiSessions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No syllabus sessions found for this course')),
+        const SnackBar(
+          content: Text('No syllabus sessions found for this course'),
+        ),
       );
       return;
     }
@@ -518,18 +511,22 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   child: ListView.separated(
                     shrinkWrap: true,
                     itemCount: _syllabiSessions.length,
-                    separatorBuilder: (_, __) => const Divider(height: 12),
+                    separatorBuilder: (_, _) => const Divider(height: 12),
                     itemBuilder: (_, i) {
                       final s = _syllabiSessions[i];
 
                       final unitTitle = (s['unitTitle'] ?? '').toString();
                       final title = (s['title'] ?? '').toString();
-                      final objective =
-                      (s['objective'] ?? '').toString().trim();
-                      final skillType =
-                      (s['skillType'] ?? '').toString().trim();
-                      final hasHomework =
-                          (s['homework'] ?? '').toString().trim().isNotEmpty;
+                      final objective = (s['objective'] ?? '')
+                          .toString()
+                          .trim();
+                      final skillType = (s['skillType'] ?? '')
+                          .toString()
+                          .trim();
+                      final hasHomework = (s['homework'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty;
                       final sn = (s['sessionNumber'] is num)
                           ? (s['sessionNumber'] as num).toInt()
                           : (int.tryParse('${s['sessionNumber']}') ?? 0);
@@ -734,23 +731,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   }
 
   Future<void> _saveAttendance() async {
-    debugPrint('========== SAVE ATTENDANCE DEBUG START ==========');
-    debugPrint('saving for classId=$_classId');
-    debugPrint('widget.classData keys=${widget.classData.keys.toList()}');
-    debugPrint('widget.classData learners type=${widget.classData['learners'].runtimeType}');
-    debugPrint('widget.classData learners value=${widget.classData['learners']}');
-    debugPrint('_learnerUids=$_learnerUids');
-    debugPrint('_present=$_present');
-    debugPrint('_taughtItems=$_taughtItems');
-    debugPrint('existingSessionId=${widget.existingSessionId}');
-    debugPrint('existingRecord type=${widget.existingRecord.runtimeType}');
-    debugPrint('existingRecord value=${widget.existingRecord}');
-    debugPrint('========== SAVE ATTENDANCE DEBUG BEFORE VALIDATION END ==========');
-
     if (_classId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Missing class id')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Missing class id')));
       return;
     }
     if (_taughtItems.isEmpty) {
@@ -782,12 +766,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
           for (final entry in attendanceMap.entries) {
             final rec = entry.value;
-            if (rec is! Map) {
-              debugPrint(
-                'SKIP malformed attendance entry at classes/$_classId/attendance/${entry.key} => ${rec.runtimeType} $rec',
-              );
-              continue;
-            }
+            if (rec is! Map) continue;
 
             final recMap = _safeMap(rec);
             final recDate = (recMap['date'] ?? '').toString().trim();
@@ -809,8 +788,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       final tm = teacherSnap.exists
           ? _safeMap(teacherSnap.value)
           : <String, dynamic>{};
-      final teacherName =
-      "${tm['first_name'] ?? ''} ${tm['last_name'] ?? ''}".trim();
+      final teacherName = "${tm['first_name'] ?? ''} ${tm['last_name'] ?? ''}"
+          .trim();
 
       final sessionId = _isEdit
           ? widget.existingSessionId!
@@ -826,18 +805,19 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       final hwText = _homeworkCtrl.text.trim();
       final prevHw = _safeMap(widget.existingRecord?['homework']);
-      final hwCreatedAt = prevHw['createdAt'] ??
+      final hwCreatedAt =
+          prevHw['createdAt'] ??
           (widget.existingRecord?['createdAt'] ?? ServerValue.timestamp);
 
       final Map<String, dynamic>? homeworkObj =
-      (hwText.isEmpty && _homeworkDueDate.isEmpty)
+          (hwText.isEmpty && _homeworkDueDate.isEmpty)
           ? null
           : {
-        'text': hwText,
-        'dueDate': _homeworkDueDate,
-        'createdAt': hwCreatedAt,
-        'updatedAt': ServerValue.timestamp,
-      };
+              'text': hwText,
+              'dueDate': _homeworkDueDate,
+              'createdAt': hwCreatedAt,
+              'updatedAt': ServerValue.timestamp,
+            };
 
       // Backward-compatible single taught (first item)
       final first = _taughtItems.first;
@@ -872,7 +852,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         'date': dateStr,
         'updatedAt': ServerValue.timestamp,
         'createdAt':
-        widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
+            widget.existingRecord?['createdAt'] ?? ServerValue.timestamp,
         'meetingNumber': _meetingNumber,
         'teacherUid': user.uid,
         'teacherName': teacherName,
@@ -898,57 +878,35 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       // Also write to each learner course node
       for (final lUid in _learnerUids) {
-        debugPrint('---- learner loop start: $lUid ----');
-
-        final cSnap = await _db.child('users').child(lUid).child('courses').get();
-        debugPrint('courses exists for $lUid => ${cSnap.exists}');
-        debugPrint('courses raw type for $lUid => ${cSnap.value.runtimeType}');
-        debugPrint('courses raw value for $lUid => ${cSnap.value}');
+        final cSnap = await _db
+            .child('users')
+            .child(lUid)
+            .child('courses')
+            .get();
 
         if (!cSnap.exists) continue;
 
         final courses = _safeMap(cSnap.value);
-        debugPrint('courses keys for $lUid => ${courses.keys.toList()}');
 
         String? targetKey;
 
         for (final entry in courses.entries) {
           final val = entry.value;
-          debugPrint(
-            'course entry key=${entry.key} type=${val.runtimeType} value=$val',
-          );
 
-          if (val is! Map) {
-            debugPrint('SKIP: entry.value is not Map');
-            continue;
-          }
+          if (val is! Map) continue;
 
           final valMap = _safeMap(val);
-          debugPrint('valMap keys=${valMap.keys.toList()}');
-
-          debugPrint(
-            'valMap["class"] type=${valMap['class'].runtimeType} value=${valMap['class']}',
-          );
 
           final classNode = _safeMap(valMap['class']);
-          debugPrint('classNode keys=${classNode.keys.toList()}');
-
-          if (classNode.isEmpty) {
-            debugPrint('SKIP: classNode is empty');
-            continue;
-          }
+          if (classNode.isEmpty) continue;
 
           final cid = (classNode['class_id'] ?? '').toString();
-          debugPrint('classNode class_id=$cid vs current _classId=$_classId');
 
           if (cid == _classId) {
             targetKey = entry.key.toString();
-            debugPrint('MATCH FOUND: targetKey=$targetKey');
             break;
           }
         }
-
-        debugPrint('final targetKey for $lUid => $targetKey');
 
         if (targetKey != null) {
           updates['users/$lUid/courses/$targetKey/attendance/$sessionId'] = {
@@ -970,14 +928,12 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         SnackBar(content: Text(_isEdit ? 'Updated ✅' : 'Saved ✅')),
       );
       Navigator.pop(context);
-    } catch (e, st) {
-      debugPrint('========== SAVE ATTENDANCE ERROR ==========');
-      debugPrint('error: $e');
-      debugPrint('stack: $st');
-      debugPrint('========== SAVE ATTENDANCE ERROR END ==========');
-
+    } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(
+          e,
+          fallback: 'Could not save attendance. Please try again.',
+        );
         _busy = false;
       });
     }
@@ -1155,12 +1111,12 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   // syllabus
                   final unitTitle = (item['unitTitle'] ?? '').toString();
                   final title = (item['title'] ?? '').toString();
-                  final objective =
-                  (item['objective'] ?? '').toString().trim();
-                  final skillType =
-                  (item['skillType'] ?? '').toString().trim();
-                  final hasLessonHomework =
-                      (item['lessonHomework'] ?? '').toString().trim().isNotEmpty;
+                  final objective = (item['objective'] ?? '').toString().trim();
+                  final skillType = (item['skillType'] ?? '').toString().trim();
+                  final hasLessonHomework = (item['lessonHomework'] ?? '')
+                      .toString()
+                      .trim()
+                      .isNotEmpty;
                   final snRaw = item['sessionNumber'];
                   final sn = (snRaw is num)
                       ? snRaw.toInt()
@@ -1425,7 +1381,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         ),
         trailing: Switch(
           value: isPresent,
-          activeColor: Colors.green,
+          activeThumbColor: Colors.green,
           onChanged: (v) => setState(() => _present[uid] = v),
         ),
         leading: CircleAvatar(
@@ -1442,8 +1398,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     );
   }
 
-  Widget _buildErrorState() =>
-      Center(child: Text(_error!, style: const TextStyle(color: Colors.red)));
+  Widget _buildErrorState() => Center(
+    child: Text(_error!, style: const TextStyle(color: Colors.red)),
+  );
 
   @override
   Widget build(BuildContext context) {

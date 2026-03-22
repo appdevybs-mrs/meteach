@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import 'take_attendance_screen.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
 
-  const AttendanceHistoryScreen({
-    super.key,
-    required this.classData,
-  });
+  const AttendanceHistoryScreen({super.key, required this.classData});
 
   @override
   State<AttendanceHistoryScreen> createState() =>
@@ -28,8 +26,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   List<Map<String, dynamic>> _sessions = [];
 
   String get _classId =>
-      (widget.classData['class_id'] ?? widget.classData['id'] ?? '')
-          .toString();
+      (widget.classData['class_id'] ?? widget.classData['id'] ?? '').toString();
 
   String get _courseTitle =>
       (widget.classData['course_title'] ?? 'Course History').toString();
@@ -61,8 +58,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     });
 
     try {
-      final snap =
-      await _db.child("classes").child(_classId).child('attendance').get();
+      final snap = await _db
+          .child("classes")
+          .child(_classId)
+          .child('attendance')
+          .get();
 
       if (!snap.exists) {
         setState(() {
@@ -76,10 +76,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
       final list = raw.entries
           .where((e) => e.value is Map)
-          .map((e) => {
-        'id': e.key,
-        ...Map<String, dynamic>.from(e.value as Map),
-      })
+          .map(
+            (e) => {'id': e.key, ...Map<String, dynamic>.from(e.value as Map)},
+          )
           .toList();
 
       list.sort((a, b) {
@@ -94,7 +93,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -110,10 +109,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Delete Record?',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         content: Text(
           'This will remove attendance for the teacher and all learners. This action cannot be undone.',
@@ -128,10 +124,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
             ),
           ),
           ElevatedButton(
@@ -164,16 +157,20 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       updates['classes/$_classId/attendance/$sId'] = null;
 
       final allUids = <String>{
-        ...Map<String, dynamic>.from(session['present'] ?? {})
-            .keys
-            .map((e) => e.toString()),
-        ...Map<String, dynamic>.from(session['absent'] ?? {})
-            .keys
-            .map((e) => e.toString()),
+        ...Map<String, dynamic>.from(
+          session['present'] ?? {},
+        ).keys.map((e) => e.toString()),
+        ...Map<String, dynamic>.from(
+          session['absent'] ?? {},
+        ).keys.map((e) => e.toString()),
       };
 
       for (final uid in allUids) {
-        final uSnap = await _db.child('users').child(uid).child('courses').get();
+        final uSnap = await _db
+            .child('users')
+            .child(uid)
+            .child('courses')
+            .get();
         if (uSnap.exists) {
           final courses = Map<String, dynamic>.from(uSnap.value as Map);
           for (final entry in courses.entries) {
@@ -195,9 +192,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Record deleted successfully'),
-          ),
+          const SnackBar(content: Text('Record deleted successfully')),
         );
       }
     } catch (e) {
@@ -213,8 +208,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     if (!snap.exists) return uid;
 
     final m = Map<String, dynamic>.from(snap.value as Map);
-    final full =
-    "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim();
+    final full = "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim();
 
     return full.isEmpty ? uid : full;
   }
@@ -236,19 +230,19 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
       final titles = items
           .map((e) {
-        final item = Map<String, dynamic>.from(e);
-        final type = (item['type'] ?? 'syllabus').toString();
+            final item = Map<String, dynamic>.from(e);
+            final type = (item['type'] ?? 'syllabus').toString();
 
-        if (type == 'custom') {
-          final customTitle = (item['title'] ?? '').toString().trim();
-          return customTitle.isEmpty ? 'Custom Lesson' : customTitle;
-        }
+            if (type == 'custom') {
+              final customTitle = (item['title'] ?? '').toString().trim();
+              return customTitle.isEmpty ? 'Custom Lesson' : customTitle;
+            }
 
-        final title = (item['title'] ?? '').toString().trim();
-        final sn = _safeInt(item['sessionNumber']);
-        if (title.isEmpty) return '';
-        return sn > 0 ? 'Session $sn • $title' : title;
-      })
+            final title = (item['title'] ?? '').toString().trim();
+            final sn = _safeInt(item['sessionNumber']);
+            if (title.isEmpty) return '';
+            return sn > 0 ? 'Session $sn • $title' : title;
+          })
           .where((t) => t.isNotEmpty)
           .toList();
 
@@ -271,8 +265,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   List<Map<String, dynamic>> _normalizedTaughtItems(
-      Map<String, dynamic> session,
-      ) {
+    Map<String, dynamic> session,
+  ) {
     final List<Map<String, dynamic>> result = [];
 
     if (session['taughtItems'] is List) {
@@ -333,10 +327,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [
-                            p.primary,
-                            p.primary.withOpacity(0.88),
-                          ],
+                          colors: [p.primary, p.primary.withOpacity(0.88)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -389,7 +380,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                 p,
                                 icon: Icons.menu_book_rounded,
                                 text:
-                                '${taughtItems.length} lesson${taughtItems.length == 1 ? '' : 's'}',
+                                    '${taughtItems.length} lesson${taughtItems.length == 1 ? '' : 's'}',
                               ),
                             ],
                           ),
@@ -412,15 +403,19 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       ...taughtItems.map((item) {
                         final type = (item['type'] ?? 'syllabus').toString();
                         final title = (item['title'] ?? '').toString().trim();
-                        final unitTitle =
-                        (item['unitTitle'] ?? '').toString().trim();
+                        final unitTitle = (item['unitTitle'] ?? '')
+                            .toString()
+                            .trim();
                         final notes = (item['notes'] ?? '').toString().trim();
-                        final objective =
-                        (item['objective'] ?? '').toString().trim();
-                        final skillType =
-                        (item['skillType'] ?? '').toString().trim();
-                        final lessonHomework =
-                        (item['lessonHomework'] ?? '').toString().trim();
+                        final objective = (item['objective'] ?? '')
+                            .toString()
+                            .trim();
+                        final skillType = (item['skillType'] ?? '')
+                            .toString()
+                            .trim();
+                        final lessonHomework = (item['lessonHomework'] ?? '')
+                            .toString()
+                            .trim();
                         final sessionNumber = _safeInt(item['sessionNumber']);
 
                         final isCustom = type == 'custom';
@@ -431,7 +426,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                           decoration: BoxDecoration(
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: p.border.withOpacity(0.9)),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.9),
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.03),
@@ -478,13 +475,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                     Text(
                                       isCustom
                                           ? (title.isEmpty
-                                          ? 'Custom Lesson'
-                                          : title)
+                                                ? 'Custom Lesson'
+                                                : title)
                                           : (sessionNumber > 0
-                                          ? 'Session $sessionNumber • $title'
-                                          : (title.isEmpty
-                                          ? 'Untitled Lesson'
-                                          : title)),
+                                                ? 'Session $sessionNumber • $title'
+                                                : (title.isEmpty
+                                                      ? 'Untitled Lesson'
+                                                      : title)),
                                       style: TextStyle(
                                         color: p.primary,
                                         fontWeight: FontWeight.w900,
@@ -501,7 +498,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                           icon: isCustom
                                               ? Icons.star_rounded
                                               : Icons.check_rounded,
-                                          text: isCustom ? 'Custom' : 'Syllabus',
+                                          text: isCustom
+                                              ? 'Custom'
+                                              : 'Syllabus',
                                           tint: isCustom ? p.accent : p.primary,
                                         ),
                                         if (skillType.isNotEmpty)
@@ -520,12 +519,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
                                           color: p.appBg,
-                                          borderRadius:
-                                          BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               'Objective',
@@ -557,12 +557,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
                                           color: p.appBg,
-                                          borderRadius:
-                                          BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               'Notes',
@@ -594,12 +595,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
                                           color: p.appBg,
-                                          borderRadius:
-                                          BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Column(
                                           crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               'Lesson Homework',
@@ -683,7 +685,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                 ),
                               ),
                             ],
-                            if (homeworkText.isNotEmpty && homeworkDue.isNotEmpty)
+                            if (homeworkText.isNotEmpty &&
+                                homeworkDue.isNotEmpty)
                               const SizedBox(height: 14),
                             if (homeworkDue.isNotEmpty)
                               _pillChip(
@@ -706,10 +709,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Widget _detailHeroChip(
-      AppPalette p, {
-        required IconData icon,
-        required String text,
-      }) {
+    AppPalette p, {
+    required IconData icon,
+    required String text,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
@@ -736,10 +739,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Widget _detailSectionTitle(
-      AppPalette p, {
-        required IconData icon,
-        required String title,
-      }) {
+    AppPalette p, {
+    required IconData icon,
+    required String title,
+  }) {
     return Row(
       children: [
         Container(
@@ -785,11 +788,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Widget _pillChip(
-      AppPalette p, {
-        required IconData icon,
-        required String text,
-        required Color tint,
-      }) {
+    AppPalette p, {
+    required IconData icon,
+    required String text,
+    required Color tint,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -892,26 +895,24 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             ),
           ),
           _busy
-              ? Center(
-            child: CircularProgressIndicator(color: p.primary),
-          )
+              ? Center(child: CircularProgressIndicator(color: p.primary))
               : _error != null
               ? _buildError(p)
               : _sessions.isEmpty
               ? _buildEmpty(p)
               : RefreshIndicator(
-            color: p.primary,
-            onRefresh: _loadHistory,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-              children: [
-                _topSummaryCard(p, totalSessions),
-                const SizedBox(height: 14),
-                ..._sessions.map((s) => _buildSessionCard(p, s)),
-              ],
-            ),
-          ),
+                  color: p.primary,
+                  onRefresh: _loadHistory,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                    children: [
+                      _topSummaryCard(p, totalSessions),
+                      const SizedBox(height: 14),
+                      ..._sessions.map((s) => _buildSessionCard(p, s)),
+                    ],
+                  ),
+                ),
         ],
       ),
     );
@@ -922,10 +923,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1004,7 +1002,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     final homework = Map<String, dynamic>.from(s['homework'] ?? {});
     final hasHomework =
         (homework['text'] ?? '').toString().trim().isNotEmpty ||
-            (homework['dueDate'] ?? '').toString().trim().isNotEmpty;
+        (homework['dueDate'] ?? '').toString().trim().isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1045,8 +1043,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               ),
               if (meetingNumber > 0)
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: p.soft,
                     borderRadius: BorderRadius.circular(999),
@@ -1141,11 +1141,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             children: [
               IconButton(
                 tooltip: 'Edit',
-                icon: Icon(
-                  Icons.edit_note_rounded,
-                  color: p.primary,
-                  size: 26,
-                ),
+                icon: Icon(Icons.edit_note_rounded, color: p.primary, size: 26),
                 onPressed: () => _editSession(s),
               ),
               IconButton(
@@ -1234,12 +1230,12 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   }
 
   Widget _studentList(
-      AppPalette p,
-      String title,
-      List<dynamic> uids,
-      Color color,
-      IconData icon,
-      ) {
+    AppPalette p,
+    String title,
+    List<dynamic> uids,
+    Color color,
+    IconData icon,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1269,7 +1265,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           )
         else
           ...uids.map(
-                (uid) => FutureBuilder<String>(
+            (uid) => FutureBuilder<String>(
               future: _nameOf(uid.toString()),
               builder: (context, snap) {
                 final name = snap.data ?? '...';

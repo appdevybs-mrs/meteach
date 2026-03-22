@@ -8,28 +8,31 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'admin/admin_home.dart';
 import 'enroll_screen.dart';
-import 'teacher/teacher_home.dart';
 import 'services/fcm_service.dart';
 import 'firebase_options.dart';
 import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
-import 'learner/learner_home.dart';
+import 'shared/human_error.dart';
 import 'auth/auth_gate.dart';
 import 'package:video_player/video_player.dart';
 
+part 'home/home_shell.part.dart';
+part 'home/login.part.dart';
+
+/// App-level snackbar access for services outside widget tree.
 final GlobalKey<ScaffoldMessengerState> messengerKey =
     GlobalKey<ScaffoldMessengerState>();
+
+/// App-level navigator access for notification deep-links.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await appThemeController.loadSavedTheme();
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FirebaseCrashlytics.instance.recordFlutterFatalError(details);
@@ -42,8 +45,10 @@ Future<void> main() async {
 
   runApp(const YourBridgeSchoolApp());
 
+  unawaited(appThemeController.loadSavedTheme());
+
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    FCMService.I.init();
+    unawaited(FCMService.I.init());
   });
 }
 
@@ -74,68 +79,6 @@ class YourBridgeSchoolApp extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-enum AppMode { home, stories, games, gallery }
-
-class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
-
-  @override
-  State<HomeShell> createState() => _HomeShellState();
-}
-
-class _HomeShellState extends State<HomeShell> {
-  AppMode mode = AppMode.home;
-
-  late final List<Widget> _pages = const [
-    AssistantHome(),
-    StoriesHome(),
-    GamesHome(),
-    GalleryHome(),
-  ];
-
-  Future<void> _openLogin(BuildContext context) async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: IndexedStack(index: mode.index, children: _pages),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openLogin(context),
-        backgroundColor: Brand.primaryBlue,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.login_rounded),
-        label: const Text('Login'),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: mode.index,
-        onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(
-            icon: Icon(Icons.auto_stories_rounded),
-            label: 'Stories',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sports_esports_rounded),
-            label: 'Games',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.photo_library_rounded),
-            label: 'Gallery',
-          ),
-        ],
-      ),
     );
   }
 }
@@ -172,7 +115,7 @@ class SoftBackground extends StatelessWidget {
                   child: Image.asset(
                     'assets/images/ybs_logo.png',
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(
+                    errorBuilder: (_, _, _) => const Icon(
                       Icons.school_rounded,
                       size: 160,
                       color: Brand.uiBorder,
@@ -195,6 +138,223 @@ class SimpleTopBar extends StatelessWidget {
 
   const SimpleTopBar({super.key, required this.title, this.right});
 
+  static const List<String> _companyNodeCandidates = [
+    'appConfig/Company info',
+    'appConfig/companyInfo',
+    'company',
+    'companyProfile',
+    'appConfig/company',
+    'app/company',
+  ];
+
+  static String _pickString(Map<String, dynamic> m, List<String> keys) {
+    for (final key in keys) {
+      final v = m[key];
+      final s = (v ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return '';
+  }
+
+  static _CompanyInfo? _parseCompanyInfo(dynamic value) {
+    if (value is! Map) return null;
+    final m = value.map((k, v) => MapEntry(k.toString(), v));
+
+    final info = _CompanyInfo(
+      fullName: _pickString(m, [
+        'companyFullName',
+        'company full name',
+        'company_full_name',
+        'fullName',
+        'name',
+        'company_name',
+      ]),
+      phone: _pickString(m, [
+        'companyPhone',
+        'company phone',
+        'company_phone',
+        'phone',
+      ]),
+      email: _pickString(m, [
+        'companyEmail',
+        'company email',
+        'company_email',
+        'email',
+      ]),
+      accreditationNumber: _pickString(m, [
+        'companyAccreditationNumber',
+        'company accreditation number',
+        'company_accreditation_number',
+        'accreditationNumber',
+        'accreditation_number',
+      ]),
+      address: _pickString(m, [
+        'companyAddress',
+        'company address',
+        'company_address',
+        'address',
+      ]),
+    );
+
+    if (info.fullName.isEmpty &&
+        info.phone.isEmpty &&
+        info.email.isEmpty &&
+        info.accreditationNumber.isEmpty &&
+        info.address.isEmpty) {
+      return null;
+    }
+    return info;
+  }
+
+  static Future<_CompanyInfo?> _loadCompanyInfo() async {
+    final db = FirebaseDatabase.instance;
+    for (final path in _companyNodeCandidates) {
+      try {
+        final snap = await db.ref(path).get();
+        final parsed = _parseCompanyInfo(snap.value);
+        if (parsed != null) return parsed;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static Future<void> _openMapForAddress(
+    BuildContext context,
+    String address,
+  ) async {
+    final query = Uri.encodeComponent(address.trim());
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$query',
+    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Maps.')),
+      );
+    }
+  }
+
+  static Future<void> _openWhatsAppForPhone(
+    BuildContext context,
+    String phone,
+  ) async {
+    final trimmed = phone.trim();
+    if (trimmed.isEmpty) return;
+
+    final normalized = trimmed.replaceAll(RegExp(r'[^0-9+]'), '');
+    final waNumber = normalized.startsWith('+')
+        ? normalized.substring(1)
+        : normalized;
+
+    if (waNumber.isEmpty) return;
+
+    final uri = Uri.parse('https://wa.me/$waNumber');
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open WhatsApp.')));
+    }
+  }
+
+  static Future<void> _showCompanyPopup(BuildContext context) async {
+    final info = await _loadCompanyInfo();
+    if (!context.mounted) return;
+
+    if (info == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Company details are not available yet.')),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+        title: Text(info.fullName.isEmpty ? 'Company Details' : info.fullName),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 84,
+                  height: 84,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Brand.uiBorder),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 14,
+                        offset: const Offset(0, 7),
+                      ),
+                    ],
+                  ),
+                  child: Image.asset(
+                    'assets/images/ybs_logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.school_rounded,
+                      color: Brand.primaryBlue,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (info.phone.isNotEmpty)
+                InkWell(
+                  onTap: () => _openWhatsAppForPhone(ctx, info.phone),
+                  child: Text(
+                    'Phone (WhatsApp): ${info.phone}',
+                    style: const TextStyle(
+                      color: Brand.primaryBlue,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              if (info.email.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Email: ${info.email}'),
+              ],
+              if (info.accreditationNumber.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Accreditation #: ${info.accreditationNumber}'),
+              ],
+              if (info.address.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                InkWell(
+                  onTap: () => _openMapForAddress(ctx, info.address),
+                  child: Text(
+                    'Address: ${info.address}',
+                    style: const TextStyle(
+                      color: Brand.primaryBlue,
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -203,27 +363,31 @@ class SimpleTopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
       child: Row(
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.94),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.uiBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(6),
-            child: Image.asset(
-              'assets/images/ybs_logo.png',
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.school_rounded, color: Brand.primaryBlue),
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => _showCompanyPopup(context),
+            child: Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.94),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Brand.uiBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: Image.asset(
+                'assets/images/ybs_logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.school_rounded, color: Brand.primaryBlue),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -270,6 +434,22 @@ class CardShell extends StatelessWidget {
   }
 }
 
+class _CompanyInfo {
+  const _CompanyInfo({
+    required this.fullName,
+    required this.phone,
+    required this.email,
+    required this.accreditationNumber,
+    required this.address,
+  });
+
+  final String fullName;
+  final String phone;
+  final String email;
+  final String accreditationNumber;
+  final String address;
+}
+
 class AssistantHome extends StatelessWidget {
   const AssistantHome({super.key});
 
@@ -307,7 +487,7 @@ class AssistantHome extends StatelessWidget {
 }
 
 class _LevelTestCard extends StatelessWidget {
-  _LevelTestCard({super.key});
+  _LevelTestCard();
 
   final Uri _webPlayStoreUrl = Uri.parse(
     'https://play.google.com/store/apps/details?id=com.appdevybs.mycertenglish&pcampaignid=web_share',
@@ -337,9 +517,13 @@ class _LevelTestCard extends StatelessWidget {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Open failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not open Play Store.'),
+          ),
+        ),
+      );
     }
   }
 
@@ -399,33 +583,6 @@ class _LevelTestCard extends StatelessWidget {
   }
 }
 
-class StoriesHome extends StatelessWidget {
-  const StoriesHome({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftBackground(child: const LearnerStoriesScreen());
-  }
-}
-
-class GamesHome extends StatelessWidget {
-  const GamesHome({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftBackground(child: const LearnerGamesScreen());
-  }
-}
-
-class GalleryHome extends StatelessWidget {
-  const GalleryHome({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const _PublicGalleryShowcase();
-  }
-}
-
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
@@ -480,777 +637,6 @@ class _SectionHeader extends StatelessWidget {
                 fontWeight: FontWeight.w900,
                 fontSize: 12,
               ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class LoginScreen extends StatelessWidget {
-  const LoginScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: SoftBackground(
-          child: Column(
-            children: [
-              SimpleTopBar(
-                title: 'Login',
-                right: IconButton(
-                  tooltip: 'Back',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                  color: Brand.primaryBlue,
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                        ),
-                        child: CardShell(
-                          child: ClassroomLoginSection(onLoggedInAdmin: () {}),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class ClassroomHome extends StatefulWidget {
-  const ClassroomHome({super.key});
-
-  @override
-  State<ClassroomHome> createState() => _ClassroomHomeState();
-}
-
-class _ClassroomHomeState extends State<ClassroomHome> {
-  bool showLogin = true;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftBackground(
-      child: Column(
-        children: [
-          const SimpleTopBar(title: 'Classroom'),
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                    ),
-                    child: CardShell(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        child: showLogin
-                            ? ClassroomLoginSection(
-                                key: const ValueKey('login'),
-                                onLoggedInAdmin: () {},
-                              )
-                            : Column(
-                                key: const ValueKey('classroomInfo'),
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 54,
-                                    height: 54,
-                                    decoration: BoxDecoration(
-                                      color: Brand.accentCyan.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: Brand.uiBorder),
-                                    ),
-                                    child: const Icon(
-                                      Icons.school_rounded,
-                                      color: Brand.primaryBlue,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Classroom (Next)',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(fontWeight: FontWeight.w900),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Next step: student/teacher login.\nTeachers mark attendance and post assignments.',
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          color: Brand.mainText.withOpacity(
-                                            0.75,
-                                          ),
-                                          height: 1.4,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  FilledButton(
-                                    onPressed: () =>
-                                        setState(() => showLogin = true),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: Brand.primaryBlue,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
-                                    ),
-                                    child: const Text('Open Login'),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ClassroomLoginSection extends StatefulWidget {
-  final VoidCallback onLoggedInAdmin;
-
-  const ClassroomLoginSection({super.key, required this.onLoggedInAdmin});
-
-  @override
-  State<ClassroomLoginSection> createState() => _ClassroomLoginSectionState();
-}
-
-class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
-  static const String supportWhatsAppNumber = '';
-  static const String supportEmail = '';
-
-  final emailCtrl = TextEditingController();
-  final passCtrl = TextEditingController();
-  final captchaCtrl = TextEditingController();
-
-  bool loading = false;
-  bool showPass = false;
-  String error = '';
-
-  bool showCaptcha = true;
-  int a = 2, b = 3;
-
-  int failedAttempts = 0;
-  DateTime? cooldownUntil;
-  Timer? _cooldownTicker;
-
-  DateTime? _lastResetRequestAt;
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshCaptcha();
-  }
-
-  @override
-  void dispose() {
-    _cooldownTicker?.cancel();
-    emailCtrl.dispose();
-    passCtrl.dispose();
-    captchaCtrl.dispose();
-    super.dispose();
-  }
-
-  void _refreshCaptcha() {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    a = (now % 8) + 1;
-    b = ((now ~/ 7) % 8) + 1;
-    captchaCtrl.clear();
-  }
-
-  bool _isValidEmail(String email) {
-    final e = email.trim();
-    if (e.isEmpty) return false;
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e);
-  }
-
-  bool get _isCoolingDown {
-    if (cooldownUntil == null) return false;
-    return DateTime.now().isBefore(cooldownUntil!);
-  }
-
-  int get _cooldownSecondsLeft {
-    if (cooldownUntil == null) return 0;
-    final diff = cooldownUntil!.difference(DateTime.now()).inSeconds;
-    return diff < 0 ? 0 : diff;
-  }
-
-  void _startCooldown({int seconds = 20}) {
-    cooldownUntil = DateTime.now().add(Duration(seconds: seconds));
-    _cooldownTicker?.cancel();
-
-    _cooldownTicker = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) return;
-      if (!_isCoolingDown) {
-        t.cancel();
-        setState(() {});
-      } else {
-        setState(() {});
-      }
-    });
-
-    setState(() {});
-  }
-
-  String _friendlyAuthMsg(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'user-disabled':
-        return 'This account is disabled.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please wait and try again.';
-      case 'wrong-password':
-      case 'user-not-found':
-      case 'invalid-credential':
-        return 'Email or password is incorrect.';
-      default:
-        return 'Login failed. Please try again.';
-    }
-  }
-
-  bool _validateInputs({required bool enforceCaptcha}) {
-    final email = emailCtrl.text.trim().toLowerCase();
-    final pass = passCtrl.text;
-
-    if (!_isValidEmail(email)) {
-      setState(() => error = 'Please enter a valid email.');
-      return false;
-    }
-    if (pass.isEmpty) {
-      setState(() => error = 'Please enter your password.');
-      return false;
-    }
-
-    if (enforceCaptcha) {
-      final expected = (a + b).toString();
-      final cap = captchaCtrl.text.trim();
-      if (cap != expected) {
-        setState(() => error = 'Captcha is incorrect. Try again.');
-        _refreshCaptcha();
-        return false;
-      }
-    }
-
-    setState(() => error = '');
-    return true;
-  }
-
-  Future<void> _signInWithFirebase(String email, String pass) async {
-    if (!mounted) return;
-
-    setState(() {
-      loading = true;
-      error = '';
-    });
-
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: pass,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        loading = false;
-        failedAttempts = 0;
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Welcome back!')));
-
-      // ✅ CLOSE LOGIN SCREEN
-      Navigator.of(context).pop();
-
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        failedAttempts = 0;
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Welcome back!')));
-    } on FirebaseAuthException catch (e) {
-      failedAttempts += 1;
-      showCaptcha = true;
-      _refreshCaptcha();
-
-      if (failedAttempts >= 3) {
-        _startCooldown(seconds: 20);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = _friendlyAuthMsg(e);
-      });
-    } catch (_) {
-      failedAttempts += 1;
-      showCaptcha = true;
-      _refreshCaptcha();
-
-      if (failedAttempts >= 3) {
-        _startCooldown(seconds: 20);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = 'Login failed. Please try again.';
-      });
-    }
-  }
-
-  Future<void> _manualLogin() async {
-    FocusScope.of(context).unfocus();
-    if (loading) return;
-
-    if (_isCoolingDown) {
-      setState(
-        () =>
-            error = 'Please wait $_cooldownSecondsLeft seconds and try again.',
-      );
-      return;
-    }
-
-    const requireCaptchaNow = true;
-
-    if (!_validateInputs(enforceCaptcha: requireCaptchaNow)) return;
-
-    final email = emailCtrl.text.trim().toLowerCase();
-    final pass = passCtrl.text;
-
-    await _signInWithFirebase(email, pass);
-  }
-
-  Future<void> _forgotPassword() async {
-    if (loading) return;
-
-    final now = DateTime.now();
-    if (_lastResetRequestAt != null &&
-        now.difference(_lastResetRequestAt!).inSeconds < 10) {
-      setState(() => error = 'Please wait a few seconds and try again.');
-      return;
-    }
-
-    final prefill = emailCtrl.text.trim();
-    final ctrl = TextEditingController(text: prefill);
-
-    final email = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Enter your email. If an account exists, we will send a reset link.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: const Text('Send link'),
-          ),
-        ],
-      ),
-    );
-
-    if (!mounted) return;
-    if (email == null) return;
-
-    final normalized = email.trim().toLowerCase();
-    if (!_isValidEmail(normalized)) {
-      setState(() => error = 'Please enter a valid email address.');
-      return;
-    }
-
-    setState(() {
-      loading = true;
-      error = '';
-    });
-
-    try {
-      _lastResetRequestAt = DateTime.now();
-
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: normalized);
-
-      if (!mounted) return;
-      setState(() => loading = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'If an account exists for that email, a reset link has been sent.',
-          ),
-        ),
-      );
-    } on FirebaseAuthException catch (_) {
-      if (!mounted) return;
-      setState(() => loading = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'If an account exists for that email, a reset link has been sent.',
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => loading = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'If an account exists for that email, a reset link has been sent.',
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _openWhatsApp() async {
-    if (supportWhatsAppNumber.trim().isEmpty) return;
-
-    final n = supportWhatsAppNumber.trim();
-    final uri = Uri.parse('https://wa.me/$n');
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open WhatsApp.')));
-    }
-  }
-
-  Future<void> _emailSupport() async {
-    if (supportEmail.trim().isEmpty) return;
-    final uri = Uri.parse(
-      'mailto:${supportEmail.trim()}?subject=Support%20Request',
-    );
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open email app.')),
-      );
-    }
-  }
-
-  Widget _supportRow() {
-    final hasWhatsApp = supportWhatsAppNumber.trim().isNotEmpty;
-    final hasEmail = supportEmail.trim().isNotEmpty;
-
-    if (!hasWhatsApp && !hasEmail) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 6),
-        Text(
-          'Need help?',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Brand.mainText.withOpacity(0.75),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            if (hasWhatsApp)
-              OutlinedButton.icon(
-                onPressed: loading ? null : _openWhatsApp,
-                icon: const Text('💬', style: TextStyle(fontSize: 16)),
-                label: const Text('WhatsApp'),
-              ),
-            if (hasEmail)
-              OutlinedButton.icon(
-                onPressed: loading ? null : _emailSupport,
-                icon: const Icon(Icons.email_rounded, size: 18),
-                label: const Text('Email'),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Center(
-          child: Column(
-            children: [
-              Container(
-                width: 130,
-                height: 130,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: Brand.uiBorder),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 18,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Image.asset(
-                  'assets/images/ybs_logo.png',
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.school_rounded,
-                    size: 44,
-                    color: Brand.primaryBlue,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Sign in',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Brand.primaryBlue,
-                ),
-              ),
-              const SizedBox(height: 6),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        TextField(
-          controller: emailCtrl,
-          enabled: !loading,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Email',
-            prefixIcon: Icon(Icons.alternate_email_rounded),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: passCtrl,
-          enabled: !loading,
-          obscureText: !showPass,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: 'Password',
-            prefixIcon: const Icon(Icons.lock_rounded),
-            suffixIcon: IconButton(
-              tooltip: 'Show/Hide password',
-              onPressed: loading
-                  ? null
-                  : () => setState(() => showPass = !showPass),
-              icon: Icon(showPass ? Icons.visibility_off : Icons.visibility),
-            ),
-          ),
-          onSubmitted: (_) => loading ? null : _manualLogin(),
-        ),
-        const SizedBox(height: 6),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: loading ? null : _forgotPassword,
-            child: const Text('Forgot password?'),
-          ),
-        ),
-        const SizedBox(height: 6),
-        if (_isCoolingDown) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Brand.actionOrange.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.actionOrange.withOpacity(0.35)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.timer_rounded, color: Brand.actionOrange),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Too many attempts. Try again in $_cooldownSecondsLeft seconds.',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Brand.actionOrange,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: Brand.accentCyan.withOpacity(0.06),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Brand.uiBorder),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: Brand.primaryBlue.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Brand.uiBorder),
-                ),
-                child: const Icon(
-                  Icons.verified_user_rounded,
-                  size: 18,
-                  color: Brand.primaryBlue,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '$a + $b =',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: Brand.primaryBlue,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 90,
-                child: TextField(
-                  controller: captchaCtrl,
-                  enabled: !loading,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                    hintText: '...',
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'New captcha',
-                onPressed: loading ? null : () => setState(_refreshCaptcha),
-                icon: const Icon(Icons.refresh_rounded),
-                color: Brand.primaryBlue,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: (loading || _isCoolingDown) ? null : _manualLogin,
-          style: FilledButton.styleFrom(
-            backgroundColor: Brand.actionOrange,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          icon: loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.login_rounded),
-          label: Text(loading ? 'Signing in...' : 'Sign in'),
-        ),
-        _supportRow(),
-        if (error.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: cs.error.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: cs.error.withOpacity(0.35)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.error_outline_rounded, color: cs.error),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    error,
-                    style: TextStyle(
-                      color: cs.error,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -1658,7 +1044,7 @@ class _JoinOnlineCircleEntryButtonState
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: circles.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final circle = circles[index];
                           final state = circle.joinStateAt(DateTime.now());
@@ -1802,7 +1188,7 @@ class _JoinOnlineCircleEntryButtonState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Join Online Class',
+                        'Join Online Circle',
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 17,
@@ -2157,7 +1543,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                 Image.network(
                                   url,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  errorBuilder: (_, _, _) => Container(
                                     color: Colors.grey.shade200,
                                     alignment: Alignment.center,
                                     child: const Icon(
@@ -2294,7 +1680,7 @@ class _PublicGalleryViewerScreen extends StatelessWidget {
                       child: Image.network(
                         url,
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
+                        errorBuilder: (_, _, _) => const Icon(
                           Icons.broken_image_outlined,
                           color: Colors.white,
                           size: 44,
@@ -2897,35 +2283,46 @@ class _CategoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
+    return CardShell(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8),
+          collapsedIconColor: Brand.primaryBlue,
+          iconColor: Brand.primaryBlue,
+          title: Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w900,
               color: Brand.primaryBlue,
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 230,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: courses.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, i) {
-              return SizedBox(
-                width: 260,
-                child: _CourseCardMini(course: courses[i]),
-              );
-            },
+          subtitle: Text(
+            '${courses.length} course${courses.length == 1 ? '' : 's'}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Brand.mainText.withOpacity(0.68),
+              fontWeight: FontWeight.w700,
+            ),
           ),
+          children: [
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: courses.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.45,
+              ),
+              itemBuilder: (context, index) {
+                return _CourseCardMini(course: courses[index]);
+              },
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -2936,7 +2333,8 @@ class _CourseCardMini extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
       onTap: () => showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -2947,67 +2345,67 @@ class _CourseCardMini extends StatelessWidget {
         ),
         builder: (_) => _CourseDetailsSheet(course: course),
       ),
-      child: CardShell(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Brand.uiBorder),
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Row(
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(10),
               child: SizedBox(
-                height: 110,
-                width: double.infinity,
+                width: 52,
+                height: 52,
                 child: course.thumb.trim().isNotEmpty
                     ? Image.network(
                         course.thumb,
                         fit: BoxFit.cover,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return Container(color: Brand.appBg);
-                        },
-                        errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(Icons.image_not_supported),
+                        errorBuilder: (_, _, _) => Container(
+                          color: Brand.appBg,
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.school_rounded, size: 20),
                         ),
                       )
                     : Container(
                         color: Brand.appBg,
-                        child: const Icon(Icons.school_rounded, size: 40),
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.school_rounded, size: 20),
                       ),
               ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              course.title.isEmpty ? '(Untitled course)' : course.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: Brand.primaryBlue,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (course.duration.trim().isNotEmpty)
-              Row(
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.schedule_rounded,
-                    size: 16,
-                    color: Brand.primaryBlue,
+                  Text(
+                    course.title.isEmpty ? '(Untitled)' : course.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: Brand.primaryBlue,
+                    ),
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      course.duration,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Brand.mainText.withOpacity(0.7),
-                        fontWeight: FontWeight.w700,
-                      ),
+                  const SizedBox(height: 4),
+                  Text(
+                    course.duration.trim().isEmpty
+                        ? 'Tap for details'
+                        : course.duration,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Brand.mainText.withOpacity(0.70),
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
               ),
+            ),
           ],
         ),
       ),
@@ -3131,7 +2529,7 @@ class _CourseDetailsSheet extends StatelessWidget {
         child: Image.network(
           course.thumb,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
+          errorBuilder: (_, _, _) => Container(
             color: Brand.appBg,
             child: const Center(child: Icon(Icons.image_not_supported)),
           ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class TeacherClassProgressScreen extends StatefulWidget {
   final String classId;
@@ -29,8 +30,9 @@ class _TeacherClassProgressScreenState
   static const String syllabiNode = "syllabi";
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  late final DatabaseReference _classRef =
-  _db.child(classesNode).child(widget.classId);
+  late final DatabaseReference _classRef = _db
+      .child(classesNode)
+      .child(widget.classId);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
 
   StreamSubscription<DatabaseEvent>? _classSub;
@@ -74,12 +76,11 @@ class _TeacherClassProgressScreenState
 
   String get _courseTitle =>
       (widget.classData['course_title'] ??
-          widget.classData['courseTitle'] ??
-          'Class')
+              widget.classData['courseTitle'] ??
+              'Class')
           .toString();
 
-  String get _courseCode =>
-      (widget.classData['course_code'] ?? '').toString();
+  String get _courseCode => (widget.classData['course_code'] ?? '').toString();
 
   String get _courseId => (widget.classData['course_id'] ?? '').toString();
 
@@ -100,56 +101,60 @@ class _TeacherClassProgressScreenState
       await _loadSyllabus();
 
       await _classSub?.cancel();
-      _classSub = _classRef.onValue.listen((event) {
-        final raw = event.snapshot.value;
-        final data = raw is Map
-            ? Map<String, dynamic>.from(raw as Map)
-            : <String, dynamic>{};
+      _classSub = _classRef.onValue.listen(
+        (event) {
+          final raw = event.snapshot.value;
+          final data = raw is Map
+              ? Map<String, dynamic>.from(raw)
+              : <String, dynamic>{};
 
-        final att = (data['attendance'] is Map)
-            ? Map<String, dynamic>.from(data['attendance'] as Map)
-            : <String, dynamic>{};
+          final att = (data['attendance'] is Map)
+              ? Map<String, dynamic>.from(data['attendance'] as Map)
+              : <String, dynamic>{};
 
-        final learners = (data['learners'] is Map)
-            ? Map<String, dynamic>.from(data['learners'] as Map)
-            : <String, dynamic>{};
+          final learners = (data['learners'] is Map)
+              ? Map<String, dynamic>.from(data['learners'] as Map)
+              : <String, dynamic>{};
 
-        final covered = _computeCoveredFromClassAttendance(att);
-        final pct = _totalSyllabusSessions <= 0
-            ? 0
-            : ((covered.length / _totalSyllabusSessions) * 100)
-            .round()
-            .clamp(0, 100);
+          final covered = _computeCoveredFromClassAttendance(att);
+          final pct = _totalSyllabusSessions <= 0
+              ? 0
+              : ((covered.length / _totalSyllabusSessions) * 100).round().clamp(
+                  0,
+                  100,
+                );
 
-        String? selected = _selectedLearnerUid;
-        if ((selected == null ||
-            selected.isEmpty ||
-            !learners.containsKey(selected)) &&
-            learners.isNotEmpty) {
-          selected = learners.keys.first.toString();
-        }
+          String? selected = _selectedLearnerUid;
+          if ((selected == null ||
+                  selected.isEmpty ||
+                  !learners.containsKey(selected)) &&
+              learners.isNotEmpty) {
+            selected = learners.keys.first.toString();
+          }
 
-        if (!mounted) return;
-        setState(() {
-          _class = data;
-          _attendance = att;
-          _learners = learners;
-          _classCoveredSessionIds = covered;
-          _classProgressPct = pct;
-          _selectedLearnerUid = selected;
-          if (_learners.isEmpty) _learnerView = false;
-          _busy = false;
-        });
-      }, onError: (e) {
-        if (!mounted) return;
-        setState(() {
-          _error = e.toString();
-          _busy = false;
-        });
-      });
+          if (!mounted) return;
+          setState(() {
+            _class = data;
+            _attendance = att;
+            _learners = learners;
+            _classCoveredSessionIds = covered;
+            _classProgressPct = pct;
+            _selectedLearnerUid = selected;
+            if (_learners.isEmpty) _learnerView = false;
+            _busy = false;
+          });
+        },
+        onError: (e) {
+          if (!mounted) return;
+          setState(() {
+            _error = toHumanError(e);
+            _busy = false;
+          });
+        },
+      );
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -296,23 +301,15 @@ class _TeacherClassProgressScreenState
       final p = r['present'];
       final a = r['absent'];
 
-      if (p is Map &&
-          p.containsKey(learnerUid) &&
-          (p[learnerUid] == true)) {
+      if (p is Map && p.containsKey(learnerUid) && (p[learnerUid] == true)) {
         present++;
       }
-      if (a is Map &&
-          a.containsKey(learnerUid) &&
-          (a[learnerUid] == true)) {
+      if (a is Map && a.containsKey(learnerUid) && (a[learnerUid] == true)) {
         absent++;
       }
     }
 
-    return _LearnerStats(
-      sessionsHeld: held,
-      present: present,
-      absent: absent,
-    );
+    return _LearnerStats(sessionsHeld: held, present: present, absent: absent);
   }
 
   String _learnerName(String uid) {
@@ -389,7 +386,7 @@ class _TeacherClassProgressScreenState
     final clampedScale = scale.clamp(0.85, 1.20);
 
     return MediaQuery(
-      data: mq.copyWith(textScaleFactor: clampedScale.toDouble()),
+      data: mq.copyWith(textScaler: TextScaler.linear(clampedScale.toDouble())),
       child: Scaffold(
         backgroundColor: p.appBg,
         appBar: AppBar(
@@ -399,10 +396,7 @@ class _TeacherClassProgressScreenState
           iconTheme: IconThemeData(color: p.primary),
           title: Text(
             'Class Progress',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
           actions: [
             IconButton(
@@ -429,27 +423,25 @@ class _TeacherClassProgressScreenState
               ),
             ),
             _busy
-                ? Center(
-              child: CircularProgressIndicator(color: p.primary),
-            )
+                ? Center(child: CircularProgressIndicator(color: p.primary))
                 : _error != null
                 ? _buildErrorState(p)
                 : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _headerHeroCard(p),
-                const SizedBox(height: 12),
-                _viewModeCard(p),
-                const SizedBox(height: 12),
-                if (_learners.isNotEmpty) ...[
-                  _learnerPickerCard(p),
-                  const SizedBox(height: 12),
-                ],
-                _progressOverviewCard(p),
-                const SizedBox(height: 12),
-                _unitsProgressCard(p),
-              ],
-            ),
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      _headerHeroCard(p),
+                      const SizedBox(height: 12),
+                      _viewModeCard(p),
+                      const SizedBox(height: 12),
+                      if (_learners.isNotEmpty) ...[
+                        _learnerPickerCard(p),
+                        const SizedBox(height: 12),
+                      ],
+                      _progressOverviewCard(p),
+                      const SizedBox(height: 12),
+                      _unitsProgressCard(p),
+                    ],
+                  ),
           ],
         ),
       ),
@@ -464,10 +456,7 @@ class _TeacherClassProgressScreenState
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -529,7 +518,7 @@ class _TeacherClassProgressScreenState
                   children: [
                     _heroChip(
                       label:
-                      'Syllabus ${_totalSyllabusSessions <= 0 ? '-' : _totalSyllabusSessions}',
+                          'Syllabus ${_totalSyllabusSessions <= 0 ? '-' : _totalSyllabusSessions}',
                     ),
                     _heroChip(label: 'Held $sessionsHeld'),
                     _heroChip(label: 'Learners $learnersCount'),
@@ -616,8 +605,8 @@ class _TeacherClassProgressScreenState
                     selected: _learnerView,
                     onTap: canUseLearnerView
                         ? () {
-                      setState(() => _learnerView = true);
-                    }
+                            setState(() => _learnerView = true);
+                          }
                         : null,
                   ),
                 ),
@@ -641,11 +630,11 @@ class _TeacherClassProgressScreenState
   }
 
   Widget _toggleBtn(
-      AppPalette p, {
-        required String label,
-        required bool selected,
-        VoidCallback? onTap,
-      }) {
+    AppPalette p, {
+    required String label,
+    required bool selected,
+    VoidCallback? onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -681,10 +670,7 @@ class _TeacherClassProgressScreenState
         ),
         child: Text(
           'No learners in this class.',
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
         ),
       );
     }
@@ -699,10 +685,7 @@ class _TeacherClassProgressScreenState
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: p.text,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
           ),
         ),
       );
@@ -716,10 +699,7 @@ class _TeacherClassProgressScreenState
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: p.text,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
         ),
       );
     }).toList();
@@ -751,7 +731,7 @@ class _TeacherClassProgressScreenState
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: _selectedLearnerUid,
+            initialValue: _selectedLearnerUid,
             isExpanded: true,
             selectedItemBuilder: (_) => selectedBuilder,
             dropdownColor: p.cardBg,
@@ -771,8 +751,10 @@ class _TeacherClassProgressScreenState
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(color: p.accent, width: 2),
               ),
-              contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
             ),
             onChanged: (v) {
               if (v == null) return;
@@ -790,8 +772,11 @@ class _TeacherClassProgressScreenState
     Set<String> coveredSet = _classCoveredSessionIds;
     int pct = _classProgressPct;
 
-    _LearnerStats stats =
-    const _LearnerStats(sessionsHeld: 0, present: 0, absent: 0);
+    _LearnerStats stats = const _LearnerStats(
+      sessionsHeld: 0,
+      present: 0,
+      absent: 0,
+    );
 
     if (_learnerView &&
         _selectedLearnerUid != null &&
@@ -924,10 +909,7 @@ class _TeacherClassProgressScreenState
         ),
         child: Text(
           'Syllabus not found for this course.',
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
         ),
       );
     }
@@ -978,17 +960,17 @@ class _TeacherClassProgressScreenState
             ),
           ),
           const SizedBox(height: 12),
-          ...units.map((u) => _unitExpansion(p, u, coveredSet)).toList(),
+          ...units.map((u) => _unitExpansion(p, u, coveredSet)),
         ],
       ),
     );
   }
 
   Widget _unitExpansion(
-      AppPalette p,
-      Map<String, dynamic> u,
-      Set<String> coveredSet,
-      ) {
+    AppPalette p,
+    Map<String, dynamic> u,
+    Set<String> coveredSet,
+  ) {
     final unitTitle = (u['unitTitle'] ?? 'Unit').toString();
     final sessions = (u['sessions'] as List<Map<String, dynamic>>);
 
@@ -999,8 +981,9 @@ class _TeacherClassProgressScreenState
       if (sid.isNotEmpty && coveredSet.contains(sid)) unitPassed++;
     }
 
-    final unitPct =
-    unitTotal == 0 ? 0 : ((unitPassed / unitTotal) * 100).round();
+    final unitPct = unitTotal == 0
+        ? 0
+        : ((unitPassed / unitTotal) * 100).round();
     final unitColor = _progressColor(unitPct);
 
     return Container(
@@ -1015,8 +998,10 @@ class _TeacherClassProgressScreenState
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: Container(
               width: 42,
@@ -1025,17 +1010,11 @@ class _TeacherClassProgressScreenState
                 color: p.soft,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(
-                Icons.folder_open_rounded,
-                color: p.primary,
-              ),
+              child: Icon(Icons.folder_open_rounded, color: p.primary),
             ),
             title: Text(
               unitTitle.isEmpty ? 'Unit' : unitTitle,
-              style: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1085,18 +1064,17 @@ class _TeacherClassProgressScreenState
   }
 
   Widget _sessionExpansion(
-      AppPalette p,
-      Map<String, dynamic> s,
-      Set<String> coveredSet,
-      ) {
+    AppPalette p,
+    Map<String, dynamic> s,
+    Set<String> coveredSet,
+  ) {
     final title = (s['title'] ?? '').toString();
     final sessionId = (s['sessionId'] ?? '').toString();
     final skill = (s['skillType'] ?? '').toString();
     final objective = (s['objective'] ?? '').toString();
     final content = (s['content'] ?? '').toString();
 
-    final bool passed =
-        sessionId.isNotEmpty && coveredSet.contains(sessionId);
+    final bool passed = sessionId.isNotEmpty && coveredSet.contains(sessionId);
     final statusText = passed ? 'Passed' : 'Coming';
     final statusColor = passed ? successGreen : warningOrange;
 
@@ -1112,8 +1090,10 @@ class _TeacherClassProgressScreenState
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: Container(
               width: 40,
@@ -1123,26 +1103,18 @@ class _TeacherClassProgressScreenState
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
-                passed
-                    ? Icons.check_circle_rounded
-                    : Icons.schedule_rounded,
+                passed ? Icons.check_circle_rounded : Icons.schedule_rounded,
                 color: statusColor,
               ),
             ),
             title: Text(
               title.isEmpty ? 'Session' : title,
-              style: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              [
-                if (skill.isNotEmpty) skill,
-                statusText,
-              ].join(' • '),
+              [if (skill.isNotEmpty) skill, statusText].join(' • '),
               style: TextStyle(
                 color: p.text.withOpacity(0.7),
                 fontWeight: FontWeight.w700,
@@ -1232,10 +1204,7 @@ class _TeacherClassProgressScreenState
           child: Text(
             v,
             textAlign: TextAlign.right,
-            style: TextStyle(
-              color: p.text,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
           ),
         ),
       ],
@@ -1243,11 +1212,11 @@ class _TeacherClassProgressScreenState
   }
 
   Widget _kpi(
-      AppPalette p, {
-        required String label,
-        required String value,
-        required IconData icon,
-      }) {
+    AppPalette p, {
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1262,10 +1231,7 @@ class _TeacherClassProgressScreenState
           const SizedBox(width: 8),
           Text(
             value,
-            style: TextStyle(
-              color: p.text,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
           ),
           const SizedBox(width: 8),
           Text(

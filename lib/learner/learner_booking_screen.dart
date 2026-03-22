@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -64,10 +63,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   static const int timetableDays = 7;
   List<_Slot> generatedSlots = [];
 
-// My bookings map: "yyyy-mm-dd|HH:MM|teacherId" -> sessionNo
+  // My bookings map: "yyyy-mm-dd|HH:MM|teacherId" -> sessionNo
   Map<String, int> myBookedSlots = {};
 
-// Slot group summary: "yyyy-mm-dd|HH:MM|teacherId" -> summary
+  // Slot group summary: "yyyy-mm-dd|HH:MM|teacherId" -> summary
   Map<String, _SlotSummary> slotSummary = {};
 
   // Filters
@@ -141,19 +140,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       _db.child('booking_reservations/$cid');
 
   DatabaseReference _legacyReservationsRef(
-      String cid,
-      String dayKey,
-      String hhmm,
-      ) =>
-      _db.child('booking_reservations/$cid/$dayKey/$hhmm');
+    String cid,
+    String dayKey,
+    String hhmm,
+  ) => _db.child('booking_reservations/$cid/$dayKey/$hhmm');
 
   DatabaseReference _reservationsRef(
-      String cid,
-      String dayKey,
-      String hhmm,
-      String teacherId,
-      ) =>
-      _db.child('booking_reservations/$cid/$dayKey/$hhmm/$teacherId');
+    String cid,
+    String dayKey,
+    String hhmm,
+    String teacherId,
+  ) => _db.child('booking_reservations/$cid/$dayKey/$hhmm/$teacherId');
 
   String _slotSummaryKey(String dayKey, String hhmm, String teacherId) =>
       '$dayKey|$hhmm|$teacherId';
@@ -274,8 +271,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       final learnerName = await _getMyFullName();
 
       final sessionNo = slot.groupSessionNo ?? currentSession;
-      final safeCourseTitle =
-      courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+      final safeCourseTitle = courseTitle.trim().isEmpty
+          ? 'Course'
+          : courseTitle.trim();
 
       final adminTitle = 'New learner booking';
       final adminBody =
@@ -325,9 +323,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           'sessionNo': sessionNo.toString(),
         },
       );
-    } catch (e) {
-      debugPrint('Booking notification failed: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> _scheduleLearnerLocalReminder(_Slot slot) async {
@@ -336,19 +332,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       await NotificationService.I.requestPermissions();
 
       final sessionNo = slot.groupSessionNo ?? currentSession;
-      final safeCourseTitle =
-      courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
+      final safeCourseTitle = courseTitle.trim().isEmpty
+          ? 'Course'
+          : courseTitle.trim();
 
       await NotificationService.I.scheduleSessionReminder(
         classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
         title: 'Upcoming class',
-        body: 'Session $sessionNo for $safeCourseTitle with ${slot.teacherName}',
+        body:
+            'Session $sessionNo for $safeCourseTitle with ${slot.teacherName}',
         sessionStart: slot.start,
         minutesBefore: 30,
       );
-    } catch (e) {
-      debugPrint('Local booking reminder failed: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> _cancelLearnerLocalReminder(_Slot slot) async {
@@ -359,9 +355,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         classId: '${slot.courseId}_${slot.dayKey}_${slot.time}',
         sessionStart: slot.start,
       );
-    } catch (e) {
-      debugPrint('Cancel local booking reminder failed: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> _runBusy(String label, Future<void> Function() action) async {
@@ -434,16 +428,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final m = raw.map((k, vv) => MapEntry(k.toString(), vv));
 
-        final id =
-        (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '').toString().trim();
+        final id = (m['id'] ?? m['courseId'] ?? m['course_id'] ?? '')
+            .toString()
+            .trim();
 
         final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
             .toString()
             .trim()
             .toLowerCase();
 
-        final deliveryKey =
-        (m['deliveryKey'] ?? '').toString().trim().toLowerCase();
+        final deliveryKey = (m['deliveryKey'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
         final isBookingCourse =
             variantKey == 'flexible' || deliveryKey == 'flexible';
@@ -471,9 +468,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final c = val.map((k, v) => MapEntry(k.toString(), v));
         final courseIdAny =
-        (c['course_id'] ?? c['courseId'] ?? c['course'] ?? '')
-            .toString()
-            .trim();
+            (c['course_id'] ?? c['courseId'] ?? c['course'] ?? '')
+                .toString()
+                .trim();
         if (courseIdAny != cid) continue;
 
         final learners = c['learners'];
@@ -535,8 +532,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       final snap = await _db.child('syllabi/$cid/flexible').get();
       if (!snap.exists || snap.value == null || snap.value is! Map) return;
 
-      final root =
-      (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+      final root = (snap.value as Map).map(
+        (k, vv) => MapEntry(k.toString(), vv),
+      );
 
       final t = (root['title'] ?? '').toString().trim();
       if (t.isNotEmpty) courseTitle = t;
@@ -591,17 +589,17 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     try {
       final snap = await _progressRef(cid).get();
       if (!snap.exists || snap.value == null) {
-        await _progressRef(cid).set({
-          'currentSession': 1,
-          'updatedAt': ServerValue.timestamp,
-        });
+        await _progressRef(
+          cid,
+        ).set({'currentSession': 1, 'updatedAt': ServerValue.timestamp});
         currentSession = 1;
         return;
       }
 
       if (snap.value is Map) {
-        final m =
-        (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+        final m = (snap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
         currentSession = _toInt(m['currentSession'], fallback: 1);
         if (currentSession <= 0) currentSession = 1;
       } else {
@@ -622,22 +620,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     try {
       for (int i = 0; i < daysAhead; i++) {
-        final day =
-        DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).add(Duration(days: i));
         final dk = _dateKey(day);
 
         final snap = await _reservationsRootRef(cid).child(dk).get();
         if (!snap.exists || snap.value == null || snap.value is! Map) continue;
 
-        final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+        final m = (snap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
 
         for (final e in m.entries) {
           final hhmm = e.key.toString();
           final timeNode = e.value;
           if (timeNode is! Map) continue;
 
-          final teachersAtTime =
-          timeNode.map((k, vv) => MapEntry(k.toString(), vv));
+          final teachersAtTime = timeNode.map(
+            (k, vv) => MapEntry(k.toString(), vv),
+          );
 
           for (final teacherEntry in teachersAtTime.entries) {
             final teacherId = teacherEntry.key.toString();
@@ -649,8 +653,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             final learnersRaw = sm['learners'];
             if (learnersRaw is! Map) continue;
 
-            final learners =
-            learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
+            final learners = learnersRaw.map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            );
             final count = learners.length;
             if (count <= 0) continue;
 
@@ -686,22 +691,28 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     try {
       for (int i = 0; i < daysAhead; i++) {
-        final day =
-        DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).add(Duration(days: i));
         final dk = _dateKey(day);
 
         final snap = await _reservationsRootRef(cid).child(dk).get();
         if (!snap.exists || snap.value == null || snap.value is! Map) continue;
 
-        final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+        final m = (snap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
 
         for (final e in m.entries) {
           final hhmm = e.key.toString();
           final timeNode = e.value;
           if (timeNode is! Map) continue;
 
-          final teachersAtTime =
-          timeNode.map((k, vv) => MapEntry(k.toString(), vv));
+          final teachersAtTime = timeNode.map(
+            (k, vv) => MapEntry(k.toString(), vv),
+          );
 
           for (final teacherEntry in teachersAtTime.entries) {
             final teacherId = teacherEntry.key.toString();
@@ -755,7 +766,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         return;
       }
 
-      final root = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+      final root = (snap.value as Map).map(
+        (k, vv) => MapEntry(k.toString(), vv),
+      );
       final List<_TeacherAvail> teachers = [];
 
       for (final entry in root.entries) {
@@ -769,8 +782,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         final settingsNode = tn['settings'];
         if (settingsNode is Map) {
           final sm = settingsNode.map((k, vv) => MapEntry(k.toString(), vv));
-          teacherOnlineEnabled =
-              _toBool(sm['teacherOnlineEnabled'], fallback: true);
+          teacherOnlineEnabled = _toBool(
+            sm['teacherOnlineEnabled'],
+            fallback: true,
+          );
         }
         if (!teacherOnlineEnabled) continue;
 
@@ -779,25 +794,29 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
         final effective = perCourse.map((k, vv) => MapEntry(k.toString(), vv));
 
-        final courseOnlineEnabled =
-        _toBool(effective['courseOnlineEnabled'], fallback: true);
+        final courseOnlineEnabled = _toBool(
+          effective['courseOnlineEnabled'],
+          fallback: true,
+        );
         if (!courseOnlineEnabled) continue;
 
-        final resolvedTeacherName = (effective['teacherName'] ??
-            effective['teacher_name'] ??
-            tn['teacherName'] ??
-            tn['teacher_name'] ??
-            '')
-            .toString()
-            .trim();
+        final resolvedTeacherName =
+            (effective['teacherName'] ??
+                    effective['teacher_name'] ??
+                    tn['teacherName'] ??
+                    tn['teacher_name'] ??
+                    '')
+                .toString()
+                .trim();
 
-        final meetUrl = (effective['meetUrl'] ??
-            effective['meet_url'] ??
-            effective['googleMeetUrl'] ??
-            effective['google_meet_url'] ??
-            '')
-            .toString()
-            .trim();
+        final meetUrl =
+            (effective['meetUrl'] ??
+                    effective['meet_url'] ??
+                    effective['googleMeetUrl'] ??
+                    effective['google_meet_url'] ??
+                    '')
+                .toString()
+                .trim();
 
         int durationMin = _toInt(effective['durationMinutes'], fallback: 0);
         if (durationMin <= 0) {
@@ -805,8 +824,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         }
         if (durationMin <= 0) durationMin = 60;
 
-        int maxLearners =
-        _toInt(effective['maxLearnersPerSlot'], fallback: 0);
+        int maxLearners = _toInt(effective['maxLearnersPerSlot'], fallback: 0);
         if (maxLearners <= 0) maxLearners = 6;
 
         final week = effective['week'];
@@ -830,8 +848,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         teachers.add(
           _TeacherAvail(
             teacherId: teacherId,
-            teacherName:
-            resolvedTeacherName.isEmpty ? 'Teacher' : resolvedTeacherName,
+            teacherName: resolvedTeacherName.isEmpty
+                ? 'Teacher'
+                : resolvedTeacherName,
             slotsByDay: slotsByDay,
             meetUrl: meetUrl,
             durationMinutes: durationMin,
@@ -844,8 +863,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       final List<_Slot> out = [];
       for (int i = 0; i < daysAhead; i++) {
-        final day =
-        DateTime(now.year, now.month, now.day).add(Duration(days: i));
+        final day = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).add(Duration(days: i));
         final wk = _weekdayKey(day);
         final dayKey = _dateKey(day);
 
@@ -931,7 +953,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         _toast('Booking closes 24 hours before class.');
         return;
       }
-      if (slot.groupSessionNo != null && slot.groupSessionNo != currentSession) {
+      if (slot.groupSessionNo != null &&
+          slot.groupSessionNo != currentSession) {
         _toast('This slot is already a Session ${slot.groupSessionNo} group.');
         return;
       }
@@ -957,11 +980,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       }
 
       if (existing != null) {
-        final locked =
-        !existing.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+        final locked = !existing.start.isAfter(
+          DateTime.now().add(const Duration(hours: 24)),
+        );
         if (locked) {
           _toast(
-              'You already booked a class and it’s within 24 hours, so you can’t change it.');
+            'You already booked a class and it’s within 24 hours, so you can’t change it.',
+          );
           return;
         }
 
@@ -984,9 +1009,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               classId: '${cid}_${existing.dayKey}_${existing.time}',
               sessionStart: oldSlotStart,
             );
-          } catch (e) {
-            debugPrint('Old reminder cancel failed: $e');
-          }
+          } catch (_) {}
         }
       }
 
@@ -999,7 +1022,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       if (pre.exists && pre.value is Map) {
         final m = (pre.value as Map).map((k, v) => MapEntry(k.toString(), v));
         existingGroupSession = _toInt(m['sessionNo'], fallback: 0);
-        if (existingGroupSession != null && existingGroupSession <= 0) {
+        if (existingGroupSession <= 0) {
           existingGroupSession = null;
         }
 
@@ -1017,7 +1040,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       if (existingGroupSession != null &&
           existingGroupSession != currentSession) {
         _toast(
-            'This slot is a Session $existingGroupSession group. You are on Session $currentSession.');
+          'This slot is a Session $existingGroupSession group. You are on Session $currentSession.',
+        );
         return;
       }
 
@@ -1036,7 +1060,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         final existingLearners = node['learners'];
         if (existingLearners is Map) {
           learners.addAll(
-              existingLearners.map((k, v) => MapEntry(k.toString(), v)));
+            existingLearners.map((k, v) => MapEntry(k.toString(), v)),
+          );
         }
 
         if (learners.containsKey(myUid)) {
@@ -1066,7 +1091,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
       if (!tx.committed) {
         _toast(
-            'Could not join. The slot may be full or became a different session group.');
+          'Could not join. The slot may be full or became a different session group.',
+        );
         return;
       }
 
@@ -1092,17 +1118,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   Future<bool> _cancelBookingByKey(
-      String cid,
-      String dayKey,
-      String hhmm,
-      String teacherId,
-      ) async {
+    String cid,
+    String dayKey,
+    String hhmm,
+    String teacherId,
+  ) async {
     try {
       final start = _parseSlotStart(dayKey, hhmm);
       if (start == null) return false;
 
-      final locked =
-      !start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+      final locked = !start.isAfter(
+        DateTime.now().add(const Duration(hours: 24)),
+      );
       if (locked) return false;
 
       Future<bool> cancelAtRef(DatabaseReference ref) async {
@@ -1147,8 +1174,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final cid = courseId;
     if (cid == null) return;
 
-    final locked =
-    !slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
+    final locked = !slot.start.isAfter(
+      DateTime.now().add(const Duration(hours: 24)),
+    );
     if (locked) {
       _toast('You can’t cancel within 24 hours of the session.');
       return;
@@ -1242,7 +1270,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final now = DateTime.now();
     return List.generate(
       count,
-          (i) => DateTime(now.year, now.month, now.day).add(Duration(days: i)),
+      (i) => DateTime(now.year, now.month, now.day).add(Duration(days: i)),
     );
   }
 
@@ -1423,8 +1451,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               child: Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomPad),
                 child: Directionality(
-                  textDirection:
-                  isArabic ? TextDirection.rtl : TextDirection.ltr,
+                  textDirection: isArabic
+                      ? TextDirection.rtl
+                      : TextDirection.ltr,
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: isArabic
@@ -1524,8 +1553,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                             onPressed: () => Navigator.pop(context),
                             child: Text(
                               _helpClose(helpLang),
-                              style:
-                              const TextStyle(fontWeight: FontWeight.w900),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ),
@@ -1542,10 +1572,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   Widget _langChip(
-      String label,
-      String code,
-      void Function(void Function()) setLocalState,
-      ) {
+    String label,
+    String code,
+    void Function(void Function()) setLocalState,
+  ) {
     final selected = helpLang == code;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
@@ -1927,7 +1957,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       builder: (_) {
         final bottomPad = MediaQuery.of(context).padding.bottom;
 
-        final canCancel = slot.bookedByMe &&
+        final canCancel =
+            slot.bookedByMe &&
             slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
         final cancelLocked = slot.bookedByMe && !canCancel;
 
@@ -1982,8 +2013,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                         showDragHandle: true,
                         backgroundColor: Colors.white,
                         shape: const RoundedRectangleBorder(
-                          borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(24)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
                         ),
                         builder: (_) => TeacherMediaSheet(
                           teacherUid: slot.teacherId,
@@ -2073,9 +2105,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     ),
                     onPressed: canJoinMeet
                         ? () {
-                      Navigator.pop(context);
-                      _openExternalUrl(slot.meetUrl);
-                    }
+                            Navigator.pop(context);
+                            _openExternalUrl(slot.meetUrl);
+                          }
                         : null,
                     child: Text(
                       canJoinMeet
@@ -2089,8 +2121,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 if (!slot.bookedByMe) ...[
                   FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor:
-                      joinable ? actionOrange : Colors.grey.shade400,
+                      backgroundColor: joinable
+                          ? actionOrange
+                          : Colors.grey.shade400,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -2100,85 +2133,98 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     onPressed: (booking || refreshing || !joinable)
                         ? null
                         : () async {
-                      Navigator.pop(context);
+                            Navigator.pop(context);
 
-                      final existing = await _findMyNextBooking(courseId!);
+                            final existing = await _findMyNextBooking(
+                              courseId!,
+                            );
 
-                      final isSameExactBooking = existing != null &&
-                          existing.dayKey == slot.dayKey &&
-                          existing.time == slot.time &&
-                          existing.teacherId == slot.teacherId;
+                            final isSameExactBooking =
+                                existing != null &&
+                                existing.dayKey == slot.dayKey &&
+                                existing.time == slot.time &&
+                                existing.teacherId == slot.teacherId;
 
-                      final isSameTimeDifferentTeacher = existing != null &&
-                          existing.dayKey == slot.dayKey &&
-                          existing.time == slot.time &&
-                          existing.teacherId != slot.teacherId;
+                            final isSameTimeDifferentTeacher =
+                                existing != null &&
+                                existing.dayKey == slot.dayKey &&
+                                existing.time == slot.time &&
+                                existing.teacherId != slot.teacherId;
 
-                      final hasOther = existing != null && !isSameExactBooking;
+                            final hasOther =
+                                existing != null && !isSameExactBooking;
 
-                      final locked = existing != null &&
-                          !existing.start.isAfter(
-                            DateTime.now().add(const Duration(hours: 24)),
-                          );
+                            final locked =
+                                existing != null &&
+                                !existing.start.isAfter(
+                                  DateTime.now().add(const Duration(hours: 24)),
+                                );
 
-                      final label = isSameTimeDifferentTeacher
-                          ? 'Change teacher'
-                          : ((slot.bookedCount > 0 && slot.groupSessionNo == currentSession)
-                          ? 'Join group'
-                          : 'Book this slot');
+                            final label = isSameTimeDifferentTeacher
+                                ? 'Change teacher'
+                                : ((slot.bookedCount > 0 &&
+                                          slot.groupSessionNo == currentSession)
+                                      ? 'Join group'
+                                      : 'Book this slot');
 
-                      final msg = hasOther
-                          ? (locked
-                          ? 'You already booked a class within 24 hours.\nYou can’t change it now.'
-                          : isSameTimeDifferentTeacher
-                          ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
-                          : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? currentSession} (${slot.bookedCount}/$cap).')
-                          : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? currentSession}\nLearners: ${slot.bookedCount}/$cap';
-                      if (hasOther && locked) {
-                        _toast('You can’t change booking within 24 hours.');
-                        return;
-                      }
+                            final msg = hasOther
+                                ? (locked
+                                      ? 'You already booked a class within 24 hours.\nYou can’t change it now.'
+                                      : isSameTimeDifferentTeacher
+                                      ? 'You already booked this time with another teacher.\nDo you want to change teacher?\n\nCurrent: ${existing.teacherName} — ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${slot.teacherName} — ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will keep the same date and time and only change the teacher.'
+                                      : 'You already booked a class.\nDo you want to change it to this slot?\n\nOld: ${_friendlyDate(existing.start)} ${existing.time}\nNew: ${_friendlyDate(slot.start)} ${slot.time}\n\nThis will join Session ${slot.groupSessionNo ?? currentSession} (${slot.bookedCount}/$cap).')
+                                : 'Confirm booking?\n\n${_friendlyDate(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}\n\nGroup: Session ${slot.groupSessionNo ?? currentSession}\nLearners: ${slot.bookedCount}/$cap';
+                            if (hasOther && locked) {
+                              _toast(
+                                'You can’t change booking within 24 hours.',
+                              );
+                              return;
+                            }
 
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: Text(
-                            hasOther
-                                ? (isSameTimeDifferentTeacher ? 'Change teacher' : 'Change booking')
-                                : label,
-                          ),
-                          content: Text(msg),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, false),
-                              child: const Text('No'),
-                            ),
-                            FilledButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, true),
-                              child: Text(
-                                hasOther
-                                    ? (isSameTimeDifferentTeacher ? 'Yes, Change Teacher' : 'Yes, Change')
-                                    : 'Yes',
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: Text(
+                                  hasOther
+                                      ? (isSameTimeDifferentTeacher
+                                            ? 'Change teacher'
+                                            : 'Change booking')
+                                      : label,
+                                ),
+                                content: Text(msg),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('No'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: Text(
+                                      hasOther
+                                          ? (isSameTimeDifferentTeacher
+                                                ? 'Yes, Change Teacher'
+                                                : 'Yes, Change')
+                                          : 'Yes',
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
-                      );
+                            );
 
-                      if (ok == true) {
-                        await _runBusy('Saving booking...', () async {
-                          await _bookSlot(slot);
-                        });
-                      }
-                    },
+                            if (ok == true) {
+                              await _runBusy('Saving booking...', () async {
+                                await _bookSlot(slot);
+                              });
+                            }
+                          },
                     child: Text(
                       joinable
                           ? ((slot.bookedCount > 0 &&
-                          slot.groupSessionNo == currentSession)
-                          ? 'Join group'
-                          : 'Book this slot')
+                                    slot.groupSessionNo == currentSession)
+                                ? 'Join group'
+                                : 'Book this slot')
                           : (newBookingLocked ? 'Closed' : 'Unavailable'),
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
@@ -2203,8 +2249,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   const SizedBox(height: 10),
                   FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor:
-                      cancelLocked ? Colors.grey.shade400 : Colors.red.shade600,
+                      backgroundColor: cancelLocked
+                          ? Colors.grey.shade400
+                          : Colors.red.shade600,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -2214,36 +2261,36 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     onPressed: (booking || refreshing || !canCancel)
                         ? null
                         : () async {
-                      Navigator.pop(context);
+                            Navigator.pop(context);
 
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('Cancel booking'),
-                          content: const Text(
-                            'Are you sure you want to cancel this booking?',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, false),
-                              child: const Text('No'),
-                            ),
-                            FilledButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, true),
-                              child: const Text('Yes, Cancel'),
-                            ),
-                          ],
-                        ),
-                      );
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Cancel booking'),
+                                content: const Text(
+                                  'Are you sure you want to cancel this booking?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('No'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text('Yes, Cancel'),
+                                  ),
+                                ],
+                              ),
+                            );
 
-                      if (ok == true) {
-                        await _runBusy('Cancelling booking...', () async {
-                          await _cancelMyBooking(slot);
-                        });
-                      }
-                    },
+                            if (ok == true) {
+                              await _runBusy('Cancelling booking...', () async {
+                                await _cancelMyBooking(slot);
+                              });
+                            }
+                          },
                     child: Text(
                       cancelLocked
                           ? 'Cancel disabled (within 24h)'
@@ -2301,10 +2348,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               ],
             ),
           ),
-          if (trailing != null) ...[
-            const SizedBox(width: 10),
-            trailing,
-          ],
+          if (trailing != null) ...[const SizedBox(width: 10), trailing],
         ],
       ),
     );
@@ -2313,7 +2357,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   // ================== More teachers sheet ==================
 
   Future<void> _openMoreTeachersSheet(
-      List<_Slot> allSlots, List<_Slot> hiddenSlots) async {
+    List<_Slot> allSlots,
+    List<_Slot> hiddenSlots,
+  ) async {
     if (!mounted || hiddenSlots.isEmpty) return;
 
     await showModalBottomSheet(
@@ -2371,6 +2417,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       },
     );
   }
+
   void _openExpandedSchedule() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -2383,10 +2430,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             iconTheme: const IconThemeData(color: primaryBlue),
             title: const Text(
               'Full Schedule',
-              style: TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
             ),
           ),
           body: SafeArea(
@@ -2411,8 +2455,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       teacherIdToName[s.teacherId] = s.teacherName;
     }
     final teacherIds = teacherIdToName.keys.toList()
-      ..sort((a, b) =>
-          (teacherIdToName[a] ?? '').compareTo(teacherIdToName[b] ?? ''));
+      ..sort(
+        (a, b) =>
+            (teacherIdToName[a] ?? '').compareTo(teacherIdToName[b] ?? ''),
+      );
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -2442,14 +2488,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   onlyJoinable ||
                   onlyPeerGroups)
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: actionOrange.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: actionOrange.withOpacity(0.25),
-                    ),
+                    border: Border.all(color: actionOrange.withOpacity(0.25)),
                   ),
                   child: const Text(
                     'Active',
@@ -2475,10 +2521,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
               value: teacherFilter,
               isExpanded: true,
               underline: const SizedBox.shrink(),
-              icon: const Icon(
-                Icons.expand_more_rounded,
-                color: primaryBlue,
-              ),
+              icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
               items: [
                 const DropdownMenuItem(
                   value: 'all',
@@ -2510,19 +2553,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 _chip(
                   'All day',
                   timeFilter == 'all',
-                      () => setState(() => timeFilter = 'all'),
+                  () => setState(() => timeFilter = 'all'),
                 ),
                 const SizedBox(width: 8),
                 _chip(
                   'Morning',
                   timeFilter == 'morning',
-                      () => setState(() => timeFilter = 'morning'),
+                  () => setState(() => timeFilter = 'morning'),
                 ),
                 const SizedBox(width: 8),
                 _chip(
                   'Afternoon',
                   timeFilter == 'afternoon',
-                      () => setState(() => timeFilter = 'afternoon'),
+                  () => setState(() => timeFilter = 'afternoon'),
                 ),
               ],
             ),
@@ -2621,11 +2664,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   }
 
   Widget _badge(
-      String text, {
-        required Color bg,
-        Color fg = Colors.white,
-        IconData? icon,
-      }) {
+    String text, {
+    required Color bg,
+    Color fg = Colors.white,
+    IconData? icon,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -2658,8 +2701,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final sessionInfo = curriculumSessions['$currentSession'];
     final sessionTitle = (sessionInfo is Map)
         ? (sessionInfo['sessionTitle'] ?? sessionInfo['title'] ?? '')
-        .toString()
-        .trim()
+              .toString()
+              .trim()
         : '';
 
     return Container(
@@ -2757,7 +2800,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     final peerGroup = _isPeerGroup(s);
     final otherSession =
         (s.groupSessionNo != null && s.groupSessionNo != currentSession) &&
-            !bookedByMe;
+        !bookedByMe;
     final fullButMySession =
         !bookedByMe && s.groupSessionNo == currentSession && s.isFull;
 
@@ -2844,15 +2887,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             else if (isClosed)
               _badge(countText, bg: Colors.grey.shade500)
             else if (peerGroup)
-                _badge(
-                  countText,
-                  bg: actionOrange,
-                  icon: Icons.groups_rounded,
-                )
-              else if (otherSession || fullButMySession)
-                  _badge(countText, bg: Colors.grey.shade600)
-                else
-                  _badge(countText, bg: Colors.grey.shade800),
+              _badge(countText, bg: actionOrange, icon: Icons.groups_rounded)
+            else if (otherSession || fullButMySession)
+              _badge(countText, bg: Colors.grey.shade600)
+            else
+              _badge(countText, bg: Colors.grey.shade800),
           ],
         ),
       ),
@@ -2874,7 +2913,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
     for (final k in index.keys) {
       index[k]!.sort((a, b) => a.teacherName.compareTo(b.teacherName));
     }
-    double _rowHeightForTime(String time) {
+    double rowHeightForTime(String time) {
       int maxVisibleCount = 0;
       bool hasHidden = false;
 
@@ -2934,12 +2973,15 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             children: [
               const SizedBox(height: headerHeight + 8),
               ...times.map((t) {
-                final rowHeight = _rowHeightForTime(t);
+                final rowHeight = rowHeightForTime(t);
 
                 return Container(
                   height: rowHeight,
                   alignment: Alignment.topLeft,
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 8,
+                  ),
                   child: Text(
                     t,
                     style: const TextStyle(
@@ -2948,7 +2990,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     ),
                   ),
                 );
-              }).toList(),
+              }),
             ],
           ),
         ),
@@ -2991,7 +3033,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 ),
                 const SizedBox(height: 8),
                 ...times.map((t) {
-                  final rowHeight = _rowHeightForTime(t);
+                  final rowHeight = rowHeightForTime(t);
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -3022,53 +3064,56 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                           ),
                           child: hasSlot
                               ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (int i = 0; i < visibleCount; i++) ...[
-                                _teacherMiniTile(list[i]),
-                                if (i != visibleCount - 1)
-                                  const SizedBox(height: 8),
-                              ],
-                              if (hiddenCount > 0) ...[
-                                const SizedBox(height: 6),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(999),
-                                  onTap: () => _openMoreTeachersSheet(
-                                    list,
-                                    list.sublist(visibleCount),
-                                  ),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 7,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFB),
-                                      borderRadius:
-                                      BorderRadius.circular(999),
-                                      border: Border.all(
-                                        color: uiBorder.withOpacity(0.9),
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (int i = 0; i < visibleCount; i++) ...[
+                                      _teacherMiniTile(list[i]),
+                                      if (i != visibleCount - 1)
+                                        const SizedBox(height: 8),
+                                    ],
+                                    if (hiddenCount > 0) ...[
+                                      const SizedBox(height: 6),
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        onTap: () => _openMoreTeachersSheet(
+                                          list,
+                                          list.sublist(visibleCount),
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 7,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF8FAFB),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: uiBorder.withOpacity(0.9),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '+$hiddenCount more',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 11,
+                                              color: Colors.grey.shade800,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    child: Text(
-                                      '+$hiddenCount more',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 11,
-                                        color: Colors.grey.shade800,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          )
+                                    ],
+                                  ],
+                                )
                               : const SizedBox.shrink(),
                         );
                       }).toList(),
                     ),
                   );
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -3093,10 +3138,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         iconTheme: const IconThemeData(color: primaryBlue),
         title: const Text(
           'Book Your Class',
-          style: TextStyle(
-            color: primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -3109,10 +3151,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             onPressed: (loading || booking || refreshing || cid == null)
                 ? null
                 : () async {
-              await _runBusy('Refreshing schedule...', () async {
-                await _refreshSchedule();
-              });
-            },
+                    await _runBusy('Refreshing schedule...', () async {
+                      await _refreshSchedule();
+                    });
+                  },
             icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
           ),
           const SizedBox(width: 4),
@@ -3127,110 +3169,120 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                 : (cid == null)
                 ? const Center(child: Text('No course selected.'))
                 : ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _buildCompactHeader(),
-                const SizedBox(height: 12),
-                _SectionCard(
-                  title: 'Schedule',
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    padding: const EdgeInsets.all(12),
                     children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: generatedSlots.isEmpty ? null : _openExpandedSchedule,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: uiBorder.withOpacity(0.9),
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.open_in_full_rounded,
-                                size: 16,
-                                color: primaryBlue,
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'Expand',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryBlue,
-                                  fontSize: 12,
+                      _buildCompactHeader(),
+                      const SizedBox(height: 12),
+                      _SectionCard(
+                        title: 'Schedule',
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: generatedSlots.isEmpty
+                                  ? null
+                                  : _openExpandedSchedule,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: uiBorder.withOpacity(0.9),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.open_in_full_rounded,
+                                      size: 16,
+                                      color: primaryBlue,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Expand',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: primaryBlue,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: () => setState(() => filtersExpanded = !filtersExpanded),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: uiBorder.withOpacity(0.9),
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.tune_rounded,
-                                size: 16,
-                                color: primaryBlue,
+                            const SizedBox(width: 8),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () => setState(
+                                () => filtersExpanded = !filtersExpanded,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                filtersExpanded ? 'Hide filters' : 'Filters',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryBlue,
-                                  fontSize: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: uiBorder.withOpacity(0.9),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.tune_rounded,
+                                      size: 16,
+                                      color: primaryBlue,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      filtersExpanded
+                                          ? 'Hide filters'
+                                          : 'Filters',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: primaryBlue,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
+                        child: generatedSlots.isEmpty
+                            ? const Text(
+                                'No available slots found.\nAsk your teacher to set availability for this course.',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (filtersExpanded) ...[
+                                    _buildFiltersInline(),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  _buildTimetable(generatedSlots),
+                                  const SizedBox(height: 96),
+                                ],
+                              ),
                       ),
+                      if (booking || refreshing)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 14),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
                     ],
                   ),
-                  child: generatedSlots.isEmpty
-                      ? const Text(
-                    'No available slots found.\nAsk your teacher to set availability for this course.',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  )
-                      : Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      if (filtersExpanded) ...[
-                        _buildFiltersInline(),
-                        const SizedBox(height: 12),
-                      ],
-                      _buildTimetable(generatedSlots),
-                      const SizedBox(height: 96),
-                    ],
-                  ),
-                ),
-                if (booking || refreshing)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 14),
-                    child: Center(
-                        child: CircularProgressIndicator()),
-                  ),
-              ],
-            ),
           ),
           if (busy)
             Positioned.fill(
@@ -3240,7 +3292,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   child: Container(
                     width: 220,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 18),
+                      horizontal: 18,
+                      vertical: 18,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
@@ -3256,7 +3310,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          progressLabel.isEmpty ? 'Please wait...' : progressLabel,
+                          progressLabel.isEmpty
+                              ? 'Please wait...'
+                              : progressLabel,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
@@ -3298,7 +3354,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
     final wd = days[d.weekday - 1];
     final mo = months[d.month - 1];
@@ -3412,8 +3468,8 @@ class _MyBooking {
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.title,
-    required this.child,
     this.subtitle,
+    required this.child,
     this.trailing,
   });
 

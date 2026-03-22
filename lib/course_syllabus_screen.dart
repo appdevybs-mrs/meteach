@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'shared/human_error.dart';
 
 /// ----------------------------
 /// Course Syllabus Screen
@@ -136,8 +137,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<String> _loadCourseFolderName() async {
     final courseMap = await _loadCourseMeta();
     final courseCode = (courseMap['course_code'] ?? '').toString().trim();
-    final courseTitle =
-    (courseMap['title'] ?? widget.courseTitle).toString().trim();
+    final courseTitle = (courseMap['title'] ?? widget.courseTitle)
+        .toString()
+        .trim();
 
     return _SyllabusServerStorage.buildCourseFolderName(
       courseCode: courseCode,
@@ -169,10 +171,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'duration': courseDuration,
         'updatedAt': ServerValue.timestamp,
         'units': _units
-            .map((u) => u.toMap(
-          includeRecordedExtras: _isRecordedVariant,
-          includeOnlineExtras: !_isRecordedVariant,
-        ))
+            .map(
+              (u) => u.toMap(
+                includeRecordedExtras: _isRecordedVariant,
+                includeOnlineExtras: !_isRecordedVariant,
+              ),
+            )
             .toList(),
       };
 
@@ -186,13 +190,15 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           .set(true);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Syllabus saved ✅')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Syllabus saved ✅')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not save changes.')),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -221,12 +227,14 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     final stored = session.serverFolderPath.trim();
     if (stored.isNotEmpty) return stored;
 
-    final fromVideo =
-    _SyllabusServerStorage.extractFolderPathFromUrl(session.videoUrl);
+    final fromVideo = _SyllabusServerStorage.extractFolderPathFromUrl(
+      session.videoUrl,
+    );
     if (fromVideo.isNotEmpty) return fromVideo;
 
-    final fromMaterials =
-    _SyllabusServerStorage.extractFolderPathFromUrl(session.materialsUrl);
+    final fromMaterials = _SyllabusServerStorage.extractFolderPathFromUrl(
+      session.materialsUrl,
+    );
     if (fromMaterials.isNotEmpty) return fromMaterials;
 
     return '';
@@ -313,7 +321,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not delete item.')),
+        ),
       );
     }
   }
@@ -332,8 +342,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   // ----------------------------
 
   Future<void> _addSession(int unitIndex) async {
-    final courseFolderName =
-    _isRecordedVariant ? await _loadCourseFolderName() : '';
+    final courseFolderName = _isRecordedVariant
+        ? await _loadCourseFolderName()
+        : '';
 
     final res = await showModalBottomSheet<_SessionDraft>(
       context: context,
@@ -387,8 +398,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
   Future<void> _editSession(int unitIndex, int sessionIndex) async {
     final unit = _units[unitIndex];
     final s = unit.sessions[sessionIndex];
-    final courseFolderName =
-    _isRecordedVariant ? await _loadCourseFolderName() : '';
+    final courseFolderName = _isRecordedVariant
+        ? await _loadCourseFolderName()
+        : '';
 
     final res = await showModalBottomSheet<_SessionDraft>(
       context: context,
@@ -397,8 +409,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         title: 'Edit Session',
         isRecorded: _isRecordedVariant,
         courseFolderName: courseFolderName,
-        suggestedSessionNumber:
-        s.sessionNumber > 0 ? s.sessionNumber : (sessionIndex + 1),
+        suggestedSessionNumber: s.sessionNumber > 0
+            ? s.sessionNumber
+            : (sessionIndex + 1),
         initial: _SessionDraft(
           title: s.title,
           skillType: s.skillType,
@@ -464,7 +477,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not delete item.')),
+        ),
       );
     }
   }
@@ -531,10 +546,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               onPressed: (_saving || _loading) ? null : _saveSyllabus,
               icon: _saving
                   ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.save),
               label: Text(_saving ? 'Saving…' : 'Save'),
             ),
@@ -549,46 +564,43 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _units.isEmpty
-          ? _EmptyState(
-        onAddUnit: _addUnit,
-        courseTitle: widget.courseTitle,
-      )
+          ? _EmptyState(onAddUnit: _addUnit, courseTitle: widget.courseTitle)
           : Column(
-        children: [
-          _HeaderStats(units: _units.length, sessions: _totalSessions),
-          Expanded(
-            child: ReorderableListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-              itemCount: _units.length,
-              onReorder: (oldIndex, newIndex) {
-                if (newIndex > oldIndex) newIndex -= 1;
-                _moveUnit(oldIndex, newIndex);
-              },
-              itemBuilder: (context, unitIndex) {
-                final unit = _units[unitIndex];
-                return _UnitCard(
-                  key: ValueKey(unit.id),
-                  unitNumber: unitIndex + 1,
-                  unit: unit,
-                  isExpanded: _isExpanded(unit.id),
-                  onToggleExpanded: () => _toggleExpanded(unit.id),
-                  onEdit: () => _editUnit(unitIndex),
-                  onDelete: () => _deleteUnit(unitIndex),
-                  onAddSession: () => _addSession(unitIndex),
-                  onReorderSession: (oldI, newI) {
-                    if (newI > oldI) newI -= 1;
-                    _moveSession(unitIndex, oldI, newI);
-                  },
-                  onEditSession: (sessionIndex) =>
-                      _editSession(unitIndex, sessionIndex),
-                  onDeleteSession: (sessionIndex) =>
-                      _deleteSession(unitIndex, sessionIndex),
-                );
-              },
+              children: [
+                _HeaderStats(units: _units.length, sessions: _totalSessions),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                    itemCount: _units.length,
+                    onReorder: (oldIndex, newIndex) {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      _moveUnit(oldIndex, newIndex);
+                    },
+                    itemBuilder: (context, unitIndex) {
+                      final unit = _units[unitIndex];
+                      return _UnitCard(
+                        key: ValueKey(unit.id),
+                        unitNumber: unitIndex + 1,
+                        unit: unit,
+                        isExpanded: _isExpanded(unit.id),
+                        onToggleExpanded: () => _toggleExpanded(unit.id),
+                        onEdit: () => _editUnit(unitIndex),
+                        onDelete: () => _deleteUnit(unitIndex),
+                        onAddSession: () => _addSession(unitIndex),
+                        onReorderSession: (oldI, newI) {
+                          if (newI > oldI) newI -= 1;
+                          _moveSession(unitIndex, oldI, newI);
+                        },
+                        onEditSession: (sessionIndex) =>
+                            _editSession(unitIndex, sessionIndex),
+                        onDeleteSession: (sessionIndex) =>
+                            _deleteSession(unitIndex, sessionIndex),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -599,25 +611,25 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     bool danger = false,
   }) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: danger ? Colors.red : null,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmText),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: danger ? Colors.red : null,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(confirmText),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
@@ -752,11 +764,7 @@ class _SyllabusServerStorage {
       }
 
       req.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
       );
     }
 
@@ -790,11 +798,7 @@ class _SyllabusServerStorage {
   }) async {
     final r = await http.post(
       Uri.parse(deleteUrl),
-      body: {
-        'key': sha1(secret),
-        'root': root,
-        'path': path,
-      },
+      body: {'key': sha1(secret), 'root': root, 'path': path},
     );
 
     final raw = r.body.trim();
@@ -884,8 +888,11 @@ class _EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.menu_book_outlined,
-                  size: 42, color: Color(0xFF1A2B48)),
+              const Icon(
+                Icons.menu_book_outlined,
+                size: 42,
+                color: Color(0xFF1A2B48),
+              ),
               const SizedBox(height: 10),
               const Text(
                 'No syllabus yet',
@@ -943,8 +950,9 @@ class _UnitCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseTitle =
-    unit.title.trim().isNotEmpty ? unit.title.trim() : unit.description.trim();
+    final baseTitle = unit.title.trim().isNotEmpty
+        ? unit.title.trim()
+        : unit.description.trim();
 
     final title = unit.otherTitle.trim().isEmpty
         ? baseTitle
@@ -984,8 +992,9 @@ class _UnitCard extends StatelessWidget {
                   IconButton(
                     tooltip: isExpanded ? 'Collapse' : 'Expand',
                     onPressed: onToggleExpanded,
-                    icon:
-                    Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                    icon: Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                    ),
                   ),
                   PopupMenuButton<String>(
                     onSelected: (v) {
@@ -995,7 +1004,10 @@ class _UnitCard extends StatelessWidget {
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'edit', child: Text('Edit unit')),
                       PopupMenuDivider(),
-                      PopupMenuItem(value: 'delete', child: Text('Delete unit')),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete unit'),
+                      ),
                     ],
                   ),
                 ],
@@ -1180,9 +1192,13 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900, fontSize: 16)),
+                Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: titleC,
@@ -1192,7 +1208,7 @@ class _UnitEditorSheetState extends State<_UnitEditorSheet> {
                     filled: true,
                   ),
                   validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -1322,8 +1338,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
   bool get _hasInitialRecordedAssets =>
       widget.initial.serverFolderPath.trim().isNotEmpty ||
-          widget.initial.videoUrl.trim().isNotEmpty ||
-          widget.initial.materialsUrl.trim().isNotEmpty;
+      widget.initial.videoUrl.trim().isNotEmpty ||
+      widget.initial.materialsUrl.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -1332,8 +1348,9 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     objectiveC = TextEditingController(text: widget.initial.objective);
     contentC = TextEditingController(text: widget.initial.content);
     homeworkC = TextEditingController(text: widget.initial.homework);
-    durationC =
-        TextEditingController(text: widget.initial.durationMinutes.toString());
+    durationC = TextEditingController(
+      text: widget.initial.durationMinutes.toString(),
+    );
     videoUrlC = TextEditingController(text: widget.initial.videoUrl);
     videoThumbC = TextEditingController(text: widget.initial.videoThumbnailUrl);
     materialsUrlC = TextEditingController(text: widget.initial.materialsUrl);
@@ -1365,31 +1382,30 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() => _inlineError = null);
     }
   }
+
   Future<bool> _confirmClearAsset({
     required String title,
     required String message,
     required String confirmText,
   }) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmText),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(confirmText),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
@@ -1404,13 +1420,15 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     _serverFolderPath = '${widget.courseFolderName}/$sessionFolder';
     return _serverFolderPath;
   }
+
   Future<void> _clearVideoOnly() async {
-    if (videoUrlC.text.trim().isEmpty && videoThumbC.text.trim().isEmpty) return;
+    if (videoUrlC.text.trim().isEmpty && videoThumbC.text.trim().isEmpty)
+      return;
 
     final ok = await _confirmClearAsset(
       title: 'Remove video?',
       message:
-      'This will remove the video from this session. Learners will no longer see the video button.',
+          'This will remove the video from this session. Learners will no longer see the video button.',
       confirmText: 'Remove',
     );
 
@@ -1430,7 +1448,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     final ok = await _confirmClearAsset(
       title: 'Remove HTML?',
       message:
-      'This will remove the HTML materials from this session. Learners will no longer see the read button.',
+          'This will remove the HTML materials from this session. Learners will no longer see the read button.',
       confirmText: 'Remove',
     );
 
@@ -1442,30 +1460,32 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       _inlineError = null;
     });
   }
+
   Future<bool> _prepareRecordedReplacementIfNeeded() async {
     if (!widget.isRecorded) return true;
     if (!_hasInitialRecordedAssets) return true;
     if (_assetsResetForReplacement) return true;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Replace recorded files?'),
-        content: const Text(
-          'Replacing recorded files will delete the old video and HTML for this session first. You will need to upload both files again.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Replace recorded files?'),
+            content: const Text(
+              'Replacing recorded files will delete the old video and HTML for this session first. You will need to upload both files again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Continue'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return false;
@@ -1609,9 +1629,13 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900, fontSize: 16)),
+                Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
                 if (_inlineError != null) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -1643,15 +1667,16 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                     filled: true,
                   ),
                   validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
                   onChanged: (_) => _clearInlineError(),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<SkillType>(
-                  value: _skill,
+                  initialValue: _skill,
                   items: SkillType.values
-                      .map((s) =>
-                      DropdownMenuItem(value: s, child: Text(s.label)))
+                      .map(
+                        (s) => DropdownMenuItem(value: s, child: Text(s.label)),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _skill = v ?? _skill),
                   decoration: const InputDecoration(
@@ -1666,7 +1691,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                   decoration: const InputDecoration(
                     labelText: 'Lesson objective *',
                     hintText:
-                    'By the end of this session, students will be able to…',
+                        'By the end of this session, students will be able to…',
                     filled: true,
                   ),
                   validator: (v) => (v == null || v.trim().isEmpty)
@@ -1699,7 +1724,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                   maxLines: 6,
                   decoration: const InputDecoration(
                     labelText: 'Lesson content',
-                    hintText: 'Optional: instructions, links, text, activities…',
+                    hintText:
+                        'Optional: instructions, links, text, activities…',
                     filled: true,
                   ),
                   onChanged: (_) => _clearInlineError(),
@@ -1758,18 +1784,19 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                               : _pickAndUploadVideo,
                           icon: _uploadingVideo
                               ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child:
-                            CircularProgressIndicator(strokeWidth: 2),
-                          )
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
                               : const Icon(Icons.video_file_rounded),
                           label: Text(
                             _uploadingVideo
                                 ? 'Uploading...'
                                 : (videoUrlC.text.trim().isEmpty
-                                ? 'Upload Video'
-                                : 'Replace Video'),
+                                      ? 'Upload Video'
+                                      : 'Replace Video'),
                           ),
                         ),
                         if (videoUrlC.text.trim().isNotEmpty) ...[
@@ -1812,18 +1839,19 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                               : _pickAndUploadHtml,
                           icon: _uploadingMaterials
                               ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child:
-                            CircularProgressIndicator(strokeWidth: 2),
-                          )
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
                               : const Icon(Icons.html_rounded),
                           label: Text(
                             _uploadingMaterials
                                 ? 'Uploading...'
                                 : (materialsUrlC.text.trim().isEmpty
-                                ? 'Upload HTML'
-                                : 'Replace HTML'),
+                                      ? 'Upload HTML'
+                                      : 'Replace HTML'),
                           ),
                         ),
                         if (materialsUrlC.text.trim().isNotEmpty) ...[
@@ -1876,8 +1904,6 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
                       if (!_form.currentState!.validate()) return;
 
-
-
                       Navigator.pop(
                         context,
                         _SessionDraft(
@@ -1887,13 +1913,16 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           content: contentC.text,
                           homework: homeworkC.text,
                           durationMinutes: int.parse(durationC.text.trim()),
-                          videoUrl:
-                          widget.isRecorded ? videoUrlC.text.trim() : '',
-                          videoThumbnailUrl:
-                          widget.isRecorded ? videoThumbC.text.trim() : '',
+                          videoUrl: widget.isRecorded
+                              ? videoUrlC.text.trim()
+                              : '',
+                          videoThumbnailUrl: widget.isRecorded
+                              ? videoThumbC.text.trim()
+                              : '',
                           materialsUrl: materialsUrlC.text.trim(),
-                          serverFolderPath:
-                          widget.isRecorded ? _serverFolderPath.trim() : '',
+                          serverFolderPath: widget.isRecorded
+                              ? _serverFolderPath.trim()
+                              : '',
                         ),
                       );
                     },
@@ -2012,10 +2041,12 @@ class SyllabusUnit {
       'description': description,
       'order': order,
       'sessions': sessions
-          .map((s) => s.toMap(
-        includeRecordedExtras: includeRecordedExtras,
-        includeOnlineExtras: includeOnlineExtras,
-      ))
+          .map(
+            (s) => s.toMap(
+              includeRecordedExtras: includeRecordedExtras,
+              includeOnlineExtras: includeOnlineExtras,
+            ),
+          )
           .toList(),
     };
   }
@@ -2048,7 +2079,9 @@ class SyllabusUnit {
     }
 
     final rawSessions = asListOfMaps(m['sessions']);
-    final sessions = rawSessions.map((x) => SyllabusSession.fromMap(x)).toList();
+    final sessions = rawSessions
+        .map((x) => SyllabusSession.fromMap(x))
+        .toList();
 
     return SyllabusUnit(
       id: (m['id'] ?? '').toString(),

@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 
 class AdminContractScreen extends StatefulWidget {
   const AdminContractScreen({super.key});
@@ -22,8 +23,10 @@ class _AdminContractScreenState extends State<AdminContractScreen>
   late final TabController _tab;
 
   // RTDB roots (your structure)
-  DatabaseReference get _teacherRoot => FirebaseDatabase.instance.ref('contract/teacher');
-  DatabaseReference get _learnerRoot => FirebaseDatabase.instance.ref('contract/learner');
+  DatabaseReference get _teacherRoot =>
+      FirebaseDatabase.instance.ref('contract/teacher');
+  DatabaseReference get _learnerRoot =>
+      FirebaseDatabase.instance.ref('contract/learner');
 
   bool _ensuring = true;
 
@@ -60,7 +63,11 @@ class _AdminContractScreenState extends State<AdminContractScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('RTDB init failed: $e')),
+          SnackBar(
+            content: Text(
+              toHumanError(e, fallback: 'Could not initialize contract data.'),
+            ),
+          ),
         );
       }
     } finally {
@@ -68,7 +75,8 @@ class _AdminContractScreenState extends State<AdminContractScreen>
     }
   }
 
-  DatabaseReference _activeRoot() => _tab.index == 0 ? _teacherRoot : _learnerRoot;
+  DatabaseReference _activeRoot() =>
+      _tab.index == 0 ? _teacherRoot : _learnerRoot;
   String _activeLabel() => _tab.index == 0 ? 'Teachers' : 'Learners';
 
   // ---------- Helpers ----------
@@ -131,9 +139,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
           .toList();
 
       if (t.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Title is required')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Title is required')));
         return;
       }
       if (items.isEmpty) {
@@ -151,11 +159,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
 
         if (existingId == null) {
           final newRef = root.push();
-          await newRef.set({
-            'title': t,
-            'items': items,
-            'updatedAt': now,
-          });
+          await newRef.set({'title': t, 'items': items, 'updatedAt': now});
         } else {
           await root.child(existingId).update({
             'title': t,
@@ -176,7 +180,11 @@ class _AdminContractScreenState extends State<AdminContractScreen>
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
+          SnackBar(
+            content: Text(
+              toHumanError(e, fallback: 'Could not save contract settings.'),
+            ),
+          ),
         );
       } finally {
         saving = false;
@@ -208,10 +216,14 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                       decoration: BoxDecoration(
                         color: primaryBlue.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                        border: Border.all(
+                          color: primaryBlue.withOpacity(0.12),
+                        ),
                       ),
                       child: Icon(
-                        existingId == null ? Icons.add_rounded : Icons.edit_rounded,
+                        existingId == null
+                            ? Icons.add_rounded
+                            : Icons.edit_rounded,
                         color: primaryBlue,
                         size: 20,
                       ),
@@ -238,7 +250,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
                     labelText: 'Contract title',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -251,7 +265,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     labelText: 'Items (one per line)',
                     alignLabelWithHint: true,
                     hintText: 'Example:\nRule 1\nRule 2\nRule 3',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -299,7 +315,11 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                           ),
                         ),
                         onPressed: save,
-                        icon: Icon(existingId == null ? Icons.add_rounded : Icons.save_rounded),
+                        icon: Icon(
+                          existingId == null
+                              ? Icons.add_rounded
+                              : Icons.save_rounded,
+                        ),
                         label: Text(existingId == null ? 'Add' : 'Save'),
                       ),
                     ),
@@ -317,23 +337,23 @@ class _AdminContractScreenState extends State<AdminContractScreen>
 
   Future<bool> _confirmDelete(String title) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete contract?'),
-        content: Text('This will permanently delete:\n\n"$title"'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete contract?'),
+            content: Text('This will permanently delete:\n\n"$title"'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
@@ -377,7 +397,10 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     ),
                     child: const Icon(Icons.edit_rounded, color: primaryBlue),
                   ),
-                  title: const Text('Edit', style: TextStyle(fontWeight: FontWeight.w900)),
+                  title: const Text(
+                    'Edit',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                   subtitle: const Text('Update title or items'),
                   onTap: () async {
                     Navigator.pop(context);
@@ -399,9 +422,15 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: Colors.red.withOpacity(0.12)),
                     ),
-                    child: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.red,
+                    ),
                   ),
-                  title: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w900)),
+                  title: const Text(
+                    'Delete',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                   subtitle: const Text('Remove this contract'),
                   onTap: () async {
                     Navigator.pop(context);
@@ -417,7 +446,11 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     } catch (e) {
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Delete failed: $e')),
+                        SnackBar(
+                          content: Text(
+                            toHumanError(e, fallback: 'Could not delete item.'),
+                          ),
+                        ),
                       );
                     }
                   },
@@ -550,24 +583,24 @@ class _AdminContractScreenState extends State<AdminContractScreen>
       body: _ensuring
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
-        controller: _tab,
-        children: [
-          _ContractsTab(
-            root: _teacherRoot,
-            kindLabel: 'Teachers',
-            emptyIcon: Icons.badge_rounded,
-            openActions: _openContractActionsSheet,
-            emptyState: _emptyState,
-          ),
-          _ContractsTab(
-            root: _learnerRoot,
-            kindLabel: 'Learners',
-            emptyIcon: Icons.school_rounded,
-            openActions: _openContractActionsSheet,
-            emptyState: _emptyState,
-          ),
-        ],
-      ),
+              controller: _tab,
+              children: [
+                _ContractsTab(
+                  root: _teacherRoot,
+                  kindLabel: 'Teachers',
+                  emptyIcon: Icons.badge_rounded,
+                  openActions: _openContractActionsSheet,
+                  emptyState: _emptyState,
+                ),
+                _ContractsTab(
+                  root: _learnerRoot,
+                  kindLabel: 'Learners',
+                  emptyIcon: Icons.school_rounded,
+                  openActions: _openContractActionsSheet,
+                  emptyState: _emptyState,
+                ),
+              ],
+            ),
     );
   }
 }
@@ -593,18 +626,20 @@ class _ContractsTab extends StatefulWidget {
   final IconData emptyIcon;
 
   final void Function({
-  required DatabaseReference root,
-  required String id,
-  required String title,
-  required List<String> items,
-  required String kindLabel,
-  }) openActions;
+    required DatabaseReference root,
+    required String id,
+    required String title,
+    required List<String> items,
+    required String kindLabel,
+  })
+  openActions;
 
   final Widget Function({
-  required IconData icon,
-  required String title,
-  required String subtitle,
-  }) emptyState;
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  })
+  emptyState;
 
   const _ContractsTab({
     required this.root,
@@ -624,7 +659,8 @@ class _ContractsTabState extends State<_ContractsTab>
   bool get wantKeepAlive => true;
 
   // ✅ create stream once per tab
-  late final Stream<DatabaseEvent> _stream = widget.root.onValue.asBroadcastStream();
+  late final Stream<DatabaseEvent> _stream = widget.root.onValue
+      .asBroadcastStream();
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const appBg = Color(0xFFF4F7F9);
@@ -661,7 +697,8 @@ class _ContractsTabState extends State<_ContractsTab>
       stream: _stream,
       builder: (context, snap) {
         // ✅ loader only on first connect
-        if (snap.connectionState == ConnectionState.waiting && snap.data == null) {
+        if (snap.connectionState == ConnectionState.waiting &&
+            snap.data == null) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -682,10 +719,19 @@ class _ContractsTabState extends State<_ContractsTab>
           final m = _asMap(raw);
           final title = (m['title'] ?? '').toString().trim();
           final items = _asStringList(m['items']);
-          final updatedAt = (m['updatedAt'] is num) ? (m['updatedAt'] as num).toInt() : 0;
+          final updatedAt = (m['updatedAt'] is num)
+              ? (m['updatedAt'] as num).toInt()
+              : 0;
           if (title.isEmpty) return;
 
-          entries.add(_ContractEntry(id: id, title: title, items: items, updatedAt: updatedAt));
+          entries.add(
+            _ContractEntry(
+              id: id,
+              title: title,
+              items: items,
+              updatedAt: updatedAt,
+            ),
+          );
         });
 
         entries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -693,7 +739,7 @@ class _ContractsTabState extends State<_ContractsTab>
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
           itemCount: entries.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, i) {
             final c = entries[i];
 
@@ -716,7 +762,7 @@ class _ContractsTabState extends State<_ContractsTab>
                       color: Colors.black.withOpacity(0.03),
                       blurRadius: 10,
                       offset: const Offset(0, 6),
-                    )
+                    ),
                   ],
                 ),
                 child: Padding(
@@ -730,9 +776,15 @@ class _ContractsTabState extends State<_ContractsTab>
                         decoration: BoxDecoration(
                           color: primaryBlue.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                          border: Border.all(
+                            color: primaryBlue.withOpacity(0.12),
+                          ),
                         ),
-                        child: const Icon(Icons.description_rounded, color: primaryBlue, size: 20),
+                        child: const Icon(
+                          Icons.description_rounded,
+                          color: primaryBlue,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -753,7 +805,10 @@ class _ContractsTabState extends State<_ContractsTab>
                             Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: appBg,
                                     borderRadius: BorderRadius.circular(999),

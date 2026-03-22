@@ -14,24 +14,24 @@ class MaterialWebViewScreen extends StatefulWidget {
     required this.title,
     required this.url,
     this.headers = const <String, String>{},
-  })  : htmlString = null,
-        assetPath = null;
+  }) : htmlString = null,
+       assetPath = null;
 
   const MaterialWebViewScreen.fromAsset({
     super.key,
     required this.title,
     required this.assetPath,
-  })  : url = null,
-        htmlString = null,
-        headers = const <String, String>{};
+  }) : url = null,
+       htmlString = null,
+       headers = const <String, String>{};
 
   const MaterialWebViewScreen.fromHtmlString({
     super.key,
     required this.title,
     required this.htmlString,
-  })  : url = null,
-        assetPath = null,
-        headers = const <String, String>{};
+  }) : url = null,
+       assetPath = null,
+       headers = const <String, String>{};
 
   final String title;
   final String? url;
@@ -133,10 +133,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
           return;
         }
 
-        final bool launched = await launchUrl(
-          uri,
-          webOnlyWindowName: '_self',
-        );
+        final bool launched = await launchUrl(uri, webOnlyWindowName: '_self');
 
         if (!mounted) return;
         setState(() {
@@ -259,7 +256,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
     if (controller.platform is AndroidWebViewController) {
       final AndroidWebViewController androidController =
-      controller.platform as AndroidWebViewController;
+          controller.platform as AndroidWebViewController;
 
       AndroidWebViewController.enableDebugging(true);
       androidController.setMediaPlaybackRequiresUserGesture(false);
@@ -594,7 +591,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
     final String safeState = state.replaceAll("'", "\\'");
 
-    final String script = '''
+    final String script =
+        '''
 (function () {
   try {
     var eventName = 'flutter-game-lifecycle';
@@ -688,10 +686,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     final Uri? uri = Uri.tryParse(widget.url!.trim());
     if (uri == null) return;
 
-    await launchUrl(
-      uri,
-      webOnlyWindowName: '_self',
-    );
+    await launchUrl(uri, webOnlyWindowName: '_self');
   }
 
   Widget _buildErrorState() {
@@ -717,10 +712,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               const SizedBox(height: 12),
               const Text(
                 'Could not open game',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 10),
               Text(
@@ -807,8 +799,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   }
 
   Widget _buildOverlayLoading() {
-    final double? progressValue =
-    (_progress <= 0 || _progress > 100) ? null : _progress / 100;
+    final double? progressValue = (_progress <= 0 || _progress > 100)
+        ? null
+        : _progress / 100;
 
     return IgnorePointer(
       child: Container(
@@ -856,8 +849,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       child: IgnorePointer(
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 180),
-          opacity:
-          _lastError == null && _isPageReady && _lastJsMessage != null
+          opacity: _lastError == null && _isPageReady && _lastJsMessage != null
               ? 0.14
               : 0,
           child: Container(

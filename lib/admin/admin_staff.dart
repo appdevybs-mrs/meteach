@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 import 'admin_teacher_reminders_screen.dart';
-import 'admin_teacher_mail_thread_screen.dart';
 import 'admin_teacher_mail_topics_screen.dart';
 
 class AdminStaffScreen extends StatefulWidget {
@@ -69,7 +69,9 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     // ✅ avoid using a context that is in the middle of dispose/pop
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
     });
   }
 
@@ -321,7 +323,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
         actions: [
           AnimatedBuilder(
             animation: _tab,
-            builder: (_, __) {
+            builder: (_, _) {
               final isUsersTab = _tab.index == 0;
               if (!isUsersTab) return const SizedBox.shrink();
               return IconButton(
@@ -414,7 +416,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
             onSearchChanged: (v) => setState(() => _search = v),
             onStatusFilterChanged: (_) {},
             onRoleFilterChanged: (_) {},
-            actionsBuilder: (_, __) => const [
+            actionsBuilder: (_, _) => const [
               PopupMenuItem(value: _RowAction.restore, child: Text('Restore')),
               PopupMenuDivider(),
               PopupMenuItem(
@@ -444,7 +446,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
             onSearchChanged: (v) => setState(() => _search = v),
             onStatusFilterChanged: (_) {},
             onRoleFilterChanged: (_) {},
-            actionsBuilder: (_, __) => const [
+            actionsBuilder: (_, _) => const [
               PopupMenuItem(value: _RowAction.restore, child: Text('Unblock')),
               PopupMenuDivider(),
               PopupMenuItem(
@@ -660,13 +662,13 @@ class _StaffListState extends State<_StaffList>
                   final canShowMailBadge =
                       meUid != null && u.role == StaffRole.teacher;
                   final threadId = canShowMailBadge
-                      ? _pairThreadId(meUid!, row.uid)
+                      ? _pairThreadId(meUid, row.uid)
                       : '';
 
                   final unreadRef = canShowMailBadge
                       ? _db
                             .ref('mail_index')
-                            .child(meUid!)
+                            .child(meUid)
                             .child(threadId)
                             .child('unreadCount')
                       : null;
@@ -1203,7 +1205,9 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   String get _teacherFullName =>
@@ -1988,7 +1992,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                 child: Column(
                   children: [
                     DropdownButtonFormField<StaffRole>(
-                      value: _role,
+                      initialValue: _role,
                       decoration: InputDecoration(
                         labelText: 'Role',
                         filled: true,
@@ -2058,7 +2062,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                     ],
 
                     DropdownButtonFormField<StaffStatus>(
-                      value: _status,
+                      initialValue: _status,
                       decoration: InputDecoration(
                         labelText: 'Status',
                         filled: true,
@@ -2619,7 +2623,7 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
                         _dot(),
                         _statInline('Classes', matchingClasses.toString()),
                         _dot(),
-                        _statInline('OvC', '${openClasses}/${closedClasses}'),
+                        _statInline('OvC', '$openClasses/$closedClasses'),
                         _dot(),
                         _statInline('Enr', totalEnrollments.toString()),
                       ],

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class TeacherWagesScreen extends StatefulWidget {
   const TeacherWagesScreen({super.key});
@@ -88,56 +89,54 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
     required BuildContext context,
     required String paymentId,
   }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: p.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Text(
-          'Confirm this wage?',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        content: Text(
-          'Only confirm if you really received the money from the admin.\nAfter confirming, you cannot undo it.',
-          style: TextStyle(
-            color: p.text.withOpacity(0.82),
-            fontWeight: FontWeight.w700,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            backgroundColor: p.cardBg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Text(
+              'Confirm this wage?',
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+            ),
+            content: Text(
+              'Only confirm if you really received the money from the admin.\nAfter confirming, you cannot undo it.',
               style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w800,
+                color: p.text.withOpacity(0.82),
+                fontWeight: FontWeight.w700,
+                height: 1.4,
               ),
             ),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'Confirm',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  'Confirm',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -152,9 +151,9 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final v = snap.value;
       if (v is! Map) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment not found.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Payment not found.')));
         return;
       }
 
@@ -185,9 +184,9 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final alreadyConfirmed = TeacherWagesScreen.asBool(m['teacherConfirmed']);
       if (alreadyConfirmed) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Already confirmed ✅')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Already confirmed ✅')));
         return;
       }
 
@@ -207,7 +206,11 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Confirm failed: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not confirm this wage item.'),
+          ),
+        ),
       );
     }
   }
@@ -255,18 +258,13 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             return Center(
               child: Text(
                 'Could not load wages.',
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
               ),
             );
           }
 
           if (!snap.hasData) {
-            return Center(
-              child: CircularProgressIndicator(color: p.accent),
-            );
+            return Center(child: CircularProgressIndicator(color: p.accent));
           }
 
           if (raw is! Map) {
@@ -283,10 +281,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             final teacherId = (m['teacherId'] ?? '').toString().trim();
             if (teacherId != myUid) return;
 
-            mine.add({
-              'paymentId': k.toString(),
-              ...m,
-            });
+            mine.add({'paymentId': k.toString(), ...m});
           });
 
           if (mine.isEmpty) {
@@ -297,9 +292,9 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
           }
 
           mine.sort(
-                (a, b) => TeacherWagesScreen.asInt(b['paidAt']).compareTo(
-              TeacherWagesScreen.asInt(a['paidAt']),
-            ),
+            (a, b) => TeacherWagesScreen.asInt(
+              b['paidAt'],
+            ).compareTo(TeacherWagesScreen.asInt(a['paidAt'])),
           );
 
           final Map<String, List<Map<String, dynamic>>> byMonth = {};
@@ -311,7 +306,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             byMonth[monthKey]!.add(payment);
           }
 
-          final monthKeys = byMonth.keys.toList()..sort((a, b) => b.compareTo(a));
+          final monthKeys = byMonth.keys.toList()
+            ..sort((a, b) => b.compareTo(a));
 
           int totalAll = 0;
           int paidByAdminAll = 0;
@@ -385,10 +381,7 @@ class _WagesHeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -482,8 +475,9 @@ class _HeroMiniStat extends StatelessWidget {
         border: Border.all(color: Colors.white.withOpacity(0.14)),
       ),
       child: Column(
-        crossAxisAlignment:
-        fullWidth ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        crossAxisAlignment: fullWidth
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
         children: [
           Text(
             value,
@@ -527,9 +521,9 @@ class _MonthSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [...payments]
       ..sort(
-            (a, b) => TeacherWagesScreen.asInt(b['paidAt']).compareTo(
-          TeacherWagesScreen.asInt(a['paidAt']),
-        ),
+        (a, b) => TeacherWagesScreen.asInt(
+          b['paidAt'],
+        ).compareTo(TeacherWagesScreen.asInt(a['paidAt'])),
       );
 
     int total = 0;
@@ -582,11 +576,7 @@ class _MonthSection extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _MonthPill(
-                palette: palette,
-                label: 'Total',
-                value: '$total DA',
-              ),
+              _MonthPill(palette: palette, label: 'Total', value: '$total DA'),
               _MonthPill(
                 palette: palette,
                 label: 'Paid',
@@ -672,8 +662,9 @@ class _TeacherPaymentRow extends StatelessWidget {
     final learnerName = (payment['learner_name'] ?? '').toString().trim();
     final serial = (payment['learner_serial'] ?? '').toString().trim();
 
-    final paidAt =
-    TeacherWagesScreen.fmtYmdFromMs(TeacherWagesScreen.asInt(payment['paidAt']));
+    final paidAt = TeacherWagesScreen.fmtYmdFromMs(
+      TeacherWagesScreen.asInt(payment['paidAt']),
+    );
     final startDate = (payment['startDate'] ?? '').toString().trim();
 
     final amount = TeacherWagesScreen.asInt(payment['amount']);
@@ -779,8 +770,10 @@ class _TeacherPaymentRow extends StatelessWidget {
             child: Opacity(
               opacity: canTap ? 1.0 : 0.82,
               child: Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: chipBg,
                   borderRadius: BorderRadius.circular(999),
@@ -811,10 +804,7 @@ class _TeacherPaymentRow extends StatelessWidget {
 }
 
 class _EmptyWagesState extends StatelessWidget {
-  const _EmptyWagesState({
-    required this.palette,
-    required this.text,
-  });
+  const _EmptyWagesState({required this.palette, required this.text});
 
   final AppPalette palette;
   final String text;

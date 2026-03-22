@@ -26,14 +26,14 @@ class _AuthGateState extends State<AuthGate> {
   bool _sessionStarted = false;
   String? _sessionUid;
 
-  void log(String msg) => debugPrint('FIKRA_AUTH | $msg');
+  void log(String msg) {}
 
   String normRole(String? role) {
     final s = (role ?? '').toLowerCase();
-    return s.replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '').trim();
+    return s
+        .replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '')
+        .trim();
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +43,9 @@ class _AuthGateState extends State<AuthGate> {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnap) {
         if (authSnap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         final user = authSnap.data;
@@ -54,7 +56,6 @@ class _AuthGateState extends State<AuthGate> {
           return widget.signedOutHome;
         }
 
-
         final uid = user.uid;
 
         final usersRef = FirebaseDatabase.instance.ref('users/$uid');
@@ -63,12 +64,16 @@ class _AuthGateState extends State<AuthGate> {
           stream: usersRef.onValue,
           builder: (context, userEvent) {
             if (userEvent.connectionState == ConnectionState.waiting) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             }
 
             if (userEvent.hasError) {
               return Scaffold(
-                body: Center(child: Text('User stream error:\n${userEvent.error}')),
+                body: Center(
+                  child: Text('User stream error:\n${userEvent.error}'),
+                ),
               );
             }
 
@@ -77,14 +82,20 @@ class _AuthGateState extends State<AuthGate> {
 
             // If /users/{uid} missing => check users_deleted/users_blocked
             if (!existsInUsers) {
-              final delRef = FirebaseDatabase.instance.ref('users_deleted/$uid');
-              final blkRef = FirebaseDatabase.instance.ref('users_blocked/$uid');
+              final delRef = FirebaseDatabase.instance.ref(
+                'users_deleted/$uid',
+              );
+              final blkRef = FirebaseDatabase.instance.ref(
+                'users_blocked/$uid',
+              );
 
               return FutureBuilder<List<DataSnapshot>>(
                 future: Future.wait([delRef.get(), blkRef.get()]),
                 builder: (context, checks) {
                   if (!checks.hasData) {
-                    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                    return const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    );
                   }
 
                   final delSnap = checks.data![0];
@@ -93,12 +104,16 @@ class _AuthGateState extends State<AuthGate> {
                   if (delSnap.exists) {
                     // Read flags
                     final raw = delSnap.value;
-                    final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+                    final m = raw is Map
+                        ? raw.map((k, v) => MapEntry(k.toString(), v))
+                        : <String, dynamic>{};
 
                     final deleteAuth = (m['deleteAuth'] == true);
                     final selfDeleteDone = (m['selfDeleteDone'] == true);
 
-                    log('🚫 Found in users_deleted | deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone');
+                    log(
+                      '🚫 Found in users_deleted | deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone',
+                    );
 
                     return DeletedActionScreen(
                       uid: uid,
@@ -110,12 +125,16 @@ class _AuthGateState extends State<AuthGate> {
                   if (blkSnap.exists) {
                     // Optional flags for blocked too
                     final raw = blkSnap.value;
-                    final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+                    final m = raw is Map
+                        ? raw.map((k, v) => MapEntry(k.toString(), v))
+                        : <String, dynamic>{};
 
                     final deleteAuth = (m['deleteAuth'] == true);
                     final selfDeleteDone = (m['selfDeleteDone'] == true);
 
-                    log('⛔ Found in users_blocked | deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone');
+                    log(
+                      '⛔ Found in users_blocked | deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone',
+                    );
 
                     return BlockedActionScreen(
                       uid: uid,
@@ -135,11 +154,15 @@ class _AuthGateState extends State<AuthGate> {
 
             // Exists in /users => parse role/status
             final raw = snap!.value;
-            final m = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+            final m = raw is Map
+                ? raw.map((k, v) => MapEntry(k.toString(), v))
+                : <String, dynamic>{};
 
             final status = (m['status'] ?? '').toString().toLowerCase().trim();
             // ✅ NEW: Always check if user is in users_deleted FIRST
-            final delRefEarly = FirebaseDatabase.instance.ref('users_deleted/$uid');
+            final delRefEarly = FirebaseDatabase.instance.ref(
+              'users_deleted/$uid',
+            );
 
             return FutureBuilder<DataSnapshot>(
               future: delRefEarly.get(),
@@ -170,76 +193,83 @@ class _AuthGateState extends State<AuthGate> {
 
                 final role = normRole(m['role']?.toString());
 
-            log('ROLE=[$role] STATUS=[$status]');
+                log('ROLE=[$role] STATUS=[$status]');
 
-            // Paused => separate screen
-            if (status == 'paused') {
-              return const PausedActionScreen();
-            }
+                // Paused => separate screen
+                if (status == 'paused') {
+                  return const PausedActionScreen();
+                }
 
-// ✅ Blocked (when /users/$uid still exists)
-            if (status == 'blocked') {
-              final blkRef = FirebaseDatabase.instance.ref('users_blocked/$uid');
-
-              return FutureBuilder<DataSnapshot>(
-                future: blkRef.get(),
-                builder: (context, snap2) {
-                  if (!snap2.hasData) {
-                    return const Scaffold(body: Center(child: CircularProgressIndicator()));
-                  }
-
-                  final blkSnap = snap2.data!;
-                  final raw2 = blkSnap.value;
-                  final mm = raw2 is Map
-                      ? raw2.map((k, v) => MapEntry(k.toString(), v))
-                      : <String, dynamic>{};
-
-                  final deleteAuth = (mm['deleteAuth'] == true);
-                  final selfDeleteDone = (mm['selfDeleteDone'] == true);
-
-                  log('⛔ status=blocked | users_blocked exists=${blkSnap.exists} deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone');
-
-                  return BlockedActionScreen(
-                    uid: uid,
-                    deleteAuth: deleteAuth,
-                    selfDeleteDone: selfDeleteDone,
+                // ✅ Blocked (when /users/$uid still exists)
+                if (status == 'blocked') {
+                  final blkRef = FirebaseDatabase.instance.ref(
+                    'users_blocked/$uid',
                   );
-                },
-              );
-            }
 
+                  return FutureBuilder<DataSnapshot>(
+                    future: blkRef.get(),
+                    builder: (context, snap2) {
+                      if (!snap2.hasData) {
+                        return const Scaffold(
+                          body: Center(child: CircularProgressIndicator()),
+                        );
+                      }
 
-            // Normal routing
+                      final blkSnap = snap2.data!;
+                      final raw2 = blkSnap.value;
+                      final mm = raw2 is Map
+                          ? raw2.map((k, v) => MapEntry(k.toString(), v))
+                          : <String, dynamic>{};
 
-// ✅ single-device session: start ONCE per uid
-            if (!_sessionStarted || _sessionUid != uid) {
-              _sessionStarted = true;
-              _sessionUid = uid;
+                      final deleteAuth = (mm['deleteAuth'] == true);
+                      final selfDeleteDone = (mm['selfDeleteDone'] == true);
 
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                SessionManager.createNewSessionAndStartListening();
-              });
-            }
+                      log(
+                        '⛔ status=blocked | users_blocked exists=${blkSnap.exists} deleteAuth=$deleteAuth selfDeleteDone=$selfDeleteDone',
+                      );
 
+                      return BlockedActionScreen(
+                        uid: uid,
+                        deleteAuth: deleteAuth,
+                        selfDeleteDone: selfDeleteDone,
+                      );
+                    },
+                  );
+                }
 
-            TopicService.subscribeForRole(role: role);
-            FCMService.syncTokenAfterLogin();
+                // Normal routing
 
+                // ✅ single-device session: start ONCE per uid
+                if (!_sessionStarted || _sessionUid != uid) {
+                  _sessionStarted = true;
+                  _sessionUid = uid;
 
-            if (role == 'admin') return const AdminHome();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    SessionManager.createNewSessionAndStartListening();
+                  });
+                }
 
-            if (role == 'teacher' || role == 'teachers' || role == 'teacher(s)' || role == 'Teacher') {
-              return const TeacherHomeScreen();
-            }
+                TopicService.subscribeForRole(role: role);
+                FCMService.syncTokenAfterLogin();
 
-            if (role == 'learner' || role == 'learners' || role == 'learner(s)') {
-              return const LearnerHome();
-            }
+                if (role == 'admin') return const AdminHome();
 
-            return NotAuthorized(role: role);
+                if (role == 'teacher' ||
+                    role == 'teachers' ||
+                    role == 'teacher(s)' ||
+                    role == 'Teacher') {
+                  return const TeacherHomeScreen();
+                }
+
+                if (role == 'learner' ||
+                    role == 'learners' ||
+                    role == 'learner(s)') {
+                  return const LearnerHome();
+                }
+
+                return NotAuthorized(role: role);
               },
             );
-
           },
         );
       },

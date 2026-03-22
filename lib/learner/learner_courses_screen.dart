@@ -3,14 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 import 'learner_course_detail_screen.dart';
 import 'recorded_course_study_screen.dart';
+
 class LearnerCoursesScreen extends StatefulWidget {
-  const LearnerCoursesScreen({
-    super.key,
-    this.initialCourseKey,
-  });
+  const LearnerCoursesScreen({super.key, this.initialCourseKey});
 
   final String? initialCourseKey;
 
@@ -95,7 +94,9 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
       int numVal(dynamic v) =>
           (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
-      list.sort((a, b) => numVal(b['assignedAt']).compareTo(numVal(a['assignedAt'])));
+      list.sort(
+        (a, b) => numVal(b['assignedAt']).compareTo(numVal(a['assignedAt'])),
+      );
 
       setState(() {
         _courses = list;
@@ -105,7 +106,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       _openInitialCourseIfNeeded();
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -127,7 +128,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     if (!mounted) return;
 
     final match = _courses.cast<Map<String, dynamic>?>().firstWhere(
-          (course) => (course?['courseKey'] ?? '').toString() == targetKey,
+      (course) => (course?['courseKey'] ?? '').toString() == targetKey,
       orElse: () => null,
     );
 
@@ -145,17 +146,18 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         MaterialPageRoute(
           builder: (_) => variantKey == 'recorded'
               ? RecordedCourseStudyScreen(
-            courseKey: targetKey,
-            courseData: match,
-          )
+                  courseKey: targetKey,
+                  courseData: match,
+                )
               : LearnerCourseDetailScreen(
-            courseKey: targetKey,
-            courseData: match,
-          ),
+                  courseKey: targetKey,
+                  courseData: match,
+                ),
         ),
       );
     });
   }
+
   String _courseIdOf(Map<String, dynamic> course) {
     final cls = (course['class'] is Map)
         ? Map<String, dynamic>.from(course['class'] as Map)
@@ -197,58 +199,53 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     return key == 'flexible' || key == 'private' || key == 'recorded';
   }
 
-  ({
-  Color bg,
-  Color border,
-  Color fg,
-  IconData icon,
-  String label,
-  }) _variantStyle(String variantKey) {
+  ({Color bg, Color border, Color fg, IconData icon, String label})
+  _variantStyle(String variantKey) {
     switch (variantKey) {
       case 'flexible':
         return (
-        bg: const Color(0xFFEAF4FF),
-        border: const Color(0xFFB8D6FF),
-        fg: const Color(0xFF2563EB),
-        icon: Icons.swap_horiz_rounded,
-        label: 'FLEXIBLE',
+          bg: const Color(0xFFEAF4FF),
+          border: const Color(0xFFB8D6FF),
+          fg: const Color(0xFF2563EB),
+          icon: Icons.swap_horiz_rounded,
+          label: 'FLEXIBLE',
         );
 
       case 'inclass':
         return (
-        bg: const Color(0xFFEAF7EE),
-        border: const Color(0xFFBFE3C8),
-        fg: const Color(0xFF1E8E3E),
-        icon: Icons.groups_rounded,
-        label: 'IN-CLASS',
+          bg: const Color(0xFFEAF7EE),
+          border: const Color(0xFFBFE3C8),
+          fg: const Color(0xFF1E8E3E),
+          icon: Icons.groups_rounded,
+          label: 'IN-CLASS',
         );
 
       case 'private':
         return (
-        bg: const Color(0xFFFFF4E8),
-        border: const Color(0xFFF7D3A8),
-        fg: const Color(0xFFF98D28),
-        icon: Icons.person_rounded,
-        label: 'PRIVATE',
+          bg: const Color(0xFFFFF4E8),
+          border: const Color(0xFFF7D3A8),
+          fg: const Color(0xFFF98D28),
+          icon: Icons.person_rounded,
+          label: 'PRIVATE',
         );
 
       case 'recorded':
         return (
-        bg: const Color(0xFFF3EEFF),
-        border: const Color(0xFFD8C8FF),
-        fg: const Color(0xFF7C3AED),
-        icon: Icons.play_circle_rounded,
-        label: 'RECORDED',
+          bg: const Color(0xFFF3EEFF),
+          border: const Color(0xFFD8C8FF),
+          fg: const Color(0xFF7C3AED),
+          icon: Icons.play_circle_rounded,
+          label: 'RECORDED',
         );
 
       default:
         final p = palette;
         return (
-        bg: p.soft,
-        border: p.border.withOpacity(0.85),
-        fg: p.primary,
-        icon: Icons.school_rounded,
-        label: 'COURSE',
+          bg: p.soft,
+          border: p.border.withOpacity(0.85),
+          fg: p.primary,
+          icon: Icons.school_rounded,
+          label: 'COURSE',
         );
     }
   }
@@ -271,6 +268,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
     return {'total': total, 'present': present};
   }
+
   Future<Map<String, int>> _progressCounts(Map<String, dynamic> course) async {
     final courseId = _courseIdOf(course);
     final variantKey = _variantKeyOf(course);
@@ -284,8 +282,10 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
     if (variantKey == 'recorded') {
       try {
-        final syllabusSnap =
-        await _syllabiRef.child(courseId).child('recorded').get();
+        final syllabusSnap = await _syllabiRef
+            .child(courseId)
+            .child('recorded')
+            .get();
 
         final Map<String, Map<String, dynamic>> sessionMetaById = {};
 
@@ -330,8 +330,9 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
               final sessionId = (session['id'] ?? '').toString().trim();
               final sessionNumber = _asInt(session['sessionNumber']);
               final videoUrl = (session['videoUrl'] ?? '').toString().trim();
-              final materialsUrl =
-              (session['materialsUrl'] ?? '').toString().trim();
+              final materialsUrl = (session['materialsUrl'] ?? '')
+                  .toString()
+                  .trim();
 
               final hasVideo = videoUrl.isNotEmpty;
               final hasMaterials = materialsUrl.isNotEmpty;
@@ -364,8 +365,9 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
             .get();
 
         if (progressSnap.exists && progressSnap.value is Map) {
-          final rawProgress =
-          Map<String, dynamic>.from(progressSnap.value as Map);
+          final rawProgress = Map<String, dynamic>.from(
+            progressSnap.value as Map,
+          );
 
           for (final entry in rawProgress.entries) {
             final sessionId = entry.key.toString().trim();
@@ -373,7 +375,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
             if (sessionId.isEmpty || value is! Map) continue;
 
-            final progress = Map<String, dynamic>.from(value as Map);
+            final progress = Map<String, dynamic>.from(value);
             final meta =
                 sessionMetaById[sessionId] ?? const <String, dynamic>{};
 
@@ -548,7 +550,8 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
 
     final overdue = sessionsDone >= sessionsPaidTotal;
-    final dueSoon = !overdue && sessionsDone >= (sessionsPaidTotal - warnBefore);
+    final dueSoon =
+        !overdue && sessionsDone >= (sessionsPaidTotal - warnBefore);
 
     if (overdue) return 'PAYMENT NEEDED';
     if (dueSoon) return 'PAYMENT SOON';
@@ -569,10 +572,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         iconTheme: IconThemeData(color: p.primary),
         title: Text(
           'My Courses',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -584,49 +584,44 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       ),
       body: WatermarkBackground(
         child: _busy
-            ? Center(
-          child: CircularProgressIndicator(color: p.primary),
-        )
+            ? Center(child: CircularProgressIndicator(color: p.primary))
             : _error != null
             ? Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: p.cardBg,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: p.border.withOpacity(0.85)),
-              ),
-              child: Text(
-                _error!,
-                style: TextStyle(
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.w800,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: p.cardBg,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: p.border.withOpacity(0.85)),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        )
+              )
             : _courses.isEmpty
             ? _EmptyCoursesState(palette: p, onRefresh: _load)
             : RefreshIndicator(
-          color: p.primary,
-          onRefresh: _load,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-            children: [
-              _CoursesHeroCard(
-                palette: p,
-                coursesCount: _courses.length,
+                color: p.primary,
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                  children: [
+                    _CoursesHeroCard(palette: p, coursesCount: _courses.length),
+                    const SizedBox(height: 16),
+                    ..._courses.map(_courseCard),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              ..._courses.map(_courseCard).toList(),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -634,16 +629,17 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   Widget _courseCard(Map<String, dynamic> course) {
     final p = palette;
     final courseKey = (course['courseKey'] ?? '').toString();
-    final title =
-    (course['title'] ?? course['course_title'] ?? 'Course').toString();
+    final title = (course['title'] ?? course['course_title'] ?? 'Course')
+        .toString();
     final code = (course['course_code'] ?? '').toString();
 
     final cls = (course['class'] is Map)
         ? Map<String, dynamic>.from(course['class'] as Map)
         : <String, dynamic>{};
     final classId = (cls['class_id'] ?? '').toString().trim();
-    final instructor =
-    (cls['instructor'] ?? cls['teacher_name'] ?? '').toString().trim();
+    final instructor = (cls['instructor'] ?? cls['teacher_name'] ?? '')
+        .toString()
+        .trim();
     final status = (cls['status'] ?? course['status'] ?? '').toString().trim();
 
     final variantKey = _variantKeyOf(course);
@@ -777,10 +773,14 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDue ? Colors.red : p.accent).withOpacity(0.12),
+                          color: (isDue ? Colors.red : p.accent).withOpacity(
+                            0.12,
+                          ),
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(
-                            color: (isDue ? Colors.red : p.accent).withOpacity(0.28),
+                            color: (isDue ? Colors.red : p.accent).withOpacity(
+                              0.28,
+                            ),
                           ),
                         ),
                         child: Text(
@@ -876,13 +876,13 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                     MaterialPageRoute(
                       builder: (_) => variantKey == 'recorded'
                           ? RecordedCourseStudyScreen(
-                        courseKey: courseKey,
-                        courseData: course,
-                      )
+                              courseKey: courseKey,
+                              courseData: course,
+                            )
                           : LearnerCourseDetailScreen(
-                        courseKey: courseKey,
-                        courseData: course,
-                      ),
+                              courseKey: courseKey,
+                              courseData: course,
+                            ),
                     ),
                   );
                 },
@@ -955,10 +955,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 }
 
 class _CoursesHeroCard extends StatelessWidget {
-  const _CoursesHeroCard({
-    required this.palette,
-    required this.coursesCount,
-  });
+  const _CoursesHeroCard({required this.palette, required this.coursesCount});
 
   final _CoursesPalette palette;
   final int coursesCount;
@@ -969,10 +966,7 @@ class _CoursesHeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1148,10 +1142,7 @@ class _InfoLine extends StatelessWidget {
 }
 
 class _EmptyCoursesState extends StatelessWidget {
-  const _EmptyCoursesState({
-    required this.palette,
-    required this.onRefresh,
-  });
+  const _EmptyCoursesState({required this.palette, required this.onRefresh});
 
   final _CoursesPalette palette;
   final Future<void> Function() onRefresh;

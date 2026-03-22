@@ -19,15 +19,11 @@ class UiK {
     fontSize: 16,
   ).copyWith(fontSize: size);
 
-  static TextStyle labelText() => const TextStyle(
-    color: mainText,
-    fontWeight: FontWeight.w900,
-  );
+  static TextStyle labelText() =>
+      const TextStyle(color: mainText, fontWeight: FontWeight.w900);
 
-  static TextStyle subtleText() => TextStyle(
-    color: mainText.withOpacity(0.7),
-    fontWeight: FontWeight.w700,
-  );
+  static TextStyle subtleText() =>
+      TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700);
 
   static String yyyyMmDd(DateTime d) {
     final mm = d.month.toString().padLeft(2, '0');

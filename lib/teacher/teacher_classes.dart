@@ -23,6 +23,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import 'teacher_learner_profile_screen.dart';
 import 'take_attendance_screen.dart';
 import 'attendance_history_screen.dart';
@@ -102,7 +103,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     if (!mounted) return;
     Fluttertoast.cancel();
     Fluttertoast.showToast(
-      msg: msg,
+      msg: humanizeUiMessage(msg),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.CENTER,
       backgroundColor: Colors.black.withOpacity(0.85),
@@ -170,12 +171,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok) _toast('Could not open the link.');
   }
+
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
     if (uid.isEmpty) {
-      return {
-        'full': '',
-        'profilePhoto': '',
-      };
+      return {'full': '', 'profilePhoto': ''};
     }
 
     if (_learnerMiniCache.containsKey(uid)) {
@@ -185,67 +184,47 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     try {
       final snap = await _usersRef.child(uid).get();
       if (snap.exists && snap.value is Map) {
-        final m =
-        (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
         final fn = _safeStr(m['first_name']);
         final ln = _safeStr(m['last_name']);
         final full = ('$fn $ln').trim();
         final profilePhoto = _safeStr(m['profile_photo']);
 
-        final out = {
-          'full': full,
-          'profilePhoto': profilePhoto,
-        };
+        final out = {'full': full, 'profilePhoto': profilePhoto};
 
         _learnerMiniCache[uid] = out;
         return out;
       }
     } catch (_) {}
 
-    final out = {
-      'full': '',
-      'profilePhoto': '',
-    };
+    final out = {'full': '', 'profilePhoto': ''};
     _learnerMiniCache[uid] = out;
     return out;
   }
 
-  Widget _learnerAvatar({
-    required String profilePhotoUrl,
-    double size = 38,
-  }) {
+  Widget _learnerAvatar({required String profilePhotoUrl, double size = 38}) {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: p.soft,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: p.soft, shape: BoxShape.circle),
       clipBehavior: Clip.antiAlias,
       child: profilePhotoUrl.trim().isNotEmpty
           ? Image.network(
-        profilePhotoUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Icon(
-          Icons.person_rounded,
-          size: size * 0.48,
-          color: p.primary,
-        ),
-      )
-          : Icon(
-        Icons.person_rounded,
-        size: size * 0.48,
-        color: p.primary,
-      ),
+              profilePhotoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.person_rounded,
+                size: size * 0.48,
+                color: p.primary,
+              ),
+            )
+          : Icon(Icons.person_rounded, size: size * 0.48, color: p.primary),
     );
   }
 
   Future<void> _loadAll() async {
     await _loadTeacherProfile();
-    await Future.wait([
-      _loadMyClasses(),
-      _loadMyOnlineBookings(),
-    ]);
+    await Future.wait([_loadMyClasses(), _loadMyOnlineBookings()]);
   }
 
   Future<void> _loadTeacherProfile() async {
@@ -275,9 +254,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         );
       }
     } catch (e) {
+      final humanError = toHumanError(e);
       setState(() {
-        _error = e.toString();
-        _onlineError = e.toString();
+        _error = humanError;
+        _onlineError = humanError;
       });
     }
   }
@@ -314,7 +294,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
       raw.forEach((key, value) {
         final c = (value is Map)
-            ? Map<String, dynamic>.from(value as Map)
+            ? Map<String, dynamic>.from(value)
             : <String, dynamic>{};
 
         String curUid = '';
@@ -331,12 +311,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
         final matchesUid = curUid.isNotEmpty && curUid == _teacherUid;
 
-        final matchesName = _teacherName.isNotEmpty &&
+        final matchesName =
+            _teacherName.isNotEmpty &&
             _norm(
-              legacyInstructorName.isNotEmpty
-                  ? legacyInstructorName
-                  : curName,
-            ) ==
+                  legacyInstructorName.isNotEmpty
+                      ? legacyInstructorName
+                      : curName,
+                ) ==
                 _norm(_teacherName);
 
         final legacySerial = _safeStr(c['instructorserial'] ?? c['serial']);
@@ -372,7 +353,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -381,9 +362,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   int _learnersCount(Map<String, dynamic> classData) {
     final learners =
         classData['learners'] ??
-            classData['students'] ??
-            classData['enrolled_learners'] ??
-            classData['enrolledLearners'];
+        classData['students'] ??
+        classData['enrolled_learners'] ??
+        classData['enrolledLearners'];
 
     if (learners is Map) return learners.length;
 
@@ -395,13 +376,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   List<Map<String, String>> _inClassLearnersList(
-      Map<String, dynamic> classData,
-      ) {
+    Map<String, dynamic> classData,
+  ) {
     final learners =
         classData['learners'] ??
-            classData['students'] ??
-            classData['enrolled_learners'] ??
-            classData['enrolledLearners'];
+        classData['students'] ??
+        classData['enrolled_learners'] ??
+        classData['enrolledLearners'];
 
     final List<Map<String, String>> out = [];
 
@@ -425,23 +406,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
           final serial = _safeStr(m['serial']);
 
-          out.add({
-            'uid': uid,
-            'name': name,
-            'serial': serial,
-          });
+          out.add({'uid': uid, 'name': name, 'serial': serial});
         } else if (value is String) {
-          out.add({
-            'uid': uid,
-            'name': value.trim(),
-            'serial': '',
-          });
+          out.add({'uid': uid, 'name': value.trim(), 'serial': ''});
         } else {
-          out.add({
-            'uid': uid,
-            'name': '',
-            'serial': '',
-          });
+          out.add({'uid': uid, 'name': '', 'serial': ''});
         }
       }
     } else if (learners is List) {
@@ -461,17 +430,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           );
           final serial = _safeStr(m['serial']);
 
-          out.add({
-            'uid': uid,
-            'name': name,
-            'serial': serial,
-          });
+          out.add({'uid': uid, 'name': name, 'serial': serial});
         } else if (item is String) {
-          out.add({
-            'uid': item.trim(),
-            'name': '',
-            'serial': '',
-          });
+          out.add({'uid': item.trim(), 'name': '', 'serial': ''});
         }
       }
     }
@@ -484,8 +445,6 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     return out;
   }
-
-
 
   String _firstSessionDate(Map<String, dynamic> classData) {
     final schedule = classData['schedule'];
@@ -508,9 +467,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Future<_ClassProg> _loadClassProgress(
-      String classId,
-      Map<String, dynamic> classData,
-      ) async {
+    String classId,
+    Map<String, dynamic> classData,
+  ) async {
     if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
 
     final courseId = _safeStr(classData['course_id']);
@@ -578,9 +537,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
     final syllabusPct = totalLessons <= 0
         ? 0
-        : ((coveredLessons / totalLessons) * 100)
-        .round()
-        .clamp(0, 100);
+        : ((coveredLessons / totalLessons) * 100).round().clamp(0, 100);
 
     final prog = _ClassProg(
       syllabusPercent: syllabusPct,
@@ -595,13 +552,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Future<Map<String, dynamic>?> _loadSessionDetails(
-      String courseId,
-      int sessionNo,
-      ) async {
+    String courseId,
+    int sessionNo,
+  ) async {
     if (courseId.isEmpty || sessionNo <= 0) return null;
     try {
-      final snap =
-      await _db.child('booking_curriculum/$courseId/sessions/$sessionNo').get();
+      final snap = await _db
+          .child('booking_curriculum/$courseId/sessions/$sessionNo')
+          .get();
       if (snap.exists && snap.value is Map) {
         return (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
       }
@@ -610,9 +568,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Future<Map<String, dynamic>?> _loadOnlineSyllabusSession(
-      String courseId,
-      int sessionNo,
-      ) async {
+    String courseId,
+    int sessionNo,
+  ) async {
     if (courseId.isEmpty || sessionNo <= 0) return null;
 
     try {
@@ -620,7 +578,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         final snap = await _db.child('syllabi/$courseId/$variantKey').get();
         if (!snap.exists || snap.value is! Map) continue;
 
-        final root = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final root = (snap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
         final unitsRaw = root['units'];
 
         if (unitsRaw is! List) continue;
@@ -659,7 +619,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       return;
     }
 
-    final titleRaw = (info['sessionTitle'] ?? info['title'] ?? '').toString().trim();
+    final titleRaw = (info['sessionTitle'] ?? info['title'] ?? '')
+        .toString()
+        .trim();
     final title = titleRaw.isEmpty
         ? 'Session $sessionNo'
         : 'Session $sessionNo — $titleRaw';
@@ -667,7 +629,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final objective = (info['objective'] ?? '').toString().trim();
     final content = (info['content'] ?? '').toString().trim();
     final homework = (info['homework'] ?? '').toString().trim();
-    final duration = _asInt(info['durationMinutes'] ?? info['durationMin'] ?? 0);
+    final duration = _asInt(
+      info['durationMinutes'] ?? info['durationMin'] ?? 0,
+    );
 
     await showModalBottomSheet(
       context: context,
@@ -794,10 +758,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
   }
 
   Future<void> _openOnlineSessionDetailsSheet(
-      String courseId,
-      int sessionNo,
-      String courseTitle,
-      ) async {
+    String courseId,
+    int sessionNo,
+    String courseTitle,
+  ) async {
     final info = await _loadOnlineSyllabusSession(courseId, sessionNo);
     if (!mounted) return;
 
@@ -965,7 +929,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
-  Future<String> _loadCourseTitle(String courseId, List<String> learnerUids) async {
+  Future<String> _loadCourseTitle(
+    String courseId,
+    List<String> learnerUids,
+  ) async {
     if (courseId.isEmpty) return '';
     if (_courseTitleCache.containsKey(courseId)) {
       return _courseTitleCache[courseId]!;
@@ -984,11 +951,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           final value = entry.value;
           if (value is! Map) continue;
 
-          final courseMap = Map<String, dynamic>.from(value as Map);
+          final courseMap = Map<String, dynamic>.from(value);
           final id = _safeStr(courseMap['id']);
           if (id != courseId) continue;
 
-          final title = _safeStr(courseMap['title'] ?? courseMap['course_title']);
+          final title = _safeStr(
+            courseMap['title'] ?? courseMap['course_title'],
+          );
           if (title.isNotEmpty) {
             _courseTitleCache[courseId] = title;
             return title;
@@ -1024,8 +993,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       if (teacherId.isEmpty || courseId.isEmpty) {
         return const _AvailMeta.empty();
       }
-      final snap =
-      await _db.child('$bookingAvailabilityNode/$teacherId/$courseId').get();
+      final snap = await _db
+          .child('$bookingAvailabilityNode/$teacherId/$courseId')
+          .get();
       if (snap.exists && snap.value is Map) {
         final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
 
@@ -1035,7 +1005,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               m['googleMeetUrl'] ??
               m['google_meet_url'],
         );
-        int dur = _asInt(m['durationMinutes'] ?? m['durationMin'] ?? m['duration']);
+        int dur = _asInt(
+          m['durationMinutes'] ?? m['durationMin'] ?? m['duration'],
+        );
         if (dur <= 0) dur = 60;
 
         final teacherName = _safeStr(m['teacherName'] ?? m['teacher_name']);
@@ -1053,9 +1025,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final now = DateTime.now();
     final openFrom = start.subtract(const Duration(minutes: 10));
     final dur = durationMinutes <= 0 ? 60 : durationMinutes;
-    final openUntil = start.add(Duration(minutes: dur)).add(
-      const Duration(minutes: 15),
-    );
+    final openUntil = start
+        .add(Duration(minutes: dur))
+        .add(const Duration(minutes: 15));
     return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
@@ -1074,7 +1046,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       }
 
       final rootSnap = await _db.child(bookingReservationsNode).get();
-      if (!rootSnap.exists || rootSnap.value == null || rootSnap.value is! Map) {
+      if (!rootSnap.exists ||
+          rootSnap.value == null ||
+          rootSnap.value is! Map) {
         setState(() {
           _onlineAll = [];
           _onlineBusy = false;
@@ -1082,8 +1056,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         return;
       }
 
-      final Map<dynamic, dynamic> byCourse =
-      Map<dynamic, dynamic>.from(rootSnap.value as Map);
+      final Map<dynamic, dynamic> byCourse = Map<dynamic, dynamic>.from(
+        rootSnap.value as Map,
+      );
       final List<_OnlineBooking> out = [];
 
       for (final courseEntry in byCourse.entries) {
@@ -1091,14 +1066,18 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         final courseNode = courseEntry.value;
         if (courseNode is! Map) continue;
 
-        final Map<dynamic, dynamic> byDate = Map<dynamic, dynamic>.from(courseNode);
+        final Map<dynamic, dynamic> byDate = Map<dynamic, dynamic>.from(
+          courseNode,
+        );
 
         for (final dateEntry in byDate.entries) {
           final dayKey = dateEntry.key.toString();
           final dateNode = dateEntry.value;
           if (dateNode is! Map) continue;
 
-          final Map<dynamic, dynamic> byTime = Map<dynamic, dynamic>.from(dateNode);
+          final Map<dynamic, dynamic> byTime = Map<dynamic, dynamic>.from(
+            dateNode,
+          );
 
           for (final timeEntry in byTime.entries) {
             final hhmm = timeEntry.key.toString();
@@ -1145,8 +1124,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 teacherName: meta.teacherName.isNotEmpty
                     ? meta.teacherName
                     : (teacherNameFromSlot.isNotEmpty
-                    ? teacherNameFromSlot
-                    : (_teacherName.isNotEmpty ? _teacherName : 'Teacher')),
+                          ? teacherNameFromSlot
+                          : (_teacherName.isNotEmpty
+                                ? _teacherName
+                                : 'Teacher')),
                 learnerUids: learnerUids,
                 sessionNo: sessionNo,
                 createdAtRaw: createdAt,
@@ -1168,7 +1149,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       });
     } catch (e) {
       setState(() {
-        _onlineError = e.toString();
+        _onlineError = toHumanError(e);
         _onlineBusy = false;
       });
     }
@@ -1238,7 +1219,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     child: Image.asset(
                       'assets/images/ybs_logo.png',
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -1247,10 +1228,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ),
           TabBarView(
             controller: _tab,
-            children: [
-              _buildInClassTab(),
-              _buildOnlineTab(),
-            ],
+            children: [_buildInClassTab(), _buildOnlineTab()],
           ),
         ],
       ),
@@ -1259,9 +1237,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Widget _buildInClassTab() {
     if (_busy) {
-      return Center(
-        child: CircularProgressIndicator(color: p.accent),
-      );
+      return Center(child: CircularProgressIndicator(color: p.accent));
     }
 
     if (_error != null) {
@@ -1288,7 +1264,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         if (_myClasses.isEmpty)
           _emptyState('No classes found for you yet.')
         else
-          ..._myClasses.map((c) => _classCard(c)).toList(),
+          ..._myClasses.map((c) => _classCard(c)),
       ],
     );
   }
@@ -1298,10 +1274,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1368,8 +1341,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Widget _classCard(Map<String, dynamic> c) {
     final classId = _safeStr(c['id'] ?? c['class_id']);
-    final title =
-    _safeStr(c['course_title']).isEmpty ? 'Class' : _safeStr(c['course_title']);
+    final title = _safeStr(c['course_title']).isEmpty
+        ? 'Class'
+        : _safeStr(c['course_title']);
     final duration = _safeStr(c['course_duration']);
     final classTitle = title;
     final learnersCount = _learnersCount(c);
@@ -1407,8 +1381,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _miniInfoLine(Icons.timelapse_rounded, 'Duration',
-                  duration.isEmpty ? '-' : duration),
+              _miniInfoLine(
+                Icons.timelapse_rounded,
+                'Duration',
+                duration.isEmpty ? '-' : duration,
+              ),
               const SizedBox(height: 4),
               _miniInfoLine(
                 Icons.event_rounded,
@@ -1416,11 +1393,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 _firstSessionDate(c),
               ),
               const SizedBox(height: 4),
-              _miniInfoLine(
-                Icons.groups_rounded,
-                'Learners',
-                '$learnersCount',
-              ),
+              _miniInfoLine(Icons.groups_rounded, 'Learners', '$learnersCount'),
               const SizedBox(height: 12),
               FutureBuilder<_ClassProg>(
                 future: classId.isEmpty
@@ -1430,12 +1403,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   final prog = snap.data ?? _ClassProg.zero();
 
                   final plannedMeetingsStr =
-                  (prog.plannedMeetings == null || prog.plannedMeetings! <= 0)
+                      (prog.plannedMeetings == null ||
+                          prog.plannedMeetings! <= 0)
                       ? '-'
                       : '${prog.plannedMeetings}';
 
-                  final syllabusTotalStr =
-                  prog.totalLessons <= 0 ? '-' : '${prog.totalLessons}';
+                  final syllabusTotalStr = prog.totalLessons <= 0
+                      ? '-'
+                      : '${prog.totalLessons}';
                   final syllabusPct = prog.syllabusPercent.clamp(0, 100);
 
                   return Column(
@@ -1458,8 +1433,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                         child: LinearProgressIndicator(
                           value: prog.totalLessons <= 0
                               ? 0
-                              : (prog.coveredLessons / prog.totalLessons)
-                              .clamp(0, 1),
+                              : (prog.coveredLessons / prog.totalLessons).clamp(
+                                  0,
+                                  1,
+                                ),
                           minHeight: 9,
                           backgroundColor: p.primary.withOpacity(0.10),
                           valueColor: AlwaysStoppedAnimation(p.accent),
@@ -1524,13 +1501,12 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                 future: _loadLearnerMini(learnerUid),
                                 builder: (context, snap) {
                                   final profilePhotoUrl =
-                                  (snap.data?['profilePhoto'] ?? '').trim();
+                                      (snap.data?['profilePhoto'] ?? '').trim();
 
                                   return _learnerAvatar(
                                     profilePhotoUrl: profilePhotoUrl,
                                     size: 38,
                                   );
-
                                 },
                               ),
 
@@ -1554,7 +1530,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                             children: [
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.person_rounded, size: 16),
+                                  icon: const Icon(
+                                    Icons.person_rounded,
+                                    size: 16,
+                                  ),
                                   label: const Text('Profile'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: p.primary,
@@ -1574,24 +1553,27 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                   onPressed: learnerUid.isEmpty
                                       ? null
                                       : () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            TeacherLearnerProfileScreen(
-                                              learnerUid: learnerUid,
-                                              learnerName: learnerDisplayName,
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  TeacherLearnerProfileScreen(
+                                                    learnerUid: learnerUid,
+                                                    learnerName:
+                                                        learnerDisplayName,
+                                                  ),
                                             ),
-                                      ),
-                                    );
-                                  },
+                                          );
+                                        },
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.photo_library_rounded,
-                                      size: 16),
+                                  icon: const Icon(
+                                    Icons.photo_library_rounded,
+                                    size: 16,
+                                  ),
                                   label: const Text('Gallery'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: p.primary,
@@ -1611,19 +1593,20 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                   onPressed: learnerUid.isEmpty
                                       ? null
                                       : () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            TeacherLearnerGalleryScreen(
-                                              learnerUid: learnerUid,
-                                              learnerName: learnerDisplayName,
-                                              classId: classId,
-                                              classTitle: classTitle,
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  TeacherLearnerGalleryScreen(
+                                                    learnerUid: learnerUid,
+                                                    learnerName:
+                                                        learnerDisplayName,
+                                                    classId: classId,
+                                                    classTitle: classTitle,
+                                                  ),
                                             ),
-                                      ),
-                                    );
-                                  },
+                                          );
+                                        },
                                 ),
                               ),
                             ],
@@ -1631,7 +1614,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
               ],
             ),
           ),
@@ -1713,10 +1696,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               icon: Icon(Icons.insights_rounded, color: p.primary),
               label: Text(
                 "Progress",
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
               ),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: p.border),
@@ -1728,16 +1708,16 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               onPressed: classId.isEmpty
                   ? null
                   : () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => TeacherClassProgressScreen(
-                      classId: classId,
-                      classData: c,
-                    ),
-                  ),
-                );
-              },
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TeacherClassProgressScreen(
+                            classId: classId,
+                            classData: c,
+                          ),
+                        ),
+                      );
+                    },
             ),
           ),
         ],
@@ -1765,9 +1745,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   Widget _buildOnlineTab() {
     if (_onlineBusy) {
-      return Center(
-        child: CircularProgressIndicator(color: p.accent),
-      );
+      return Center(child: CircularProgressIndicator(color: p.accent));
     }
 
     if (_onlineError != null) {
@@ -1791,8 +1769,11 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     }
 
     final now = DateTime.now();
-    final pastLimit = DateTime(now.year, now.month, now.day)
-        .subtract(const Duration(days: 7));
+    final pastLimit = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(const Duration(days: 7));
 
     final List<_OnlineBooking> startingOrOngoing = [];
     final List<_OnlineBooking> upcoming = [];
@@ -1879,10 +1860,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1919,13 +1897,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(child: _heroMiniStat(label: 'Live', value: '$live')),
+              Expanded(
+                child: _heroMiniStat(label: 'Live', value: '$live'),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: _heroMiniStat(label: 'Upcoming', value: '$upcoming'),
               ),
               const SizedBox(width: 10),
-              Expanded(child: _heroMiniStat(label: 'Past', value: '$past')),
+              Expanded(
+                child: _heroMiniStat(label: 'Past', value: '$past'),
+              ),
             ],
           ),
         ],
@@ -1933,10 +1915,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
-  Widget _heroMiniStat({
-    required String label,
-    required String value,
-  }) {
+  Widget _heroMiniStat({required String label, required String value}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
@@ -1975,9 +1954,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     if (items.isEmpty) {
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: [
-          _emptyHint(emptyText),
-        ],
+        children: [_emptyHint(emptyText)],
       );
     }
 
@@ -2020,14 +1997,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final statusBg = inWindow
         ? const Color(0xFFEAF7EE)
         : (dt.isAfter(DateTime.now())
-        ? p.accent.withOpacity(0.12)
-        : p.soft.withOpacity(0.8));
+              ? p.accent.withOpacity(0.12)
+              : p.soft.withOpacity(0.8));
 
     final statusBorder = inWindow
         ? const Color(0xFFB9E2C5)
         : (dt.isAfter(DateTime.now())
-        ? p.accent.withOpacity(0.28)
-        : p.border.withOpacity(0.8));
+              ? p.accent.withOpacity(0.28)
+              : p.border.withOpacity(0.8));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -2072,8 +2049,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               builder: (context, snap) {
                 final title = (snap.data ?? '').trim();
                 final sNo = b.sessionNo <= 0 ? '-' : '${b.sessionNo}';
-                final label =
-                title.isEmpty ? 'Session: $sNo' : 'Session: $sNo — $title';
+                final label = title.isEmpty
+                    ? 'Session: $sNo'
+                    : 'Session: $sNo — $title';
 
                 return _bookingInfoLine(Icons.menu_book_rounded, '', label);
               },
@@ -2161,8 +2139,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                           builder: (_) => OnlineTakeAttendanceScreen(
                             booking: b,
                             teacherUid: _teacherUid,
-                            teacherName:
-                            _teacherName.isEmpty ? 'Teacher' : _teacherName,
+                            teacherName: _teacherName.isEmpty
+                                ? 'Teacher'
+                                : _teacherName,
                           ),
                         ),
                       );
@@ -2269,10 +2248,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         children: [
           Text(
             'Learners (preview)',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              color: p.primary,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
           ),
           const SizedBox(height: 8),
           ...show.map((uid) {
@@ -2280,8 +2256,8 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               future: _loadLearnerMini(uid),
               builder: (context, snap) {
                 final full = (snap.data?['full'] ?? '').trim();
-                final profilePhotoUrl =
-                (snap.data?['profilePhoto'] ?? '').trim();
+                final profilePhotoUrl = (snap.data?['profilePhoto'] ?? '')
+                    .trim();
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -2307,7 +2283,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 );
               },
             );
-          }).toList(),
+          }),
 
           if (more > 0)
             Text(
@@ -2400,9 +2376,9 @@ class _AvailMeta {
   });
 
   const _AvailMeta.empty()
-      : meetUrl = '',
-        durationMinutes = 60,
-        teacherName = '';
+    : meetUrl = '',
+      durationMinutes = 60,
+      teacherName = '';
 }
 
 class _OnlineBooking {
@@ -2492,7 +2468,7 @@ class _OnlineTakeAttendanceScreenState
   void _toast(String msg) {
     Fluttertoast.cancel();
     Fluttertoast.showToast(
-      msg: msg,
+      msg: humanizeUiMessage(msg),
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.CENTER,
       backgroundColor: Colors.black.withOpacity(0.85),
@@ -2500,7 +2476,6 @@ class _OnlineTakeAttendanceScreenState
       fontSize: 15,
     );
   }
-
 
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
     if (_localLearnerMiniCache.containsKey(uid)) {
@@ -2529,49 +2504,38 @@ class _OnlineTakeAttendanceScreenState
       }
     } catch (_) {}
 
-    final out = {
-      'full': 'Learner',
-      'profilePhoto': '',
-    };
+    final out = {'full': 'Learner', 'profilePhoto': ''};
     _localLearnerMiniCache[uid] = out;
     return out;
   }
 
-  Widget _learnerAvatar({
-    required String profilePhotoUrl,
-    double size = 36,
-  }) {
+  Widget _learnerAvatar({required String profilePhotoUrl, double size = 36}) {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: p.soft,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: p.soft, shape: BoxShape.circle),
       clipBehavior: Clip.antiAlias,
       child: profilePhotoUrl.trim().isNotEmpty
           ? Image.network(
-        profilePhotoUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Icon(
-          Icons.person_rounded,
-          size: size * 0.48,
-          color: p.primary,
-        ),
-      )
-          : Icon(
-        Icons.person_rounded,
-        size: size * 0.48,
-        color: p.primary,
-      ),
+              profilePhotoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Icon(
+                Icons.person_rounded,
+                size: size * 0.48,
+                color: p.primary,
+              ),
+            )
+          : Icon(Icons.person_rounded, size: size * 0.48, color: p.primary),
     );
   }
 
-  DatabaseReference _teacherAttendanceRef() =>
-      _db.child('${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}');
+  DatabaseReference _teacherAttendanceRef() => _db.child(
+    '${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}',
+  );
 
   DatabaseReference _learnerAttendanceRef(String learnerUid) => _db.child(
-      '${_TeacherClassesScreenState.bookingProgressNode}/$learnerUid/${widget.booking.courseId}/online_attendance/${widget.booking.bookingKey}');
+    '${_TeacherClassesScreenState.bookingProgressNode}/$learnerUid/${widget.booking.courseId}/online_attendance/${widget.booking.bookingKey}',
+  );
 
   Future<void> _save() async {
     setState(() => saving = true);
@@ -2581,31 +2545,35 @@ class _OnlineTakeAttendanceScreenState
     if (sessionNo > 0) {
       try {
         final snap = await _db
-            .child('booking_curriculum/${widget.booking.courseId}/sessions/$sessionNo')
+            .child(
+              'booking_curriculum/${widget.booking.courseId}/sessions/$sessionNo',
+            )
             .get();
         if (snap.exists && snap.value is Map) {
-          final m = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
-          sessionTitle = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
+          final m = (snap.value as Map).map(
+            (k, v) => MapEntry(k.toString(), v),
+          );
+          sessionTitle = (m['sessionTitle'] ?? m['title'] ?? '')
+              .toString()
+              .trim();
         }
       } catch (_) {}
     }
 
     final List<Map<String, dynamic>> taughtItems = (sessionNo > 0)
         ? [
-      {
-        'type': 'syllabus',
-        'sessionNumber': sessionNo,
-        'title': sessionTitle,
-      }
-    ]
+            {
+              'type': 'syllabus',
+              'sessionNumber': sessionNo,
+              'title': sessionTitle,
+            },
+          ]
         : <Map<String, dynamic>>[];
 
     try {
       final Map<String, dynamic> learners = {};
       for (final uid in widget.booking.learnerUids) {
-        learners[uid] = {
-          'present': presentMap[uid] == true,
-        };
+        learners[uid] = {'present': presentMap[uid] == true};
       }
 
       final payload = {
@@ -2709,15 +2677,15 @@ class _OnlineTakeAttendanceScreenState
             onPressed: saving ? null : _save,
             icon: saving
                 ? SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: p.accent,
-              ),
-            )
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: p.accent,
+                    ),
+                  )
                 : Icon(Icons.save_rounded, color: p.accent),
-          )
+          ),
         ],
       ),
       body: ListView(
@@ -2799,10 +2767,10 @@ class _OnlineTakeAttendanceScreenState
                             child: FutureBuilder<Map<String, String>>(
                               future: _loadLearnerMini(uid),
                               builder: (context, snap) {
-                                final name =
-                                (snap.data?['full'] ?? 'Learner').trim();
+                                final name = (snap.data?['full'] ?? 'Learner')
+                                    .trim();
                                 final profilePhotoUrl =
-                                (snap.data?['profilePhoto'] ?? '').trim();
+                                    (snap.data?['profilePhoto'] ?? '').trim();
 
                                 return Row(
                                   children: [
@@ -2829,13 +2797,14 @@ class _OnlineTakeAttendanceScreenState
                           const SizedBox(width: 10),
                           Switch(
                             value: v,
-                            onChanged: (x) => setState(() => presentMap[uid] = x),
-                            activeColor: p.accent,
+                            onChanged: (x) =>
+                                setState(() => presentMap[uid] = x),
+                            activeThumbColor: p.accent,
                           ),
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
               ],
             ),
           ),
@@ -2895,8 +2864,9 @@ class _OnlineAttendanceHistoryScreenState
 
   @override
   Widget build(BuildContext context) {
-    final ref = FirebaseDatabase.instance
-        .ref('${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}');
+    final ref = FirebaseDatabase.instance.ref(
+      '${_TeacherClassesScreenState.onlineAttendanceNode}/${widget.booking.bookingKey}',
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -2914,9 +2884,7 @@ class _OnlineAttendanceHistoryScreenState
         future: ref.get(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(color: p.accent),
-            );
+            return Center(child: CircularProgressIndicator(color: p.accent));
           }
           if (!snap.hasData || !snap.data!.exists || snap.data!.value == null) {
             return Center(
@@ -2924,10 +2892,7 @@ class _OnlineAttendanceHistoryScreenState
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   'No online attendance found yet.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: p.text,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
                 ),
               ),
             );
@@ -2968,7 +2933,9 @@ class _OnlineAttendanceHistoryScreenState
                         final v = e.value;
                         bool present = false;
                         if (v is Map) {
-                          final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+                          final m = v.map(
+                            (k, vv) => MapEntry(k.toString(), vv),
+                          );
                           present = m['present'] == true;
                         }
 
@@ -2976,7 +2943,9 @@ class _OnlineAttendanceHistoryScreenState
                           padding: const EdgeInsets.only(bottom: 8),
                           child: FutureBuilder<DataSnapshot>(
                             future: FirebaseDatabase.instance
-                                .ref('${_TeacherClassesScreenState.usersNode}/$uid')
+                                .ref(
+                                  '${_TeacherClassesScreenState.usersNode}/$uid',
+                                )
                                 .get(),
                             builder: (context, userSnap) {
                               String fullName = 'Learner';
@@ -2985,17 +2954,21 @@ class _OnlineAttendanceHistoryScreenState
                               if (userSnap.hasData &&
                                   userSnap.data!.exists &&
                                   userSnap.data!.value is Map) {
-                                final um = (userSnap.data!.value as Map)
-                                    .map((k, vv) => MapEntry(k.toString(), vv));
-                                final fn =
-                                (um['first_name'] ?? '').toString().trim();
-                                final ln =
-                                (um['last_name'] ?? '').toString().trim();
+                                final um = (userSnap.data!.value as Map).map(
+                                  (k, vv) => MapEntry(k.toString(), vv),
+                                );
+                                final fn = (um['first_name'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final ln = (um['last_name'] ?? '')
+                                    .toString()
+                                    .trim();
                                 final f = ('$fn $ln').trim();
                                 if (f.isNotEmpty) fullName = f;
 
-                                profilePhotoUrl =
-                                    (um['profile_photo'] ?? '').toString().trim();
+                                profilePhotoUrl = (um['profile_photo'] ?? '')
+                                    .toString()
+                                    .trim();
                               }
 
                               return Container(
@@ -3019,20 +2992,19 @@ class _OnlineAttendanceHistoryScreenState
                                       clipBehavior: Clip.antiAlias,
                                       child: profilePhotoUrl.isNotEmpty
                                           ? Image.network(
-                                        profilePhotoUrl,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            Icon(
+                                              profilePhotoUrl,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, _, _) => Icon(
+                                                Icons.person_rounded,
+                                                size: 16,
+                                                color: p.primary,
+                                              ),
+                                            )
+                                          : Icon(
                                               Icons.person_rounded,
                                               size: 16,
                                               color: p.primary,
                                             ),
-                                      )
-                                          : Icon(
-                                        Icons.person_rounded,
-                                        size: 16,
-                                        color: p.primary,
-                                      ),
                                     ),
                                     const SizedBox(width: 10),
                                     Expanded(
@@ -3050,9 +3022,7 @@ class _OnlineAttendanceHistoryScreenState
                             },
                           ),
                         );
-
-
-                      }).toList()
+                      })
                     else
                       Text(
                         'No learners map saved.',
@@ -3138,7 +3108,9 @@ class _OnlineAttendanceStatsScreenState
     int absent = 0;
 
     try {
-      final snap = await _db.child(_TeacherClassesScreenState.onlineAttendanceNode).get();
+      final snap = await _db
+          .child(_TeacherClassesScreenState.onlineAttendanceNode)
+          .get();
       if (snap.exists && snap.value is Map) {
         final m = Map<dynamic, dynamic>.from(snap.value as Map);
         for (final entry in m.entries) {
@@ -3148,7 +3120,8 @@ class _OnlineAttendanceStatsScreenState
           final teacherUid = (rec['teacherUid'] ?? '').toString();
           final courseId = (rec['courseId'] ?? '').toString();
           if (teacherUid != widget.teacherUid) continue;
-          if (widget.courseId.isNotEmpty && courseId != widget.courseId) continue;
+          if (widget.courseId.isNotEmpty && courseId != widget.courseId)
+            continue;
 
           sessions++;
 
@@ -3193,34 +3166,32 @@ class _OnlineAttendanceStatsScreenState
         ),
       ),
       body: loading
-          ? Center(
-        child: CircularProgressIndicator(color: p.accent),
-      )
+          ? Center(child: CircularProgressIndicator(color: p.accent))
           : ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          _box(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.all(14),
               children: [
-                Text(
-                  'Course: ${widget.courseTitle.trim().isEmpty ? widget.courseId : widget.courseTitle}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: p.primary,
+                _box(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Course: ${widget.courseTitle.trim().isEmpty ? widget.courseId : widget.courseTitle}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: p.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _statLine('Sessions with attendance', '$totalSessions'),
+                      const SizedBox(height: 8),
+                      _statLine('Total Present marks', '$presentCount'),
+                      const SizedBox(height: 8),
+                      _statLine('Total Absent marks', '$absentCount'),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                _statLine('Sessions with attendance', '$totalSessions'),
-                const SizedBox(height: 8),
-                _statLine('Total Present marks', '$presentCount'),
-                const SizedBox(height: 8),
-                _statLine('Total Absent marks', '$absentCount'),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -3239,10 +3210,7 @@ class _OnlineAttendanceStatsScreenState
         const SizedBox(width: 10),
         Text(
           value,
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: p.primary,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w900, color: p.primary),
         ),
       ],
     );

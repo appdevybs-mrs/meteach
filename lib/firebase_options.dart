@@ -46,7 +46,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '337224826950',
     projectId: 'dreamenglishacademy-3efcd',
     authDomain: 'dreamenglishacademy-3efcd.firebaseapp.com',
-    databaseURL: 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
     storageBucket: 'dreamenglishacademy-3efcd.firebasestorage.app',
     measurementId: 'G-B73X6MN677',
   );
@@ -56,7 +57,8 @@ class DefaultFirebaseOptions {
     appId: '1:337224826950:android:1e14ed96fb3966bff48a47',
     messagingSenderId: '337224826950',
     projectId: 'dreamenglishacademy-3efcd',
-    databaseURL: 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
     storageBucket: 'dreamenglishacademy-3efcd.firebasestorage.app',
   );
 
@@ -65,10 +67,13 @@ class DefaultFirebaseOptions {
     appId: '1:337224826950:ios:af9ceafb6bdf419bf48a47',
     messagingSenderId: '337224826950',
     projectId: 'dreamenglishacademy-3efcd',
-    databaseURL: 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
     storageBucket: 'dreamenglishacademy-3efcd.firebasestorage.app',
-    androidClientId: '337224826950-p139a8tkv1d2c8qctpnod6pshd5iselr.apps.googleusercontent.com',
-    iosClientId: '337224826950-i1u0uv2lalacdp1hl03nl56krd859vp9.apps.googleusercontent.com',
+    androidClientId:
+        '337224826950-p139a8tkv1d2c8qctpnod6pshd5iselr.apps.googleusercontent.com',
+    iosClientId:
+        '337224826950-i1u0uv2lalacdp1hl03nl56krd859vp9.apps.googleusercontent.com',
     iosBundleId: 'com.yourbridgeschool.dreamEnglishAcademy',
   );
 
@@ -77,10 +82,13 @@ class DefaultFirebaseOptions {
     appId: '1:337224826950:ios:af9ceafb6bdf419bf48a47',
     messagingSenderId: '337224826950',
     projectId: 'dreamenglishacademy-3efcd',
-    databaseURL: 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
     storageBucket: 'dreamenglishacademy-3efcd.firebasestorage.app',
-    androidClientId: '337224826950-p139a8tkv1d2c8qctpnod6pshd5iselr.apps.googleusercontent.com',
-    iosClientId: '337224826950-i1u0uv2lalacdp1hl03nl56krd859vp9.apps.googleusercontent.com',
+    androidClientId:
+        '337224826950-p139a8tkv1d2c8qctpnod6pshd5iselr.apps.googleusercontent.com',
+    iosClientId:
+        '337224826950-i1u0uv2lalacdp1hl03nl56krd859vp9.apps.googleusercontent.com',
     iosBundleId: 'com.yourbridgeschool.dreamEnglishAcademy',
   );
 
@@ -90,7 +98,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '337224826950',
     projectId: 'dreamenglishacademy-3efcd',
     authDomain: 'dreamenglishacademy-3efcd.firebaseapp.com',
-    databaseURL: 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com',
     storageBucket: 'dreamenglishacademy-3efcd.firebasestorage.app',
     measurementId: 'G-N9LL75Q6WY',
   );

@@ -87,7 +87,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         asMap.forEach((innerK, innerV) {
           if (innerK.trim().isEmpty || innerV == null) return;
           if (innerV is Map) {
-            final innerMap = innerV.map((kk, vvv) => MapEntry(kk.toString(), vvv));
+            final innerMap = innerV.map(
+              (kk, vvv) => MapEntry(kk.toString(), vvv),
+            );
             if (_looksLikeThreadObject(innerMap)) {
               addIfThreadObject(innerK, innerV);
             }
@@ -173,7 +175,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         return threadId;
       }
 
-      final myName = picked.myName.trim().isEmpty ? 'Learner' : picked.myName.trim();
+      final myName = picked.myName.trim().isEmpty
+          ? 'Learner'
+          : picked.myName.trim();
 
       if (picked.mode == _LearnerComposeMode.single) {
         if (picked.sendToAllAdmins == true) {
@@ -236,7 +240,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         }
 
         final classmates = picked.classmateUidsByClass[classId] ?? <String>[];
-        final targets = classmates.where((u) => u.trim().isNotEmpty && u.trim() != meUid).toList();
+        final targets = classmates
+            .where((u) => u.trim().isNotEmpty && u.trim() != meUid)
+            .toList();
 
         if (targets.isEmpty) {
           _snack('No classmates found in this class.');
@@ -285,188 +291,213 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       floatingActionButton: uid.isEmpty
           ? null
           : FloatingActionButton.extended(
-        onPressed: _composeNewTopic,
-        icon: const Icon(Icons.edit_rounded),
-        label: const Text('New message'),
-      ),
+              onPressed: _composeNewTopic,
+              icon: const Icon(Icons.edit_rounded),
+              label: const Text('New message'),
+            ),
       body: WatermarkBackground(
         child: uid.isEmpty
             ? Center(
-          child: Text(
-            'Not logged in.',
-            style: TextStyle(fontWeight: FontWeight.w900, color: _navy),
-          ),
-        )
-            : StreamBuilder<DatabaseEvent>(
-          stream: ref.onValue,
-          builder: (context, snap) {
-            final rows = _parse(snap.data?.snapshot.value);
-
-            if (rows.isEmpty) {
-              return Center(
                 child: Text(
-                  'No mail yet.',
-                  style: TextStyle(fontWeight: FontWeight.w900, color: _navyDark),
+                  'Not logged in.',
+                  style: TextStyle(fontWeight: FontWeight.w900, color: _navy),
                 ),
-              );
-            }
+              )
+            : StreamBuilder<DatabaseEvent>(
+                stream: ref.onValue,
+                builder: (context, snap) {
+                  final rows = _parse(snap.data?.snapshot.value);
 
-            return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              itemCount: rows.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, i) {
-                final r = rows[i];
-
-                final threadId = r.threadId;
-                final peerUid = r.peerUid;
-                final peerName = r.peerName.trim().isEmpty ? 'User' : r.peerName.trim();
-                final subject = r.subject;
-                final lastMessage = r.lastMessage;
-                final unread = r.unreadCount;
-                final updatedAt = r.updatedAtMs;
-
-                return InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => LearnerMailThreadScreen(
-                          threadId: threadId,
-                          peerUid: peerUid,
-                          peerName: peerName,
-                          subject: subject,
+                  if (rows.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'No mail yet.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: _navyDark,
                         ),
                       ),
                     );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: _navy.withOpacity(0.14)),
-                    ),
-                    child: Row(
-                      children: [
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: _navy.withOpacity(0.06),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: _navy.withOpacity(0.14)),
-                              ),
-                              child: Icon(
-                                Icons.mail_rounded,
-                                color: _navy.withOpacity(0.92),
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                    itemCount: rows.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) {
+                      final r = rows[i];
+
+                      final threadId = r.threadId;
+                      final peerUid = r.peerUid;
+                      final peerName = r.peerName.trim().isEmpty
+                          ? 'User'
+                          : r.peerName.trim();
+                      final subject = r.subject;
+                      final lastMessage = r.lastMessage;
+                      final unread = r.unreadCount;
+                      final updatedAt = r.updatedAtMs;
+
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => LearnerMailThreadScreen(
+                                threadId: threadId,
+                                peerUid: peerUid,
+                                peerName: peerName,
+                                subject: subject,
                               ),
                             ),
-                            if (unread > 0)
-                              Positioned(
-                                right: -8,
-                                top: -8,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: _orange,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    unread > 99 ? '99+' : '$unread',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 11,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: _navy.withOpacity(0.14)),
+                          ),
+                          child: Row(
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    width: 46,
+                                    height: 46,
+                                    decoration: BoxDecoration(
+                                      color: _navy.withOpacity(0.06),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: _navy.withOpacity(0.14),
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      Icons.mail_rounded,
+                                      color: _navy.withOpacity(0.92),
                                     ),
                                   ),
-                                ),
+                                  if (unread > 0)
+                                    Positioned(
+                                      right: -8,
+                                      top: -8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _orange,
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          unread > 99 ? '99+' : '$unread',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                          ],
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      peerName,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            peerName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              color: _navy,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          updatedAt <= 0 ? '' : _fmt(updatedAt),
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: _navy.withOpacity(0.55),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (subject.trim().isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _orange.withOpacity(0.14),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: _orange.withOpacity(0.24),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _short(subject, 60),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: _navyDark,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      lastMessage.trim().isEmpty
+                                          ? '—'
+                                          : _short(lastMessage, 90),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        color: _navy,
-                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        color: _navy.withOpacity(0.62),
+                                        fontSize: 13,
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    updatedAt <= 0 ? '' : _fmt(updatedAt),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      color: _navy.withOpacity(0.55),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                              const SizedBox(height: 6),
-                              if (subject.trim().isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: _orange.withOpacity(0.14),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(color: _orange.withOpacity(0.24)),
-                                  ),
-                                  child: Text(
-                                    _short(subject, 60),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: _navyDark,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(height: 8),
-                              Text(
-                                lastMessage.trim().isEmpty ? '—' : _short(lastMessage, 90),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: _navy.withOpacity(0.62),
-                                  fontSize: 13,
-                                ),
+                              const SizedBox(width: 10),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: _orange.withOpacity(0.85),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Icon(Icons.chevron_right_rounded, color: _orange.withOpacity(0.85)),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
+                      );
+                    },
+                  );
+                },
+              ),
       ),
     );
   }
 }
 
 enum _LearnerComposeMode { single, classGroup }
+
 enum _LearnerRecipientType { adminAll, admin, teacher, classmate }
 
 class _LearnerRecipientRow {
@@ -562,16 +593,24 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
 
   String _normalizeRole(dynamic raw) {
     final s = (raw ?? '').toString().trim().toLowerCase();
-    if (s == 'admin' || s == 'adin' || s == 'admn' || s == 'adm' || s == 'administration' || s == 'administrator') {
+    if (s == 'admin' ||
+        s == 'adin' ||
+        s == 'admn' ||
+        s == 'adm' ||
+        s == 'administration' ||
+        s == 'administrator') {
       return 'admin';
     }
-    if (s == 'teacher' || s == 'teach' || s == 'instructor' || s == 'prof') return 'teacher';
-    if (s == 'learner' || s == 'lerner' || s == 'student' || s == 'pupil') return 'learner';
+    if (s == 'teacher' || s == 'teach' || s == 'instructor' || s == 'prof')
+      return 'teacher';
+    if (s == 'learner' || s == 'lerner' || s == 'student' || s == 'pupil')
+      return 'learner';
     return 'learner';
   }
 
   IconData _recipientIcon(_LearnerRecipientType t) {
-    if (t == _LearnerRecipientType.adminAll || t == _LearnerRecipientType.admin) {
+    if (t == _LearnerRecipientType.adminAll ||
+        t == _LearnerRecipientType.admin) {
       return Icons.admin_panel_settings_rounded;
     }
     if (t == _LearnerRecipientType.teacher) {
@@ -588,7 +627,8 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
   }
 
   Color _recipientTint(_LearnerRecipientType t) {
-    if (t == _LearnerRecipientType.adminAll || t == _LearnerRecipientType.admin) {
+    if (t == _LearnerRecipientType.adminAll ||
+        t == _LearnerRecipientType.admin) {
       return Colors.deepPurple;
     }
     if (t == _LearnerRecipientType.teacher) {
@@ -601,12 +641,16 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
     try {
       final meSnap = await widget.db.child('users/${widget.meUid}').get();
       if (meSnap.exists && meSnap.value is Map) {
-        final m = (meSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+        final m = (meSnap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
         final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
         final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
         final email = (m['email'] ?? '').toString().trim();
         final full = ('$fn $ln').trim();
-        _myName = full.isNotEmpty ? full : (email.isNotEmpty ? email : 'Learner');
+        _myName = full.isNotEmpty
+            ? full
+            : (email.isNotEmpty ? email : 'Learner');
       }
 
       final usersSnap = await widget.db.child('users').get();
@@ -618,11 +662,15 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           final m = vv.map((k, v) => MapEntry(k.toString(), v));
           final role = _normalizeRole(m['role']);
 
-          final fn = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+          final fn = (m['first_name'] ?? m['firstName'] ?? '')
+              .toString()
+              .trim();
           final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
           final email = (m['email'] ?? '').toString().trim();
           final full = ('$fn $ln').trim();
-          final display = full.isNotEmpty ? full : (email.isNotEmpty ? email : uid.toString());
+          final display = full.isNotEmpty
+              ? full
+              : (email.isNotEmpty ? email : uid.toString());
 
           final u = uid.toString();
           _nameByUid[u] = display;
@@ -649,11 +697,16 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           final learners = c['learners'];
           bool imIn = false;
           if (learners is Map) {
-            imIn = learners.containsKey(widget.meUid) || learners[widget.meUid] == true;
+            imIn =
+                learners.containsKey(widget.meUid) ||
+                learners[widget.meUid] == true;
           }
           if (!imIn) return;
 
-          final title = (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId).toString().trim();
+          final title =
+              (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId)
+                  .toString()
+                  .trim();
           myClasses.add(
             _LearnerClassRow(
               classId: classId.toString(),
@@ -682,7 +735,9 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
         });
       }
 
-      myClasses.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      myClasses.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
 
       final all = <_LearnerRecipientRow>[];
 
@@ -821,7 +876,11 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: tint.withOpacity(0.18)),
           ),
-          child: Icon(_recipientIcon(r.type), color: tint.withOpacity(0.95), size: 19),
+          child: Icon(
+            _recipientIcon(r.type),
+            color: tint.withOpacity(0.95),
+            size: 19,
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -833,7 +892,10 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 r.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
@@ -880,7 +942,10 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 c.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
@@ -924,7 +989,11 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                   padding: EdgeInsets.all(18),
                   child: Row(
                     children: [
-                      SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                       SizedBox(width: 10),
                       Text('Loading...'),
                     ],
@@ -950,7 +1019,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 const SizedBox(height: 12),
                 if (_mode == _LearnerComposeMode.single)
                   DropdownButtonFormField<_LearnerRecipientRow>(
-                    value: _picked,
+                    initialValue: _picked,
                     isExpanded: true,
                     items: _recipients.map((r) {
                       return DropdownMenuItem<_LearnerRecipientRow>(
@@ -979,7 +1048,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                   )
                 else
                   DropdownButtonFormField<_LearnerClassRow>(
-                    value: _pickedClass,
+                    initialValue: _pickedClass,
                     isExpanded: true,
                     items: _classes.map((c) {
                       return DropdownMenuItem<_LearnerClassRow>(
@@ -1023,7 +1092,9 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                     onPressed: _submit,
                     icon: const Icon(Icons.send_rounded),
                     label: Text(
-                      _mode == _LearnerComposeMode.classGroup ? 'Create class topics' : 'Create topic',
+                      _mode == _LearnerComposeMode.classGroup
+                          ? 'Create class topics'
+                          : 'Create topic',
                     ),
                   ),
                 ),

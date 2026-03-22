@@ -44,9 +44,7 @@ class _MailInboxScreenState extends State<MailInboxScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mail'),
-      ),
+      appBar: AppBar(title: const Text('Mail')),
       body: StreamBuilder<DatabaseEvent>(
         stream: _stream,
         builder: (_, snap) {
@@ -70,12 +68,12 @@ class _MailInboxScreenState extends State<MailInboxScreen> {
                   ),
                   trailing: r.unreadCount > 0
                       ? CircleAvatar(
-                    radius: 12,
-                    child: Text(
-                      '${r.unreadCount}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  )
+                          radius: 12,
+                          child: Text(
+                            '${r.unreadCount}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        )
                       : null,
                   onTap: () {
                     Navigator.of(context).push(

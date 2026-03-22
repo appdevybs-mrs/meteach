@@ -59,10 +59,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -72,13 +69,47 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   String _friendlyDate(DateTime d) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${days[d.weekday - 1]} ${_two(d.day)} ${months[d.month - 1]}';
   }
 
   String _friendlyDateLong(DateTime d) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${days[d.weekday - 1]}, ${_two(d.day)} ${months[d.month - 1]} ${d.year}';
   }
 
@@ -103,7 +134,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       final hh = int.tryParse(tp[0]);
       final mm = int.tryParse(tp[1]);
 
-      if (y == null || m == null || d == null || hh == null || mm == null) return null;
+      if (y == null || m == null || d == null || hh == null || mm == null)
+        return null;
 
       return DateTime(y, m, d, hh, mm);
     } catch (_) {
@@ -142,7 +174,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return !d.isBefore(startOfWeek) && d.isBefore(endOfWeek);
   }
 
-  DatabaseReference _reservationsRootRef(String cid) => _db.child('booking_reservations/$cid');
+  DatabaseReference _reservationsRootRef(String cid) =>
+      _db.child('booking_reservations/$cid');
   DatabaseReference _reservationsRef(String cid, String dayKey, String hhmm) =>
       _db.child('booking_reservations/$cid/$dayKey/$hhmm');
 
@@ -200,7 +233,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       final Map<String, bool> hasBookings = {};
 
       if (reservationsSnap.value is Map) {
-        final root = (reservationsSnap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+        final root = (reservationsSnap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
 
         for (final entry in root.entries) {
           final cid = entry.key;
@@ -211,11 +246,15 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             final days = courseNode.map((k, vv) => MapEntry(k.toString(), vv));
             for (final dayEntry in days.entries) {
               if (dayEntry.value is! Map) continue;
-              final times = (dayEntry.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+              final times = (dayEntry.value as Map).map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              );
 
               for (final timeEntry in times.entries) {
                 if (timeEntry.value is! Map) continue;
-                final m = (timeEntry.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+                final m = (timeEntry.value as Map).map(
+                  (k, vv) => MapEntry(k.toString(), vv),
+                );
                 final learnersRaw = m['learners'];
                 if (learnersRaw is Map && learnersRaw.isNotEmpty) {
                   found = true;
@@ -245,7 +284,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           final title = (m['title'] ?? '').toString().trim();
           final level = (m['level'] ?? '').toString().trim();
           final category = (m['category'] ?? '').toString().trim();
-          final orderIndex = (m['order_index'] is num) ? (m['order_index'] as num).toInt() : 999;
+          final orderIndex = (m['order_index'] is num)
+              ? (m['order_index'] as num).toInt()
+              : 999;
 
           out.add(
             _CourseItem(
@@ -262,7 +303,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       }
 
       out.sort((a, b) {
-        if (a.orderIndex != b.orderIndex) return a.orderIndex.compareTo(b.orderIndex);
+        if (a.orderIndex != b.orderIndex)
+          return a.orderIndex.compareTo(b.orderIndex);
         return a.title.compareTo(b.title);
       });
 
@@ -323,8 +365,12 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             final learnersRaw = m['learners'];
             if (learnersRaw is! Map) continue;
 
-            final learnersMap = learnersRaw.map((k, vv) => MapEntry(k.toString(), vv));
-            final learnerUids = learnersMap.keys.map((e) => e.toString()).toList();
+            final learnersMap = learnersRaw.map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            );
+            final learnerUids = learnersMap.keys
+                .map((e) => e.toString())
+                .toList();
             if (learnerUids.isEmpty) continue;
 
             final start = _parseSlotStart(dayKey, hhmm);
@@ -386,7 +432,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           );
         }
 
-        final m = (snap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+        final m = (snap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
 
         final first = (m['first_name'] ?? '').toString().trim();
         final last = (m['last_name'] ?? '').toString().trim();
@@ -484,10 +532,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   // ========================= Cancel =========================
 
   Future<void> _cancelLearnerFromSlot(
-      _AdminBookedSlot slot,
-      String learnerUid,
-      BuildContext detailsSheetContext,
-      ) async {
+    _AdminBookedSlot slot,
+    String learnerUid,
+    BuildContext detailsSheetContext,
+  ) async {
     if (busyAction) return;
 
     final ok = await showDialog<bool>(
@@ -498,8 +546,14 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           'Remove this learner from:\n\n${_friendlyDateLong(slot.start)} at ${slot.time}\nTeacher: ${slot.teacherName}',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes, Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Cancel'),
+          ),
         ],
       ),
     );
@@ -562,15 +616,21 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       final Map<String, _ReservationSummary> summaries = {};
 
       if (reservationsSnap.value is Map) {
-        final days = (reservationsSnap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+        final days = (reservationsSnap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
 
         for (final dayEntry in days.entries) {
           if (dayEntry.value is! Map) continue;
-          final dayMap = (dayEntry.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+          final dayMap = (dayEntry.value as Map).map(
+            (k, vv) => MapEntry(k.toString(), vv),
+          );
 
           for (final timeEntry in dayMap.entries) {
             if (timeEntry.value is! Map) continue;
-            final m = (timeEntry.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+            final m = (timeEntry.value as Map).map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            );
 
             final learnersRaw = m['learners'];
             int count = 0;
@@ -590,9 +650,12 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       }
 
       final availabilitySnap = await _db.child('booking_availability').get();
-      if (!availabilitySnap.exists || availabilitySnap.value is! Map) return out;
+      if (!availabilitySnap.exists || availabilitySnap.value is! Map)
+        return out;
 
-      final root = (availabilitySnap.value as Map).map((k, vv) => MapEntry(k.toString(), vv));
+      final root = (availabilitySnap.value as Map).map(
+        (k, vv) => MapEntry(k.toString(), vv),
+      );
 
       for (final teacherEntry in root.entries) {
         final teacherId = teacherEntry.key;
@@ -606,13 +669,14 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
         final m = perCourse.map((k, vv) => MapEntry(k.toString(), vv));
 
-        final teacherName = (m['teacherName'] ??
-            m['teacher_name'] ??
-            tn['teacherName'] ??
-            tn['teacher_name'] ??
-            'Teacher')
-            .toString()
-            .trim();
+        final teacherName =
+            (m['teacherName'] ??
+                    m['teacher_name'] ??
+                    tn['teacherName'] ??
+                    tn['teacher_name'] ??
+                    'Teacher')
+                .toString()
+                .trim();
 
         int maxLearners = _toInt(m['maxLearnersPerSlot'], fallback: 0);
         if (maxLearners <= 0) maxLearners = 6;
@@ -623,7 +687,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         final wm = week.map((k, vv) => MapEntry(k.toString(), vv));
 
         for (int i = 0; i < 21; i++) {
-          final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+          final day = DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).add(Duration(days: i));
           final dayKey = _dateKey(day);
           final weekday = _weekdayKey(day);
 
@@ -665,18 +733,21 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   }
 
   Future<void> _pickRescheduleTarget(
-      _AdminBookedSlot sourceSlot,
-      String learnerUid,
-      BuildContext detailsSheetContext,
-      ) async {
+    _AdminBookedSlot sourceSlot,
+    String learnerUid,
+    BuildContext detailsSheetContext,
+  ) async {
     final available = await _buildAvailableSlotsForCourse(sourceSlot.courseId);
 
     if (!mounted) return;
 
     final possible = available.where((s) {
-      if (s.dayKey == sourceSlot.dayKey && s.time == sourceSlot.time) return false;
-      if (s.start.isBefore(DateTime.now().subtract(const Duration(minutes: 1)))) return false;
-      if (s.groupSessionNo != null && s.groupSessionNo != sourceSlot.sessionNo) return false;
+      if (s.dayKey == sourceSlot.dayKey && s.time == sourceSlot.time)
+        return false;
+      if (s.start.isBefore(DateTime.now().subtract(const Duration(minutes: 1))))
+        return false;
+      if (s.groupSessionNo != null && s.groupSessionNo != sourceSlot.sessionNo)
+        return false;
       if (s.isFull) return false;
       return true;
     }).toList();
@@ -702,7 +773,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             final filtered = possible.where((s) {
               if (query.trim().isEmpty) return true;
               final q = query.trim().toLowerCase();
-              final text = '${s.teacherName} ${s.dayKey} ${s.time} ${_friendlyDateLong(s.start)}'.toLowerCase();
+              final text =
+                  '${s.teacherName} ${s.dayKey} ${s.time} ${_friendlyDateLong(s.start)}'
+                      .toLowerCase();
               return text.contains(q);
             }).toList();
 
@@ -720,7 +793,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Choose new slot',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: primaryBlue),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          color: primaryBlue,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -729,7 +806,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                         hintText: 'Search teacher / date / time',
                         isDense: true,
                         prefixIcon: const Icon(Icons.search_rounded),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: uiBorder),
@@ -741,56 +820,68 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     Expanded(
                       child: filtered.isEmpty
                           ? const Center(
-                        child: Text(
-                          'No slots match your search.',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      )
-                          : ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (_, i) {
-                          final s = filtered[i];
-                          final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
-
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(14),
-                            onTap: () => Navigator.pop(context, s),
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: uiBorder),
+                              child: Text(
+                                'No slots match your search.',
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${_friendlyDateLong(s.start)} • ${s.time}',
-                                    style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    'Teacher: ${s.teacherName}',
-                                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    s.groupSessionNo == null
-                                        ? 'Empty slot • Capacity ${s.bookedCount}/$cap'
-                                        : 'Session ${s.groupSessionNo} group • Capacity ${s.bookedCount}/$cap',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: s.groupSessionNo == null ? successGreen : actionOrange,
+                            )
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (_, i) {
+                                final s = filtered[i];
+                                final cap = s.maxLearnersPerSlot <= 0
+                                    ? 6
+                                    : s.maxLearnersPerSlot;
+
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => Navigator.pop(context, s),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: uiBorder),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${_friendlyDateLong(s.start)} • ${s.time}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: primaryBlue,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          'Teacher: ${s.teacherName}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          s.groupSessionNo == null
+                                              ? 'Empty slot • Capacity ${s.bookedCount}/$cap'
+                                              : 'Session ${s.groupSessionNo} group • Capacity ${s.bookedCount}/$cap',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: s.groupSessionNo == null
+                                                ? successGreen
+                                                : actionOrange,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
                   ],
                 ),
@@ -825,12 +916,18 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         title: const Text('Reschedule booking'),
         content: Text(
           'Move this learner?\n\n'
-              'From:\n${_friendlyDateLong(sourceSlot.start)} at ${sourceSlot.time}\n${sourceSlot.teacherName}\n\n'
-              'To:\n${_friendlyDateLong(target.start)} at ${target.time}\n${target.teacherName}',
+          'From:\n${_friendlyDateLong(sourceSlot.start)} at ${sourceSlot.time}\n${sourceSlot.teacherName}\n\n'
+          'To:\n${_friendlyDateLong(target.start)} at ${target.time}\n${target.teacherName}',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes, Move')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, Move'),
+          ),
         ],
       ),
     );
@@ -840,12 +937,21 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     setState(() => busyAction = true);
 
     try {
-      final sourceRef = _reservationsRef(sourceSlot.courseId, sourceSlot.dayKey, sourceSlot.time);
-      final targetRef = _reservationsRef(target.courseId, target.dayKey, target.time);
+      final sourceRef = _reservationsRef(
+        sourceSlot.courseId,
+        sourceSlot.dayKey,
+        sourceSlot.time,
+      );
+      final targetRef = _reservationsRef(
+        target.courseId,
+        target.dayKey,
+        target.time,
+      );
 
       final tx = await targetRef.runTransaction((Object? currentData) {
-        final Map<String, dynamic> node =
-        (currentData is Map) ? currentData.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+        final Map<String, dynamic> node = (currentData is Map)
+            ? currentData.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{};
 
         final Map<String, dynamic> learners = <String, dynamic>{};
         final learnersRaw = node['learners'];
@@ -858,7 +964,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           return Transaction.abort();
         }
 
-        final cap = target.maxLearnersPerSlot <= 0 ? 6 : target.maxLearnersPerSlot;
+        final cap = target.maxLearnersPerSlot <= 0
+            ? 6
+            : target.maxLearnersPerSlot;
         if (!learners.containsKey(learnerUid) && learners.length >= cap) {
           return Transaction.abort();
         }
@@ -899,7 +1007,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       });
 
       if (!removeTx.committed) {
-        _toast('Moved to new slot, but old slot cleanup failed. Please refresh and check.');
+        _toast(
+          'Moved to new slot, but old slot cleanup failed. Please refresh and check.',
+        );
       } else {
         _toast('Booking moved ✅');
       }
@@ -936,20 +1046,22 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       builder: (sheetContext) {
         final bottomPad = MediaQuery.of(sheetContext).padding.bottom;
 
-        final learners = slot.learnerUids
-            .map(
-              (uid) => learnerCache[uid] ??
-              _LearnerProfile(
-                uid: uid,
-                fullName: uid,
-                serial: '',
-                email: '',
-                phone: '',
-                status: '',
-              ),
-        )
-            .toList()
-          ..sort((a, b) => a.fullName.compareTo(b.fullName));
+        final learners =
+            slot.learnerUids
+                .map(
+                  (uid) =>
+                      learnerCache[uid] ??
+                      _LearnerProfile(
+                        uid: uid,
+                        fullName: uid,
+                        serial: '',
+                        email: '',
+                        phone: '',
+                        status: '',
+                      ),
+                )
+                .toList()
+              ..sort((a, b) => a.fullName.compareTo(b.fullName));
 
         return SafeArea(
           child: Padding(
@@ -973,7 +1085,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Teacher: ${slot.teacherName}',
-                    style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade700,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -981,131 +1096,182 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Session ${slot.sessionNo <= 0 ? '—' : slot.sessionNo} • ${slot.learnerCount} learner${slot.learnerCount == 1 ? '' : 's'}',
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: actionOrange),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: actionOrange,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
                 Flexible(
                   child: learners.isEmpty
                       ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Text(
-                      'No learners found.',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  )
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Text(
+                            'No learners found.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        )
                       : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: learners.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final p = learners[i];
+                          shrinkWrap: true,
+                          itemCount: learners.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final p = learners[i];
 
-                      return Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: uiBorder),
+                            return Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: uiBorder),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          p.fullName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: primaryBlue,
+                                          ),
+                                        ),
+                                      ),
+                                      if (p.status.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                p.status.toLowerCase() ==
+                                                    'active'
+                                                ? const Color(0xFFEAF7EE)
+                                                : const Color(0xFFFFF1E3),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            p.status,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  if (p.serial.isNotEmpty) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      p.serial,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                  if (p.email.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      p.email,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                  if (p.phone.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      p.phone,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: primaryBlue,
+                                            side: BorderSide(
+                                              color: primaryBlue.withOpacity(
+                                                0.25,
+                                              ),
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 10,
+                                            ),
+                                          ),
+                                          onPressed: busyAction
+                                              ? null
+                                              : () => _pickRescheduleTarget(
+                                                  slot,
+                                                  p.uid,
+                                                  sheetContext,
+                                                ),
+                                          icon: const Icon(
+                                            Icons.swap_horiz_rounded,
+                                          ),
+                                          label: const Text(
+                                            'Reschedule',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: FilledButton.icon(
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor:
+                                                Colors.red.shade600,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 10,
+                                            ),
+                                          ),
+                                          onPressed: busyAction
+                                              ? null
+                                              : () => _cancelLearnerFromSlot(
+                                                  slot,
+                                                  p.uid,
+                                                  sheetContext,
+                                                ),
+                                          icon: const Icon(Icons.close_rounded),
+                                          label: const Text(
+                                            'Cancel',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    p.fullName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: primaryBlue,
-                                    ),
-                                  ),
-                                ),
-                                if (p.status.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: p.status.toLowerCase() == 'active'
-                                          ? const Color(0xFFEAF7EE)
-                                          : const Color(0xFFFFF1E3),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      p.status,
-                                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            if (p.serial.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                p.serial,
-                                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-                              ),
-                            ],
-                            if (p.email.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                p.email,
-                                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-                              ),
-                            ],
-                            if (p.phone.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                p.phone,
-                                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-                              ),
-                            ],
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: primaryBlue,
-                                      side: BorderSide(color: primaryBlue.withOpacity(0.25)),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                    ),
-                                    onPressed: busyAction
-                                        ? null
-                                        : () => _pickRescheduleTarget(slot, p.uid, sheetContext),
-                                    icon: const Icon(Icons.swap_horiz_rounded),
-                                    label: const Text(
-                                      'Reschedule',
-                                      style: TextStyle(fontWeight: FontWeight.w900),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: Colors.red.shade600,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                    ),
-                                    onPressed: busyAction
-                                        ? null
-                                        : () => _cancelLearnerFromSlot(slot, p.uid, sheetContext),
-                                    icon: const Icon(Icons.close_rounded),
-                                    label: const Text(
-                                      'Cancel',
-                                      style: TextStyle(fontWeight: FontWeight.w900),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
                 ),
               ],
             ),
@@ -1129,8 +1295,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     final teacherIds = teacherMap.keys.toList()
       ..sort((a, b) => (teacherMap[a] ?? '').compareTo(teacherMap[b] ?? ''));
 
-    final totalLearners = filtered.fold<int>(0, (sum, s) => sum + s.learnerCount);
-    final futureCount = filtered.where((s) => s.start.isAfter(DateTime.now())).length;
+    final totalLearners = filtered.fold<int>(
+      0,
+      (sum, s) => sum + s.learnerCount,
+    );
+    final futureCount = filtered
+        .where((s) => s.start.isAfter(DateTime.now()))
+        .length;
 
     return Scaffold(
       backgroundColor: appBg,
@@ -1146,7 +1317,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: (loadingCourses || loadingBookings || selectedCourseId == null)
+            onPressed:
+                (loadingCourses || loadingBookings || selectedCourseId == null)
                 ? null
                 : () => _loadBookingsForCourse(selectedCourseId!),
             icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
@@ -1157,248 +1329,325 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       body: loadingCourses
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
-        children: [
-          _Card(
-            title: course?.title ?? 'Select a course',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
               children: [
-                _buildCompactSelectors(),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _StatPill(label: 'Rows', value: '${filtered.length}', icon: Icons.table_rows_rounded),
-                    _StatPill(label: 'Lrnrs', value: '$totalLearners', icon: Icons.people_alt_rounded),
-                    _StatPill(label: 'Up', value: '$futureCount', icon: Icons.schedule_rounded),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          _Card(
-            title: 'Filters',
-            child: Column(
-              children: [
-                TextField(
-                  controller: searchC,
-                  decoration: InputDecoration(
-                    hintText: 'Search teacher / date / time / session / status',
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: searchC.text.trim().isEmpty
-                        ? null
-                        : IconButton(
-                      onPressed: () => searchC.clear(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: uiBorder),
-                    ),
+                _Card(
+                  title: course?.title ?? 'Select a course',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildCompactSelectors(),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _StatPill(
+                            label: 'Rows',
+                            value: '${filtered.length}',
+                            icon: Icons.table_rows_rounded,
+                          ),
+                          _StatPill(
+                            label: 'Lrnrs',
+                            value: '$totalLearners',
+                            icon: Icons.people_alt_rounded,
+                          ),
+                          _StatPill(
+                            label: 'Up',
+                            value: '$futureCount',
+                            icon: Icons.schedule_rounded,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _smallDropdown(
-                      width: 160,
-                      value: teacherFilter,
-                      items: [
-                        const DropdownMenuItem(value: 'all', child: Text('All teachers')),
-                        ...teacherIds.map(
-                              (id) => DropdownMenuItem(
-                            value: id,
-                            child: Text(
-                              teacherMap[id] ?? 'Teacher',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                const SizedBox(height: 10),
+                _Card(
+                  title: 'Filters',
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: searchC,
+                        decoration: InputDecoration(
+                          hintText:
+                              'Search teacher / date / time / session / status',
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: searchC.text.trim().isEmpty
+                              ? null
+                              : IconButton(
+                                  onPressed: () => searchC.clear(),
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: uiBorder),
                           ),
                         ),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => teacherFilter = v);
-                      },
-                    ),
-                    _smallDropdown(
-                      width: 130,
-                      value: dateFilter,
-                      items: const [
-                        DropdownMenuItem(value: 'all', child: Text('All')),
-                        DropdownMenuItem(value: 'today', child: Text('Today')),
-                        DropdownMenuItem(value: 'thisWeek', child: Text('This week')),
-                        DropdownMenuItem(value: 'future', child: Text('Upcoming')),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => dateFilter = v);
-                      },
-                    ),
-                    _togglePill(
-                      label: 'Group only',
-                      value: onlyMultiLearner,
-                      onChanged: (v) => setState(() => onlyMultiLearner = v),
-                    ),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: primaryBlue,
-                        side: BorderSide(color: primaryBlue.withOpacity(0.20)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
-                      onPressed: _clearFilters,
-                      icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
-                      label: const Text(
-                        'Clear',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          _Card(
-            title: 'All bookings',
-            child: loadingBookings
-                ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator()),
-            )
-                : filtered.isEmpty
-                ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'No bookings found for this course.',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            )
-                : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: primaryBlue,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      horizontalMargin: 10,
-                      columnSpacing: 14,
-                      headingRowHeight: 38,
-                      dataRowMinHeight: 48,
-                      dataRowMaxHeight: 56,
-                      columns: const [
-                        DataColumn(label: Text('Day')),
-                        DataColumn(label: Text('Time')),
-                        DataColumn(label: Text('Teacher')),
-                        DataColumn(label: Text('Sess')),
-                        DataColumn(label: Text('Lrnrs')),
-                        DataColumn(label: Text('Status')),
-                        DataColumn(label: Text('Act')),
-                      ],
-                      rows: filtered.map((s) {
-                        final statusColor = _statusColorForSlot(s);
-                        final isPast = s.start.isBefore(DateTime.now());
-
-                        return DataRow(
-                          cells: [
-                            DataCell(
-                              Text(
-                                _friendlyDate(s.start),
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _smallDropdown(
+                            width: 160,
+                            value: teacherFilter,
+                            items: [
+                              const DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All teachers'),
                               ),
-                            ),
-                            DataCell(
-                              Text(
-                                s.time,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 12,
-                                  color: isPast ? Colors.grey.shade700 : actionOrange,
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 110),
-                                child: Text(
-                                  s.teacherName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                s.sessionNo <= 0 ? '—' : '${s.sessionNo}',
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                '${s.learnerCount}',
-                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-                              ),
-                            ),
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  _statusLabelForSlot(s),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: statusColor,
-                                    fontSize: 11,
+                              ...teacherIds.map(
+                                (id) => DropdownMenuItem(
+                                  value: id,
+                                  child: Text(
+                                    teacherMap[id] ?? 'Teacher',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => teacherFilter = v);
+                            },
+                          ),
+                          _smallDropdown(
+                            width: 130,
+                            value: dateFilter,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'today',
+                                child: Text('Today'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'thisWeek',
+                                child: Text('This week'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'future',
+                                child: Text('Upcoming'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => dateFilter = v);
+                            },
+                          ),
+                          _togglePill(
+                            label: 'Group only',
+                            value: onlyMultiLearner,
+                            onChanged: (v) =>
+                                setState(() => onlyMultiLearner = v),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: primaryBlue,
+                              side: BorderSide(
+                                color: primaryBlue.withOpacity(0.20),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
                             ),
-                            DataCell(
-                              TextButton(
-                                onPressed: () => _openSlotDetails(s),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'View',
-                                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                            onPressed: _clearFilters,
+                            icon: const Icon(
+                              Icons.filter_alt_off_rounded,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'Clear',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _Card(
+                  title: 'All bookings',
+                  child: loadingBookings
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : filtered.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'No bookings found for this course.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  horizontalMargin: 10,
+                                  columnSpacing: 14,
+                                  headingRowHeight: 38,
+                                  dataRowMinHeight: 48,
+                                  dataRowMaxHeight: 56,
+                                  columns: const [
+                                    DataColumn(label: Text('Day')),
+                                    DataColumn(label: Text('Time')),
+                                    DataColumn(label: Text('Teacher')),
+                                    DataColumn(label: Text('Sess')),
+                                    DataColumn(label: Text('Lrnrs')),
+                                    DataColumn(label: Text('Status')),
+                                    DataColumn(label: Text('Act')),
+                                  ],
+                                  rows: filtered.map((s) {
+                                    final statusColor = _statusColorForSlot(s);
+                                    final isPast = s.start.isBefore(
+                                      DateTime.now(),
+                                    );
+
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(
+                                          Text(
+                                            _friendlyDate(s.start),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            s.time,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                              color: isPast
+                                                  ? Colors.grey.shade700
+                                                  : actionOrange,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              maxWidth: 110,
+                                            ),
+                                            child: Text(
+                                              s.teacherName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            s.sessionNo <= 0
+                                                ? '—'
+                                                : '${s.sessionNo}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            '${s.learnerCount}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: statusColor.withOpacity(
+                                                0.10,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              _statusLabelForSlot(s),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: statusColor,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          TextButton(
+                                            onPressed: () =>
+                                                _openSlotDetails(s),
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 6,
+                                                  ),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                            child: const Text(
+                                              'View',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
                                 ),
                               ),
                             ),
                           ],
-                        );
-                      }).toList(),
-                    ),
-                  ),
+                        ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1407,8 +1656,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     final filteredCourses = _coursesForSelectedLevel();
 
     String? safeCourseId = selectedCourseId;
-    if (safeCourseId != null && !filteredCourses.any((c) => c.id == safeCourseId)) {
-      safeCourseId = filteredCourses.isNotEmpty ? filteredCourses.first.id : null;
+    if (safeCourseId != null &&
+        !filteredCourses.any((c) => c.id == safeCourseId)) {
+      safeCourseId = filteredCourses.isNotEmpty
+          ? filteredCourses.first.id
+          : null;
     }
 
     return Column(
@@ -1419,44 +1671,42 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _chip(
-                'All levels',
-                levelFilter == 'all',
-                    () async {
+              _chip('All levels', levelFilter == 'all', () async {
+                setState(() {
+                  levelFilter = 'all';
+                  if (!_coursesForSelectedLevel().any(
+                    (c) => c.id == selectedCourseId,
+                  )) {
+                    selectedCourseId = _coursesForSelectedLevel().isNotEmpty
+                        ? _coursesForSelectedLevel().first.id
+                        : null;
+                  }
+                });
+                if (selectedCourseId != null) {
+                  await _loadBookingsForCourse(selectedCourseId!);
+                }
+              }),
+              ...levels.map(
+                (lvl) => _chip(lvl, levelFilter == lvl, () async {
+                  final matching = allCourses
+                      .where((c) => c.levelText == lvl)
+                      .toList();
+
                   setState(() {
-                    levelFilter = 'all';
-                    if (!_coursesForSelectedLevel().any((c) => c.id == selectedCourseId)) {
-                      selectedCourseId = _coursesForSelectedLevel().isNotEmpty
-                          ? _coursesForSelectedLevel().first.id
+                    levelFilter = lvl;
+                    if (!matching.any((c) => c.id == selectedCourseId)) {
+                      selectedCourseId = matching.isNotEmpty
+                          ? matching.first.id
                           : null;
                     }
                   });
+
                   if (selectedCourseId != null) {
                     await _loadBookingsForCourse(selectedCourseId!);
+                  } else {
+                    setState(() => bookedSlots = []);
                   }
-                },
-              ),
-              ...levels.map(
-                    (lvl) => _chip(
-                  lvl,
-                  levelFilter == lvl,
-                      () async {
-                    final matching = allCourses.where((c) => c.levelText == lvl).toList();
-
-                    setState(() {
-                      levelFilter = lvl;
-                      if (!matching.any((c) => c.id == selectedCourseId)) {
-                        selectedCourseId = matching.isNotEmpty ? matching.first.id : null;
-                      }
-                    });
-
-                    if (selectedCourseId != null) {
-                      await _loadBookingsForCourse(selectedCourseId!);
-                    } else {
-                      setState(() => bookedSlots = []);
-                    }
-                  },
-                ),
+                }),
               ),
             ],
           ),
@@ -1476,41 +1726,43 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                   value: safeCourseId,
                   isExpanded: true,
                   underline: const SizedBox.shrink(),
-                  icon: const Icon(Icons.expand_more_rounded, color: primaryBlue),
+                  icon: const Icon(
+                    Icons.expand_more_rounded,
+                    color: primaryBlue,
+                  ),
                   hint: const Text('No course'),
                   items: filteredCourses
                       .map(
                         (c) => DropdownMenuItem(
-                      value: c.id,
-                      child: Text(
-                        _shortCourseLabel(c),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primaryBlue,
-                          fontSize: 13,
+                          value: c.id,
+                          child: Text(
+                            _shortCourseLabel(c),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: primaryBlue,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  )
+                      )
                       .toList(),
                   onChanged: filteredCourses.isEmpty
                       ? null
                       : (v) async {
-                    if (v == null) return;
-                    setState(() {
-                      selectedCourseId = v;
-                      bookedSlots = [];
-                      teacherFilter = 'all';
-                    });
-                    await _loadBookingsForCourse(v);
-                  },
+                          if (v == null) return;
+                          setState(() {
+                            selectedCourseId = v;
+                            bookedSlots = [];
+                            teacherFilter = 'all';
+                          });
+                          await _loadBookingsForCourse(v);
+                        },
                 ),
               ),
             ),
             const SizedBox(width: 8),
-
           ],
         ),
       ],
@@ -1551,7 +1803,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         decoration: BoxDecoration(
           color: on ? actionOrange.withOpacity(0.12) : Colors.white,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: on ? actionOrange.withOpacity(0.35) : uiBorder),
+          border: Border.all(
+            color: on ? actionOrange.withOpacity(0.35) : uiBorder,
+          ),
         ),
         child: Text(
           label,
@@ -1582,13 +1836,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 11.5),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 11.5,
+            ),
           ),
           const SizedBox(width: 6),
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: actionOrange,
+            activeThumbColor: actionOrange,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -1723,7 +1981,11 @@ class _Card extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 13),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 13,
+            ),
           ),
           const SizedBox(height: 8),
           child,
@@ -1763,11 +2025,19 @@ class _StatPill extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.w800, color: primaryBlue, fontSize: 12),
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: primaryBlue,
+              fontSize: 12,
+            ),
           ),
           Text(
             value,
-            style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue, fontSize: 12),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 12,
+            ),
           ),
         ],
       ),

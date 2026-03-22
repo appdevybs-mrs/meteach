@@ -22,7 +22,7 @@ class NotificationService {
   static final NotificationService I = NotificationService._();
 
   final FlutterLocalNotificationsPlugin _plugin =
-  FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
   bool _inited = false;
 
   static const int dailyReminderId = 900001;
@@ -66,31 +66,39 @@ class NotificationService {
     );
 
     // Create/update Android notification channels (safe to call repeatedly).
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     if (android != null) {
-      await android.createNotificationChannel(const AndroidNotificationChannel(
-        _dailyChannelId,
-        _dailyChannelName,
-        description: _dailyChannelDesc,
-        importance: Importance.defaultImportance,
-      ));
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _dailyChannelId,
+          _dailyChannelName,
+          description: _dailyChannelDesc,
+          importance: Importance.defaultImportance,
+        ),
+      );
 
-      await android.createNotificationChannel(const AndroidNotificationChannel(
-        _sessionChannelId,
-        _sessionChannelName,
-        description: _sessionChannelDesc,
-        importance: Importance.max,
-      ));
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _sessionChannelId,
+          _sessionChannelName,
+          description: _sessionChannelDesc,
+          importance: Importance.max,
+        ),
+      );
     }
 
     _inited = true;
   }
 
   Future<bool> requestPermissions() async {
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     final granted = await android?.requestNotificationsPermission();
     return granted ?? true;
   }
@@ -207,16 +215,11 @@ class NotificationService {
       notificationDetails: _detailsDaily(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: jsonEncode({
-        'type': 'coach',
-        'goalId': goalId,
-      }),
+      payload: jsonEncode({'type': 'coach', 'goalId': goalId}),
     );
   }
 
-  Future<void> cancelCoachReminder({
-    required String goalId,
-  }) async {
+  Future<void> cancelCoachReminder({required String goalId}) async {
     await _plugin.cancel(id: _makeCoachNotifId(goalId));
   }
 
@@ -335,8 +338,9 @@ class NotificationService {
     final diff = sessionStart.difference(scheduledAt).inMinutes;
 
     // If original body is empty, create one. If not, append helpful info.
-    final base =
-    originalBody.trim().isEmpty ? 'Starts at $startTime' : originalBody.trim();
+    final base = originalBody.trim().isEmpty
+        ? 'Starts at $startTime'
+        : originalBody.trim();
 
     if (diff <= 0) {
       return '$base • Starts at $startTime';

@@ -6,18 +6,17 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 
 class LearnerReminderDetailsScreen extends StatefulWidget {
-  const LearnerReminderDetailsScreen({
-    super.key,
-    required this.reminderId,
-  });
+  const LearnerReminderDetailsScreen({super.key, required this.reminderId});
 
   final String reminderId;
 
   @override
-  State<LearnerReminderDetailsScreen> createState() => _LearnerReminderDetailsScreenState();
+  State<LearnerReminderDetailsScreen> createState() =>
+      _LearnerReminderDetailsScreenState();
 }
 
-class _LearnerReminderDetailsScreenState extends State<LearnerReminderDetailsScreen> {
+class _LearnerReminderDetailsScreenState
+    extends State<LearnerReminderDetailsScreen> {
   final _db = FirebaseDatabase.instance.ref();
 
   @override
@@ -35,10 +34,7 @@ class _LearnerReminderDetailsScreenState extends State<LearnerReminderDetailsScr
     final snap = await ref.child('readAt').get();
     if (snap.exists) return; // already read
 
-    await ref.update({
-      'readAt': ServerValue.timestamp,
-      'status': 'read',
-    });
+    await ref.update({'readAt': ServerValue.timestamp, 'status': 'read'});
   }
 
   @override
@@ -66,7 +62,10 @@ class _LearnerReminderDetailsScreenState extends State<LearnerReminderDetailsScr
 
             if (v is! Map) {
               return const Center(
-                child: Text('Reminder not found.', style: TextStyle(fontWeight: FontWeight.w800)),
+                child: Text(
+                  'Reminder not found.',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
               );
             }
 
@@ -75,7 +74,9 @@ class _LearnerReminderDetailsScreenState extends State<LearnerReminderDetailsScr
             final title = (m['title'] ?? 'Reminder').toString();
             final desc = (m['description'] ?? '').toString();
             final status = (m['status'] ?? '').toString();
-            final teacher = (m['teacher'] is Map) ? (m['teacher']['name'] ?? '').toString() : '';
+            final teacher = (m['teacher'] is Map)
+                ? (m['teacher']['name'] ?? '').toString()
+                : '';
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -100,11 +101,16 @@ class _LearnerReminderDetailsScreenState extends State<LearnerReminderDetailsScr
                         ),
                         const SizedBox(height: 14),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: UiK.primaryBlue.withOpacity(0.06),
                             borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                            border: Border.all(
+                              color: UiK.uiBorder.withOpacity(0.85),
+                            ),
                           ),
                           child: Text(
                             status.isEmpty ? '—' : status,

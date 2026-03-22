@@ -14,8 +14,7 @@ class TeacherPublicGalleryScreen extends StatefulWidget {
       _TeacherPublicGalleryScreenState();
 }
 
-class _TeacherPublicGalleryScreenState
-    extends State<TeacherPublicGalleryScreen>
+class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
     with SingleTickerProviderStateMixin {
   static const int _pageSize = 4;
 
@@ -26,9 +25,9 @@ class _TeacherPublicGalleryScreenState
   late final Stream<DatabaseEvent> _learnerGalleryStream;
 
   final TextEditingController _myGallerySearchController =
-  TextEditingController();
+      TextEditingController();
   final TextEditingController _teachersSearchController =
-  TextEditingController();
+      TextEditingController();
 
   String _teacherUid = '';
 
@@ -53,8 +52,10 @@ class _TeacherPublicGalleryScreenState
     _teacherUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     _classesStream = _db.child('classes').onValue.asBroadcastStream();
-    _learnerGalleryStream =
-        _db.child('learner_gallery').onValue.asBroadcastStream();
+    _learnerGalleryStream = _db
+        .child('learner_gallery')
+        .onValue
+        .asBroadcastStream();
 
     appThemeController.addListener(_onThemeChanged);
   }
@@ -152,18 +153,16 @@ class _TeacherPublicGalleryScreenState
         final m = itemVal.map((k, vv) => MapEntry(k.toString(), vv));
 
         final teacherUid = (m['teacherUid'] ?? '').toString().trim();
-        final uploadedByRole =
-        (m['uploadedByRole'] ?? '').toString().trim().toLowerCase();
+        final uploadedByRole = (m['uploadedByRole'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
         if (teacherUid.isEmpty) return;
         if (teacherUid != _teacherUid) return;
         if (uploadedByRole == 'admin') return;
 
-        out.add({
-          'id': itemId.toString(),
-          'learnerUid': uid,
-          ...m,
-        });
+        out.add({'id': itemId.toString(), 'learnerUid': uid, ...m});
       });
     });
 
@@ -177,8 +176,8 @@ class _TeacherPublicGalleryScreenState
   }
 
   List<Map<String, dynamic>> _allOtherTeachersGalleryItems(
-      dynamic learnerGalleryValue,
-      ) {
+    dynamic learnerGalleryValue,
+  ) {
     if (learnerGalleryValue is! Map) return [];
 
     final raw = Map<dynamic, dynamic>.from(learnerGalleryValue);
@@ -195,8 +194,10 @@ class _TeacherPublicGalleryScreenState
         final m = itemVal.map((k, vv) => MapEntry(k.toString(), vv));
 
         final teacherUid = (m['teacherUid'] ?? '').toString().trim();
-        final uploadedByRole =
-        (m['uploadedByRole'] ?? '').toString().trim().toLowerCase();
+        final uploadedByRole = (m['uploadedByRole'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
         if (teacherUid.isEmpty) return;
         if (teacherUid == _teacherUid) return;
@@ -233,7 +234,8 @@ class _TeacherPublicGalleryScreenState
       final classTitle = (item['classTitle'] ?? '').toString().toLowerCase();
 
       final matchesType = typeFilter == 'all' || type == typeFilter;
-      final matchesSearch = q.isEmpty ||
+      final matchesSearch =
+          q.isEmpty ||
           learnerName.contains(q) ||
           teacherName.contains(q) ||
           classTitle.contains(q);
@@ -243,9 +245,9 @@ class _TeacherPublicGalleryScreenState
   }
 
   List<Map<String, dynamic>> _visibleItems(
-      List<Map<String, dynamic>> items,
-      int visibleCount,
-      ) {
+    List<Map<String, dynamic>> items,
+    int visibleCount,
+  ) {
     if (items.isEmpty) return const [];
     final count = visibleCount.clamp(0, items.length);
     return items.take(count).toList();
@@ -391,18 +393,9 @@ class _TeacherPublicGalleryScreenState
                       fontWeight: FontWeight.w700,
                     ),
                     items: const [
-                      DropdownMenuItem(
-                        value: 'all',
-                        child: Text('All'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'photo',
-                        child: Text('Photos'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'video',
-                        child: Text('Videos'),
-                      ),
+                      DropdownMenuItem(value: 'all', child: Text('All')),
+                      DropdownMenuItem(value: 'photo', child: Text('Photos')),
+                      DropdownMenuItem(value: 'video', child: Text('Videos')),
                     ],
                     onChanged: onTypeChanged,
                   ),
@@ -445,17 +438,21 @@ class _TeacherPublicGalleryScreenState
               typeFilter: _myGalleryTypeFilter,
             );
 
-            final visibleItems =
-            _visibleItems(filteredItems, _visibleMyGalleryCount);
+            final visibleItems = _visibleItems(
+              filteredItems,
+              _visibleMyGalleryCount,
+            );
 
             final photoCount = filteredItems
-                .where((e) =>
-            (e['type'] ?? '').toString().toLowerCase() == 'photo')
+                .where(
+                  (e) => (e['type'] ?? '').toString().toLowerCase() == 'photo',
+                )
                 .length;
 
             final videoCount = filteredItems
-                .where((e) =>
-            (e['type'] ?? '').toString().toLowerCase() == 'video')
+                .where(
+                  (e) => (e['type'] ?? '').toString().toLowerCase() == 'video',
+                )
                 .length;
 
             final canLoadMore = visibleItems.length < filteredItems.length;
@@ -467,10 +464,7 @@ class _TeacherPublicGalleryScreenState
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [
-                        p.primary,
-                        p.primary.withOpacity(0.88),
-                      ],
+                      colors: [p.primary, p.primary.withOpacity(0.88)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -540,7 +534,7 @@ class _TeacherPublicGalleryScreenState
                   const _TeacherGalleryEmptyBox(
                     title: 'No gallery items found.',
                     subtitle:
-                    'Your uploaded learner gallery items will appear here.',
+                        'Your uploaded learner gallery items will appear here.',
                   )
                 else ...[
                   GridView.builder(
@@ -548,20 +542,23 @@ class _TeacherPublicGalleryScreenState
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.88,
-                    ),
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.88,
+                        ),
                     itemBuilder: (context, index) {
                       final item = visibleItems[index];
-                      final type =
-                      (item['type'] ?? '').toString().trim().toLowerCase();
+                      final type = (item['type'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
                       final url = (item['url'] ?? '').toString().trim();
                       final createdAt = _fmtDate(item['createdAt']);
-                      final learnerName =
-                      (item['learnerName'] ?? '').toString().trim();
+                      final learnerName = (item['learnerName'] ?? '')
+                          .toString()
+                          .trim();
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(18),
@@ -570,7 +567,9 @@ class _TeacherPublicGalleryScreenState
                           decoration: BoxDecoration(
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: p.border.withOpacity(0.85)),
+                            border: Border.all(
+                              color: p.border.withOpacity(0.85),
+                            ),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.03),
@@ -595,12 +594,14 @@ class _TeacherPublicGalleryScreenState
                                         Image.network(
                                           url,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Container(
+                                          errorBuilder: (_, _, _) => Container(
                                             color: p.soft,
                                             alignment: Alignment.center,
                                             child: Icon(
                                               Icons.broken_image_outlined,
-                                              color: p.primary.withOpacity(0.55),
+                                              color: p.primary.withOpacity(
+                                                0.55,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -613,16 +614,20 @@ class _TeacherPublicGalleryScreenState
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(0.58),
-                                            borderRadius:
-                                            BorderRadius.circular(12),
+                                            color: Colors.black.withOpacity(
+                                              0.58,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Icon(
                                                 type == 'video'
-                                                    ? Icons.play_circle_fill_rounded
+                                                    ? Icons
+                                                          .play_circle_fill_rounded
                                                     : Icons.photo_rounded,
                                                 color: Colors.white,
                                                 size: 14,
@@ -647,12 +652,19 @@ class _TeacherPublicGalleryScreenState
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                                padding: const EdgeInsets.fromLTRB(
+                                  10,
+                                  10,
+                                  10,
+                                  12,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      learnerName.isEmpty ? 'Learner' : learnerName,
+                                      learnerName.isEmpty
+                                          ? 'Learner'
+                                          : learnerName,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -709,8 +721,9 @@ class _TeacherPublicGalleryScreenState
           _learnerGalleryCache = learnerGalleryValue;
         }
 
-        final allItems =
-        _allOtherTeachersGalleryItems(learnerGalleryValue ?? _learnerGalleryCache);
+        final allItems = _allOtherTeachersGalleryItems(
+          learnerGalleryValue ?? _learnerGalleryCache,
+        );
 
         final filteredItems = _applySearchAndFilter(
           items: allItems,
@@ -718,7 +731,10 @@ class _TeacherPublicGalleryScreenState
           typeFilter: _teachersTypeFilter,
         );
 
-        final visibleItems = _visibleItems(filteredItems, _visibleTeachersCount);
+        final visibleItems = _visibleItems(
+          filteredItems,
+          _visibleTeachersCount,
+        );
 
         final photoCount = filteredItems
             .where((e) => (e['type'] ?? '').toString().toLowerCase() == 'photo')
@@ -737,10 +753,7 @@ class _TeacherPublicGalleryScreenState
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    p.primary,
-                    p.primary.withOpacity(0.88),
-                  ],
+                  colors: [p.primary, p.primary.withOpacity(0.88)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -810,15 +823,14 @@ class _TeacherPublicGalleryScreenState
               const _TeacherGalleryEmptyBox(
                 title: 'No other teachers gallery items found.',
                 subtitle:
-                'When other teachers upload learner gallery items, they will appear here.',
+                    'When other teachers upload learner gallery items, they will appear here.',
               )
             else ...[
               GridView.builder(
                 itemCount: visibleItems.length,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 12,
                   mainAxisSpacing: 12,
@@ -826,14 +838,18 @@ class _TeacherPublicGalleryScreenState
                 ),
                 itemBuilder: (context, index) {
                   final item = visibleItems[index];
-                  final type =
-                  (item['type'] ?? '').toString().trim().toLowerCase();
+                  final type = (item['type'] ?? '')
+                      .toString()
+                      .trim()
+                      .toLowerCase();
                   final url = (item['url'] ?? '').toString().trim();
                   final createdAt = _fmtDate(item['createdAt']);
-                  final uploader =
-                  (item['teacherName'] ?? '').toString().trim();
-                  final learnerName =
-                  (item['learnerName'] ?? '').toString().trim();
+                  final uploader = (item['teacherName'] ?? '')
+                      .toString()
+                      .trim();
+                  final learnerName = (item['learnerName'] ?? '')
+                      .toString()
+                      .trim();
 
                   return InkWell(
                     borderRadius: BorderRadius.circular(18),
@@ -867,7 +883,7 @@ class _TeacherPublicGalleryScreenState
                                     Image.network(
                                       url,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(
+                                      errorBuilder: (_, _, _) => Container(
                                         color: p.soft,
                                         alignment: Alignment.center,
                                         child: Icon(
@@ -886,8 +902,7 @@ class _TeacherPublicGalleryScreenState
                                       ),
                                       decoration: BoxDecoration(
                                         color: Colors.black.withOpacity(0.58),
-                                        borderRadius:
-                                        BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -990,10 +1005,7 @@ class _TeacherPublicGalleryScreenState
         iconTheme: IconThemeData(color: p.primary),
         title: Text(
           'Gallery',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         bottom: TabBar(
           controller: _tab,
@@ -1009,10 +1021,7 @@ class _TeacherPublicGalleryScreenState
       body: SafeArea(
         child: TabBarView(
           controller: _tab,
-          children: [
-            _buildMyGalleryTab(),
-            _buildTeachersTab(),
-          ],
+          children: [_buildMyGalleryTab(), _buildTeachersTab()],
         ),
       ),
     );
@@ -1020,10 +1029,7 @@ class _TeacherPublicGalleryScreenState
 }
 
 class _TeacherGalleryStatChip extends StatelessWidget {
-  const _TeacherGalleryStatChip({
-    required this.text,
-    required this.icon,
-  });
+  const _TeacherGalleryStatChip({required this.text, required this.icon});
 
   final String text;
   final IconData icon;
@@ -1057,10 +1063,7 @@ class _TeacherGalleryStatChip extends StatelessWidget {
 }
 
 class _TeacherGalleryEmptyBox extends StatelessWidget {
-  const _TeacherGalleryEmptyBox({
-    required this.title,
-    required this.subtitle,
-  });
+  const _TeacherGalleryEmptyBox({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;
@@ -1418,10 +1421,12 @@ class _TeacherPublicVideoPreviewCardState
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
-                      thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 12),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
                     ),
                     child: Slider(
                       min: 0,
@@ -1430,11 +1435,11 @@ class _TeacherPublicVideoPreviewCardState
                           : duration.inMilliseconds.toDouble(),
                       value: position.inMilliseconds
                           .clamp(
-                        0,
-                        duration.inMilliseconds <= 0
-                            ? 1
-                            : duration.inMilliseconds,
-                      )
+                            0,
+                            duration.inMilliseconds <= 0
+                                ? 1
+                                : duration.inMilliseconds,
+                          )
                           .toDouble(),
                       activeColor: p.accent,
                       inactiveColor: Colors.white24,
@@ -1546,23 +1551,23 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
                       child: isVideo
                           ? _TeacherPublicVideoPreviewCard(url: url)
                           : InteractiveViewer(
-                        minScale: 0.8,
-                        maxScale: 4,
-                        child: Image.network(
-                          url,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const SizedBox(
-                            height: 260,
-                            child: Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white,
-                                size: 44,
+                              minScale: 0.8,
+                              maxScale: 4,
+                              child: Image.network(
+                                url,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => const SizedBox(
+                                  height: 260,
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white,
+                                      size: 44,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
                     ),
                     Container(
                       width: double.infinity,

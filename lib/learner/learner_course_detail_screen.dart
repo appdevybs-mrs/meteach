@@ -30,6 +30,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 
 import 'learner_homework_screen.dart';
+import '../shared/human_error.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 
@@ -44,10 +45,12 @@ class LearnerCourseDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<LearnerCourseDetailScreen> createState() => _LearnerCourseDetailScreenState();
+  State<LearnerCourseDetailScreen> createState() =>
+      _LearnerCourseDetailScreenState();
 }
 
-class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> with SingleTickerProviderStateMixin {
+class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
+    with SingleTickerProviderStateMixin {
   static const usersNode = 'users';
   static const syllabiNode = 'syllabi';
   static const classesNode = 'classes';
@@ -77,8 +80,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   List<Map<String, dynamic>> _syllabiFlat = [];
   Set<String> _coveredSessionIds = {};
-  Map<int, String> _sessionIdByNumber = {}; // sessionNumber -> sessionId (fallback)
-  Map<int, String> _sessionTitleByNumber = {}; // sessionNumber -> title (for online taughtSummary)
+  Map<int, String> _sessionIdByNumber =
+      {}; // sessionNumber -> sessionId (fallback)
+  Map<int, String> _sessionTitleByNumber =
+      {}; // sessionNumber -> title (for online taughtSummary)
 
   // ✅ meetings total (optional)
   int? _plannedMeetings;
@@ -152,26 +157,33 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     return buf.toString();
   }
 
-  Map<String, dynamic> get _cls =>
-      (_course['class'] is Map) ? Map<String, dynamic>.from(_course['class'] as Map) : <String, dynamic>{};
+  Map<String, dynamic> get _cls => (_course['class'] is Map)
+      ? Map<String, dynamic>.from(_course['class'] as Map)
+      : <String, dynamic>{};
 
-  String get _courseTitle => (_course['title'] ?? _course['course_title'] ?? 'Course').toString();
+  String get _courseTitle =>
+      (_course['title'] ?? _course['course_title'] ?? 'Course').toString();
   String get _courseCode => (_course['course_code'] ?? '').toString();
   String get _classId => (_cls['class_id'] ?? '').toString();
 
-// syllabi key (courseId)
+  // syllabi key (courseId)
   String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString();
 
   String get _deliveryKey {
-    final rootVariant =
-    (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
+    final rootVariant = (_course['variantKey'] ?? _course['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     if (rootVariant.isNotEmpty) return rootVariant;
 
-    final classMap =
-    (_course['class'] is Map) ? Map<String, dynamic>.from(_course['class'] as Map) : <String, dynamic>{};
+    final classMap = (_course['class'] is Map)
+        ? Map<String, dynamic>.from(_course['class'] as Map)
+        : <String, dynamic>{};
 
-    final classVariant =
-    (classMap['variantKey'] ?? classMap['variant'] ?? '').toString().trim().toLowerCase();
+    final classVariant = (classMap['variantKey'] ?? classMap['variant'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     if (classVariant.isNotEmpty) return classVariant;
 
     return (_course['deliveryKey'] ?? '').toString().trim().toLowerCase();
@@ -181,8 +193,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       (_course['studyMode'] ?? '').toString().trim().toLowerCase();
 
   String get _legacyVariantKey =>
-      (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
-
+      (_course['variantKey'] ?? _course['variant'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
 
   String get _syllabusVariantKey {
     final delivery = _deliveryKey;
@@ -217,8 +231,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
     return '';
   }
-  DatabaseReference get _paymentSummaryRef =>
-      _usersRef.child(_uid).child('courses').child(widget.courseKey).child('payment_summary');
+
+  DatabaseReference get _paymentSummaryRef => _usersRef
+      .child(_uid)
+      .child('courses')
+      .child(widget.courseKey)
+      .child('payment_summary');
 
   // ✅ NEW: online attendance ref for this learner + course
   DatabaseReference get _onlineAttendanceRef =>
@@ -226,7 +244,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   int? _plannedMeetingsFromCourseOrClass(Map<String, dynamic> course) {
     // try in course/class snapshot first
-    final cls = (course['class'] is Map) ? Map<String, dynamic>.from(course['class'] as Map) : <String, dynamic>{};
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
 
     dynamic v;
 
@@ -253,7 +273,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       final snap = await _classesRef.child(classId).child('schedule').get();
       if (!snap.exists || snap.value == null || snap.value is! Map) return null;
       final m = Map<String, dynamic>.from(snap.value as Map);
-      final n = _asInt(m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount']);
+      final n = _asInt(
+        m['meetingsCount'] ?? m['totalMeetings'] ?? m['sessionsCount'],
+      );
       return n > 0 ? n : null;
     } catch (_) {
       return null;
@@ -286,26 +308,36 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       await _paySub?.cancel();
       _payLoading = true;
 
-      _paySub = _paymentSummaryRef.onValue.listen((event) {
-        final raw = event.snapshot.value;
-        final sum = raw is Map ? raw.map((k, v) => MapEntry(k.toString(), v)) : <String, dynamic>{};
+      _paySub = _paymentSummaryRef.onValue.listen(
+        (event) {
+          final raw = event.snapshot.value;
+          final sum = raw is Map
+              ? raw.map((k, v) => MapEntry(k.toString(), v))
+              : <String, dynamic>{};
 
-        if (!mounted) return;
-        setState(() {
-          _paymentSummary = Map<String, dynamic>.from(sum);
-          _payLoading = false;
-        });
-      }, onError: (_) {
-        if (!mounted) return;
-        setState(() {
-          _paymentSummary = {};
-          _payLoading = false;
-        });
-      });
+          if (!mounted) return;
+          setState(() {
+            _paymentSummary = Map<String, dynamic>.from(sum);
+            _payLoading = false;
+          });
+        },
+        onError: (_) {
+          if (!mounted) return;
+          setState(() {
+            _paymentSummary = {};
+            _payLoading = false;
+          });
+        },
+      );
 
       // Reload course live (so it reflects new attendance/payment_summary)
-      final snap = await _usersRef.child(_uid).child('courses').child(widget.courseKey).get();
-      if (!snap.exists || snap.value == null || snap.value is! Map) throw Exception('Course not found.');
+      final snap = await _usersRef
+          .child(_uid)
+          .child('courses')
+          .child(widget.courseKey)
+          .get();
+      if (!snap.exists || snap.value == null || snap.value is! Map)
+        throw Exception('Course not found.');
       _course = Map<String, dynamic>.from(snap.value as Map);
 
       // ✅ planned meetings (recommendation feature)
@@ -326,14 +358,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           if (!variantCandidates.contains(x)) variantCandidates.add(x);
         }
 
-        final rootVariant =
-        (_course['variantKey'] ?? _course['variant'] ?? '').toString().trim().toLowerCase();
+        final rootVariant = (_course['variantKey'] ?? _course['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-        final classMap =
-        (_course['class'] is Map) ? Map<String, dynamic>.from(_course['class'] as Map) : <String, dynamic>{};
+        final classMap = (_course['class'] is Map)
+            ? Map<String, dynamic>.from(_course['class'] as Map)
+            : <String, dynamic>{};
 
         final classVariant =
-        (classMap['variantKey'] ?? classMap['variant'] ?? '').toString().trim().toLowerCase();
+            (classMap['variantKey'] ?? classMap['variant'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
 
         addCandidate(rootVariant);
         addCandidate(classVariant);
@@ -372,7 +410,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
         for (final key in variantCandidates) {
           final testSnap = await rootSyllabusRef.child(key).get();
-          if (testSnap.exists && testSnap.value != null && testSnap.value is Map) {
+          if (testSnap.exists &&
+              testSnap.value != null &&
+              testSnap.value is Map) {
             sSnap = testSnap;
             break;
           }
@@ -421,7 +461,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             }
           }
 
-          int n(dynamic v) => (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+          int n(dynamic v) =>
+              (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
           flat.sort((a, b) {
             final uo = n(a['unitOrder']).compareTo(n(b['unitOrder']));
             if (uo != 0) return uo;
@@ -474,9 +515,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               final item = Map<String, dynamic>.from(it);
               final type = (item['type'] ?? '').toString().trim().toLowerCase();
 
-              final String title = (item['title'] ?? item['name'] ?? '').toString().trim();
+              final String title = (item['title'] ?? item['name'] ?? '')
+                  .toString()
+                  .trim();
               final String sid = (item['sessionId'] ?? '').toString().trim();
-              final int sn = _asInt(item['sessionNumber']); // fallback if sessionId missing
+              final int sn = _asInt(
+                item['sessionNumber'],
+              ); // fallback if sessionId missing
               taughtItemsList.add(item);
 
               if (type == 'syllabus') {
@@ -495,9 +540,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           }
 
           // ✅ old single taught map
-          final taughtOld = (rec['taught'] is Map) ? Map<String, dynamic>.from(rec['taught'] as Map) : <String, dynamic>{};
+          final taughtOld = (rec['taught'] is Map)
+              ? Map<String, dynamic>.from(rec['taught'] as Map)
+              : <String, dynamic>{};
           if (!hasNewFormat) {
-            final taughtSessionId = (taughtOld['sessionId'] ?? '').toString().trim();
+            final taughtSessionId = (taughtOld['sessionId'] ?? '')
+                .toString()
+                .trim();
             final taughtSn = _asInt(taughtOld['sessionNumber']); // fallback
 
             if (taughtSessionId.isNotEmpty) {
@@ -512,8 +561,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           String taughtSummary = '';
           if (hasNewFormat) {
             final parts = <String>[];
-            if (taughtSyllabusTitles.isNotEmpty) parts.add(taughtSyllabusTitles.join(', '));
-            if (taughtCustomTitles.isNotEmpty) parts.add('Notes: ${taughtCustomTitles.join(', ')}');
+            if (taughtSyllabusTitles.isNotEmpty)
+              parts.add(taughtSyllabusTitles.join(', '));
+            if (taughtCustomTitles.isNotEmpty)
+              parts.add('Notes: ${taughtCustomTitles.join(', ')}');
             taughtSummary = parts.join(' • ');
           } else {
             taughtSummary = (taughtOld['title'] ?? '').toString().trim();
@@ -523,8 +574,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           int sortMs = 0;
           final updatedAt = rec['updatedAt'];
           final createdAt = rec['createdAt'] ?? rec['created_at'];
-          if (updatedAt is num) sortMs = updatedAt.toInt();
-          else if (createdAt is num) sortMs = createdAt.toInt();
+          if (updatedAt is num) {
+            sortMs = updatedAt.toInt();
+          } else if (createdAt is num)
+            sortMs = createdAt.toInt();
           else {
             final dateStr = (rec['date'] ?? '').toString();
             sortMs = _tryParseYmdToMillis(dateStr) ?? 0;
@@ -574,7 +627,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               String taughtSummary = '';
               if (sessionNo > 0) {
                 final title = (_sessionTitleByNumber[sessionNo] ?? '').trim();
-                taughtSummary = title.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo — $title';
+                taughtSummary = title.isEmpty
+                    ? 'Session $sessionNo'
+                    : 'Session $sessionNo — $title';
 
                 // ✅ syllabus covered from online sessionNo -> sessionId
                 final sid = _sessionIdByNumber[sessionNo];
@@ -638,7 +693,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                   if (it is! Map) continue;
                   final item = Map<String, dynamic>.from(it);
 
-                  final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                  final type = (item['type'] ?? '')
+                      .toString()
+                      .trim()
+                      .toLowerCase();
                   if (type != 'syllabus') continue;
 
                   final sn = _asInt(item['sessionNumber']);
@@ -648,7 +706,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     covered.add(sid);
                   } else if (sn > 0) {
                     final mapped = _sessionIdByNumber[sn];
-                    if (mapped != null && mapped.isNotEmpty) covered.add(mapped);
+                    if (mapped != null && mapped.isNotEmpty)
+                      covered.add(mapped);
                   }
                 }
               } else {
@@ -661,7 +720,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               }
             }
 
-            _coveredSessionIds = covered; // refresh after adding online coverage
+            _coveredSessionIds =
+                covered; // refresh after adding online coverage
           }
         } catch (_) {}
       }
@@ -684,7 +744,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       setState(() => _busy = false);
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -692,8 +752,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   Map<String, int> _attendanceCountsAll() {
     final total = _attendanceAll.length;
-    final present =
-        _attendanceAll.where((x) => (x['status'] ?? '').toString().toLowerCase() == 'present').length;
+    final present = _attendanceAll
+        .where((x) => (x['status'] ?? '').toString().toLowerCase() == 'present')
+        .length;
     return {'total': total, 'present': present};
   }
 
@@ -702,7 +763,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   List<Map<String, dynamic>> _groupSyllabiByUnit() {
     final Map<String, Map<String, dynamic>> groups = {};
 
-    int n(dynamic v) => (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+    int n(dynamic v) =>
+        (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
 
     for (final s in _syllabiFlat) {
       final unitId = (s['unitId'] ?? '').toString();
@@ -748,7 +810,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       final t = l.trim();
       if (t.isEmpty) return false;
       final up = t.toUpperCase();
-      if (t.startsWith('📘') || t.startsWith('📤') || t.startsWith('✅')) return true;
+      if (t.startsWith('📘') || t.startsWith('📤') || t.startsWith('✅'))
+        return true;
       if (up.startsWith('PART ')) return true;
       if (up.startsWith('SUBMISSION')) return true;
       if (up.startsWith('FOCUS:')) return true;
@@ -760,7 +823,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       return false;
     }
 
-    bool isBullet(String l) => l.trimLeft().startsWith('- ') || l.trimLeft().startsWith('• ');
+    bool isBullet(String l) =>
+        l.trimLeft().startsWith('- ') || l.trimLeft().startsWith('• ');
 
     final List<_HwBlock> blocks = [];
     _HwBlock current = _HwBlock(title: '', lines: []);
@@ -780,7 +844,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       }
 
       if (isHeader(t)) {
-        if (current.title.trim().isNotEmpty || current.lines.any((x) => x.trim().isNotEmpty)) {
+        if (current.title.trim().isNotEmpty ||
+            current.lines.any((x) => x.trim().isNotEmpty)) {
           pushCurrent();
         }
         current = _HwBlock(title: t.trim(), lines: []);
@@ -803,7 +868,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     pushCurrent();
 
     for (int i = 0; i < blocks.length; i++) {
-      if (blocks[i].title.isEmpty) blocks[i] = blocks[i].copyWith(title: 'Homework');
+      if (blocks[i].title.isEmpty)
+        blocks[i] = blocks[i].copyWith(title: 'Homework');
     }
 
     return blocks;
@@ -818,12 +884,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     // ✅ Meetings = attendance records (in-class + online)
     final meetingsHeld = counts['total'] ?? 0;
     final present = counts['present'] ?? 0;
-    final attPct = meetingsHeld == 0 ? 0 : ((present / meetingsHeld) * 100).round();
+    final attPct = meetingsHeld == 0
+        ? 0
+        : ((present / meetingsHeld) * 100).round();
 
     // ✅ Syllabus coverage (unique sessionIds) from BOTH sources
     final totalLessons = _syllabiFlat.length;
     final coveredLessons = _coveredSessionIds.length;
-    final syllabusPct = totalLessons == 0 ? 0 : ((coveredLessons / totalLessons) * 100).round();
+    final syllabusPct = totalLessons == 0
+        ? 0
+        : ((coveredLessons / totalLessons) * 100).round();
 
     return Scaffold(
       backgroundColor: UiK.appBg,
@@ -832,7 +902,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         elevation: 0,
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: UiK.primaryBlue),
-        title: Text(_courseTitle, style: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900)),
+        title: Text(
+          _courseTitle,
+          style: const TextStyle(
+            color: UiK.primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'Homework',
@@ -871,29 +947,36 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             ? const Center(child: CircularProgressIndicator())
             : _error != null
             ? Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w800),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        )
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
             : TabBarView(
-          controller: _tab,
-          children: [
-            _paymentTab(sessionsPassed: meetingsHeld),
-            _attendanceTab(attPct: attPct, present: present, total: meetingsHeld),
-            _progressTab(
-              meetingsHeld: meetingsHeld,
-              plannedMeetings: _plannedMeetings,
-              syllabusPct: syllabusPct,
-              coveredLessons: coveredLessons,
-              totalLessons: totalLessons,
-            ),
-          ],
-        ),
+                controller: _tab,
+                children: [
+                  _paymentTab(sessionsPassed: meetingsHeld),
+                  _attendanceTab(
+                    attPct: attPct,
+                    present: present,
+                    total: meetingsHeld,
+                  ),
+                  _progressTab(
+                    meetingsHeld: meetingsHeld,
+                    plannedMeetings: _plannedMeetings,
+                    syllabusPct: syllabusPct,
+                    coveredLessons: coveredLessons,
+                    totalLessons: totalLessons,
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -939,7 +1022,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                   style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
-                if (overdue || dueSoon) _dueBanner(overdue: overdue, left: leftSafe),
+                if (overdue || dueSoon)
+                  _dueBanner(overdue: overdue, left: leftSafe),
                 _sessionsTable(
                   paid: hasPayments ? sessionsPaidTotal : null,
                   passed: sessionsPassed,
@@ -958,9 +1042,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.receipt_long_rounded, size: 18, color: UiK.actionOrange),
+                          Icon(
+                            Icons.receipt_long_rounded,
+                            size: 18,
+                            color: UiK.actionOrange,
+                          ),
                           SizedBox(width: 8),
-                          Text('Last payment', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                          Text(
+                            'Last payment',
+                            style: TextStyle(
+                              color: UiK.mainText,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -970,18 +1064,29 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                           style: UiK.subtleText(),
                         )
                       else ...[
-                        _kvRow('Amount', lastAmount > 0 ? _fmtMoney(lastAmount) : '—'),
+                        _kvRow(
+                          'Amount',
+                          lastAmount > 0 ? _fmtMoney(lastAmount) : '—',
+                        ),
                         const SizedBox(height: 6),
-                        _kvRow('Method', lastMethod.isNotEmpty ? lastMethod : '—'),
+                        _kvRow(
+                          'Method',
+                          lastMethod.isNotEmpty ? lastMethod : '—',
+                        ),
                         const SizedBox(height: 6),
-                        _kvRow('Date', lastPaymentAt.isNotEmpty ? lastPaymentAt : '—'),
+                        _kvRow(
+                          'Date',
+                          lastPaymentAt.isNotEmpty ? lastPaymentAt : '—',
+                        ),
                       ],
                       const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                          border: Border.all(
+                            color: UiK.uiBorder.withOpacity(0.85),
+                          ),
                           color: Colors.white,
                         ),
                         child: Column(
@@ -989,10 +1094,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.tips_and_updates_rounded, size: 18, color: UiK.actionOrange),
+                                Icon(
+                                  Icons.tips_and_updates_rounded,
+                                  size: 18,
+                                  color: UiK.actionOrange,
+                                ),
                                 SizedBox(width: 8),
-                                Text('Recommendation',
-                                    style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                                Text(
+                                  'Recommendation',
+                                  style: TextStyle(
+                                    color: UiK.mainText,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -1003,8 +1117,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                                   ? 'Payment is due now. Please contact the academy to renew your sessions.'
                                   : dueSoon
                                   ? (leftSafe == 1
-                                  ? 'Payment due in 1 session. It’s a good time to renew now.'
-                                  : 'Payment due soon. It’s a good time to renew.')
+                                        ? 'Payment due in 1 session. It’s a good time to renew now.'
+                                        : 'Payment due soon. It’s a good time to renew.')
                                   : 'Everything looks good. Keep attending and track your progress.',
                               style: UiK.subtleText(),
                             ),
@@ -1022,7 +1136,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     );
   }
 
-  Widget _sessionsTable({required int? paid, required int passed, required int? left}) {
+  Widget _sessionsTable({
+    required int? paid,
+    required int passed,
+    required int? left,
+  }) {
     Widget cell(String v, {bool strong = false}) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
@@ -1053,7 +1171,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           ),
           children: [
             TableRow(
-              decoration: BoxDecoration(color: UiK.primaryBlue.withOpacity(0.04)),
+              decoration: BoxDecoration(
+                color: UiK.primaryBlue.withOpacity(0.04),
+              ),
               children: [
                 cell('Sessions paid', strong: true),
                 cell('Sessions passed', strong: true),
@@ -1079,12 +1199,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         Expanded(
           child: Text(
             k,
-            style: TextStyle(color: UiK.mainText.withOpacity(0.70), fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: UiK.mainText.withOpacity(0.70),
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
         Text(
           v,
-          style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+          style: const TextStyle(
+            color: UiK.mainText,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ],
     );
@@ -1113,9 +1239,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: UiK.mainText)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: UiK.mainText,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(msg, style: TextStyle(color: UiK.mainText.withOpacity(0.75), fontWeight: FontWeight.w700)),
+                Text(
+                  msg,
+                  style: TextStyle(
+                    color: UiK.mainText.withOpacity(0.75),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1126,7 +1264,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
 
   // -------------------- ATTENDANCE TAB (NOW SHOWS IN-CLASS + ONLINE) --------------------
 
-  Widget _attendanceTab({required int attPct, required int present, required int total}) {
+  Widget _attendanceTab({
+    required int attPct,
+    required int present,
+    required int total,
+  }) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -1142,15 +1284,24 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 Text('Course Summary', style: UiK.titleText()),
                 const SizedBox(height: 8),
                 Text(
-                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',                  style: UiK.subtleText(),
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',
+                  style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _kpi(icon: Icons.how_to_reg_rounded, label: 'Attendance', value: '$attPct%'),
-                    _kpi(icon: Icons.check_circle_rounded, label: 'Present', value: '$present/$total'),
+                    _kpi(
+                      icon: Icons.how_to_reg_rounded,
+                      label: 'Attendance',
+                      value: '$attPct%',
+                    ),
+                    _kpi(
+                      icon: Icons.check_circle_rounded,
+                      label: 'Present',
+                      value: '$present/$total',
+                    ),
                     _kpi(
                       icon: Icons.wifi_tethering_rounded,
                       label: 'Online records',
@@ -1169,12 +1320,15 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               padding: EdgeInsets.all(24),
               child: Text(
                 'No attendance records yet.',
-                style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: UiK.mainText,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           )
         else
-          ..._attendanceAll.map(_attendanceCard).toList(),
+          ..._attendanceAll.map(_attendanceCard),
       ],
     );
   }
@@ -1190,17 +1344,23 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final taughtSummary = (a['taughtSummary'] ?? '').toString().trim();
 
     // old taught details still supported
-    final taughtOld = (a['taught'] is Map) ? Map<String, dynamic>.from(a['taught'] as Map) : <String, dynamic>{};
+    final taughtOld = (a['taught'] is Map)
+        ? Map<String, dynamic>.from(a['taught'] as Map)
+        : <String, dynamic>{};
     final unitTitle = (taughtOld['unitTitle'] ?? '').toString();
 
     // Homework (in-class only)
-    final hw = (a['homework'] is Map) ? Map<String, dynamic>.from(a['homework'] as Map) : <String, dynamic>{};
+    final hw = (a['homework'] is Map)
+        ? Map<String, dynamic>.from(a['homework'] as Map)
+        : <String, dynamic>{};
     final hwText = (hw['text'] ?? '').toString().trim();
     final hwDue = (hw['dueDate'] ?? '').toString().trim();
 
     final isPresent = status == 'present';
 
-    final tagBg = isOnline ? UiK.actionOrange.withOpacity(0.10) : UiK.primaryBlue.withOpacity(0.08);
+    final tagBg = isOnline
+        ? UiK.actionOrange.withOpacity(0.10)
+        : UiK.primaryBlue.withOpacity(0.08);
     final tagFg = isOnline ? UiK.actionOrange : UiK.primaryBlue;
     final tagText = isOnline ? 'Online' : 'In-class';
 
@@ -1217,7 +1377,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
-              backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red).withOpacity(0.08),
+              backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red)
+                  .withOpacity(0.08),
               child: Icon(
                 isPresent ? Icons.check_rounded : Icons.close_rounded,
                 color: isPresent ? UiK.primaryBlue : Colors.red,
@@ -1238,18 +1399,35 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(999),
                           color: tagBg,
-                          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                          border: Border.all(
+                            color: UiK.uiBorder.withOpacity(0.85),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(isOnline ? Icons.wifi_tethering_rounded : Icons.groups_rounded, size: 14, color: tagFg),
+                            Icon(
+                              isOnline
+                                  ? Icons.wifi_tethering_rounded
+                                  : Icons.groups_rounded,
+                              size: 14,
+                              color: tagFg,
+                            ),
                             const SizedBox(width: 6),
-                            Text(tagText, style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                            Text(
+                              tagText,
+                              style: TextStyle(
+                                color: UiK.mainText,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1259,8 +1437,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                   const SizedBox(height: 6),
                   Text(
                     'Status: ${isPresent ? 'Present' : 'Absent'}'
-                        '${rate.isEmpty ? '' : ' • Success: $rate%'}'
-                        '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
+                    '${rate.isEmpty ? '' : ' • Success: $rate%'}'
+                    '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
                     style: UiK.subtleText(),
                   ),
 
@@ -1273,7 +1451,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     const SizedBox(height: 2),
                     Text(
                       'Unit: $unitTitle',
-                      style: TextStyle(color: UiK.mainText.withOpacity(0.6), fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: UiK.mainText.withOpacity(0.6),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
 
@@ -1284,7 +1465,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                        border: Border.all(
+                          color: UiK.uiBorder.withOpacity(0.85),
+                        ),
                         color: UiK.primaryBlue.withOpacity(0.04),
                       ),
                       child: Column(
@@ -1292,9 +1475,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                         children: [
                           const Row(
                             children: [
-                              Icon(Icons.assignment_rounded, size: 18, color: UiK.actionOrange),
+                              Icon(
+                                Icons.assignment_rounded,
+                                size: 18,
+                                color: UiK.actionOrange,
+                              ),
                               SizedBox(width: 8),
-                              Text('Homework', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                              Text(
+                                'Homework',
+                                style: TextStyle(
+                                  color: UiK.mainText,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
                             ],
                           ),
                           if (hwDue.isNotEmpty) ...[
@@ -1330,10 +1523,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final units = _groupSyllabiByUnit();
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
-    final plannedStr = (plannedMeetings == null || plannedMeetings <= 0) ? '-' : '$plannedMeetings';
+    final plannedStr = (plannedMeetings == null || plannedMeetings <= 0)
+        ? '-'
+        : '$plannedMeetings';
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + (bottomPad > 0 ? bottomPad : 12),
+      ),
       children: [
         Card(
           elevation: 0,
@@ -1347,19 +1547,35 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 Text('Progress', style: UiK.titleText()),
                 const SizedBox(height: 8),
                 Text(
-                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',                  style: UiK.subtleText(),
+                  'Code: ${_courseCode.isEmpty ? '-' : _courseCode} • Class: ${_classId.isEmpty ? '-' : _classId}${_studyTypeLabel.isEmpty ? '' : ' • $_studyTypeLabel'}',
+                  style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
 
                 // meetings line
                 Row(
                   children: [
-                    const Icon(Icons.event_available_rounded, size: 18, color: UiK.actionOrange),
+                    const Icon(
+                      Icons.event_available_rounded,
+                      size: 18,
+                      color: UiK.actionOrange,
+                    ),
                     const SizedBox(width: 8),
-                    const Text('Meetings', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    const Text(
+                      'Meetings',
+                      style: TextStyle(
+                        color: UiK.mainText,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const Spacer(),
-                    Text('$meetingsHeld/$plannedStr',
-                        style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    Text(
+                      '$meetingsHeld/$plannedStr',
+                      style: const TextStyle(
+                        color: UiK.mainText,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ],
                 ),
 
@@ -1368,25 +1584,46 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 // syllabus line + bar
                 Row(
                   children: [
-                    const Icon(Icons.menu_book_rounded, size: 18, color: UiK.actionOrange),
+                    const Icon(
+                      Icons.menu_book_rounded,
+                      size: 18,
+                      color: UiK.actionOrange,
+                    ),
                     const SizedBox(width: 8),
-                    const Text('Syllabus', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    const Text(
+                      'Syllabus',
+                      style: TextStyle(
+                        color: UiK.mainText,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const Spacer(),
-                    Text('$syllabusPct%', style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                    Text(
+                      '$syllabusPct%',
+                      style: const TextStyle(
+                        color: UiK.mainText,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(999),
                   child: LinearProgressIndicator(
-                    value: totalLessons == 0 ? 0 : (coveredLessons / totalLessons).clamp(0, 1),
+                    value: totalLessons == 0
+                        ? 0
+                        : (coveredLessons / totalLessons).clamp(0, 1),
                     minHeight: 10,
                     backgroundColor: UiK.primaryBlue.withOpacity(0.10),
                     valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text('Covered: $coveredLessons / $totalLessons lessons', style: UiK.subtleText()),
+                Text(
+                  'Covered: $coveredLessons / $totalLessons lessons',
+                  style: UiK.subtleText(),
+                ),
               ],
             ),
           ),
@@ -1398,12 +1635,15 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               padding: EdgeInsets.all(24),
               child: Text(
                 'Syllabus not found for this course.',
-                style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: UiK.mainText,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           )
         else
-          ...units.map(_unitModuleCard).toList(),
+          ...units.map(_unitModuleCard),
       ],
     );
   }
@@ -1423,13 +1663,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     final bool completed = unitTotal > 0 && unitPassed >= unitTotal;
     final bool started = unitPassed > 0;
 
-    final statusText = completed ? 'Completed' : started ? 'In progress' : 'Not started';
+    final statusText = completed
+        ? 'Completed'
+        : started
+        ? 'In progress'
+        : 'Not started';
     final statusBg = completed
         ? UiK.primaryBlue.withOpacity(0.10)
         : started
         ? UiK.actionOrange.withOpacity(0.10)
         : UiK.uiBorder.withOpacity(0.18);
-    final statusFg = completed ? UiK.primaryBlue : started ? UiK.actionOrange : UiK.primaryBlue.withOpacity(0.7);
+    final statusFg = completed
+        ? UiK.primaryBlue
+        : started
+        ? UiK.actionOrange
+        : UiK.primaryBlue.withOpacity(0.7);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1443,15 +1691,24 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: CircleAvatar(
               backgroundColor: UiK.primaryBlue.withOpacity(0.08),
-              child: Icon(completed ? Icons.verified_rounded : Icons.folder_open_rounded, color: UiK.primaryBlue),
+              child: Icon(
+                completed ? Icons.verified_rounded : Icons.folder_open_rounded,
+                color: UiK.primaryBlue,
+              ),
             ),
             title: Text(
               unitTitle.isEmpty ? 'Unit' : unitTitle,
-              style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                color: UiK.mainText,
+                fontWeight: FontWeight.w900,
+              ),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1463,17 +1720,24 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
-                          value: unitTotal == 0 ? 0 : (unitPassed / unitTotal).clamp(0, 1),
+                          value: unitTotal == 0
+                              ? 0
+                              : (unitPassed / unitTotal).clamp(0, 1),
                           minHeight: 8,
                           backgroundColor: UiK.primaryBlue.withOpacity(0.08),
-                          valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
+                          valueColor: const AlwaysStoppedAnimation(
+                            UiK.actionOrange,
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Text(
                       '$unitPassed/$unitTotal',
-                      style: TextStyle(color: UiK.mainText.withOpacity(0.75), fontWeight: FontWeight.w900),
+                      style: TextStyle(
+                        color: UiK.mainText.withOpacity(0.75),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ],
                 ),
@@ -1505,7 +1769,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             ),
             children: [
               const SizedBox(height: 8),
-              ...sessions.map(_sessionLessonRow).toList(),
+              ...sessions.map(_sessionLessonRow),
             ],
           ),
         ),
@@ -1537,10 +1801,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
-              backgroundColor: (passed ? UiK.primaryBlue : UiK.uiBorder).withOpacity(0.10),
+              backgroundColor: (passed ? UiK.primaryBlue : UiK.uiBorder)
+                  .withOpacity(0.10),
               child: Icon(
                 passed ? Icons.check_circle_rounded : Icons.schedule_rounded,
-                color: passed ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.55),
+                color: passed
+                    ? UiK.primaryBlue
+                    : UiK.primaryBlue.withOpacity(0.55),
               ),
             ),
             const SizedBox(width: 12),
@@ -1550,7 +1817,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 children: [
                   Text(
                     title.isEmpty ? 'Session' : title,
-                    style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1560,10 +1830,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     runSpacing: 8,
                     children: [
                       _miniChip(
-                        icon: passed ? Icons.check_rounded : Icons.schedule_rounded,
+                        icon: passed
+                            ? Icons.check_rounded
+                            : Icons.schedule_rounded,
                         text: statusText,
-                        fg: passed ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.75),
-                        bg: passed ? UiK.primaryBlue.withOpacity(0.10) : UiK.uiBorder.withOpacity(0.18),
+                        fg: passed
+                            ? UiK.primaryBlue
+                            : UiK.primaryBlue.withOpacity(0.75),
+                        bg: passed
+                            ? UiK.primaryBlue.withOpacity(0.10)
+                            : UiK.uiBorder.withOpacity(0.18),
                       ),
                       if (hw.isNotEmpty)
                         _miniChip(
@@ -1578,7 +1854,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     const SizedBox(height: 8),
                     Text(
                       objective,
-                      style: TextStyle(color: UiK.mainText.withOpacity(0.70), fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        color: UiK.mainText.withOpacity(0.70),
+                        fontWeight: FontWeight.w700,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1587,7 +1866,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               ),
             ),
             const SizedBox(width: 10),
-            Icon(Icons.chevron_right_rounded, color: UiK.primaryBlue.withOpacity(0.65)),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: UiK.primaryBlue.withOpacity(0.65),
+            ),
           ],
         ),
       ),
@@ -1625,7 +1907,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               return Container(
                 decoration: BoxDecoration(
                   color: UiK.appBg,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(22),
+                  ),
                   border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
                 ),
                 child: Column(
@@ -1644,7 +1928,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     Expanded(
                       child: ListView(
                         controller: controller,
-                        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + (bottomPad > 0 ? bottomPad : 12)),
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          8,
+                          16,
+                          16 + (bottomPad > 0 ? bottomPad : 12),
+                        ),
                         children: [
                           Card(
                             elevation: 0,
@@ -1656,19 +1945,31 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       CircleAvatar(
-                                        backgroundColor: (passed ? UiK.primaryBlue : UiK.uiBorder).withOpacity(0.10),
+                                        backgroundColor:
+                                            (passed
+                                                    ? UiK.primaryBlue
+                                                    : UiK.uiBorder)
+                                                .withOpacity(0.10),
                                         child: Icon(
-                                          passed ? Icons.check_circle_rounded : Icons.schedule_rounded,
-                                          color: passed ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.6),
+                                          passed
+                                              ? Icons.check_circle_rounded
+                                              : Icons.schedule_rounded,
+                                          color: passed
+                                              ? UiK.primaryBlue
+                                              : UiK.primaryBlue.withOpacity(
+                                                  0.6,
+                                                ),
                                         ),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               title.isEmpty ? 'Session' : title,
@@ -1679,19 +1980,30 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                                               ),
                                             ),
                                             const SizedBox(height: 6),
-                                            if (unitTitle.isNotEmpty) Text(unitTitle, style: UiK.subtleText()),
+                                            if (unitTitle.isNotEmpty)
+                                              Text(
+                                                unitTitle,
+                                                style: UiK.subtleText(),
+                                              ),
                                             const SizedBox(height: 10),
                                             Wrap(
                                               spacing: 8,
                                               runSpacing: 8,
                                               children: [
                                                 _miniChip(
-                                                  icon: passed ? Icons.check_rounded : Icons.schedule_rounded,
+                                                  icon: passed
+                                                      ? Icons.check_rounded
+                                                      : Icons.schedule_rounded,
                                                   text: statusText,
-                                                  fg: passed ? UiK.primaryBlue : UiK.primaryBlue.withOpacity(0.75),
+                                                  fg: passed
+                                                      ? UiK.primaryBlue
+                                                      : UiK.primaryBlue
+                                                            .withOpacity(0.75),
                                                   bg: passed
-                                                      ? UiK.primaryBlue.withOpacity(0.10)
-                                                      : UiK.uiBorder.withOpacity(0.18),
+                                                      ? UiK.primaryBlue
+                                                            .withOpacity(0.10)
+                                                      : UiK.uiBorder
+                                                            .withOpacity(0.18),
                                                 ),
                                               ],
                                             ),
@@ -1717,35 +2029,50 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                             title: 'Homework',
                             accent: UiK.actionOrange,
                             child: hw.isEmpty
-                                ? Text('No homework for this session.', style: UiK.subtleText())
+                                ? Text(
+                                    'No homework for this session.',
+                                    style: UiK.subtleText(),
+                                  )
                                 : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Follow the tasks below and submit as instructed.',
-                                        style: UiK.subtleText(),
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              'Follow the tasks below and submit as instructed.',
+                                              style: UiK.subtleText(),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Copy homework',
+                                            icon: const Icon(
+                                              Icons.copy_rounded,
+                                              color: UiK.primaryBlue,
+                                            ),
+                                            onPressed: () async {
+                                              await Clipboard.setData(
+                                                ClipboardData(text: hw),
+                                              );
+                                              if (!mounted) return;
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Homework copied',
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Copy homework',
-                                      icon: const Icon(Icons.copy_rounded, color: UiK.primaryBlue),
-                                      onPressed: () async {
-                                        await Clipboard.setData(ClipboardData(text: hw));
-                                        if (!mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Homework copied')),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                ..._buildHomeworkBrief(hwBlocks),
-                              ],
-                            ),
+                                      const SizedBox(height: 10),
+                                      ..._buildHomeworkBrief(hwBlocks),
+                                    ],
+                                  ),
                           ),
                           const SizedBox(height: 12),
                           if (content.isNotEmpty)
@@ -1768,11 +2095,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
   }
 
   List<Widget> _buildHomeworkBrief(List<_HwBlock> blocks) {
-    if (blocks.isEmpty) return [Text('Homework details are not available.', style: UiK.subtleText())];
+    if (blocks.isEmpty)
+      return [
+        Text('Homework details are not available.', style: UiK.subtleText()),
+      ];
 
     bool looksLikeSubmission(String t) {
       final up = t.toUpperCase();
-      return up.contains('SUBMISSION') || t.startsWith('📤') || up.contains('UPLOAD');
+      return up.contains('SUBMISSION') ||
+          t.startsWith('📤') ||
+          up.contains('UPLOAD');
     }
 
     final widgets = <Widget>[];
@@ -1790,7 +2122,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-            color: submission ? UiK.actionOrange.withOpacity(0.07) : UiK.primaryBlue.withOpacity(0.04),
+            color: submission
+                ? UiK.actionOrange.withOpacity(0.07)
+                : UiK.primaryBlue.withOpacity(0.04),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1799,7 +2133,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                 Row(
                   children: [
                     Icon(
-                      submission ? Icons.upload_rounded : Icons.description_rounded,
+                      submission
+                          ? Icons.upload_rounded
+                          : Icons.description_rounded,
                       size: 18,
                       color: submission ? UiK.actionOrange : UiK.primaryBlue,
                     ),
@@ -1807,7 +2143,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
                     Expanded(
                       child: Text(
                         title,
-                        style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900),
+                        style: const TextStyle(
+                          color: UiK.mainText,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                   ],
@@ -1841,7 +2180,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('• ', style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                const Text(
+                  '• ',
+                  style: TextStyle(
+                    color: UiK.mainText,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 Expanded(child: Text(t.substring(2), style: UiK.subtleText())),
               ],
             ),
@@ -1864,7 +2209,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
       text: text,
       collapsedLines: 6,
       style: UiK.subtleText(),
-      linkStyle: const TextStyle(color: UiK.primaryBlue, fontWeight: FontWeight.w900),
+      linkStyle: const TextStyle(
+        color: UiK.primaryBlue,
+        fontWeight: FontWeight.w900,
+      ),
     );
   }
 
@@ -1888,7 +2236,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
               children: [
                 Icon(icon, size: 18, color: a),
                 const SizedBox(width: 8),
-                Text(title, style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: UiK.mainText,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -1919,7 +2273,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           const SizedBox(width: 6),
           Text(
             text,
-            style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w800),
+            style: const TextStyle(
+              color: UiK.mainText,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
@@ -1934,7 +2291,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
     bool dense = false,
   }) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: dense ? 10 : 12, vertical: dense ? 6 : 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 10 : 12,
+        vertical: dense ? 6 : 8,
+      ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: bg,
@@ -1947,14 +2307,22 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
           const SizedBox(width: 6),
           Text(
             text,
-            style: TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900, fontSize: dense ? 12 : 13),
+            style: TextStyle(
+              color: UiK.mainText,
+              fontWeight: FontWeight.w900,
+              fontSize: dense ? 12 : 13,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _kpi({required IconData icon, required String label, required String value}) {
+  Widget _kpi({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1967,9 +2335,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen> w
         children: [
           Icon(icon, size: 18, color: UiK.actionOrange),
           const SizedBox(width: 10),
-          Text(value, style: const TextStyle(color: UiK.mainText, fontWeight: FontWeight.w900)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: UiK.mainText,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: UiK.mainText.withOpacity(0.7), fontWeight: FontWeight.w700)),
+          Text(
+            label,
+            style: TextStyle(
+              color: UiK.mainText.withOpacity(0.7),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -2029,13 +2409,18 @@ class _ReadMoreState extends State<_ReadMore> {
               widget.text,
               style: widget.style,
               maxLines: _expanded ? null : widget.collapsedLines,
-              overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              overflow: _expanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
             ),
             if (overflow) ...[
               const SizedBox(height: 8),
               InkWell(
                 onTap: () => setState(() => _expanded = !_expanded),
-                child: Text(_expanded ? 'Show less' : 'Show more', style: widget.linkStyle),
+                child: Text(
+                  _expanded ? 'Show less' : 'Show more',
+                  style: widget.linkStyle,
+                ),
               ),
             ],
           ],

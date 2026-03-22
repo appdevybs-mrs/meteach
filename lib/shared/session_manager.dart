@@ -30,7 +30,6 @@ class SessionManager {
 
     await Future.delayed(const Duration(milliseconds: 300));
 
-
     // Listen for changes
     await _sub?.cancel();
     final sessionRef = _db.child('sessions/$uid/sessionId');
@@ -65,7 +64,6 @@ class SessionManager {
         }
       }
     });
-
   }
 
   static Future<void> stopListening() async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:video_player/video_player.dart';
+import '../shared/human_error.dart';
 
 class TeacherMediaSheet extends StatefulWidget {
   const TeacherMediaSheet({
@@ -46,8 +47,9 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
 
   Future<void> _loadTeacher() async {
     try {
-      final baseRef =
-      FirebaseDatabase.instance.ref('users/${widget.teacherUid}');
+      final baseRef = FirebaseDatabase.instance.ref(
+        'users/${widget.teacherUid}',
+      );
 
       final firstSnap = await baseRef.child('first_name').get();
       final lastSnap = await baseRef.child('last_name').get();
@@ -105,8 +107,7 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
       if (_videoUrl != null && _videoUrl!.trim().isNotEmpty) {
         final uri = Uri.tryParse(_videoUrl!);
 
-        if (uri != null &&
-            (uri.scheme == 'http' || uri.scheme == 'https')) {
+        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
           final controller = VideoPlayerController.networkUrl(uri);
           await controller.initialize();
           await controller.setLooping(false);
@@ -122,12 +123,10 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
           });
         }
       }
-    } catch (e, st) {
-      debugPrint('TEACHER LOAD ERROR = $e');
-      debugPrint('TEACHER LOAD STACK = $st');
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e, fallback: 'Could not load teacher profile.');
       });
     } finally {
       if (!mounted) return;
@@ -147,11 +146,7 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
           border: Border.all(color: uiBorder),
         ),
         child: const Center(
-          child: Icon(
-            Icons.person_rounded,
-            size: 56,
-            color: primaryBlue,
-          ),
+          child: Icon(Icons.person_rounded, size: 56, color: primaryBlue),
         ),
       );
     }
@@ -174,9 +169,8 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
                   url,
                   fit: BoxFit.cover,
                   width: double.infinity,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Icon(Icons.image_not_supported),
-                  ),
+                  errorBuilder: (_, _, _) =>
+                      const Center(child: Icon(Icons.image_not_supported)),
                 ),
               ),
             ),
@@ -210,32 +204,32 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
                   : 16 / 9,
               child: !_videoReady || _videoController == null
                   ? const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              )
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
                   : Stack(
-                alignment: Alignment.center,
-                children: [
-                  VideoPlayer(_videoController!),
-                  IconButton(
-                    iconSize: 60,
-                    color: Colors.white,
-                    onPressed: () {
-                      final c = _videoController!;
-                      if (c.value.isPlaying) {
-                        c.pause();
-                      } else {
-                        c.play();
-                      }
-                      setState(() {});
-                    },
-                    icon: Icon(
-                      _videoController!.value.isPlaying
-                          ? Icons.pause_circle_filled_rounded
-                          : Icons.play_circle_fill_rounded,
+                      alignment: Alignment.center,
+                      children: [
+                        VideoPlayer(_videoController!),
+                        IconButton(
+                          iconSize: 60,
+                          color: Colors.white,
+                          onPressed: () {
+                            final c = _videoController!;
+                            if (c.value.isPlaying) {
+                              c.pause();
+                            } else {
+                              c.play();
+                            }
+                            setState(() {});
+                          },
+                          icon: Icon(
+                            _videoController!.value.isPlaying
+                                ? Icons.pause_circle_filled_rounded
+                                : Icons.play_circle_fill_rounded,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
           ),
         ),
@@ -283,12 +277,12 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
                   ),
                 )
               else ...[
-                  _buildPhotos(),
-                  if (_videoUrl != null) ...[
-                    const SizedBox(height: 18),
-                    _buildVideo(),
-                  ],
+                _buildPhotos(),
+                if (_videoUrl != null) ...[
+                  const SizedBox(height: 18),
+                  _buildVideo(),
                 ],
+              ],
             ],
           ),
         ),

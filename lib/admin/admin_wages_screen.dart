@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'admin_wages_export_excel.dart';
+import '../shared/human_error.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
@@ -58,7 +59,7 @@ class AdminWagesScreen extends StatelessWidget {
       'September',
       'October',
       'November',
-      'December'
+      'December',
     ];
     final name = (m >= 1 && m <= 12) ? names[m - 1] : parts[1];
     return '$name $y';
@@ -75,8 +76,9 @@ class AdminWagesScreen extends StatelessWidget {
 
       final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
 
-      final serial =
-      (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '').toString().trim();
+      final serial = (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '')
+          .toString()
+          .trim();
 
       final phone1 = (m['phone1'] ?? m['phone'] ?? '').toString().trim();
       final phone2 = (m['phone2'] ?? '').toString().trim();
@@ -85,13 +87,14 @@ class AdminWagesScreen extends StatelessWidget {
       final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
       final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
 
-      String name = (m['learner_name'] ??
-          m['name'] ??
-          m['fullName'] ??
-          m['displayName'] ??
-          '')
-          .toString()
-          .trim();
+      String name =
+          (m['learner_name'] ??
+                  m['name'] ??
+                  m['fullName'] ??
+                  m['displayName'] ??
+                  '')
+              .toString()
+              .trim();
 
       // build from first + last if needed
       if (name.isEmpty) {
@@ -145,8 +148,9 @@ class AdminWagesScreen extends StatelessWidget {
           teacherKey = ic.trim();
         } else if (ic is Map) {
           final icm = ic.map((kk, vv) => MapEntry(kk.toString(), vv));
-          final tid =
-          (icm['teacherId'] ?? icm['uid'] ?? icm['id'] ?? '').toString().trim();
+          final tid = (icm['teacherId'] ?? icm['uid'] ?? icm['id'] ?? '')
+              .toString()
+              .trim();
           if (tid.isNotEmpty) teacherKey = tid;
         }
         if (teacherKey.isEmpty) {
@@ -253,10 +257,12 @@ class AdminWagesScreen extends StatelessWidget {
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: learners.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final l = learners[i];
-                        final displayName = l.name.isNotEmpty ? l.name : '(No name)';
+                        final displayName = l.name.isNotEmpty
+                            ? l.name
+                            : '(No name)';
                         final sub = [
                           if (l.serial.isNotEmpty) l.serial,
                           l.uid,
@@ -264,7 +270,9 @@ class AdminWagesScreen extends StatelessWidget {
 
                         return ListTile(
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                          ),
                           title: Text(
                             displayName,
                             maxLines: 1,
@@ -298,30 +306,31 @@ class AdminWagesScreen extends StatelessWidget {
 
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(makePaid ? 'Mark as PAID?' : 'Mark as UNPAID?'),
-        content: Text(
-          makePaid
-              ? 'This means you already gave the money to the teacher for this payment.'
-              : 'This will mark it as not paid to the teacher yet.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: makePaid ? Colors.green : Colors.red,
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(makePaid ? 'Mark as PAID?' : 'Mark as UNPAID?'),
+            content: Text(
+              makePaid
+                  ? 'This means you already gave the money to the teacher for this payment.'
+                  : 'This will mark it as not paid to the teacher yet.',
             ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(makePaid ? 'Mark PAID' : 'Mark UNPAID'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: makePaid ? Colors.green : Colors.red,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(makePaid ? 'Mark PAID' : 'Mark UNPAID'),
+              ),
+            ],
           ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -353,7 +362,11 @@ class AdminWagesScreen extends StatelessWidget {
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not update this wage entry.'),
+          ),
+        ),
       );
     }
   }
@@ -362,24 +375,27 @@ class AdminWagesScreen extends StatelessWidget {
     required BuildContext context,
     required String paymentId,
   }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Remove confirmation?'),
-        content: const Text('This will undo the confirmation for this payment.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Remove confirmation?'),
+            content: const Text(
+              'This will undo the confirmation for this payment.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Remove'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -393,13 +409,17 @@ class AdminWagesScreen extends StatelessWidget {
       });
 
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Confirmation removed ✅')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Confirmation removed ✅')));
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not complete this action.'),
+          ),
+        ),
       );
     }
   }
@@ -408,7 +428,9 @@ class AdminWagesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final paymentsRef = FirebaseDatabase.instance.ref('payments');
     final classesRef = FirebaseDatabase.instance.ref('classes');
-    final learnersRef = FirebaseDatabase.instance.ref('users'); // <-- assumed path
+    final learnersRef = FirebaseDatabase.instance.ref(
+      'users',
+    ); // <-- assumed path
 
     return Scaffold(
       backgroundColor: appBg,
@@ -434,7 +456,11 @@ class AdminWagesScreen extends StatelessWidget {
               } catch (e) {
                 if (!context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Export failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not export wages file.'),
+                    ),
+                  ),
                 );
               }
             },
@@ -466,7 +492,9 @@ class AdminWagesScreen extends StatelessWidget {
           });
 
           // Sort newest first by paidAt
-          payments.sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+          payments.sort(
+            (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
+          );
 
           // Group (NEW): teacherId -> list of payments (NO MONTH GROUPING)
           final Map<String, List<Map<String, dynamic>>> groupedByTeacher = {};
@@ -479,16 +507,18 @@ class AdminWagesScreen extends StatelessWidget {
 
           final teacherKeys = groupedByTeacher.keys.toList()
             ..sort((a, b) {
-              final aName = (groupedByTeacher[a]!.isNotEmpty
-                  ? (groupedByTeacher[a]!.first['teacherName'] ?? '')
-                  : '')
-                  .toString()
-                  .trim();
-              final bName = (groupedByTeacher[b]!.isNotEmpty
-                  ? (groupedByTeacher[b]!.first['teacherName'] ?? '')
-                  : '')
-                  .toString()
-                  .trim();
+              final aName =
+                  (groupedByTeacher[a]!.isNotEmpty
+                          ? (groupedByTeacher[a]!.first['teacherName'] ?? '')
+                          : '')
+                      .toString()
+                      .trim();
+              final bName =
+                  (groupedByTeacher[b]!.isNotEmpty
+                          ? (groupedByTeacher[b]!.first['teacherName'] ?? '')
+                          : '')
+                      .toString()
+                      .trim();
               final aa = aName.isEmpty ? a : aName;
               final bb = bName.isEmpty ? b : bName;
               return aa.toLowerCase().compareTo(bb.toLowerCase());
@@ -543,10 +573,15 @@ class AdminWagesScreen extends StatelessWidget {
                     final list = <_LearnerInfo>[];
                     for (final uid in missingUidsThisMonth) {
                       list.add(
-                        learnerMap[uid] ?? const _LearnerInfo(uid: '', name: '', serial: ''),
+                        learnerMap[uid] ??
+                            const _LearnerInfo(uid: '', name: '', serial: ''),
                       );
                       if (list.last.uid.isEmpty) {
-                        list[list.length - 1] = _LearnerInfo(uid: uid, name: '', serial: '');
+                        list[list.length - 1] = _LearnerInfo(
+                          uid: uid,
+                          name: '',
+                          serial: '',
+                        );
                       }
                     }
                     list.sort((a, b) {
@@ -578,7 +613,8 @@ class AdminWagesScreen extends StatelessWidget {
                       }
 
                       final tKey = teacherKeys[i - 1];
-                      final teacherPayments = groupedByTeacher[tKey] ?? const [];
+                      final teacherPayments =
+                          groupedByTeacher[tKey] ?? const [];
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
@@ -591,20 +627,24 @@ class AdminWagesScreen extends StatelessWidget {
                               color: Colors.black.withOpacity(0.03),
                               blurRadius: 10,
                               offset: const Offset(0, 6),
-                            )
+                            ),
                           ],
                         ),
                         child: _TeacherSection(
                           teacherId: tKey,
                           payments: teacherPayments,
                           nowMonthKey: nowMonthKey,
-                          studyingLearnerUids: studyingByTeacher[tKey] ??
+                          studyingLearnerUids:
+                              studyingByTeacher[tKey] ??
                               _tryMatchStudyingByTeacherName(
-                                teacherName: (teacherPayments.isNotEmpty
-                                    ? (teacherPayments.first['teacherName'] ?? '')
-                                    : '')
-                                    .toString()
-                                    .trim(),
+                                teacherName:
+                                    (teacherPayments.isNotEmpty
+                                            ? (teacherPayments
+                                                      .first['teacherName'] ??
+                                                  '')
+                                            : '')
+                                        .toString()
+                                        .trim(),
                                 studyingByTeacher: studyingByTeacher,
                               ),
                           learnerMap: learnerMap,
@@ -613,10 +653,11 @@ class AdminWagesScreen extends StatelessWidget {
                             paymentId: paymentId,
                             makePaid: makePaid,
                           ),
-                          onRemoveTeacherConfirm: (paymentId) => _adminRemoveTeacherConfirmation(
-                            context: context,
-                            paymentId: paymentId,
-                          ),
+                          onRemoveTeacherConfirm: (paymentId) =>
+                              _adminRemoveTeacherConfirmation(
+                                context: context,
+                                paymentId: paymentId,
+                              ),
                         ),
                       );
                     },
@@ -735,10 +776,7 @@ class _StatsData {
 // ---------------- Stats header card ----------------
 
 class _StatsHeaderCard extends StatelessWidget {
-  const _StatsHeaderCard({
-    required this.data,
-    required this.onTapMissing,
-  });
+  const _StatsHeaderCard({required this.data, required this.onTapMissing});
 
   final _StatsData data;
   final VoidCallback onTapMissing;
@@ -797,7 +835,10 @@ class _StatsHeaderCard extends StatelessWidget {
           ),
           if (onTap != null) ...[
             const SizedBox(width: 6),
-            Icon(Icons.chevron_right_rounded, color: Colors.black.withOpacity(0.35)),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.black.withOpacity(0.35),
+            ),
           ],
         ],
       ),
@@ -840,7 +881,7 @@ class _StatsHeaderCard extends StatelessWidget {
             color: Colors.black.withOpacity(0.03),
             blurRadius: 10,
             offset: const Offset(0, 6),
-          )
+          ),
         ],
       ),
       child: Column(
@@ -864,26 +905,36 @@ class _StatsHeaderCard extends StatelessWidget {
             childAspectRatio: 2.6,
             children: [
               _tile(
-                  label: 'Studying',
-                  value: '${data.studyingLearnersCount}',
-                  icon: Icons.groups_rounded),
+                label: 'Studying',
+                value: '${data.studyingLearnersCount}',
+                icon: Icons.groups_rounded,
+              ),
               _tile(
-                  label: 'Paid learners',
-                  value: '${data.paidLearnersCount}',
-                  icon: Icons.verified_rounded),
+                label: 'Paid learners',
+                value: '${data.paidLearnersCount}',
+                icon: Icons.verified_rounded,
+              ),
               _tile(
                 label: 'Not paid yet',
                 value: '${data.notPaidYetCount}',
                 icon: Icons.person_off_rounded,
                 onTap: onTapMissing,
               ),
-              _tile(label: 'Payments', value: '${data.paymentsCount}', icon: Icons.receipt_long_rounded),
+              _tile(
+                label: 'Payments',
+                value: '${data.paymentsCount}',
+                icon: Icons.receipt_long_rounded,
+              ),
               _tile(
                 label: 'Unpaid (to staff)',
                 value: '${data.unpaidCount} • ${_fmtDa(data.unpaidAmount)}',
                 icon: Icons.payments_rounded,
               ),
-              _tile(label: 'Total', value: _fmtDa(data.totalAmount), icon: Icons.account_balance_wallet_rounded),
+              _tile(
+                label: 'Total',
+                value: _fmtDa(data.totalAmount),
+                icon: Icons.account_balance_wallet_rounded,
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -891,9 +942,14 @@ class _StatsHeaderCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 6,
             children: [
-              if (data.notConfirmedCount > 0) _smallNotice('Waiting confirmation: ${data.notConfirmedCount}'),
-              if (data.incompleteCount > 0) _smallNotice('Some records incomplete: ${data.incompleteCount}'),
-              if (data.paymentsCount == 0) _smallNotice('No payments in this month yet.'),
+              if (data.notConfirmedCount > 0)
+                _smallNotice('Waiting confirmation: ${data.notConfirmedCount}'),
+              if (data.incompleteCount > 0)
+                _smallNotice(
+                  'Some records incomplete: ${data.incompleteCount}',
+                ),
+              if (data.paymentsCount == 0)
+                _smallNotice('No payments in this month yet.'),
             ],
           ),
         ],
@@ -1000,10 +1056,12 @@ class _TeacherSection extends StatelessWidget {
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: learners.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final l = learners[i];
-                        final displayName = l.name.isNotEmpty ? l.name : '(No name)';
+                        final displayName = l.name.isNotEmpty
+                            ? l.name
+                            : '(No name)';
                         final sub = [
                           if (l.serial.isNotEmpty) l.serial,
                           l.uid,
@@ -1011,7 +1069,9 @@ class _TeacherSection extends StatelessWidget {
 
                         return ListTile(
                           dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                          ),
                           title: Text(
                             displayName,
                             maxLines: 1,
@@ -1038,10 +1098,13 @@ class _TeacherSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final teacherName =
-    (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '').toString().trim();
+        (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '')
+            .toString()
+            .trim();
     final header = teacherName.isNotEmpty ? teacherName : teacherId;
 
-    final itemsAll = [...payments]..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    final itemsAll = [...payments]
+      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
 
     // Teacher totals (ALL TIME)
     int totalAll = 0;
@@ -1074,7 +1137,9 @@ class _TeacherSection extends StatelessWidget {
 
       final list = <_LearnerInfo>[];
       for (final uid in missingUids) {
-        list.add(learnerMap[uid] ?? _LearnerInfo(uid: uid, name: '', serial: ''));
+        list.add(
+          learnerMap[uid] ?? _LearnerInfo(uid: uid, name: '', serial: ''),
+        );
       }
       list.sort((a, b) {
         final aa = a.name.trim().isEmpty ? a.uid : a.name.trim();
@@ -1104,10 +1169,20 @@ class _TeacherSection extends StatelessWidget {
           nameB = (learnerMap[b]?.name ?? '').trim();
         }
         if (nameA.isEmpty) {
-          nameA = (byLearner[a]!.isNotEmpty ? (byLearner[a]!.first['learner_name'] ?? '') : '').toString().trim();
+          nameA =
+              (byLearner[a]!.isNotEmpty
+                      ? (byLearner[a]!.first['learner_name'] ?? '')
+                      : '')
+                  .toString()
+                  .trim();
         }
         if (nameB.isEmpty) {
-          nameB = (byLearner[b]!.isNotEmpty ? (byLearner[b]!.first['learner_name'] ?? '') : '').toString().trim();
+          nameB =
+              (byLearner[b]!.isNotEmpty
+                      ? (byLearner[b]!.first['learner_name'] ?? '')
+                      : '')
+                  .toString()
+                  .trim();
         }
         final aa = nameA.isEmpty ? a : nameA;
         final bb = nameB.isEmpty ? b : nameB;
@@ -1160,11 +1235,14 @@ class _TeacherSection extends StatelessWidget {
                     onTap: () => _showMissingList(
                       context: context,
                       title:
-                      'Not paid yet • $header • ${AdminWagesScreen._prettyMonthLabel(nowMonthKey)}',
+                          'Not paid yet • $header • ${AdminWagesScreen._prettyMonthLabel(nowMonthKey)}',
                       learners: missingList,
                     ),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(999),
@@ -1237,7 +1315,8 @@ class _LearnerSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = [...payments]..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+    final items = [...payments]
+      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
 
     // Learner name/serial
     String learnerName = '';
@@ -1250,13 +1329,20 @@ class _LearnerSection extends StatelessWidget {
     }
 
     if (learnerName.isEmpty) {
-      learnerName = (items.isNotEmpty ? (items.first['learner_name'] ?? '') : '').toString().trim();
+      learnerName =
+          (items.isNotEmpty ? (items.first['learner_name'] ?? '') : '')
+              .toString()
+              .trim();
     }
     if (learnerSerial.isEmpty) {
-      learnerSerial = (items.isNotEmpty ? (items.first['learner_serial'] ?? '') : '').toString().trim();
+      learnerSerial =
+          (items.isNotEmpty ? (items.first['learner_serial'] ?? '') : '')
+              .toString()
+              .trim();
     }
 
-    if (learnerName.isEmpty) learnerName = learnerUid == 'Unknown' ? 'Unknown learner' : learnerUid;
+    if (learnerName.isEmpty)
+      learnerName = learnerUid == 'Unknown' ? 'Unknown learner' : learnerUid;
 
     int total = 0;
     int unpaid = 0;
@@ -1373,10 +1459,7 @@ class _PaymentRow extends StatelessWidget {
     );
   }
 
-  static Widget _chip({
-    required String text,
-    required Color color,
-  }) {
+  static Widget _chip({required String text, required Color color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
@@ -1386,7 +1469,11 @@ class _PaymentRow extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontWeight: FontWeight.w900, color: color, fontSize: 12),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: color,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -1410,8 +1497,9 @@ class _PaymentRow extends StatelessWidget {
     final isPaidStaff = _asBool(payment['teacherPaid']);
     final confirmed = _asBool(payment['teacherConfirmed']);
 
-    final paidChipBg =
-    isPaidStaff ? Colors.green.withOpacity(0.15) : Colors.red.withOpacity(0.12);
+    final paidChipBg = isPaidStaff
+        ? Colors.green.withOpacity(0.15)
+        : Colors.red.withOpacity(0.12);
     final paidChipBorder = isPaidStaff ? Colors.green : Colors.red;
     final paidChipText = isPaidStaff ? 'PAID' : 'UNPAID';
 
@@ -1486,7 +1574,9 @@ class _PaymentRow extends StatelessWidget {
           const SizedBox(width: 10),
           InkWell(
             borderRadius: BorderRadius.circular(999),
-            onTap: paymentId.isEmpty ? null : () => onTogglePaid(paymentId, !isPaidStaff),
+            onTap: paymentId.isEmpty
+                ? null
+                : () => onTogglePaid(paymentId, !isPaidStaff),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(

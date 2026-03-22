@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../shared/human_error.dart';
 
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 
@@ -25,7 +26,8 @@ class AdminSubscriptionsScreen extends StatelessWidget {
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
 
-  DatabaseReference get _subsRef => FirebaseDatabase.instance.ref('subscriptions');
+  DatabaseReference get _subsRef =>
+      FirebaseDatabase.instance.ref('subscriptions');
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +48,9 @@ class AdminSubscriptionsScreen extends StatelessWidget {
             icon: const Icon(Icons.add_circle_rounded, color: actionOrange),
             onPressed: () async {
               await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SubscriptionCreateScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const SubscriptionCreateScreen(),
+                ),
               );
             },
           ),
@@ -69,7 +73,7 @@ class AdminSubscriptionsScreen extends StatelessWidget {
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, i) {
               final s = items[i];
 
@@ -84,7 +88,9 @@ class AdminSubscriptionsScreen extends StatelessWidget {
               return InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => SubscriptionDetailsScreen(sub: s)),
+                  MaterialPageRoute(
+                    builder: (_) => SubscriptionDetailsScreen(sub: s),
+                  ),
                 ),
                 child: Container(
                   decoration: BoxDecoration(
@@ -98,7 +104,9 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                       CircleAvatar(
                         backgroundColor: appBg,
                         child: Text(
-                          (s.displayName.isNotEmpty ? s.displayName[0].toUpperCase() : 'S'),
+                          (s.displayName.isNotEmpty
+                              ? s.displayName[0].toUpperCase()
+                              : 'S'),
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             color: primaryBlue,
@@ -121,7 +129,9 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              subtitleParts.isEmpty ? '-' : subtitleParts.join('  •  '),
+                              subtitleParts.isEmpty
+                                  ? '-'
+                                  : subtitleParts.join('  •  '),
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: Colors.black.withOpacity(0.65),
@@ -130,7 +140,8 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (s.selectedFee != null || s.accessLabel.trim().isNotEmpty) ...[
+                            if (s.selectedFee != null ||
+                                s.accessLabel.trim().isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Wrap(
                                 spacing: 8,
@@ -138,7 +149,8 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                                 children: [
                                   if (s.selectedFee != null)
                                     _pill(
-                                      label: '${s.selectedFee!.toStringAsFixed(0)} DA',
+                                      label:
+                                          '${s.selectedFee!.toStringAsFixed(0)} DA',
                                       bg: actionOrange.withOpacity(0.10),
                                       fg: actionOrange,
                                     ),
@@ -157,9 +169,14 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                       IconButton(
                         tooltip: 'Call',
                         icon: const Icon(Icons.call, color: actionOrange),
-                        onPressed: s.phone.trim().isEmpty ? null : () => callPhone(s.phone),
+                        onPressed: s.phone.trim().isEmpty
+                            ? null
+                            : () => callPhone(s.phone),
                       ),
-                      const Icon(Icons.chevron_right_rounded, color: primaryBlue),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: primaryBlue,
+                      ),
                     ],
                   ),
                 ),
@@ -184,11 +201,7 @@ class AdminSubscriptionsScreen extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: fg),
       ),
     );
   }
@@ -206,27 +219,28 @@ class SubscriptionDetailsScreen extends StatelessWidget {
 
   final SubscriptionItem sub;
 
-  DatabaseReference get _subsRef => FirebaseDatabase.instance.ref('subscriptions');
+  DatabaseReference get _subsRef =>
+      FirebaseDatabase.instance.ref('subscriptions');
 
   Future<bool> _confirmDelete(BuildContext context) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete subscription?'),
-        content: const Text('This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete subscription?'),
+            content: const Text('This cannot be undone.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
@@ -258,7 +272,9 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                     foregroundColor: Colors.red,
                     side: const BorderSide(color: Colors.red),
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                   onPressed: () async {
                     final ok = await _confirmDelete(context);
@@ -278,7 +294,9 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                     backgroundColor: actionOrange,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                   onPressed: () async {
                     await Navigator.of(context).push(
@@ -319,12 +337,16 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               _line('Study mode', sub.studyModeLabel),
               _line(
                 'Selected fee',
-                sub.selectedFee == null ? '' : '${sub.selectedFee!.toStringAsFixed(0)} DA',
+                sub.selectedFee == null
+                    ? ''
+                    : '${sub.selectedFee!.toStringAsFixed(0)} DA',
               ),
               _line('Access mode', sub.accessMode),
               _line(
                 'Access months',
-                sub.accessDurationMonths == null ? '' : sub.accessDurationMonths.toString(),
+                sub.accessDurationMonths == null
+                    ? ''
+                    : sub.accessDurationMonths.toString(),
               ),
               _line('Access label', sub.accessLabel),
               _line('Additional info', sub.additionalInfo),
@@ -358,8 +380,12 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                 p.isEmpty ? '-' : p,
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: p.isEmpty ? Colors.black.withOpacity(0.7) : actionOrange,
-                  decoration: p.isEmpty ? TextDecoration.none : TextDecoration.underline,
+                  color: p.isEmpty
+                      ? Colors.black.withOpacity(0.7)
+                      : actionOrange,
+                  decoration: p.isEmpty
+                      ? TextDecoration.none
+                      : TextDecoration.underline,
                 ),
               ),
             ),
@@ -384,7 +410,10 @@ class SubscriptionDetailsScreen extends StatelessWidget {
             width: 110,
             child: Text(
               k,
-              style: const TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+              ),
             ),
           ),
           Expanded(
@@ -420,7 +449,8 @@ class SubscriptionCreateScreen extends StatefulWidget {
   const SubscriptionCreateScreen({super.key});
 
   @override
-  State<SubscriptionCreateScreen> createState() => _SubscriptionCreateScreenState();
+  State<SubscriptionCreateScreen> createState() =>
+      _SubscriptionCreateScreenState();
 }
 
 class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
@@ -438,7 +468,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   bool saving = false;
 
-  DatabaseReference get _subsRef => FirebaseDatabase.instance.ref('subscriptions');
+  DatabaseReference get _subsRef =>
+      FirebaseDatabase.instance.ref('subscriptions');
   DatabaseReference get _coursesRef => FirebaseDatabase.instance.ref('courses');
 
   @override
@@ -507,9 +538,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   Future<void> _save() async {
     if (selectedCourseId == null || selectedCourseId!.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick a course first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pick a course first')));
       return;
     }
 
@@ -545,7 +576,11 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not save subscription changes.'),
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => saving = false);
@@ -574,7 +609,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
               backgroundColor: actionOrange,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
             onPressed: saving ? null : _save,
             child: Text(saving ? 'Saving…' : 'Save Subscription'),
@@ -612,7 +649,9 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
                 onPressed: _pickCourse,
                 icon: const Icon(Icons.school_rounded),
                 label: Text(
-                  selectedCourseId == null ? 'Pick course' : 'Course: $selectedCourseTitle',
+                  selectedCourseId == null
+                      ? 'Pick course'
+                      : 'Course: $selectedCourseTitle',
                 ),
               ),
             ],
@@ -729,7 +768,8 @@ class SubscriptionItem {
   final String accessLabel;
   final String additionalInfo;
 
-  String get displayName => fullName.trim().isEmpty ? '(No name)' : fullName.trim();
+  String get displayName =>
+      fullName.trim().isEmpty ? '(No name)' : fullName.trim();
 
   String get studyTypeDisplay {
     final delivery = deliveryLabel.trim();
@@ -781,12 +821,18 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
     final dbFullName = readString(m, ['fullName', 'full_name']);
     final fn = readString(m, ['firstName', 'first_name']);
     final ln = readString(m, ['lastName', 'last_name']);
-    final computedName = dbFullName.isNotEmpty ? dbFullName : ('$fn $ln').trim();
+    final computedName = dbFullName.isNotEmpty
+        ? dbFullName
+        : ('$fn $ln').trim();
 
     final rawDeliveryKey = readString(m, ['deliveryKey', 'delivery_key']);
     final normalizedDeliveryKey = _normalizeDeliveryKey(rawDeliveryKey);
 
-    final rawDeliveryLabel = readString(m, ['deliveryLabel', 'delivery_label', 'delivery']);
+    final rawDeliveryLabel = readString(m, [
+      'deliveryLabel',
+      'delivery_label',
+      'delivery',
+    ]);
     final normalizedDeliveryLabel = rawDeliveryLabel.isNotEmpty
         ? rawDeliveryLabel
         : _canonicalDeliveryLabel(normalizedDeliveryKey);
@@ -794,7 +840,10 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
     final rawStudyMode = readString(m, ['studyMode', 'study_mode']);
     final normalizedStudyMode = _normalizeStudyMode(rawStudyMode);
 
-    final rawStudyModeLabel = readString(m, ['studyModeLabel', 'study_mode_label']);
+    final rawStudyModeLabel = readString(m, [
+      'studyModeLabel',
+      'study_mode_label',
+    ]);
     final normalizedStudyModeLabel = rawStudyModeLabel.isNotEmpty
         ? rawStudyModeLabel
         : _studyModeLabel(normalizedStudyMode);
@@ -813,7 +862,8 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
         studyModeLabel: normalizedStudyModeLabel,
         selectedFee: asDouble(m['selectedFee'] ?? m['selected_fee']),
         accessMode: readString(m, ['accessMode', 'access_mode']),
-        accessDurationMonths: (m['accessDurationMonths'] ?? m['access_duration_months']) == null
+        accessDurationMonths:
+            (m['accessDurationMonths'] ?? m['access_duration_months']) == null
             ? null
             : asInt(m['accessDurationMonths'] ?? m['access_duration_months']),
         accessLabel: readString(m, ['accessLabel', 'access_label']),

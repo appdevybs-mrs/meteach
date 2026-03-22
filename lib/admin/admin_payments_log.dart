@@ -25,7 +25,9 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: AdminPaymentsLogScreen.primaryBlue),
+        iconTheme: const IconThemeData(
+          color: AdminPaymentsLogScreen.primaryBlue,
+        ),
         title: const Text(
           'Payments Log',
           style: TextStyle(
@@ -60,7 +62,8 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                 if (snapshot.hasError) {
                   return const Center(child: Text('Error loading payments.'));
                 }
-                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
@@ -70,7 +73,9 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                 if (v is Map) {
                   v.forEach((k, val) {
                     if (val is Map) {
-                      final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+                      final m = val.map(
+                        (kk, vv) => MapEntry(kk.toString(), vv),
+                      );
                       m['paymentId'] = k.toString();
                       list.add(m.cast<String, dynamic>());
                     }
@@ -78,17 +83,27 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                 }
 
                 // Sort newest first
-                list.sort((a, b) => (b['paidAt'] as int? ?? 0).compareTo(a['paidAt'] as int? ?? 0));
+                list.sort(
+                  (a, b) => (b['paidAt'] as int? ?? 0).compareTo(
+                    a['paidAt'] as int? ?? 0,
+                  ),
+                );
 
                 final s = _search.trim().toLowerCase();
                 final filtered = s.isEmpty
                     ? list
                     : list.where((p) {
-                  final uid = (p['uid'] ?? '').toString().toLowerCase();
-                  final code = (p['course_code'] ?? '').toString().toLowerCase();
-                  final title = (p['course_title'] ?? '').toString().toLowerCase();
-                  return uid.contains(s) || code.contains(s) || title.contains(s);
-                }).toList();
+                        final uid = (p['uid'] ?? '').toString().toLowerCase();
+                        final code = (p['course_code'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        final title = (p['course_title'] ?? '')
+                            .toString()
+                            .toLowerCase();
+                        return uid.contains(s) ||
+                            code.contains(s) ||
+                            title.contains(s);
+                      }).toList();
 
                 if (filtered.isEmpty) {
                   return const Center(child: Text('No payments found.'));
@@ -104,13 +119,17 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                     final code = (p['course_code'] ?? '').toString();
                     final title = (p['course_title'] ?? '').toString();
                     final uid = (p['uid'] ?? '').toString();
-                    final variantKey = (p['variantKey'] ?? '').toString().trim();
+                    final variantKey = (p['variantKey'] ?? '')
+                        .toString()
+                        .trim();
                     final studyTypeText = _studyTypeText(p);
                     final usesSessions = _variantUsesSessions(variantKey);
                     return Card(
                       elevation: 0,
                       color: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
@@ -126,7 +145,9 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                             const SizedBox(height: 6),
                             Text(
                               'Learner UID: $uid',
-                              style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                              style: TextStyle(
+                                color: Colors.black.withOpacity(0.7),
+                              ),
                             ),
                             if (studyTypeText.isNotEmpty) ...[
                               const SizedBox(height: 6),
@@ -144,18 +165,27 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                               runSpacing: 8,
                               children: [
                                 _pill('Amount: $amount'),
-                                if (usesSessions) _pill('Sessions paid: $sessionsPaid'),
-                                if ((p['method'] ?? '').toString().trim().isNotEmpty)
+                                if (usesSessions)
+                                  _pill('Sessions paid: $sessionsPaid'),
+                                if ((p['method'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isNotEmpty)
                                   _pill('Method: ${p['method']}'),
                               ],
                             ),
-                            if ((p['notes'] ?? '').toString().trim().isNotEmpty) ...[
+                            if ((p['notes'] ?? '')
+                                .toString()
+                                .trim()
+                                .isNotEmpty) ...[
                               const SizedBox(height: 10),
                               Text(
                                 'Notes: ${p['notes']}',
-                                style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                                style: TextStyle(
+                                  color: Colors.black.withOpacity(0.7),
+                                ),
                               ),
-                            ]
+                            ],
                           ],
                         ),
                       ),

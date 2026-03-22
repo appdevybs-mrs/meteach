@@ -26,7 +26,7 @@ class NotAuthorized extends StatelessWidget {
                 onPressed: () async => FirebaseAuth.instance.signOut(),
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign out'),
-              )
+              ),
             ],
           ),
         ),

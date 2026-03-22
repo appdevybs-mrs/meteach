@@ -15,10 +15,12 @@ class AdminTeacherMailTopicsScreen extends StatefulWidget {
   final dynamic teacher; // Staff OR Map
 
   @override
-  State<AdminTeacherMailTopicsScreen> createState() => _AdminTeacherMailTopicsScreenState();
+  State<AdminTeacherMailTopicsScreen> createState() =>
+      _AdminTeacherMailTopicsScreenState();
 }
 
-class _AdminTeacherMailTopicsScreenState extends State<AdminTeacherMailTopicsScreen> {
+class _AdminTeacherMailTopicsScreenState
+    extends State<AdminTeacherMailTopicsScreen> {
   final _db = FirebaseDatabase.instance;
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
@@ -57,8 +59,12 @@ class _AdminTeacherMailTopicsScreenState extends State<AdminTeacherMailTopicsScr
     if (t is Map) {
       String read(dynamic key) => (t[key] ?? '').toString().trim();
 
-      final first = read('first_name').isNotEmpty ? read('first_name') : read('firstName');
-      final last  = read('last_name').isNotEmpty  ? read('last_name')  : read('lastName');
+      final first = read('first_name').isNotEmpty
+          ? read('first_name')
+          : read('firstName');
+      final last = read('last_name').isNotEmpty
+          ? read('last_name')
+          : read('lastName');
       final full = ('$first $last').trim();
       if (full.isNotEmpty) return full;
 
@@ -82,15 +88,17 @@ class _AdminTeacherMailTopicsScreenState extends State<AdminTeacherMailTopicsScr
       final deletedAt = m['deletedAt'];
       if (deletedAt != null) return; // ✅ hide deleted threads in list
 
-      out.add(_TopicRow(
-        threadId: k.toString(),
-        subject: (m['subject'] ?? '').toString().trim(),
-        lastMessage: (m['lastMessage'] ?? '').toString(),
-        updatedAt: _toInt(m['updatedAt']),
-        unreadCount: _toInt(m['unreadCount']),
-        peerUid: (m['peerUid'] ?? '').toString(),
-        peerName: (m['peerName'] ?? '').toString(),
-      ));
+      out.add(
+        _TopicRow(
+          threadId: k.toString(),
+          subject: (m['subject'] ?? '').toString().trim(),
+          lastMessage: (m['lastMessage'] ?? '').toString(),
+          updatedAt: _toInt(m['updatedAt']),
+          unreadCount: _toInt(m['unreadCount']),
+          peerUid: (m['peerUid'] ?? '').toString(),
+          peerName: (m['peerName'] ?? '').toString(),
+        ),
+      );
     });
 
     out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -138,7 +146,8 @@ class _AdminTeacherMailTopicsScreenState extends State<AdminTeacherMailTopicsScr
       final now = DateTime.now().millisecondsSinceEpoch;
       final threadId = _db.ref('mail_threads').push().key!;
       final teacherName = _teacherDisplayName();
-      final myName = (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+      final myName = (FirebaseAuth.instance.currentUser?.email ?? 'Admin')
+          .trim();
 
       // 1) create thread meta
       await _db.ref('mail_threads/$threadId').set({
@@ -146,10 +155,7 @@ class _AdminTeacherMailTopicsScreenState extends State<AdminTeacherMailTopicsScr
         'createdAt': now,
         'updatedAt': now,
         'lastMessage': '',
-        'participants': {
-          _meUid: true,
-          widget.teacherUid: true,
-        },
+        'participants': {_meUid: true, widget.teacherUid: true},
       });
 
       // 2) create index item for admin (me)
@@ -252,12 +258,15 @@ class _AdminTeacherMailTopicsScreenState extends State<AdminTeacherMailTopicsScr
                   ),
                   trailing: t.unreadCount > 0
                       ? CircleAvatar(
-                    radius: 12,
-                    child: Text(
-                      '${t.unreadCount}',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                    ),
-                  )
+                          radius: 12,
+                          child: Text(
+                            '${t.unreadCount}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        )
                       : const Icon(Icons.chevron_right),
                   onTap: () async {
                     await Navigator.of(context).push(

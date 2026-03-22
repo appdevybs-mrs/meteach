@@ -32,9 +32,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This game has no link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('This game has no link.')));
       return;
     }
 
@@ -86,7 +86,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                         height: 200,
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (_, _, _) => Container(
                           height: 200,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -116,10 +116,14 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     'By: $ownerName',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.72),
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                        0.72,
+                      ),
                     ),
                   ),
-                  if (category.isNotEmpty || level.isNotEmpty || durationMinutes > 0) ...[
+                  if (category.isNotEmpty ||
+                      level.isNotEmpty ||
+                      durationMinutes > 0) ...[
                     const SizedBox(height: 14),
                     Wrap(
                       spacing: 8,
@@ -201,13 +205,13 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       children: tags
                           .map(
                             (tag) => Chip(
-                          label: Text(tag),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(
-                            color: cs.primary.withOpacity(0.14),
-                          ),
-                        ),
-                      )
+                              label: Text(tag),
+                              backgroundColor: cs.primary.withOpacity(0.08),
+                              side: BorderSide(
+                                color: cs.primary.withOpacity(0.14),
+                              ),
+                            ),
+                          )
                           .toList(),
                     ),
                   ],
@@ -309,8 +313,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     final q = query.trim().toLowerCase();
     final name = (game['name'] ?? '').toString().trim().toLowerCase();
-    final description =
-    (game['description'] ?? '').toString().trim().toLowerCase();
+    final description = (game['description'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     final category = (game['category'] ?? '').toString().trim().toLowerCase();
     final level = (game['level'] ?? '').toString().trim().toLowerCase();
     final tags = _tagsFromGame(game).map((e) => e.toLowerCase()).toList();
@@ -332,7 +338,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     final tags = _tagsFromGame(game);
     return tags.any(
-          (tag) => tag.trim().toLowerCase() == selectedTag.trim().toLowerCase(),
+      (tag) => tag.trim().toLowerCase() == selectedTag.trim().toLowerCase(),
     );
   }
 
@@ -343,8 +349,8 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   }
 
   Map<String, List<Map<String, dynamic>>> _groupByCategory(
-      List<MapEntry<String, Map<String, dynamic>>> items,
-      ) {
+    List<MapEntry<String, Map<String, dynamic>>> items,
+  ) {
     final grouped = <String, List<Map<String, dynamic>>>{};
 
     for (final item in items) {
@@ -403,16 +409,16 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               suffixIcon: _searchQuery.trim().isEmpty
                   ? null
                   : IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() {
-                    _searchQuery = '';
-                  });
-                },
-                icon: const Icon(Icons.close_rounded, size: 20),
-              ),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                    ),
               filled: true,
-              fillColor: cs.surfaceVariant.withOpacity(0.28),
+              fillColor: cs.surfaceContainerHighest.withOpacity(0.28),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 12,
@@ -489,11 +495,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.sports_esports_rounded,
-                size: 46,
-                color: _funOrange,
-              ),
+              Icon(Icons.sports_esports_rounded, size: 46, color: _funOrange),
               const SizedBox(height: 14),
               Text(
                 filtered
@@ -507,7 +509,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                filtered ? 'Try another name or tag.' : 'Please check again later.',
+                filtered
+                    ? 'Try another name or tag.'
+                    : 'Please check again later.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -555,9 +559,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   }
 
   Widget _buildConsoleGameCard(
-      BuildContext context,
-      Map<String, dynamic> game,
-      ) {
+    BuildContext context,
+    Map<String, dynamic> game,
+  ) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
@@ -595,23 +599,23 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                   color: cs.primary.withOpacity(0.08),
                   child: thumbnail.isNotEmpty
                       ? Image.network(
-                    thumbnail,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Icon(
-                        Icons.sports_esports_rounded,
-                        color: cs.primary,
-                        size: 34,
-                      ),
-                    ),
-                  )
+                          thumbnail,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Center(
+                            child: Icon(
+                              Icons.sports_esports_rounded,
+                              color: cs.primary,
+                              size: 34,
+                            ),
+                          ),
+                        )
                       : Center(
-                    child: Icon(
-                      Icons.sports_esports_rounded,
-                      color: cs.primary,
-                      size: 34,
-                    ),
-                  ),
+                          child: Icon(
+                            Icons.sports_esports_rounded,
+                            color: cs.primary,
+                            size: 34,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -736,7 +740,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: games.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 return _buildConsoleGameCard(context, games[index]);
               },
@@ -750,9 +754,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Games'),
-      ),
+      appBar: AppBar(title: const Text('Games')),
       body: StreamBuilder<DatabaseEvent>(
         stream: _gamesRef.onValue,
         builder: (context, snap) {
@@ -773,7 +775,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
             final gameValue = entry.value;
 
             final game = gameValue is Map
-                ? Map<String, dynamic>.from(gameValue as Map)
+                ? Map<String, dynamic>.from(gameValue)
                 : <String, dynamic>{};
 
             return MapEntry(entry.key.toString(), game);
@@ -812,7 +814,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                   _buildEmptyState(context, filtered: true)
                 else
                   ...grouped.entries.map(
-                        (entry) => _buildCategoryRow(
+                    (entry) => _buildCategoryRow(
                       context: context,
                       title: entry.key,
                       games: entry.value,

@@ -19,7 +19,8 @@ class SharedAudioPlayerScreen extends StatefulWidget {
   final String imageUrl;
 
   @override
-  State<SharedAudioPlayerScreen> createState() => _SharedAudioPlayerScreenState();
+  State<SharedAudioPlayerScreen> createState() =>
+      _SharedAudioPlayerScreenState();
 }
 
 enum _LearningMode { listen, study, shadow, review }
@@ -466,57 +467,60 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                   Expanded(
                     child: _bookmarks.isEmpty
                         ? Center(
-                      child: Text(
-                        'No bookmarks yet',
-                        style: TextStyle(
-                          color: p.text.withOpacity(0.65),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    )
-                        : ListView.builder(
-                      itemCount: _bookmarks.length,
-                      itemBuilder: (_, index) {
-                        final bookmark = _bookmarks[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            radius: 14,
-                            backgroundColor: p.primary.withOpacity(0.12),
                             child: Text(
-                              '${index + 1}',
+                              'No bookmarks yet',
                               style: TextStyle(
-                                color: p.primary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
+                                color: p.text.withOpacity(0.65),
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          title: Text(
-                            _format(bookmark),
-                            style: TextStyle(
-                              color: p.text,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          trailing: IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _bookmarks.removeAt(index);
-                              });
-                              Navigator.of(context).pop();
-                              _showBookmarksSheet();
+                          )
+                        : ListView.builder(
+                            itemCount: _bookmarks.length,
+                            itemBuilder: (_, index) {
+                              final bookmark = _bookmarks[index];
+                              return ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: p.primary.withOpacity(0.12),
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: TextStyle(
+                                      color: p.primary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  _format(bookmark),
+                                  style: TextStyle(
+                                    color: p.text,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                trailing: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _bookmarks.removeAt(index);
+                                    });
+                                    Navigator.of(context).pop();
+                                    _showBookmarksSheet();
+                                  },
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    size: 20,
+                                  ),
+                                ),
+                                onTap: () async {
+                                  Navigator.of(context).pop();
+                                  await _player.seek(bookmark);
+                                },
+                              );
                             },
-                            icon: const Icon(Icons.delete_outline_rounded, size: 20),
                           ),
-                          onTap: () async {
-                            Navigator.of(context).pop();
-                            await _player.seek(bookmark);
-                          },
-                        );
-                      },
-                    ),
                   ),
                 ],
               ),
@@ -567,78 +571,84 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                         children: [
                           _savedItems.isEmpty
                               ? Center(
-                            child: Text(
-                              'Nothing saved yet',
-                              style: TextStyle(
-                                color: p.text.withOpacity(0.65),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                              : ListView.builder(
-                            itemCount: _savedItems.length,
-                            itemBuilder: (_, index) {
-                              final item = _savedItems[index];
-                              return ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(
-                                  item,
-                                  style: TextStyle(
-                                    color: p.text,
-                                    fontWeight: FontWeight.w700,
+                                  child: Text(
+                                    'Nothing saved yet',
+                                    style: TextStyle(
+                                      color: p.text.withOpacity(0.65),
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                ),
-                                trailing: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _savedItems.removeAt(index);
-                                    });
-                                    Navigator.of(context).pop();
-                                    _showSavedItemsSheet();
+                                )
+                              : ListView.builder(
+                                  itemCount: _savedItems.length,
+                                  itemBuilder: (_, index) {
+                                    final item = _savedItems[index];
+                                    return ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(
+                                        item,
+                                        style: TextStyle(
+                                          color: p.text,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      trailing: IconButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _savedItems.removeAt(index);
+                                          });
+                                          Navigator.of(context).pop();
+                                          _showSavedItemsSheet();
+                                        },
+                                        icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    );
                                   },
-                                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
                                 ),
-                              );
-                            },
-                          ),
                           _notes.isEmpty
                               ? Center(
-                            child: Text(
-                              'No notes yet',
-                              style: TextStyle(
-                                color: p.text.withOpacity(0.65),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                              : ListView.builder(
-                            itemCount: _notes.length,
-                            itemBuilder: (_, index) {
-                              final note = _notes[index];
-                              return ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(
-                                  note,
-                                  style: TextStyle(
-                                    color: p.text,
-                                    fontWeight: FontWeight.w700,
+                                  child: Text(
+                                    'No notes yet',
+                                    style: TextStyle(
+                                      color: p.text.withOpacity(0.65),
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                ),
-                                trailing: IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _notes.removeAt(index);
-                                    });
-                                    Navigator.of(context).pop();
-                                    _showSavedItemsSheet();
+                                )
+                              : ListView.builder(
+                                  itemCount: _notes.length,
+                                  itemBuilder: (_, index) {
+                                    final note = _notes[index];
+                                    return ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(
+                                        note,
+                                        style: TextStyle(
+                                          color: p.text,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      trailing: IconButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _notes.removeAt(index);
+                                          });
+                                          Navigator.of(context).pop();
+                                          _showSavedItemsSheet();
+                                        },
+                                        icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    );
                                   },
-                                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
                                 ),
-                              );
-                            },
-                          ),
                         ],
                       ),
                     ),
@@ -762,10 +772,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
   }
 
   Widget _sheetAction(String label, VoidCallback onTap) {
-    return FilledButton(
-      onPressed: onTap,
-      child: Text(label),
-    );
+    return FilledButton(onPressed: onTap, child: Text(label));
   }
 
   _AudioPalette get palette => _toAudioPalette(appThemeController.palette);
@@ -797,10 +804,12 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
   Widget build(BuildContext context) {
     final p = palette;
     final hasImage = widget.imageUrl.trim().isNotEmpty;
-    final totalMs =
-    _duration.inMilliseconds <= 0 ? 1.0 : _duration.inMilliseconds.toDouble();
-    final currentMs =
-    _position.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble();
+    final totalMs = _duration.inMilliseconds <= 0
+        ? 1.0
+        : _duration.inMilliseconds.toDouble();
+    final currentMs = _position.inMilliseconds
+        .clamp(0, _duration.inMilliseconds)
+        .toDouble();
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -824,9 +833,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                   const SizedBox(height: 8),
                   _buildModeRow(p),
                   const SizedBox(height: 8),
-                  Expanded(
-                    child: _buildCenterStage(p, hasImage),
-                  ),
+                  Expanded(child: _buildCenterStage(p, hasImage)),
                   const SizedBox(height: 8),
                   _buildBottomActionBar(p),
                   if (_error != null) ...[
@@ -875,7 +882,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
         Image.network(
           widget.imageUrl.trim(),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(color: p.appBg),
+          errorBuilder: (_, _, _) => Container(color: p.appBg),
         ),
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
@@ -918,7 +925,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
           ),
           const Spacer(),
           _glassIconButton(
-            icon: _focusMode ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+            icon: _focusMode
+                ? Icons.fullscreen_exit_rounded
+                : Icons.fullscreen_rounded,
             onTap: () {
               setState(() {
                 _focusMode = !_focusMode;
@@ -941,12 +950,12 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
             borderRadius: BorderRadius.circular(14),
             child: hasImage
                 ? Image.network(
-              widget.imageUrl.trim(),
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _fallbackCover(),
-            )
+                    widget.imageUrl.trim(),
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _fallbackCover(),
+                  )
                 : _fallbackCover(),
           ),
           const SizedBox(width: 10),
@@ -956,7 +965,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  widget.title.trim().isEmpty ? 'Audio Story' : widget.title.trim(),
+                  widget.title.trim().isEmpty
+                      ? 'Audio Story'
+                      : widget.title.trim(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -981,10 +992,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
           ),
           _tinyPill(
             p,
-            _playbackRate.toStringAsFixed(
-              _playbackRate == _playbackRate.roundToDouble() ? 0 : 1,
-            ) +
-                'x',
+            '${_playbackRate.toStringAsFixed(_playbackRate == _playbackRate.roundToDouble() ? 0 : 1)}x',
           ),
         ],
       ),
@@ -1006,7 +1014,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               _compactInfoChip(
                 p,
                 Icons.timer_outlined,
-                _sleepRemaining == null ? 'Sleep Off' : _format(_sleepRemaining!),
+                _sleepRemaining == null
+                    ? 'Sleep Off'
+                    : _format(_sleepRemaining!),
               ),
             ],
           ),
@@ -1149,7 +1159,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
           Expanded(
             child: _miniAction(
               p,
-              icon: _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              icon: _isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
               label: _isFavorite ? 'Saved' : 'Favorite',
               onTap: _toggleFavorite,
             ),
@@ -1167,13 +1179,17 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
           final selected = _learningMode == mode;
           return Expanded(
             child: Padding(
-              padding: EdgeInsets.only(right: mode == _LearningMode.review ? 0 : 6),
+              padding: EdgeInsets.only(
+                right: mode == _LearningMode.review ? 0 : 6,
+              ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(999),
                 onTap: () => _setMode(mode),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: selected ? p.primary.withOpacity(0.16) : p.cardBg.withOpacity(0.68),
+                    color: selected
+                        ? p.primary.withOpacity(0.16)
+                        : p.cardBg.withOpacity(0.68),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: selected
@@ -1212,7 +1228,8 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               child: Image.network(
                 widget.imageUrl.trim(),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(color: p.soft.withOpacity(0.3)),
+                errorBuilder: (_, _, _) =>
+                    Container(color: p.soft.withOpacity(0.3)),
               ),
             )
           else
@@ -1250,14 +1267,13 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                   children: [
                     _overlayTag(
                       icon: Icons.graphic_eq_rounded,
-                      label: _playerState == PlayerState.playing ? 'Playing' : 'Paused',
+                      label: _playerState == PlayerState.playing
+                          ? 'Playing'
+                          : 'Paused',
                     ),
                     const SizedBox(width: 6),
                     if (_isFavorite)
-                      _overlayTag(
-                        icon: Icons.favorite_rounded,
-                        label: 'Saved',
-                      ),
+                      _overlayTag(icon: Icons.favorite_rounded, label: 'Saved'),
                     const Spacer(),
                     _overlayTag(
                       icon: Icons.bookmark_outline_rounded,
@@ -1268,14 +1284,19 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                 const Spacer(),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.28),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.white.withOpacity(0.12)),
                   ),
                   child: Text(
-                    widget.title.trim().isEmpty ? 'Audio Story' : widget.title.trim(),
+                    widget.title.trim().isEmpty
+                        ? 'Audio Story'
+                        : widget.title.trim(),
                     textAlign: TextAlign.center,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -1346,8 +1367,14 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'bookmarks', child: Text('Open bookmarks')),
-              const PopupMenuItem(value: 'saved', child: Text('Saved items / notes')),
+              const PopupMenuItem(
+                value: 'bookmarks',
+                child: Text('Open bookmarks'),
+              ),
+              const PopupMenuItem(
+                value: 'saved',
+                child: Text('Saved items / notes'),
+              ),
               const PopupMenuItem(value: 'restart', child: Text('Restart')),
               const PopupMenuItem(value: 'reload', child: Text('Reload audio')),
             ],
@@ -1445,11 +1472,11 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
   }
 
   Widget _miniAction(
-      _AudioPalette p, {
-        required IconData icon,
-        required String label,
-        required VoidCallback onTap,
-      }) {
+    _AudioPalette p, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(

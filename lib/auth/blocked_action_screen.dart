@@ -21,7 +21,7 @@ class BlockedActionScreen extends StatefulWidget {
 }
 
 class _BlockedActionScreenState extends State<BlockedActionScreen> {
-  void log(String msg) => debugPrint('FIKRA_BLOCKED | $msg');
+  void log(String msg) {}
 
   static const int _startSeconds = 5;
   Timer? _timer;
@@ -107,16 +107,17 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
       await fresh?.delete();
       log('✅ user.delete() success');
 
-      await FirebaseDatabase.instance.ref('users_blocked/${widget.uid}').update({
-        'selfDeleteDone': true,
-        'selfDeleteDoneAt': ServerValue.timestamp,
-      });
+      await FirebaseDatabase.instance.ref('users_blocked/${widget.uid}').update(
+        {'selfDeleteDone': true, 'selfDeleteDoneAt': ServerValue.timestamp},
+      );
     } catch (e) {
       log('❌ finalize error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Couldn’t finalize automatically.\nPlease sign out.\n$e'),
+            content: Text(
+              'Couldn’t finalize automatically.\nPlease sign out.\n$e',
+            ),
             duration: const Duration(seconds: 4),
           ),
         );
@@ -145,10 +146,7 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // ✅ Your logo asset
-                  Image.asset(
-                    'assets/images/ybs_logo.png',
-                    height: 100,
-                  ),
+                  Image.asset('assets/images/ybs_logo.png', height: 100),
                   const SizedBox(height: 18),
 
                   Text(
@@ -162,7 +160,7 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
 
                   Text(
                     'Your account has been blocked by the academy.\n'
-                        'If you believe this is a mistake, please contact the administration.',
+                    'If you believe this is a mistake, please contact the administration.',
                     style: theme.textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -187,7 +185,9 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _isFinalizing ? 'Finalizing…' : 'You will be signed out in',
+                          _isFinalizing
+                              ? 'Finalizing…'
+                              : 'You will be signed out in',
                           style: theme.textTheme.bodyLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -200,7 +200,9 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                               ScaleTransition(scale: anim, child: child),
                           child: Text(
                             _isFinalizing ? '…' : '$_secondsLeft',
-                            key: ValueKey(_isFinalizing ? 'dots' : _secondsLeft),
+                            key: ValueKey(
+                              _isFinalizing ? 'dots' : _secondsLeft,
+                            ),
                             style: theme.textTheme.displaySmall?.copyWith(
                               fontWeight: FontWeight.w900,
                             ),
@@ -227,9 +229,9 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                           onPressed: _isFinalizing
                               ? null
                               : () async {
-                            _timer?.cancel();
-                            await _finalize();
-                          },
+                                  _timer?.cancel();
+                                  await _finalize();
+                                },
                           child: const Text('Sign out now'),
                         ),
                       ),
@@ -249,7 +251,9 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
 
                   Text(
                     'Your Bridge School',
-                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey,
+                    ),
                   ),
                 ],
               ),

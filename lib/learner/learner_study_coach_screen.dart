@@ -24,7 +24,8 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   _CoachLang _lang = _CoachLang.en;
   String? _expandedDayKey;
 
-  _CoachPalette get palette => _CoachPalette.fromApp(appThemeController.palette);
+  _CoachPalette get palette =>
+      _CoachPalette.fromApp(appThemeController.palette);
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -71,9 +72,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
   }
 
   Map<String, bool> _emptyCheckedMap() {
-    return {
-      for (final task in _allTasks) task.id: false,
-    };
+    return {for (final task in _allTasks) task.id: false};
   }
 
   int _quoteIndexForWeek(String weekKey) {
@@ -152,12 +151,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
         'updatedAt': ServerValue.timestamp,
       });
     } catch (e) {
-      _showSnack(
-        _tr(
-          'Could not update task: $e',
-          'تعذر تحديث المهمة: $e',
-        ),
-      );
+      _showSnack(_tr('Could not update task: $e', 'تعذر تحديث المهمة: $e'));
     } finally {
       if (mounted) {
         setState(() => _updatingTask = false);
@@ -204,18 +198,10 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
         'updatedAt': ServerValue.timestamp,
       });
 
-      _showSnack(
-        _tr(
-          'This week was reset.',
-          'تمت إعادة تعيين هذا الأسبوع.',
-        ),
-      );
+      _showSnack(_tr('This week was reset.', 'تمت إعادة تعيين هذا الأسبوع.'));
     } catch (e) {
       _showSnack(
-        _tr(
-          'Could not reset week: $e',
-          'تعذر إعادة تعيين الأسبوع: $e',
-        ),
+        _tr('Could not reset week: $e', 'تعذر إعادة تعيين الأسبوع: $e'),
       );
     }
   }
@@ -307,9 +293,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
 
   void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   Map<String, bool> _extractCheckedMap(dynamic raw) {
@@ -371,10 +355,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
           surfaceTintColor: Colors.white,
           title: Text(
             _tr('Study Coach', 'مدرب الدراسة'),
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
           iconTheme: IconThemeData(color: p.primary),
           actions: [
@@ -437,16 +418,17 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                       progress: progress,
                       done: done,
                       total: total,
-                      title: _tr('My English Learning Plan', 'خطة تعلم الإنجليزية'),
+                      title: _tr(
+                        'My English Learning Plan',
+                        'خطة تعلم الإنجليزية',
+                      ),
                       subtitle: _tr(
                         'One clear weekly plan · one tracking method · simple daily steps',
                         'خطة أسبوعية واضحة · طريقة تتبع واحدة · خطوات يومية بسيطة',
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _QuoteBanner(
-                      quote: quote,
-                    ),
+                    _QuoteBanner(quote: quote),
                     const SizedBox(height: 16),
                     _TodayFocusCard(
                       day: today,
@@ -501,8 +483,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                         isToday: day.key == today.key,
                         onHeaderTap: () {
                           setState(() {
-                            _expandedDayKey =
-                            expanded ? null : day.key;
+                            _expandedDayKey = expanded ? null : day.key;
                           });
                         },
                         onToggleTask: (taskId, currentValue) {
@@ -555,10 +536,7 @@ class _HeroCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFF6C63FF),
-            Color(0xFF5B8DEF),
-          ],
+          colors: [Color(0xFF6C63FF), Color(0xFF5B8DEF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -604,15 +582,9 @@ class _HeroCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Text(
-                    '🎓',
-                    style: TextStyle(fontSize: 34),
-                  ),
+                  const Text('🎓', style: TextStyle(fontSize: 34)),
                   const Spacer(),
-                  _LangSwitch(
-                    selected: lang,
-                    onChanged: onChangeLang,
-                  ),
+                  _LangSwitch(selected: lang, onChanged: onChangeLang),
                 ],
               ),
               const SizedBox(height: 10),
@@ -656,10 +628,7 @@ class _HeroCard extends StatelessWidget {
                       child: Container(
                         decoration: const BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [
-                              Color(0xFFFFD700),
-                              Color(0xFFFF9F43),
-                            ],
+                            colors: [Color(0xFFFFD700), Color(0xFFFF9F43)],
                           ),
                         ),
                       ),
@@ -687,10 +656,7 @@ class _HeroCard extends StatelessWidget {
 }
 
 class _LangSwitch extends StatelessWidget {
-  const _LangSwitch({
-    required this.selected,
-    required this.onChanged,
-  });
+  const _LangSwitch({required this.selected, required this.onChanged});
 
   final _CoachLang selected;
   final ValueChanged<_CoachLang> onChanged;
@@ -757,10 +723,7 @@ class _QuoteBanner extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: const Border(
-          left: BorderSide(
-            color: Color(0xFF6C63FF),
-            width: 5,
-          ),
+          left: BorderSide(color: Color(0xFF6C63FF), width: 5),
         ),
         boxShadow: [
           BoxShadow(
@@ -828,10 +791,7 @@ class _TodayFocusCard extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
-            child: Text(
-              day.emoji,
-              style: const TextStyle(fontSize: 28),
-            ),
+            child: Text(day.emoji, style: const TextStyle(fontSize: 28)),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -1078,7 +1038,9 @@ class _DayCard extends StatelessWidget {
                             if (allDone)
                               _MiniTag(
                                 text: _tr('Done', 'مكتمل'),
-                                background: const Color(0xFF43B89C).withOpacity(0.16),
+                                background: const Color(
+                                  0xFF43B89C,
+                                ).withOpacity(0.16),
                                 color: const Color(0xFF43B89C),
                               ),
                           ],
@@ -1161,12 +1123,12 @@ class _DayCard extends StatelessWidget {
                               ),
                               child: done
                                   ? const Center(
-                                child: Icon(
-                                  Icons.check,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                              )
+                                      child: Icon(
+                                        Icons.check,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                    )
                                   : null,
                             ),
                             const SizedBox(width: 10),
@@ -1183,8 +1145,9 @@ class _DayCard extends StatelessWidget {
                                 child: Text(
                                   task.text(lang),
                                   style: TextStyle(
-                                    color: const Color(0xFF35375A)
-                                        .withOpacity(done ? 0.45 : 1),
+                                    color: const Color(
+                                      0xFF35375A,
+                                    ).withOpacity(done ? 0.45 : 1),
                                     fontWeight: FontWeight.w700,
                                     fontSize: 14,
                                     height: 1.45,
@@ -1224,10 +1187,7 @@ class _DayCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      const Text(
-                        '🔗',
-                        style: TextStyle(fontSize: 14),
-                      ),
+                      const Text('🔗', style: TextStyle(fontSize: 14)),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -1384,16 +1344,10 @@ class _CoachPalette {
   }
 }
 
-enum _CoachLang {
-  en,
-  ar,
-}
+enum _CoachLang { en, ar }
 
 class _LocalizedText {
-  const _LocalizedText({
-    required this.en,
-    required this.ar,
-  });
+  const _LocalizedText({required this.en, required this.ar});
 
   final String en;
   final String ar;
@@ -1404,10 +1358,7 @@ class _LocalizedText {
 }
 
 class _PlanTask {
-  const _PlanTask({
-    required this.id,
-    required this.textData,
-  });
+  const _PlanTask({required this.id, required this.textData});
 
   final String id;
   final _LocalizedText textData;
@@ -1763,5 +1714,6 @@ const List<_PlanDay> _weekPlanDays = [
   ),
 ];
 
-final List<_PlanTask> _allTasks =
-_weekPlanDays.expand((day) => day.tasks).toList(growable: false);
+final List<_PlanTask> _allTasks = _weekPlanDays
+    .expand((day) => day.tasks)
+    .toList(growable: false);

@@ -129,8 +129,9 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
 
       if (node is! Map) continue;
 
-      final Map<String, dynamic> data =
-      (node as Map).map((k, v) => MapEntry(k.toString(), v));
+      final Map<String, dynamic> data = (node).map(
+        (k, v) => MapEntry(k.toString(), v),
+      );
 
       final title = (data['title'] ?? keyName).toString().trim();
       final updatedAt = _toInt(data['updatedAt']);
@@ -155,13 +156,16 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
     final items = <_RegItem>[];
 
     if (itemsNode is Map) {
-      final entries = itemsNode.entries
-          .map((e) => MapEntry(e.key.toString(), e.value))
-          .toList()
-        ..sort((a, b) => _safeInt(a.key).compareTo(_safeInt(b.key)));
+      final entries =
+          itemsNode.entries
+              .map((e) => MapEntry(e.key.toString(), e.value))
+              .toList()
+            ..sort((a, b) => _safeInt(a.key).compareTo(_safeInt(b.key)));
 
-      final numericKeys =
-      entries.map((e) => int.tryParse(e.key.trim())).whereType<int>().toList();
+      final numericKeys = entries
+          .map((e) => int.tryParse(e.key.trim()))
+          .whereType<int>()
+          .toList();
       final zeroBased = numericKeys.isNotEmpty && numericKeys.contains(0);
 
       int fallbackNumber = 1;
@@ -170,8 +174,9 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
         if (text.isEmpty) continue;
 
         final rawNum = int.tryParse(e.key.trim());
-        final displayNum =
-        rawNum == null ? fallbackNumber : (zeroBased ? rawNum + 1 : rawNum);
+        final displayNum = rawNum == null
+            ? fallbackNumber
+            : (zeroBased ? rawNum + 1 : rawNum);
 
         items.add(
           _RegItem(
@@ -222,9 +227,7 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
 
   Widget _buildContent() {
     if (_isLoading) {
-      return Center(
-        child: CircularProgressIndicator(color: p.accent),
-      );
+      return Center(child: CircularProgressIndicator(color: p.accent));
     }
 
     if (_errorMessage != null) {
@@ -264,7 +267,7 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
         ),
         const SizedBox(height: 14),
         ..._sections.map(
-              (s) => _SectionCard(
+          (s) => _SectionCard(
             palette: p,
             section: s,
             updatedAtLabel: _formatUpdatedAt(s.updatedAt),
@@ -318,9 +321,7 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
             ),
           ],
         ),
-        body: WatermarkBackground(
-          child: SafeArea(child: _buildContent()),
-        ),
+        body: WatermarkBackground(child: SafeArea(child: _buildContent())),
       ),
     );
   }
@@ -347,10 +348,7 @@ class _HeaderHeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -466,7 +464,10 @@ class _SectionCardState extends State<_SectionCard> {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             onExpansionChanged: (v) => setState(() => _expanded = v),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 10,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             title: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -499,8 +500,10 @@ class _SectionCardState extends State<_SectionCard> {
                 if (widget.updatedAtLabel.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: p.accent.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(999),
@@ -533,10 +536,7 @@ class _SectionCardState extends State<_SectionCard> {
 }
 
 class _RegItemRow extends StatelessWidget {
-  const _RegItemRow({
-    required this.palette,
-    required this.item,
-  });
+  const _RegItemRow({required this.palette, required this.item});
 
   final AppPalette palette;
   final _RegItem item;

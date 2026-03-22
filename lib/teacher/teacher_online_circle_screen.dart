@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class TeacherOnlineCircleScreen extends StatefulWidget {
   const TeacherOnlineCircleScreen({super.key});
@@ -68,8 +69,9 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
       final user = _auth.currentUser;
       if (user == null) throw Exception('Not logged in.');
 
-      final meetingUrlFuture =
-      _db.ref('users/${user.uid}/google_meet_url').get();
+      final meetingUrlFuture = _db
+          .ref('users/${user.uid}/google_meet_url')
+          .get();
       final circleFuture = _db.ref('circle/${user.uid}').get();
 
       final results = await Future.wait([meetingUrlFuture, circleFuture]);
@@ -102,7 +104,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
         _hasExistingCircle = false;
       }
     } catch (e) {
-      _error = e.toString();
+      _error = toHumanError(e);
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -173,20 +175,14 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
     return DateFormat('yyyy-MM-dd hh:mm a').format(_selectedDateTime!);
   }
 
-  InputDecoration _dec(
-      String label, {
-        String? hintText,
-        Widget? suffixIcon,
-      }) {
+  InputDecoration _dec(String label, {String? hintText, Widget? suffixIcon}) {
     return InputDecoration(
       labelText: label,
       hintText: hintText,
       filled: true,
       fillColor: p.cardBg,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: p.border.withOpacity(0.95)),
@@ -274,7 +270,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     } finally {
       if (mounted) {
@@ -309,10 +305,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
           Expanded(
             child: Text(
               isError ? _error! : _ok!,
-              style: TextStyle(
-                color: textColor,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: textColor, fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -415,13 +408,13 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
         onPressed: _busy ? null : _saveCircle,
         icon: _busy
             ? const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white,
-          ),
-        )
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
             : const Icon(Icons.save_rounded),
         label: Text(
           _busy
@@ -435,10 +428,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
         child: Column(
           children: [
             if (_busy)
-              LinearProgressIndicator(
-                color: p.accent,
-                backgroundColor: p.soft,
-              ),
+              LinearProgressIndicator(color: p.accent, backgroundColor: p.soft),
             _statusBanner(),
             Expanded(
               child: ListView(
@@ -567,7 +557,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Circle Status',
@@ -593,14 +583,14 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                                 ),
                                 Switch(
                                   value: _isOpen,
-                                  activeColor: p.accent,
+                                  activeThumbColor: p.accent,
                                   onChanged: _busy
                                       ? null
                                       : (v) {
-                                    setState(() {
-                                      _isOpen = v;
-                                    });
-                                  },
+                                          setState(() {
+                                            _isOpen = v;
+                                          });
+                                        },
                                 ),
                               ],
                             ),

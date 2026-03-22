@@ -31,8 +31,9 @@ class TeacherSchedule extends StatefulWidget {
 }
 
 class _TeacherScheduleState extends State<TeacherSchedule> {
-  final DatabaseReference _classesRef =
-  FirebaseDatabase.instance.ref().child('classes');
+  final DatabaseReference _classesRef = FirebaseDatabase.instance.ref().child(
+    'classes',
+  );
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -103,8 +104,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               child: Container(
                 decoration: BoxDecoration(
                   color: p.appBg,
-                  borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                 ),
                 child: Padding(
                   padding: EdgeInsets.only(
@@ -138,32 +140,21 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: p.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Important: Enable No Restrictions',
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         content: Text(
           "To make class reminders work even when the app is closed, please set Battery to 'No restrictions' for this app.\n\nTap Open Settings → then choose: Battery → No restrictions.",
-          style: TextStyle(
-            color: p.text,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w600),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Later',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
             ),
           ),
           FilledButton(
@@ -176,8 +167,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
               const intent = AndroidIntent(
                 action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
-                data:
-                'package:com.dreamenglish.academy.dream_english_academy',
+                data: 'package:com.dreamenglish.academy.dream_english_academy',
               );
               await intent.launch();
             },
@@ -200,11 +190,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Future<void> _toggleDay(
-      DateTime day,
-      bool enabled,
-      List<_Occ> up,
-      List<_Occ> all,
-      ) async {
+    DateTime day,
+    bool enabled,
+    List<_Occ> up,
+    List<_Occ> all,
+  ) async {
     if (!_prefsReady) return;
     final key = 'remind_day_${_fmtKey(day)}';
     await _prefs.setBool(key, enabled);
@@ -275,8 +265,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           );
         }
       }
-    } catch (e, st) {
-      debugPrint('ERROR applying reminders: $e\n$st');
+    } catch (_, __) {
     } finally {
       _applyInProgress = false;
       if (_applyPending) {
@@ -337,20 +326,16 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 text: 'Schedule',
                 icon: Icon(Icons.format_list_bulleted_rounded),
               ),
-              Tab(
-                text: 'Calendar',
-                icon: Icon(Icons.calendar_month_rounded),
-              ),
+              Tab(text: 'Calendar', icon: Icon(Icons.calendar_month_rounded)),
             ],
           ),
         ),
         body: StreamBuilder<DatabaseEvent>(
           stream: _classesRef.onValue,
           builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting || !_prefsReady) {
-              return Center(
-                child: CircularProgressIndicator(color: p.accent),
-              );
+            if (snap.connectionState == ConnectionState.waiting ||
+                !_prefsReady) {
+              return Center(child: CircularProgressIndicator(color: p.accent));
             }
 
             final data = snap.data?.snapshot.value;
@@ -420,7 +405,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                   return false;
                 }).toList();
 
-                final visibleClasses = isAdmin ? rawClasses : teacherOnlyClasses;
+                final visibleClasses = isAdmin
+                    ? rawClasses
+                    : teacherOnlyClasses;
 
                 if (!isAdmin && visibleClasses.isEmpty) {
                   return _EmptyState(
@@ -439,8 +426,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
                 final now = DateTime.now();
                 final twoDaysAgo = now.subtract(const Duration(days: 2));
-                final recentAndUpcoming =
-                allOcc.where((o) => o.end.isAfter(twoDaysAgo)).toList();
+                final recentAndUpcoming = allOcc
+                    .where((o) => o.end.isAfter(twoDaysAgo))
+                    .toList();
 
                 _latestAllOcc = allOcc;
                 _latestUpcoming = recentAndUpcoming;
@@ -492,10 +480,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Widget _buildGroupedSchedule(
-      List<_Occ> displayList,
-      List<_Occ> allOcc,
-      List<Map<String, dynamic>> visibleClasses,
-      ) {
+    List<_Occ> displayList,
+    List<_Occ> allOcc,
+    List<Map<String, dynamic>> visibleClasses,
+  ) {
     if (displayList.isEmpty) {
       return _EmptyState(
         palette: p,
@@ -532,7 +520,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.calendar_today_rounded, size: 16, color: p.primary),
+                  Icon(
+                    Icons.calendar_today_rounded,
+                    size: 16,
+                    color: p.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -562,7 +554,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 o: o,
                 isConflict: isConflict,
                 enabled: _isClassEnabled(o.classId),
-                onToggle: () => _toggleClassNotif(o.classId, displayList, allOcc),
+                onToggle: () =>
+                    _toggleClassNotif(o.classId, displayList, allOcc),
                 onAttendance: () => _openAttendance(o, visibleClasses),
                 onHistory: () => _openHistory(o, visibleClasses),
               );
@@ -574,10 +567,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Widget _buildCalendarView(
-      List<_Occ> allOcc,
-      List<_Occ> upcoming,
-      List<Map<String, dynamic>> visibleClasses,
-      ) {
+    List<_Occ> allOcc,
+    List<_Occ> upcoming,
+    List<Map<String, dynamic>> visibleClasses,
+  ) {
     final Map<String, List<_Occ>> byDay = {};
     for (final o in allOcc) {
       final k = _fmtKey(o.start);
@@ -617,10 +610,14 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
               ),
-              leftChevronIcon:
-              Icon(Icons.chevron_left_rounded, color: p.primary),
-              rightChevronIcon:
-              Icon(Icons.chevron_right_rounded, color: p.primary),
+              leftChevronIcon: Icon(
+                Icons.chevron_left_rounded,
+                color: p.primary,
+              ),
+              rightChevronIcon: Icon(
+                Icons.chevron_right_rounded,
+                color: p.primary,
+              ),
             ),
             daysOfWeekStyle: DaysOfWeekStyle(
               weekdayStyle: TextStyle(
@@ -662,9 +659,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 shape: BoxShape.circle,
               ),
               markersMaxCount: 3,
-              outsideTextStyle: TextStyle(
-                color: p.text.withOpacity(0.35),
-              ),
+              outsideTextStyle: TextStyle(color: p.text.withOpacity(0.35)),
             ),
             onDaySelected: (s, f) => setState(() {
               _selectedDay = s;
@@ -682,9 +677,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               border: Border.all(color: p.border),
             ),
             child: SwitchListTile(
-              activeColor: p.accent,
-              contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              activeThumbColor: p.accent,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
               title: Text(
                 'Reminders for ${DateFormat('yyyy-MM-dd').format(selected)}',
                 style: TextStyle(
@@ -717,29 +714,32 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         Expanded(
           child: events.isEmpty
               ? _EmptyState(
-            palette: p,
-            icon: Icons.event_available_rounded,
-            title: 'No sessions on this date',
-            subtitle: 'Pick another day to view scheduled classes.',
-          )
+                  palette: p,
+                  icon: Icons.event_available_rounded,
+                  title: 'No sessions on this date',
+                  subtitle: 'Pick another day to view scheduled classes.',
+                )
               : ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-            itemCount: events.length,
-            itemBuilder: (context, i) {
-              final isConflict = _hasConflict(events[i], events);
-              return _SessionCard(
-                palette: p,
-                o: events[i],
-                isConflict: isConflict,
-                enabled: _isClassEnabled(events[i].classId),
-                onToggle: () =>
-                    _toggleClassNotif(events[i].classId, upcoming, allOcc),
-                onAttendance: () =>
-                    _openAttendance(events[i], visibleClasses),
-                onHistory: () => _openHistory(events[i], visibleClasses),
-              );
-            },
-          ),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  itemCount: events.length,
+                  itemBuilder: (context, i) {
+                    final isConflict = _hasConflict(events[i], events);
+                    return _SessionCard(
+                      palette: p,
+                      o: events[i],
+                      isConflict: isConflict,
+                      enabled: _isClassEnabled(events[i].classId),
+                      onToggle: () => _toggleClassNotif(
+                        events[i].classId,
+                        upcoming,
+                        allOcc,
+                      ),
+                      onAttendance: () =>
+                          _openAttendance(events[i], visibleClasses),
+                      onHistory: () => _openHistory(events[i], visibleClasses),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -747,7 +747,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   void _openAttendance(_Occ o, List<Map<String, dynamic>> visibleClasses) {
     final classMap = visibleClasses.firstWhere(
-          (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
+      (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
     );
     if (classMap.isEmpty) return;
@@ -762,7 +762,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   void _openHistory(_Occ o, List<Map<String, dynamic>> visibleClasses) {
     final classMap = visibleClasses.firstWhere(
-          (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
+      (c) => (c['class_id'] ?? c['id'])?.toString() == o.classId,
       orElse: () => <String, dynamic>{},
     );
     if (classMap.isEmpty) return;
@@ -776,10 +776,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Widget _buildSettingsView(
-      List<_Occ> upcoming,
-      List<_Occ> allOcc, {
-        VoidCallback? onSheetRefresh,
-      }) {
+    List<_Occ> upcoming,
+    List<_Occ> allOcc, {
+    VoidCallback? onSheetRefresh,
+  }) {
     return ListView(
       padding: const EdgeInsets.all(20),
       shrinkWrap: true,
@@ -820,7 +820,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           child: Column(
             children: [
               SwitchListTile(
-                activeColor: p.accent,
+                activeThumbColor: p.accent,
                 secondary: Icon(Icons.wb_sunny_rounded, color: p.accent),
                 title: Text(
                   'Daily Briefing (8:00 AM)',
@@ -846,9 +846,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               ),
               Divider(height: 1, indent: 56, color: p.border),
               SwitchListTile(
-                activeColor: p.accent,
-                secondary:
-                Icon(Icons.notifications_active_rounded, color: p.primary),
+                activeThumbColor: p.accent,
+                secondary: Icon(
+                  Icons.notifications_active_rounded,
+                  color: p.primary,
+                ),
                 title: Text(
                   'Session Alerts (15m before)',
                   style: TextStyle(
@@ -977,10 +979,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Future<void> _toggleClassNotif(
-      String classId,
-      List<_Occ> up,
-      List<_Occ> all,
-      ) async {
+    String classId,
+    List<_Occ> up,
+    List<_Occ> all,
+  ) async {
     if (!_prefsReady) return;
 
     final current = _isClassEnabled(classId);
@@ -1049,10 +1051,7 @@ class _ScheduleTopSummary extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1090,17 +1089,11 @@ class _ScheduleTopSummary extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _HeroStat(
-                  label: 'Classes',
-                  value: '$totalClasses',
-                ),
+                child: _HeroStat(label: 'Classes', value: '$totalClasses'),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _HeroStat(
-                  label: 'Sessions',
-                  value: '$totalSessions',
-                ),
+                child: _HeroStat(label: 'Sessions', value: '$totalSessions'),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1118,10 +1111,7 @@ class _ScheduleTopSummary extends StatelessWidget {
 }
 
 class _HeroStat extends StatelessWidget {
-  const _HeroStat({
-    required this.label,
-    required this.value,
-  });
+  const _HeroStat({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -1185,23 +1175,27 @@ class _SessionCard extends StatelessWidget {
     final bool isLive = now.isAfter(o.start) && now.isBefore(o.end);
     final bool isPast = now.isAfter(o.end);
 
-    Color statusColor = enabled ? palette.accent : palette.text.withOpacity(0.35);
+    Color statusColor = enabled
+        ? palette.accent
+        : palette.text.withOpacity(0.35);
     if (isConflict) statusColor = const Color(0xFFD32F2F);
     if (isLive) statusColor = palette.primary;
     if (isPast) statusColor = palette.text.withOpacity(0.30);
 
     final Color bgColor = isPast
         ? palette.soft.withOpacity(0.35)
-        : (isConflict
-        ? const Color(0xFFFFEBEE)
-        : palette.cardBg);
+        : (isConflict ? const Color(0xFFFFEBEE) : palette.cardBg);
 
-    final Color borderColor =
-    isConflict ? const Color(0xFFD32F2F).withOpacity(0.28) : palette.border;
+    final Color borderColor = isConflict
+        ? const Color(0xFFD32F2F).withOpacity(0.28)
+        : palette.border;
 
-    final Color titleColor = isPast ? palette.text.withOpacity(0.45) : palette.text;
-    final Color timeColor =
-    isPast ? palette.text.withOpacity(0.45) : (isLive ? palette.primary : palette.primary);
+    final Color titleColor = isPast
+        ? palette.text.withOpacity(0.45)
+        : palette.text;
+    final Color timeColor = isPast
+        ? palette.text.withOpacity(0.45)
+        : (isLive ? palette.primary : palette.primary);
 
     return Opacity(
       opacity: isPast ? 0.78 : 1,
@@ -1213,19 +1207,19 @@ class _SessionCard extends StatelessWidget {
           border: Border.all(color: borderColor),
           boxShadow: isLive
               ? [
-            BoxShadow(
-              color: palette.primary.withOpacity(0.10),
-              blurRadius: 14,
-              offset: const Offset(0, 8),
-            ),
-          ]
+                  BoxShadow(
+                    color: palette.primary.withOpacity(0.10),
+                    blurRadius: 14,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
               : [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
@@ -1288,7 +1282,9 @@ class _SessionCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          o.courseTitle.isEmpty ? 'Untitled Class' : o.courseTitle,
+                          o.courseTitle.isEmpty
+                              ? 'Untitled Class'
+                              : o.courseTitle,
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 15,
@@ -1313,10 +1309,9 @@ class _SessionCard extends StatelessWidget {
                               palette: palette,
                               icon: Icons.schedule_rounded,
                               text:
-                              '${DateFormat('hh:mm a').format(o.start)} - ${DateFormat('hh:mm a').format(o.end)}',
+                                  '${DateFormat('hh:mm a').format(o.start)} - ${DateFormat('hh:mm a').format(o.end)}',
                             ),
-                            if (isConflict)
-                              const _ConflictPill(),
+                            if (isConflict) const _ConflictPill(),
                           ],
                         ),
                         Divider(
@@ -1327,8 +1322,9 @@ class _SessionCard extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _ActionButton(
-                                label:
-                                isPast ? 'Update Attendance' : 'Take Attendance',
+                                label: isPast
+                                    ? 'Update Attendance'
+                                    : 'Take Attendance',
                                 icon: isPast
                                     ? Icons.edit_note_rounded
                                     : Icons.how_to_reg_rounded,

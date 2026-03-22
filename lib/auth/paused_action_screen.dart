@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../shared/human_error.dart';
 
 class PausedActionScreen extends StatefulWidget {
   const PausedActionScreen({super.key});
@@ -18,7 +19,7 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
   bool _isSigningOut = false;
   bool _started = false;
 
-  void log(String msg) => debugPrint('FIKRA_PAUSED | $msg');
+  void log(String msg) {}
 
   @override
   void initState() {
@@ -67,7 +68,11 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error signing out: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not sign out. Please try again.'),
+          ),
+        ),
       );
 
       setState(() {
@@ -90,12 +95,8 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-
                   /// 🔵 LOGO
-                  Image.asset(
-                    'assets/images/ybs_logo.png',
-                    height: 100,
-                  ),
+                  Image.asset('assets/images/ybs_logo.png', height: 100),
 
                   const SizedBox(height: 20),
 
@@ -111,7 +112,7 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
 
                   Text(
                     'Your account has been temporarily paused by the academy.\n'
-                        'If you believe this is a mistake, please contact the administration.',
+                    'If you believe this is a mistake, please contact the administration.',
                     style: theme.textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),

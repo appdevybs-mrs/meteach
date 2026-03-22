@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
@@ -157,11 +157,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       }
 
       req.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: picked.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
       );
     }
 
@@ -169,9 +165,6 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final response = await http.Response.fromStream(streamed);
 
     final raw = response.body.trim();
-
-    debugPrint('DELETE STATUS: ${response.statusCode}');
-    debugPrint('DELETE RAW RESPONSE: $raw');
 
     if (!raw.startsWith('{')) {
       throw Exception(
@@ -195,32 +188,19 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     throw Exception((data['message'] ?? 'Upload failed').toString());
   }
 
-  Future<void> _deleteFromServer({
-    required String folderPath,
-  }) async {
+  Future<void> _deleteFromServer({required String folderPath}) async {
     final response = await http.post(
       Uri.parse(_deleteUrl),
-      body: {
-        'key': _sha1(_secret),
-        'root': 'stories',
-        'path': folderPath,
-      },
+      body: {'key': _sha1(_secret), 'root': 'stories', 'path': folderPath},
     );
 
     final raw = response.body.trim();
 
-    print('DELETE URL: $_deleteUrl');
-    print('DELETE FOLDER PATH: $folderPath');
-    print('DELETE STATUS CODE: ${response.statusCode}');
-    print('DELETE HEADERS: ${response.headers}');
-    print('DELETE LOCATION: ${response.headers['location']}');
-    print('DELETE RAW BODY: $raw');
-
     if (!raw.startsWith('{')) {
       throw Exception(
         'Server did not return JSON. '
-            'HTTP ${response.statusCode}. '
-            'BODY: $raw',
+        'HTTP ${response.statusCode}. '
+        'BODY: $raw',
       );
     }
 
@@ -268,7 +248,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       final value = entry.value;
       if (value is! Map) continue;
 
-      final story = Map<String, dynamic>.from(value as Map);
+      final story = Map<String, dynamic>.from(value);
       final tags = story['tags'];
 
       if (tags is List) {
@@ -304,7 +284,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       final value = entry.value;
       if (value is! Map) continue;
 
-      final story = Map<String, dynamic>.from(value as Map);
+      final story = Map<String, dynamic>.from(value);
       final genre = (story['genre'] ?? '').toString().trim();
       if (genre.isNotEmpty) out.add(genre);
     }
@@ -335,18 +315,16 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     if (cleanUrl.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(emptyMessage)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(emptyMessage)));
       return;
     }
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MaterialWebViewScreen.fromUrl(
-          title: title,
-          url: cleanUrl,
-        ),
+        builder: (_) =>
+            MaterialWebViewScreen.fromUrl(title: title, url: cleanUrl),
       ),
     );
   }
@@ -385,27 +363,28 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   }
 
   Future<void> _deleteStory(String storyId, Map<String, dynamic> story) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Delete story'),
-          content: const Text(
-            'Are you sure you want to delete this story and all uploaded files?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    ) ??
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) {
+            return AlertDialog(
+              title: const Text('Delete story'),
+              content: const Text(
+                'Are you sure you want to delete this story and all uploaded files?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
         false;
 
     if (!ok) return;
@@ -419,10 +398,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         ? savedFolderPath
         : (teacherUid.isNotEmpty && storyUid.isNotEmpty && storyName.isNotEmpty)
         ? _buildServerFolderPath(
-      teacherUid: teacherUid,
-      storyUid: storyUid,
-      storyName: storyName,
-    )
+            teacherUid: teacherUid,
+            storyUid: storyUid,
+            storyName: storyName,
+          )
         : '';
 
     try {
@@ -439,7 +418,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete story: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not delete story. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -482,7 +465,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to duplicate story: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not duplicate story. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -515,7 +502,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update story: $e')),
+        SnackBar(
+          content: Text(
+            toHumanError(e, fallback: 'Could not update story. Try again.'),
+          ),
+        ),
       );
     }
   }
@@ -592,17 +583,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         bool localUploadingThumb = false;
 
         String uploadedUrl = (existingStory?['link'] ?? '').toString().trim();
-        String uploadedAudioUrl =
-        (existingStory?['audioUrl'] ?? '').toString().trim();
-        String uploadedPdfUrl =
-        (existingStory?['pdfUrl'] ?? '').toString().trim();
-        String uploadedThumbnail =
-        (existingStory?['thumbnail'] ?? '').toString().trim();
-        String selectedStatus =
-        (existingStory?['status'] ?? 'ready').toString().trim();
+        String uploadedAudioUrl = (existingStory?['audioUrl'] ?? '')
+            .toString()
+            .trim();
+        String uploadedPdfUrl = (existingStory?['pdfUrl'] ?? '')
+            .toString()
+            .trim();
+        String uploadedThumbnail = (existingStory?['thumbnail'] ?? '')
+            .toString()
+            .trim();
+        String selectedStatus = (existingStory?['status'] ?? 'ready')
+            .toString()
+            .trim();
 
-        String serverFolderPath =
-        (existingStory?['serverFolderPath'] ?? '').toString().trim();
+        String serverFolderPath = (existingStory?['serverFolderPath'] ?? '')
+            .toString()
+            .trim();
 
         String ensureFolderPath(String teacherUid) {
           if (serverFolderPath.isNotEmpty) {
@@ -677,7 +673,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Story upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload story file.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -699,8 +699,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               if (storyName.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content:
-                    Text('Enter the story title before uploading audio.'),
+                    content: Text(
+                      'Enter the story title before uploading audio.',
+                    ),
                   ),
                 );
                 return;
@@ -716,13 +717,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 final url = await _uploadToServer(
                   folderPath: folderPath,
                   isThumbnail: false,
-                  allowedExtensions: const [
-                    'mp3',
-                    'wav',
-                    'm4a',
-                    'aac',
-                    'ogg',
-                  ],
+                  allowedExtensions: const ['mp3', 'wav', 'm4a', 'aac', 'ogg'],
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
@@ -740,7 +735,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Audio upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload audio file.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -762,7 +761,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               if (storyName.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Enter the story title before uploading PDF.'),
+                    content: Text(
+                      'Enter the story title before uploading PDF.',
+                    ),
                   ),
                 );
                 return;
@@ -788,15 +789,17 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('PDF uploaded successfully.'),
-                    ),
+                    const SnackBar(content: Text('PDF uploaded successfully.')),
                   );
                 }
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('PDF upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload PDF file.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -853,7 +856,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Thumbnail upload failed: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(e, fallback: 'Could not upload thumbnail.'),
+                    ),
+                  ),
                 );
               } finally {
                 setLocalState(() {
@@ -878,7 +885,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter the story title.')),
+                  const SnackBar(
+                    content: Text('Please enter the story title.'),
+                  ),
                 );
                 return;
               }
@@ -977,19 +986,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final serial = (teacher['serial'] ?? '').toString().trim();
               final now = ServerValue.timestamp;
 
-              final tagsToSave = chosenTags
-                  .map((e) => e.trim())
-                  .where((e) => e.isNotEmpty)
-                  .toList()
-                ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+              final tagsToSave =
+                  chosenTags
+                      .map((e) => e.trim())
+                      .where((e) => e.isNotEmpty)
+                      .toList()
+                    ..sort(
+                      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+                    );
 
               final finalFolderPath = serverFolderPath.isNotEmpty
                   ? serverFolderPath
                   : _buildServerFolderPath(
-                teacherUid: uid,
-                storyUid: draftStoryUid,
-                storyName: name,
-              );
+                      teacherUid: uid,
+                      storyUid: draftStoryUid,
+                      storyName: name,
+                    );
 
               setLocalState(() => localSaving = true);
               if (mounted) {
@@ -998,7 +1010,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               try {
                 final ref = isEdit
-                    ? _storiesRef.child(storyId!)
+                    ? _storiesRef.child(storyId)
                     : _storiesRef.child(draftStoryUid);
 
                 final data = <String, dynamic>{
@@ -1030,7 +1042,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   data['createdAt'] = now;
                 } else {
                   data['createdAt'] =
-                      existingStory?['createdAt'] ?? ServerValue.timestamp;
+                      existingStory['createdAt'] ?? ServerValue.timestamp;
                 }
 
                 await ref.update(data);
@@ -1050,7 +1062,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               } catch (e) {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to save story: $e')),
+                  SnackBar(
+                    content: Text(
+                      toHumanError(
+                        e,
+                        fallback: 'Could not save story. Try again.',
+                      ),
+                    ),
+                  ),
                 );
               } finally {
                 if (mounted) {
@@ -1103,9 +1122,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _genreOptions.contains(
-                          genreController.text.trim(),
-                        )
+                        initialValue:
+                            _genreOptions.contains(genreController.text.trim())
                             ? genreController.text.trim()
                             : null,
                         decoration: const InputDecoration(
@@ -1115,10 +1133,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         items: _genreOptions
                             .map(
                               (item) => DropdownMenuItem<String>(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) {
                           if (value == null) return;
@@ -1129,9 +1147,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _lengthOptions.contains(
-                          lengthController.text.trim(),
-                        )
+                        initialValue:
+                            _lengthOptions.contains(
+                              lengthController.text.trim(),
+                            )
                             ? lengthController.text.trim()
                             : null,
                         decoration: const InputDecoration(
@@ -1141,10 +1160,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         items: _lengthOptions
                             .map(
                               (item) => DropdownMenuItem<String>(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) {
                           if (value == null) return;
@@ -1155,9 +1174,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _scriptTypeOptions.contains(
-                          scriptTypeController.text.trim(),
-                        )
+                        initialValue:
+                            _scriptTypeOptions.contains(
+                              scriptTypeController.text.trim(),
+                            )
                             ? scriptTypeController.text.trim()
                             : null,
                         decoration: const InputDecoration(
@@ -1167,10 +1187,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         items: _scriptTypeOptions
                             .map(
                               (item) => DropdownMenuItem<String>(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) {
                           if (value == null) return;
@@ -1181,7 +1201,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _levelOptions.contains(levelController.text.trim())
+                        initialValue:
+                            _levelOptions.contains(levelController.text.trim())
                             ? levelController.text.trim()
                             : null,
                         decoration: const InputDecoration(
@@ -1191,10 +1212,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         items: _levelOptions
                             .map(
                               (item) => DropdownMenuItem<String>(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) {
                           if (value == null) return;
@@ -1255,22 +1276,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               onSelected: localSaving
                                   ? null
                                   : (value) {
-                                setLocalState(() {
-                                  if (value) {
-                                    chosenTags.add(tag);
-                                  } else {
-                                    chosenTags.remove(tag);
-                                  }
-                                });
-                              },
+                                      setLocalState(() {
+                                        if (value) {
+                                          chosenTags.add(tag);
+                                        } else {
+                                          chosenTags.remove(tag);
+                                        }
+                                      });
+                                    },
                               onDeleted: localSaving
                                   ? null
                                   : () {
-                                setLocalState(() {
-                                  selectedTags.remove(tag);
-                                  chosenTags.remove(tag);
-                                });
-                              },
+                                      setLocalState(() {
+                                        selectedTags.remove(tag);
+                                        chosenTags.remove(tag);
+                                      });
+                                    },
                             );
                           }).toList(),
                         )
@@ -1281,8 +1302,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: const ['draft', 'ready', 'hidden', 'archived']
-                            .contains(selectedStatus)
+                        initialValue:
+                            const [
+                              'draft',
+                              'ready',
+                              'hidden',
+                              'archived',
+                            ].contains(selectedStatus)
                             ? selectedStatus
                             : 'ready',
                         decoration: const InputDecoration(
@@ -1290,9 +1316,18 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
-                          DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                          DropdownMenuItem(
+                            value: 'draft',
+                            child: Text('Draft'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ready',
+                            child: Text('Ready'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'hidden',
+                            child: Text('Hidden'),
+                          ),
                           DropdownMenuItem(
                             value: 'archived',
                             child: Text('Archived'),
@@ -1354,7 +1389,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1364,8 +1401,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingStory ? null : uploadStoryFile,
+                                    onPressed: localUploadingStory
+                                        ? null
+                                        : uploadStoryFile,
                                     icon: const Icon(Icons.sync_rounded),
                                     label: const Text('Replace File'),
                                   ),
@@ -1378,16 +1416,17 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingStory ? null : uploadStoryFile,
+                                onPressed: localUploadingStory
+                                    ? null
+                                    : uploadStoryFile,
                                 icon: localUploadingStory
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.upload_file_rounded),
                                 label: Text(
                                   localUploadingStory
@@ -1437,7 +1476,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedAudioUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('Audio link copied'),
                                         ),
@@ -1447,8 +1488,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingAudio ? null : uploadAudioFile,
+                                    onPressed: localUploadingAudio
+                                        ? null
+                                        : uploadAudioFile,
                                     icon: const Icon(Icons.headphones_rounded),
                                     label: const Text('Replace Audio'),
                                   ),
@@ -1461,16 +1503,17 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingAudio ? null : uploadAudioFile,
+                                onPressed: localUploadingAudio
+                                    ? null
+                                    : uploadAudioFile,
                                 icon: localUploadingAudio
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.audio_file_rounded),
                                 label: Text(
                                   localUploadingAudio
@@ -1520,7 +1563,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedPdfUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('PDF link copied'),
                                         ),
@@ -1530,9 +1575,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     label: const Text('Copy Link'),
                                   ),
                                   OutlinedButton.icon(
-                                    onPressed:
-                                    localUploadingPdf ? null : uploadPdfFile,
-                                    icon: const Icon(Icons.picture_as_pdf_rounded),
+                                    onPressed: localUploadingPdf
+                                        ? null
+                                        : uploadPdfFile,
+                                    icon: const Icon(
+                                      Icons.picture_as_pdf_rounded,
+                                    ),
                                     label: const Text('Replace PDF'),
                                   ),
                                 ],
@@ -1544,16 +1592,17 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               ),
                               const SizedBox(height: 10),
                               FilledButton.icon(
-                                onPressed:
-                                localUploadingPdf ? null : uploadPdfFile,
+                                onPressed: localUploadingPdf
+                                    ? null
+                                    : uploadPdfFile,
                                 icon: localUploadingPdf
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.picture_as_pdf_rounded),
                                 label: Text(
                                   localUploadingPdf
@@ -1592,11 +1641,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                   height: 140,
                                   width: double.infinity,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  errorBuilder: (_, _, _) => Container(
                                     height: 140,
                                     alignment: Alignment.center,
                                     color: Colors.grey.shade100,
-                                    child: const Text('Could not load thumbnail'),
+                                    child: const Text(
+                                      'Could not load thumbnail',
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1611,9 +1662,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Thumbnail link copied'),
+                                          content: Text(
+                                            'Thumbnail link copied',
+                                          ),
                                         ),
                                       );
                                     },
@@ -1641,12 +1696,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     : uploadThumbnail,
                                 icon: localUploadingThumb
                                     ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
                                     : const Icon(Icons.upload_rounded),
                                 label: Text(
                                   localUploadingThumb
@@ -1795,7 +1850,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: tempStatus,
+                      initialValue: tempStatus,
                       decoration: const InputDecoration(
                         labelText: 'Status',
                         border: OutlineInputBorder(),
@@ -1804,7 +1859,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         DropdownMenuItem(value: 'all', child: Text('All')),
                         DropdownMenuItem(value: 'draft', child: Text('Draft')),
                         DropdownMenuItem(value: 'ready', child: Text('Ready')),
-                        DropdownMenuItem(value: 'hidden', child: Text('Hidden')),
+                        DropdownMenuItem(
+                          value: 'hidden',
+                          child: Text('Hidden'),
+                        ),
                         DropdownMenuItem(
                           value: 'archived',
                           child: Text('Archived'),
@@ -1819,7 +1877,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: genreItems.contains(tempGenre) ? tempGenre : 'all',
+                      initialValue: genreItems.contains(tempGenre)
+                          ? tempGenre
+                          : 'all',
                       decoration: const InputDecoration(
                         labelText: 'Genre',
                         border: OutlineInputBorder(),
@@ -1827,10 +1887,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       items: genreItems
                           .map(
                             (e) => DropdownMenuItem<String>(
-                          value: e,
-                          child: Text(e == 'all' ? 'All' : e),
-                        ),
-                      )
+                              value: e,
+                              child: Text(e == 'all' ? 'All' : e),
+                            ),
+                          )
                           .toList(),
                       onChanged: (value) {
                         if (value == null) return;
@@ -1961,18 +2021,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       decoration: BoxDecoration(
         color: backgroundColor ?? cs.primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: borderColor ?? cs.primary.withOpacity(0.12),
-        ),
+        border: Border.all(color: borderColor ?? cs.primary.withOpacity(0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 15,
-            color: iconColor ?? cs.primary,
-          ),
+          Icon(icon, size: 15, color: iconColor ?? cs.primary),
           const SizedBox(width: 6),
           Text(
             text,
@@ -2031,25 +2085,27 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                       suffixIcon: _searchController.text.isEmpty
                           ? null
                           : IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                          });
-                        },
-                        icon: const Icon(Icons.clear_rounded),
-                      ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                });
+                              },
+                              icon: const Icon(Icons.clear_rounded),
+                            ),
                       filled: true,
-                      fillColor: cs.surfaceVariant.withOpacity(0.35),
+                      fillColor: cs.surfaceContainerHighest.withOpacity(0.35),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide:
-                        BorderSide(color: cs.outline.withOpacity(0.18)),
+                        borderSide: BorderSide(
+                          color: cs.outline.withOpacity(0.18),
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide:
-                        BorderSide(color: cs.outline.withOpacity(0.18)),
+                        borderSide: BorderSide(
+                          color: cs.outline.withOpacity(0.18),
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -2063,7 +2119,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   icon: Icons.filter_list_rounded,
                   tooltip: 'Filters',
                   active: activeFilterCount > 0,
-                  badgeText: activeFilterCount > 0 ? '$activeFilterCount' : null,
+                  badgeText: activeFilterCount > 0
+                      ? '$activeFilterCount'
+                      : null,
                   onTap: () => _showFilterSheet(genres),
                 ),
                 const SizedBox(width: 8),
@@ -2097,8 +2155,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   const SizedBox(width: 8),
                   _buildTopTagChip(
                     icon: Icons.category_rounded,
-                    label:
-                    _genreFilter == 'all' ? 'All genres' : _genreFilter,
+                    label: _genreFilter == 'all' ? 'All genres' : _genreFilter,
                   ),
                   const SizedBox(width: 8),
                   _buildTopTagChip(
@@ -2128,7 +2185,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       clipBehavior: Clip.none,
       children: [
         Material(
-          color: active ? cs.primary.withOpacity(0.12) : cs.surfaceVariant,
+          color: active
+              ? cs.primary.withOpacity(0.12)
+              : cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
@@ -2170,17 +2229,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     );
   }
 
-  Widget _buildTopTagChip({
-    required IconData icon,
-    required String label,
-  }) {
+  Widget _buildTopTagChip({required IconData icon, required String label}) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: cs.surfaceVariant.withOpacity(0.45),
+        color: cs.surfaceContainerHighest.withOpacity(0.45),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: cs.outline.withOpacity(0.18)),
       ),
@@ -2190,10 +2246,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -2215,16 +2268,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         );
         break;
       case 'duplicate':
-        await _duplicateStory(
-          storyId: storyId,
-          existingStory: story,
-        );
+        await _duplicateStory(storyId: storyId, existingStory: story);
         break;
       case 'archive':
-        await _toggleArchive(
-          storyId: storyId,
-          story: story,
-        );
+        await _toggleArchive(storyId: storyId, story: story);
         break;
       case 'delete':
         await _deleteStory(storyId, story);
@@ -2276,7 +2323,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         child: Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 10,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(14),
@@ -2286,19 +2336,19 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 color: cs.primary.withOpacity(0.10),
                 child: thumbnail.isNotEmpty
                     ? Image.network(
-                  thumbnail,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.menu_book_rounded,
-                    color: cs.primary,
-                    size: 24,
-                  ),
-                )
+                        thumbnail,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Icon(
+                          Icons.menu_book_rounded,
+                          color: cs.primary,
+                          size: 24,
+                        ),
+                      )
                     : Icon(
-                  Icons.menu_book_rounded,
-                  color: cs.primary,
-                  size: 24,
-                ),
+                        Icons.menu_book_rounded,
+                        color: cs.primary,
+                        size: 24,
+                      ),
               ),
             ),
             title: Text(
@@ -2320,7 +2370,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.70),
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                        0.70,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2355,16 +2407,18 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           icon: Icons.article_rounded,
                           text: scriptType,
                         ),
-                      ...tags.take(2).map(
+                      ...tags
+                          .take(2)
+                          .map(
                             (tag) => _buildMiniInfoChip(
-                          context: context,
-                          icon: Icons.sell_rounded,
-                          text: tag,
-                          backgroundColor: cs.secondary.withOpacity(0.08),
-                          borderColor: cs.secondary.withOpacity(0.14),
-                          iconColor: cs.secondary,
-                        ),
-                      ),
+                              context: context,
+                              icon: Icons.sell_rounded,
+                              text: tag,
+                              backgroundColor: cs.secondary.withOpacity(0.08),
+                              borderColor: cs.secondary.withOpacity(0.14),
+                              iconColor: cs.secondary,
+                            ),
+                          ),
                     ],
                   ),
                 ],
@@ -2379,7 +2433,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     height: 180,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       height: 180,
                       alignment: Alignment.center,
                       color: cs.primary.withOpacity(0.06),
@@ -2496,13 +2550,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     children: tags
                         .map(
                           (tag) => Chip(
-                        label: Text(tag),
-                        backgroundColor: cs.secondary.withOpacity(0.08),
-                        side: BorderSide(
-                          color: cs.secondary.withOpacity(0.14),
-                        ),
-                      ),
-                    )
+                            label: Text(tag),
+                            backgroundColor: cs.secondary.withOpacity(0.08),
+                            side: BorderSide(
+                              color: cs.secondary.withOpacity(0.14),
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -2549,8 +2603,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   child: Text(
                     teacherNotes,
                     style: TextStyle(
-                      color:
-                      theme.textTheme.bodyMedium?.color?.withOpacity(0.78),
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                        0.78,
+                      ),
                       fontWeight: FontWeight.w600,
                       height: 1.45,
                     ),
@@ -2715,7 +2770,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: cs.surfaceVariant.withOpacity(0.55),
+                          color: cs.surfaceContainerHighest.withOpacity(0.55),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Icon(Icons.more_horiz_rounded),
@@ -2737,18 +2792,28 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       final story = entry.value;
 
       final name = (story['name'] ?? '').toString().toLowerCase().trim();
-      final description =
-      (story['description'] ?? '').toString().toLowerCase().trim();
+      final description = (story['description'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
       final genre = (story['genre'] ?? '').toString().toLowerCase().trim();
       final level = (story['level'] ?? '').toString().toLowerCase().trim();
-      final scriptType =
-      (story['scriptType'] ?? '').toString().toLowerCase().trim();
-      final authorSource =
-      (story['authorSource'] ?? '').toString().toLowerCase().trim();
-      final status = (story['status'] ?? 'ready').toString().toLowerCase().trim();
+      final scriptType = (story['scriptType'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
+      final authorSource = (story['authorSource'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
+      final status = (story['status'] ?? 'ready')
+          .toString()
+          .toLowerCase()
+          .trim();
       final tags = _tagsFromStory(story).map((e) => e.toLowerCase()).join(' ');
 
-      final matchesSearch = _searchQuery.isEmpty ||
+      final matchesSearch =
+          _searchQuery.isEmpty ||
           name.contains(_searchQuery) ||
           description.contains(_searchQuery) ||
           genre.contains(_searchQuery) ||
@@ -2769,28 +2834,30 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     filtered.sort((a, b) {
       switch (_sortBy) {
         case 'name_asc':
-          return (a.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((b.value['name'] ?? '').toString().toLowerCase());
+          return (a.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (b.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'name_desc':
-          return (b.value['name'] ?? '')
-              .toString()
-              .toLowerCase()
-              .compareTo((a.value['name'] ?? '').toString().toLowerCase());
+          return (b.value['name'] ?? '').toString().toLowerCase().compareTo(
+            (a.value['name'] ?? '').toString().toLowerCase(),
+          );
         case 'created_desc':
-          return _toInt(b.value['createdAt'])
-              .compareTo(_toInt(a.value['createdAt']));
+          return _toInt(
+            b.value['createdAt'],
+          ).compareTo(_toInt(a.value['createdAt']));
         case 'created_asc':
-          return _toInt(a.value['createdAt'])
-              .compareTo(_toInt(b.value['createdAt']));
+          return _toInt(
+            a.value['createdAt'],
+          ).compareTo(_toInt(b.value['createdAt']));
         case 'updated_asc':
-          return _toInt(a.value['updatedAt'])
-              .compareTo(_toInt(b.value['updatedAt']));
+          return _toInt(
+            a.value['updatedAt'],
+          ).compareTo(_toInt(b.value['updatedAt']));
         case 'updated_desc':
         default:
-          return _toInt(b.value['updatedAt'])
-              .compareTo(_toInt(a.value['updatedAt']));
+          return _toInt(
+            b.value['updatedAt'],
+          ).compareTo(_toInt(a.value['updatedAt']));
       }
     });
 
@@ -2807,15 +2874,11 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     final cs = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Stories'),
-      ),
+      appBar: AppBar(title: const Text('Stories')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
             ? null
-            : () => _showStoryForm(
-          knownTags: const <String>[],
-        ),
+            : () => _showStoryForm(knownTags: const <String>[]),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add Story'),
       ),
@@ -2887,7 +2950,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             final storyValue = entry.value;
 
             final story = storyValue is Map
-                ? Map<String, dynamic>.from(storyValue as Map)
+                ? Map<String, dynamic>.from(storyValue)
                 : <String, dynamic>{};
 
             return MapEntry(storyId, story);
@@ -2921,34 +2984,34 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   },
                   child: visibleItems.isEmpty
                       ? ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
-                    children: [
-                      Center(
-                        child: Text(
-                          'No stories match your filters.',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: theme.textTheme.bodyMedium?.color
-                                ?.withOpacity(0.65),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 40, 16, 100),
+                          children: [
+                            Center(
+                              child: Text(
+                                'No stories match your filters.',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.textTheme.bodyMedium?.color
+                                      ?.withOpacity(0.65),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
                       : ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    itemCount: visibleItems.length,
-                    itemBuilder: (context, index) {
-                      final item = visibleItems[index];
-                      return _buildStoryCard(
-                        storyId: item.key,
-                        story: item.value,
-                        knownTags: knownTags,
-                      );
-                    },
-                  ),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          itemCount: visibleItems.length,
+                          itemBuilder: (context, index) {
+                            final item = visibleItems[index];
+                            return _buildStoryCard(
+                              storyId: item.key,
+                              story: item.value,
+                              knownTags: knownTags,
+                            );
+                          },
+                        ),
                 ),
               ),
             ],

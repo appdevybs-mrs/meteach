@@ -8,16 +8,14 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 
 class _BioChoice {
   final String ar;
   final String en;
 
-  const _BioChoice({
-    required this.ar,
-    required this.en,
-  });
+  const _BioChoice({required this.ar, required this.en});
 }
 
 class LearnerProfileScreen extends StatefulWidget {
@@ -124,8 +122,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   static const String _uploadKeySha1 =
       'a7a995d9c499128351d827eaad7285bcc891919b';
 
-  static final RegExp _specialRegex =
-  RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]');
+  static final RegExp _specialRegex = RegExp(
+    r'[!@#$%^&*(),.?":{}|<>_\-+=/\\\[\]~`]',
+  );
 
   @override
   void initState() {
@@ -178,10 +177,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse(_uploadEndpoint),
-    );
+    final request = http.MultipartRequest('POST', Uri.parse(_uploadEndpoint));
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
     request.fields['key'] = _uploadKeySha1;
@@ -194,11 +190,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-        ),
+        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
       );
     } else {
       final path = file.path;
@@ -207,11 +199,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       }
 
       request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          path,
-          filename: file.name,
-        ),
+        await http.MultipartFile.fromPath('file', path, filename: file.name),
       );
     }
 
@@ -227,7 +215,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final decoded = jsonDecode(responseBody);
     if (decoded is! Map || decoded['success'] != true) {
       throw Exception(
-        decoded is Map ? (decoded['message'] ?? 'Upload failed') : 'Upload failed',
+        decoded is Map
+            ? (decoded['message'] ?? 'Upload failed')
+            : 'Upload failed',
       );
     }
 
@@ -265,7 +255,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         _profilePhotoUrl = url;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = toHumanError(e));
     } finally {
       if (mounted) setState(() => _uploadingMainPhoto = false);
     }
@@ -309,7 +299,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       if (!mounted) return;
       setState(() {});
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = toHumanError(e));
     } finally {
       if (mounted) setState(() => _uploadingExtraPhotos = false);
     }
@@ -508,7 +498,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     if (learnerUid.isNotEmpty && courseId.isNotEmpty) {
       try {
         final snap = await _db
-            .child('$bookingProgressNode/$learnerUid/$courseId/online_attendance')
+            .child(
+              '$bookingProgressNode/$learnerUid/$courseId/online_attendance',
+            )
             .get();
 
         if (snap.exists && snap.value is Map) {
@@ -525,7 +517,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 if (it is! Map) continue;
                 final item = Map<String, dynamic>.from(it);
 
-                final type = (item['type'] ?? '').toString().trim().toLowerCase();
+                final type = (item['type'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
                 if (type != 'syllabus') continue;
 
                 final sid = (item['sessionId'] ?? '').toString().trim();
@@ -594,7 +589,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             final rec = Map<String, dynamic>.from(v);
 
             totalAttendance += 1;
-            final status = (rec['status'] ?? '').toString().trim().toLowerCase();
+            final status = (rec['status'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
             if (status == 'present') {
               totalPresent += 1;
             }
@@ -619,7 +617,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             ? Map<String, dynamic>.from(course['class'] as Map)
             : <String, dynamic>{};
 
-        final courseId = (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+        final courseId = (cls['course_id'] ?? course['id'] ?? '')
+            .toString()
+            .trim();
         if (courseId.isNotEmpty) {
           try {
             final onlineSnap = await _db
@@ -649,8 +649,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       _statLessonsCovered = totalLessonsCovered;
       _statHomeworkPending = homeworkPending;
-      _statAttendancePct =
-      totalAttendance == 0 ? 0 : ((totalPresent / totalAttendance) * 100).round();
+      _statAttendancePct = totalAttendance == 0
+          ? 0
+          : ((totalPresent / totalAttendance) * 100).round();
     } catch (_) {}
   }
 
@@ -721,7 +722,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       await _loadSmallStats();
     } catch (e) {
-      _error = e.toString();
+      _error = toHumanError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -756,12 +757,12 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       await _usersRef.child(_uid).update(updates);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated ✅')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile updated ✅')));
       await _load();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = toHumanError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -771,7 +772,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final value = (v ?? '').trim();
     if (value.isEmpty) return 'Password is required';
     if (value.length < 8) return 'Must be at least 8 characters';
-    if (!_specialRegex.hasMatch(value)) return 'Add at least 1 special character';
+    if (!_specialRegex.hasMatch(value))
+      return 'Add at least 1 special character';
     return null;
   }
 
@@ -789,10 +791,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           title,
-          style: TextStyle(
-            color: p.primary,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         content: Text(
           message,
@@ -807,10 +806,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: p.primary,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
             ),
           ),
           ElevatedButton(
@@ -835,9 +831,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final p = palette;
 
     if (currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('You must be logged in.')));
       return;
     }
 
@@ -900,20 +896,22 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 );
               } on FirebaseAuthException catch (e) {
                 String msg = e.message ?? 'Failed to update password.';
-                if (e.code == 'wrong-password') msg = 'Current password is incorrect.';
+                if (e.code == 'wrong-password')
+                  msg = 'Current password is incorrect.';
                 if (e.code == 'requires-recent-login') {
-                  msg = 'Please log in again, then retry changing your password.';
+                  msg =
+                      'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(msg)),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(msg)));
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.toString())),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(toHumanError(e))));
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
@@ -957,10 +955,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                         controller: currentCtrl,
                         obscure: obscureCurrent,
                         onToggle: () => setModalState(
-                              () => obscureCurrent = !obscureCurrent,
+                          () => obscureCurrent = !obscureCurrent,
                         ),
-                        validator: (v) =>
-                        (v ?? '').isEmpty ? 'Current password is required' : null,
+                        validator: (v) => (v ?? '').isEmpty
+                            ? 'Current password is required'
+                            : null,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
                       const SizedBox(height: 10),
@@ -969,9 +968,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                         label: 'New password',
                         controller: newCtrl,
                         obscure: obscureNew,
-                        onToggle: () => setModalState(
-                              () => obscureNew = !obscureNew,
-                        ),
+                        onToggle: () =>
+                            setModalState(() => obscureNew = !obscureNew),
                         validator: _newPasswordValidator,
                         onChanged: (_) => sheetKey.currentState?.validate(),
                       ),
@@ -982,11 +980,12 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                         controller: confirmCtrl,
                         obscure: obscureConfirm,
                         onToggle: () => setModalState(
-                              () => obscureConfirm = !obscureConfirm,
+                          () => obscureConfirm = !obscureConfirm,
                         ),
                         validator: (v) {
                           final value = (v ?? '').trim();
-                          if (value.isEmpty) return 'Please confirm your new password';
+                          if (value.isEmpty)
+                            return 'Please confirm your new password';
                           if (value != newCtrl.text.trim()) {
                             return 'Passwords do not match';
                           }
@@ -1050,11 +1049,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           decoration: InputDecoration(
             filled: true,
             fillColor: palette.cardBg,
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
             ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide(color: palette.border.withOpacity(0.85)),
@@ -1081,9 +1080,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   bool get _hasBioSelections =>
       _selectedHobbiesAr.isNotEmpty ||
-          _selectedLearningAr.isNotEmpty ||
-          _selectedTraitsAr.isNotEmpty ||
-          (_selectedGoalAr != null && _selectedGoalAr!.trim().isNotEmpty);
+      _selectedLearningAr.isNotEmpty ||
+      _selectedTraitsAr.isNotEmpty ||
+      (_selectedGoalAr != null && _selectedGoalAr!.trim().isNotEmpty);
 
   _BioChoice? _findChoice(List<_BioChoice> list, String ar) {
     for (final item in list) {
@@ -1093,9 +1092,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 
   List<String> _mapArabicSetToEnglish(
-      Set<String> selected,
-      List<_BioChoice> source,
-      ) {
+    Set<String> selected,
+    List<_BioChoice> source,
+  ) {
     return selected
         .map((ar) => _findChoice(source, ar)?.en ?? '')
         .where((e) => e.trim().isNotEmpty)
@@ -1121,8 +1120,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   String _generatedEnglishBio() {
     final firstName = _fn.text.trim();
     final hobbiesEn = _mapArabicSetToEnglish(_selectedHobbiesAr, _hobbyChoices);
-    final learningEn =
-    _mapArabicSetToEnglish(_selectedLearningAr, _learningChoices);
+    final learningEn = _mapArabicSetToEnglish(
+      _selectedLearningAr,
+      _learningChoices,
+    );
     final traitsEn = _mapArabicSetToEnglish(_selectedTraitsAr, _traitChoices);
     final goalEn = _selectedGoalAr == null
         ? ''
@@ -1250,10 +1251,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: TextStyle(
-                color: p.text,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1263,14 +1261,14 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 
   Widget _field(
-      String label,
-      TextEditingController c, {
-        TextInputType keyboard = TextInputType.text,
-        String? hintText,
-        int maxLines = 1,
-        int? maxLength,
-        String? Function(String?)? validator,
-      }) {
+    String label,
+    TextEditingController c, {
+    TextInputType keyboard = TextInputType.text,
+    String? hintText,
+    int maxLines = 1,
+    int? maxLength,
+    String? Function(String?)? validator,
+  }) {
     final p = palette;
 
     return Column(
@@ -1295,11 +1293,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             hintText: hintText,
             filled: true,
             fillColor: p.cardBg,
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
             ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide(color: p.border.withOpacity(0.85)),
@@ -1333,13 +1331,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       onSelected: (_) => onTap(),
       selectedColor: p.accent,
       backgroundColor: p.cardBg,
-      side: BorderSide(
-        color: selected ? p.accent : p.border.withOpacity(0.9),
-      ),
+      side: BorderSide(color: selected ? p.accent : p.border.withOpacity(0.9)),
       checkmarkColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(999),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       showCheckmark: false,
     );
   }
@@ -1481,14 +1475,15 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   Widget _buildAboutMeCard() {
     final p = palette;
     final arabicPreview = _hasBioSelections ? _generatedArabicBio() : '';
-    final englishPreview =
-    _hasBioSelections ? _generatedEnglishBio() : _aboutMe.text.trim();
+    final englishPreview = _hasBioSelections
+        ? _generatedEnglishBio()
+        : _aboutMe.text.trim();
 
     return _SectionCard(
       palette: p,
       title: 'Build My Bio',
       subtitle:
-      'Pick in Arabic, and we will generate an English profile for the teacher.',
+          'Pick in Arabic, and we will generate an English profile for the teacher.',
       icon: Icons.auto_awesome_rounded,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1564,10 +1559,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1587,25 +1579,28 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             height: 112,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.80), width: 3),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.80),
+                width: 3,
+              ),
               color: Colors.white.withOpacity(0.12),
             ),
             clipBehavior: Clip.antiAlias,
             child: hasPhoto
                 ? Image.network(
-              _profilePhotoUrl!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.person_rounded,
-                size: 56,
-                color: Colors.white,
-              ),
-            )
+                    _profilePhotoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.person_rounded,
+                      size: 56,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(
-              Icons.person_rounded,
-              size: 56,
-              color: Colors.white,
-            ),
+                    Icons.person_rounded,
+                    size: 56,
+                    color: Colors.white,
+                  ),
           ),
           const SizedBox(height: 14),
           Text(
@@ -1634,13 +1629,13 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               OutlinedButton.icon(
                 icon: _uploadingMainPhoto
                     ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.add_a_photo_rounded),
                 label: Text(
                   _uploadingMainPhoto
@@ -1655,7 +1650,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                onPressed: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
+                onPressed:
+                    (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
                     ? null
                     : _pickAndUploadMainPhoto,
               ),
@@ -1671,7 +1667,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  onPressed: (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
+                  onPressed:
+                      (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
                       ? null
                       : _removeMainPhoto,
                 ),
@@ -1710,7 +1707,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   child: Image.network(
                     url,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
+                    errorBuilder: (_, _, _) => Center(
                       child: Icon(
                         Icons.broken_image_outlined,
                         color: p.primary,
@@ -1756,26 +1753,24 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   border: Border.all(color: p.border),
                 ),
                 child: _uploadingExtraPhotos
-                    ? Center(
-                  child: CircularProgressIndicator(color: p.primary),
-                )
+                    ? Center(child: CircularProgressIndicator(color: p.primary))
                     : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.add_photo_alternate_outlined,
-                      color: p.primary,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Add photo',
-                      style: TextStyle(
-                        color: p.primary,
-                        fontWeight: FontWeight.w800,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add_photo_alternate_outlined,
+                            color: p.primary,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Add photo',
+                            style: TextStyle(
+                              color: p.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
         ],
@@ -1820,10 +1815,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           ),
           Text(
             value,
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -1928,27 +1920,19 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 'First name',
                 _fn,
                 validator: (v) =>
-                (v ?? '').trim().isEmpty ? 'First name is required' : null,
+                    (v ?? '').trim().isEmpty ? 'First name is required' : null,
               ),
               const SizedBox(height: 10),
               _field(
                 'Last name',
                 _ln,
                 validator: (v) =>
-                (v ?? '').trim().isEmpty ? 'Last name is required' : null,
+                    (v ?? '').trim().isEmpty ? 'Last name is required' : null,
               ),
               const SizedBox(height: 10),
-              _field(
-                'Phone 1',
-                _phone1,
-                keyboard: TextInputType.phone,
-              ),
+              _field('Phone 1', _phone1, keyboard: TextInputType.phone),
               const SizedBox(height: 10),
-              _field(
-                'Phone 2',
-                _phone2,
-                keyboard: TextInputType.phone,
-              ),
+              _field('Phone 2', _phone2, keyboard: TextInputType.phone),
               const SizedBox(height: 10),
               _field(
                 'Date of birth (YYYY-MM-DD)',
@@ -2017,10 +2001,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           iconTheme: IconThemeData(color: p.primary),
           title: Text(
             'My Profile',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
           actions: [
             IconButton(
@@ -2038,62 +2019,52 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               insets: const EdgeInsets.symmetric(horizontal: 20),
             ),
             tabs: const [
-              Tab(
-                icon: Icon(Icons.badge_rounded),
-                text: 'Credentials',
-              ),
-              Tab(
-                icon: Icon(Icons.perm_media_rounded),
-                text: 'Media & Bio',
-              ),
+              Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),
+              Tab(icon: Icon(Icons.perm_media_rounded), text: 'Media & Bio'),
             ],
           ),
         ),
         body: SafeArea(
           child: WatermarkBackground(
             child: _busy
-                ? Center(
-              child: CircularProgressIndicator(color: p.primary),
-            )
+                ? Center(child: CircularProgressIndicator(color: p.primary))
                 : _error != null
                 ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: p.cardBg,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: p.border.withOpacity(0.85),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: p.cardBg,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: p.border.withOpacity(0.85)),
+                        ),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            )
+                  )
                 : Form(
-              key: _formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              child: TabBarView(
-                children: [
-                  _buildCredentialsTab(
-                    email: email,
-                    serial: serial,
-                    role: role,
-                    status: status,
+                    key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    child: TabBarView(
+                      children: [
+                        _buildCredentialsTab(
+                          email: email,
+                          serial: serial,
+                          role: role,
+                          status: status,
+                        ),
+                        _buildMediaTab(),
+                      ],
+                    ),
                   ),
-                  _buildMediaTab(),
-                ],
-              ),
-            ),
           ),
         ),
       ),

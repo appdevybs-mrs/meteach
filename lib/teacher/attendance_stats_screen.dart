@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 
 class AttendanceStatsScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
 
-  const AttendanceStatsScreen({
-    super.key,
-    required this.classData,
-  });
+  const AttendanceStatsScreen({super.key, required this.classData});
 
   @override
   State<AttendanceStatsScreen> createState() => _AttendanceStatsScreenState();
@@ -154,10 +152,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                             ),
                           ),
                           if (_month == null)
-                            Icon(
-                              Icons.check_circle_rounded,
-                              color: p.accent,
-                            ),
+                            Icon(Icons.check_circle_rounded, color: p.accent),
                         ],
                       ),
                     ),
@@ -166,100 +161,101 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                   Expanded(
                     child: _availableMonths.isEmpty
                         ? Center(
-                      child: Text(
-                        'No saved months found yet.',
-                        style: TextStyle(
-                          color: p.text.withOpacity(0.7),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    )
-                        : ListView.separated(
-                      itemCount: _availableMonths.length,
-                      separatorBuilder: (_, __) =>
-                      const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final key = _availableMonths[index];
-                        final isSelected =
-                            _month != null && _monthKey(_month!) == key;
-
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: () {
-                            final parts = key.split('-');
-                            final year = int.tryParse(parts[0]) ?? 2000;
-                            final month = int.tryParse(parts[1]) ?? 1;
-
-                            Navigator.pop(context);
-                            setState(() {
-                              _month = DateTime(year, month, 1);
-                            });
-                            _load();
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: p.cardBg,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: isSelected
-                                    ? p.primary
-                                    : p.border.withOpacity(0.9),
-                                width: isSelected ? 1.5 : 1,
+                            child: Text(
+                              'No saved months found yet.',
+                              style: TextStyle(
+                                color: p.text.withOpacity(0.7),
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
+                          )
+                        : ListView.separated(
+                            itemCount: _availableMonths.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, index) {
+                              final key = _availableMonths[index];
+                              final isSelected =
+                                  _month != null && _monthKey(_month!) == key;
+
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () {
+                                  final parts = key.split('-');
+                                  final year = int.tryParse(parts[0]) ?? 2000;
+                                  final month = int.tryParse(parts[1]) ?? 1;
+
+                                  Navigator.pop(context);
+                                  setState(() {
+                                    _month = DateTime(year, month, 1);
+                                  });
+                                  _load();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: p.primary.withOpacity(0.08),
-                                    borderRadius:
-                                    BorderRadius.circular(14),
+                                    color: p.cardBg,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? p.primary
+                                          : p.border.withOpacity(0.9),
+                                      width: isSelected ? 1.5 : 1,
+                                    ),
                                   ),
-                                  child: Icon(
-                                    Icons.calendar_month_rounded,
-                                    color: p.primary,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                  child: Row(
                                     children: [
-                                      Text(
-                                        _monthLabel(key),
-                                        style: TextStyle(
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: p.primary.withOpacity(0.08),
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.calendar_month_rounded,
                                           color: p.primary,
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 14,
                                         ),
                                       ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        key,
-                                        style: TextStyle(
-                                          color: p.text.withOpacity(0.6),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _monthLabel(key),
+                                              style: TextStyle(
+                                                color: p.primary,
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              key,
+                                              style: TextStyle(
+                                                color: p.text.withOpacity(0.6),
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
+                                      if (isSelected)
+                                        Icon(
+                                          Icons.check_circle_rounded,
+                                          color: p.accent,
+                                        ),
                                     ],
                                   ),
                                 ),
-                                if (isSelected)
-                                  Icon(
-                                    Icons.check_circle_rounded,
-                                    color: p.accent,
-                                  ),
-                              ],
-                            ),
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
                   ),
                 ],
               ),
@@ -279,8 +275,11 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
     });
 
     try {
-      final snap =
-      await _db.child("classes").child(_classId).child('attendance').get();
+      final snap = await _db
+          .child("classes")
+          .child(_classId)
+          .child('attendance')
+          .get();
 
       if (!snap.exists) {
         setState(() => _busy = false);
@@ -316,7 +315,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
         for (final uid in all) {
           _stats.putIfAbsent(
             uid,
-                () => {
+            () => {
               'present': 0,
               'absent': 0,
               'total': 0,
@@ -346,8 +345,8 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
         final snapU = await _db.child("users").child(uid).get();
         if (snapU.exists) {
           final m = Map<String, dynamic>.from(snapU.value as Map);
-          final fullName =
-          "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}".trim();
+          final fullName = "${m['first_name'] ?? ''} ${m['last_name'] ?? ''}"
+              .trim();
 
           _stats[uid]!['name'] = fullName.isEmpty ? uid : fullName;
           _stats[uid]!['serial'] = (m['serial'] ?? '').toString();
@@ -357,7 +356,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       setState(() => _busy = false);
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = toHumanError(e);
         _busy = false;
       });
     }
@@ -387,40 +386,37 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
-    final rows = _stats.entries.map((e) {
-      final m = e.value;
-      final present = m['present'] as int;
-      final absent = m['absent'] as int;
-      final total = m['total'] as int;
-      final pct = total == 0 ? 0 : ((present / total) * 100).round();
+    final rows =
+        _stats.entries.map((e) {
+          final m = e.value;
+          final present = m['present'] as int;
+          final absent = m['absent'] as int;
+          final total = m['total'] as int;
+          final pct = total == 0 ? 0 : ((present / total) * 100).round();
 
-      return {
-        ...m,
-        'uid': e.key,
-        'present': present,
-        'absent': absent,
-        'total': total,
-        'pct': pct,
-      };
-    }).toList()
-      ..sort((a, b) {
-        final pctCompare = (b['pct'] as int).compareTo(a['pct'] as int);
-        if (pctCompare != 0) return pctCompare;
-        return (a['name'] ?? '')
-            .toString()
-            .toLowerCase()
-            .compareTo((b['name'] ?? '').toString().toLowerCase());
-      });
+          return {
+            ...m,
+            'uid': e.key,
+            'present': present,
+            'absent': absent,
+            'total': total,
+            'pct': pct,
+          };
+        }).toList()..sort((a, b) {
+          final pctCompare = (b['pct'] as int).compareTo(a['pct'] as int);
+          if (pctCompare != 0) return pctCompare;
+          return (a['name'] ?? '').toString().toLowerCase().compareTo(
+            (b['name'] ?? '').toString().toLowerCase(),
+          );
+        });
 
     final learnersCount = rows.length;
     final avgPct = rows.isEmpty
         ? 0
         : (rows.fold<int>(0, (sum, r) => sum + (r['pct'] as int)) / rows.length)
-        .round();
-    final atRiskCount =
-        rows.where((r) => (r['pct'] as int) < 50).length;
-    final excellentCount =
-        rows.where((r) => (r['pct'] as int) >= 80).length;
+              .round();
+    final atRiskCount = rows.where((r) => (r['pct'] as int) < 50).length;
+    final excellentCount = rows.where((r) => (r['pct'] as int) >= 80).length;
 
     return Scaffold(
       backgroundColor: p.appBg,
@@ -480,48 +476,43 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           ),
           SafeArea(
             child: _busy
-                ? Center(
-              child: CircularProgressIndicator(color: p.primary),
-            )
+                ? Center(child: CircularProgressIndicator(color: p.primary))
                 : _error != null
                 ? _buildErrorState(p)
                 : rows.isEmpty
                 ? _buildEmptyState(p)
                 : RefreshIndicator(
-              color: p.primary,
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-                children: [
-                  _buildHeroCard(
-                    p,
-                    learnersCount: learnersCount,
-                    avgPct: avgPct,
-                    selectedMonthLabel: _month == null
-                        ? 'All months'
-                        : _monthLabel(_monthKey(_month!)),
-                  ),
-                  const SizedBox(height: 14),
-                  _buildQuickStatsRow(
-                    p,
-                    avgPct: avgPct,
-                    excellentCount: excellentCount,
-                    atRiskCount: atRiskCount,
-                  ),
-                  const SizedBox(height: 14),
-                  _buildFilterBar(p),
-                  const SizedBox(height: 14),
-                  ...rows.asMap().entries.map(
-                        (entry) => _buildStatsCard(
-                      p,
-                      entry.key + 1,
-                      entry.value,
+                    color: p.primary,
+                    onRefresh: _load,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                      children: [
+                        _buildHeroCard(
+                          p,
+                          learnersCount: learnersCount,
+                          avgPct: avgPct,
+                          selectedMonthLabel: _month == null
+                              ? 'All months'
+                              : _monthLabel(_monthKey(_month!)),
+                        ),
+                        const SizedBox(height: 14),
+                        _buildQuickStatsRow(
+                          p,
+                          avgPct: avgPct,
+                          excellentCount: excellentCount,
+                          atRiskCount: atRiskCount,
+                        ),
+                        const SizedBox(height: 14),
+                        _buildFilterBar(p),
+                        const SizedBox(height: 14),
+                        ...rows.asMap().entries.map(
+                          (entry) =>
+                              _buildStatsCard(p, entry.key + 1, entry.value),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
           ),
         ],
       ),
@@ -529,19 +520,16 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   }
 
   Widget _buildHeroCard(
-      AppPalette p, {
-        required int learnersCount,
-        required int avgPct,
-        required String selectedMonthLabel,
-      }) {
+    AppPalette p, {
+    required int learnersCount,
+    required int avgPct,
+    required String selectedMonthLabel,
+  }) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            p.primary,
-            p.primary.withOpacity(0.88),
-          ],
+          colors: [p.primary, p.primary.withOpacity(0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -610,11 +598,11 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   }
 
   Widget _buildQuickStatsRow(
-      AppPalette p, {
-        required int avgPct,
-        required int excellentCount,
-        required int atRiskCount,
-      }) {
+    AppPalette p, {
+    required int avgPct,
+    required int excellentCount,
+    required int atRiskCount,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -648,11 +636,11 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   }
 
   Widget _miniStatCard(
-      AppPalette p, {
-        required String label,
-        required String value,
-        required IconData icon,
-      }) {
+    AppPalette p, {
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
       decoration: BoxDecoration(
@@ -672,10 +660,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           Container(
             width: 38,
             height: 38,
-            decoration: BoxDecoration(
-              color: p.soft,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: p.soft, shape: BoxShape.circle),
             child: Icon(icon, color: p.primary, size: 19),
           ),
           const SizedBox(height: 8),
@@ -761,7 +746,11 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.calendar_today_rounded, size: 15, color: p.primary),
+                  Icon(
+                    Icons.calendar_today_rounded,
+                    size: 15,
+                    color: p.primary,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Change',
@@ -780,11 +769,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
     );
   }
 
-  Widget _buildStatsCard(
-      AppPalette p,
-      int rank,
-      Map<String, dynamic> row,
-      ) {
+  Widget _buildStatsCard(AppPalette p, int rank, Map<String, dynamic> row) {
     final pct = row['pct'] as int;
     final color = _getHealthColor(pct);
     final healthLabel = _healthLabel(pct);
@@ -879,8 +864,10 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: color.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(999),

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 
 class LearnerRegulationsScreen extends StatefulWidget {
@@ -170,7 +171,7 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     }
   }
@@ -218,10 +219,7 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
           iconTheme: IconThemeData(color: p.primary),
           title: Text(
             'Regulations',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
           ),
           actions: [
             IconButton(
@@ -234,56 +232,52 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
         body: WatermarkBackground(
           child: SafeArea(
             child: _loading
-                ? Center(
-              child: CircularProgressIndicator(color: p.primary),
-            )
+                ? Center(child: CircularProgressIndicator(color: p.primary))
                 : _error != null
                 ? _ErrorBox(
-              palette: p,
-              message: 'Failed to load regulations.\n$_error',
-              onRetry: _loadAll,
-            )
+                    palette: p,
+                    message: 'Failed to load regulations.\n$_error',
+                    onRetry: _loadAll,
+                  )
                 : !_isLearner
                 ? _InfoBox(
-              palette: p,
-              title: 'Learners only',
-              message: 'هذه الصفحة مخصصة للمتعلمين فقط.',
-              icon: Icons.lock_rounded,
-            )
+                    palette: p,
+                    title: 'Learners only',
+                    message: 'هذه الصفحة مخصصة للمتعلمين فقط.',
+                    icon: Icons.lock_rounded,
+                  )
                 : _sections.isEmpty
                 ? _InfoBox(
-              palette: p,
-              title: 'No content',
-              message: 'لا توجد قوانين متاحة حاليًا.',
-              icon: Icons.info_rounded,
-            )
-                : RefreshIndicator(
-              color: p.primary,
-              onRefresh: _loadAll,
-              child: ListView(
-                padding:
-                const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                children: [
-                  _HeroHeaderCard(palette: p),
-                  const SizedBox(height: 16),
-                  _QuickMetaStrip(
                     palette: p,
-                    sectionsCount: _sections.length,
-                  ),
-                  const SizedBox(height: 16),
-                  ..._sections.map(
-                        (s) => _SectionCard(
-                      palette: p,
-                      section: s,
-                      updatedAtLabel:
-                      _formatUpdatedAt(s.updatedAt),
+                    title: 'No content',
+                    message: 'لا توجد قوانين متاحة حاليًا.',
+                    icon: Icons.info_rounded,
+                  )
+                : RefreshIndicator(
+                    color: p.primary,
+                    onRefresh: _loadAll,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                      children: [
+                        _HeroHeaderCard(palette: p),
+                        const SizedBox(height: 16),
+                        _QuickMetaStrip(
+                          palette: p,
+                          sectionsCount: _sections.length,
+                        ),
+                        const SizedBox(height: 16),
+                        ..._sections.map(
+                          (s) => _SectionCard(
+                            palette: p,
+                            section: s,
+                            updatedAtLabel: _formatUpdatedAt(s.updatedAt),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        _FooterHint(palette: p),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  _FooterHint(palette: p),
-                ],
-              ),
-            ),
           ),
         ),
       ),
@@ -302,10 +296,7 @@ class _HeroHeaderCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            palette.primary,
-            palette.primary.withOpacity(0.88),
-          ],
+          colors: [palette.primary, palette.primary.withOpacity(0.88)],
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
         ),
@@ -369,10 +360,7 @@ class _HeroHeaderCard extends StatelessWidget {
 }
 
 class _QuickMetaStrip extends StatelessWidget {
-  const _QuickMetaStrip({
-    required this.palette,
-    required this.sectionsCount,
-  });
+  const _QuickMetaStrip({required this.palette, required this.sectionsCount});
 
   final _RegPalette palette;
   final int sectionsCount;
@@ -521,8 +509,10 @@ class _SectionCardState extends State<_SectionCard> {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             onExpansionChanged: (v) => setState(() => _expanded = v),
-            tilePadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 10,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             collapsedBackgroundColor: p.cardBg,
             backgroundColor: p.cardBg,
@@ -559,9 +549,7 @@ class _SectionCardState extends State<_SectionCard> {
                     decoration: BoxDecoration(
                       color: p.accent.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: p.accent.withOpacity(0.22),
-                      ),
+                      border: Border.all(color: p.accent.withOpacity(0.22)),
                     ),
                     child: Text(
                       widget.updatedAtLabel,
@@ -616,10 +604,7 @@ class _SectionCardState extends State<_SectionCard> {
 }
 
 class _RegItemRow extends StatelessWidget {
-  const _RegItemRow({
-    required this.palette,
-    required this.item,
-  });
+  const _RegItemRow({required this.palette, required this.item});
 
   final _RegPalette palette;
   final _RegItem item;
@@ -646,9 +631,7 @@ class _RegItemRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.accent.withOpacity(0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: palette.accent.withOpacity(0.25),
-              ),
+              border: Border.all(color: palette.accent.withOpacity(0.25)),
             ),
             child: Text(
               isBullet ? '•' : item.n.toString(),
@@ -708,14 +691,9 @@ class _FooterHint extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.accent.withOpacity(0.10),
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: palette.accent.withOpacity(0.18),
-              ),
+              border: Border.all(color: palette.accent.withOpacity(0.18)),
             ),
-            child: Icon(
-              Icons.info_outline_rounded,
-              color: palette.accent,
-            ),
+            child: Icon(Icons.info_outline_rounded, color: palette.accent),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -910,10 +888,7 @@ class _RegSection {
 }
 
 class _RegItem {
-  const _RegItem({
-    required this.n,
-    required this.text,
-  });
+  const _RegItem({required this.n, required this.text});
 
   final int n;
   final String text;

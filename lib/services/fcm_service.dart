@@ -48,13 +48,9 @@ class FCMService {
   /// REQUIRED by AuthGate (your app calls this)
   static Future<void> syncTokenAfterLogin() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      debugPrint('⚠️ syncTokenAfterLogin: user is null');
-      return;
-    }
+    if (uid == null) return;
 
     final token = await FirebaseMessaging.instance.getToken();
-    debugPrint('✅ syncTokenAfterLogin uid=$uid token=$token');
 
     if (token != null && token.isNotEmpty) {
       await saveTokenToDatabase(token);
@@ -76,13 +72,11 @@ class FCMService {
 
     // Token may exist BEFORE login
     final token = await _messaging.getToken();
-    debugPrint("🔥 FCM TOKEN (startup): $token");
     if (token != null && token.isNotEmpty) {
       await saveTokenToDatabase(token);
     }
 
     _messaging.onTokenRefresh.listen((newToken) async {
-      debugPrint("🔄 FCM TOKEN REFRESH: $newToken");
       await saveTokenToDatabase(newToken);
     });
 
@@ -126,10 +120,7 @@ class FCMService {
   /// Save token under /fcm_tokens/{uid}
   static Future<void> saveTokenToDatabase(String token) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      debugPrint('⚠️ saveTokenToDatabase skipped: user not logged in');
-      return;
-    }
+    if (uid == null) return;
 
     try {
       await FirebaseDatabase.instance.ref('fcm_tokens/$uid').update({
@@ -137,10 +128,7 @@ class FCMService {
         'platform': kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'other'),
         'updatedAt': ServerValue.timestamp,
       });
-      debugPrint('✅ Token saved to RTDB: fcm_tokens/$uid');
-    } catch (e) {
-      debugPrint('❌ Token save failed: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> _ensureLocalInit() async {
@@ -357,7 +345,7 @@ class FCMService {
 
       if (v is! Map) return null;
 
-      return Map<String, dynamic>.from(v as Map);
+      return Map<String, dynamic>.from(v);
     } catch (_) {
       return null;
     }

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import '../shared/human_error.dart';
 
 import 'mail_topic_thread_screen.dart'; // the topic thread screen you already have
 
@@ -15,16 +16,21 @@ class AdminLearnerMailTopicsScreen extends StatefulWidget {
   final String learnerName;
 
   @override
-  State<AdminLearnerMailTopicsScreen> createState() => _AdminLearnerMailTopicsScreenState();
+  State<AdminLearnerMailTopicsScreen> createState() =>
+      _AdminLearnerMailTopicsScreenState();
 }
 
-class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScreen> {
+class _AdminLearnerMailTopicsScreenState
+    extends State<AdminLearnerMailTopicsScreen> {
   final _db = FirebaseDatabase.instance;
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
-  String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+  String get _meName =>
+      (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
 
-  Query get _indexQuery =>
-      _db.ref('mail_index/$_meUid').orderByChild('peerUid').equalTo(widget.learnerUid);
+  Query get _indexQuery => _db
+      .ref('mail_index/$_meUid')
+      .orderByChild('peerUid')
+      .equalTo(widget.learnerUid);
   DatabaseReference get _threadsRef => _db.ref('mail_threads');
 
   late final Stream<DatabaseEvent> _stream;
@@ -37,7 +43,9 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
 
   void _snack(String s) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(s))));
   }
 
   List<_InboxRow> _parseAndFilter(dynamic data) {
@@ -80,23 +88,30 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
   Future<void> _createNewTopic() async {
     final subjectC = TextEditingController();
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('New topic'),
-        content: TextField(
-          controller: subjectC,
-          decoration: const InputDecoration(
-            hintText: 'Subject (example: Homework question)',
-            border: OutlineInputBorder(),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('New topic'),
+            content: TextField(
+              controller: subjectC,
+              decoration: const InputDecoration(
+                hintText: 'Subject (example: Homework question)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Create'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Create')),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
@@ -154,7 +169,7 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
         ),
       );
     } catch (e) {
-      _snack('Failed: $e');
+      _snack(toHumanError(e));
     }
   }
 
@@ -162,7 +177,9 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Mail — ${widget.learnerName.isEmpty ? 'Learner' : widget.learnerName}'),
+        title: Text(
+          'Mail — ${widget.learnerName.isEmpty ? 'Learner' : widget.learnerName}',
+        ),
         actions: [
           IconButton(
             tooltip: 'New topic',
@@ -174,9 +191,13 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
       body: StreamBuilder<DatabaseEvent>(
         stream: _stream,
         builder: (_, snap) {
-          if (snap.hasError) return const Center(child: Text('Failed to load mail.'));
+          if (snap.hasError)
+            return const Center(child: Text('Failed to load mail.'));
           final rows = _parseAndFilter(snap.data?.snapshot.value);
-          if (rows.isEmpty) return const Center(child: Text('No topics yet. Tap + to create one.'));
+          if (rows.isEmpty)
+            return const Center(
+              child: Text('No topics yet. Tap + to create one.'),
+            );
 
           return ListView.builder(
             padding: const EdgeInsets.all(12),
@@ -195,26 +216,34 @@ class _AdminLearnerMailTopicsScreenState extends State<AdminLearnerMailTopicsScr
                     ),
                   ),
                   subtitle: Text(
-                    item.lastMessage.isEmpty ? 'No messages yet' : item.lastMessage,
+                    item.lastMessage.isEmpty
+                        ? 'No messages yet'
+                        : item.lastMessage,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                    trailing: hasUnread
-                        ? Center(
-                      widthFactor: 1,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '${item.unreadCount}',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    )
-                        : null,
+                  trailing: hasUnread
+                      ? Center(
+                          widthFactor: 1,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '${item.unreadCount}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
 
                   onTap: () => _openThread(row),
                 ),

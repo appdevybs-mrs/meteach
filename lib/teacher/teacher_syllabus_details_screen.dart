@@ -12,11 +12,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 
 class TeacherSyllabusDetailsScreen extends StatefulWidget {
   const TeacherSyllabusDetailsScreen({super.key, required this.courseId});
@@ -161,9 +160,17 @@ class _TeacherSyllabusDetailsScreenState
         _loading = false;
         _course = _SyllabusCourse(
           id: widget.courseId,
-          title: _firstNonEmpty([topTitle, variants['inclass']?.title ?? '', 'Syllabus']),
+          title: _firstNonEmpty([
+            topTitle,
+            variants['inclass']?.title ?? '',
+            'Syllabus',
+          ]),
           code: _firstNonEmpty([topCode, variants['inclass']?.code ?? '', '']),
-          duration: _firstNonEmpty([topDuration, variants['inclass']?.duration ?? '', '']),
+          duration: _firstNonEmpty([
+            topDuration,
+            variants['inclass']?.duration ?? '',
+            '',
+          ]),
           updatedAt: _maxInt([
             topUpdatedAt,
             ...variants.values.map((e) => e.updatedAt),
@@ -175,7 +182,7 @@ class _TeacherSyllabusDetailsScreenState
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = toHumanError(e);
       });
     }
   }
@@ -332,7 +339,9 @@ class _TeacherSyllabusDetailsScreenState
 
     final out = <_Unit>[];
     for (final u in variant.units) {
-      final filteredSessions = u.sessions.where((s) => _matches(s, _query)).toList();
+      final filteredSessions = u.sessions
+          .where((s) => _matches(s, _query))
+          .toList();
       if (filteredSessions.isEmpty) continue;
 
       out.add(
@@ -402,9 +411,7 @@ class _TeacherSyllabusDetailsScreenState
             labelColor: UiK.primaryBlue,
             unselectedLabelColor: UiK.primaryBlue.withOpacity(0.55),
             indicatorColor: UiK.primaryBlue,
-            tabs: _variantKeys
-                .map((e) => Tab(text: _variantLabel(e)))
-                .toList(),
+            tabs: _variantKeys.map((e) => Tab(text: _variantLabel(e))).toList(),
           ),
           actions: [
             IconButton(
@@ -420,22 +427,22 @@ class _TeacherSyllabusDetailsScreenState
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
                 ? _ErrorBox(
-              message: 'Failed to load the syllabus.\n\n$_error',
-              onRetry: _load,
-            )
+                    message: 'Failed to load the syllabus.\n\n$_error',
+                    onRetry: _load,
+                  )
                 : c == null
                 ? const _InfoBox(
-              title: 'Not found',
-              message: 'We could not find this course syllabus.',
-              icon: Icons.info_rounded,
-            )
+                    title: 'Not found',
+                    message: 'We could not find this course syllabus.',
+                    icon: Icons.info_rounded,
+                  )
                 : TabBarView(
-              controller: _tabController,
-              children: _variantKeys.map((key) {
-                final variant = c.variants[key]!;
-                return _buildVariantContent(variant);
-              }).toList(),
-            ),
+                    controller: _tabController,
+                    children: _variantKeys.map((key) {
+                      final variant = c.variants[key]!;
+                      return _buildVariantContent(variant);
+                    }).toList(),
+                  ),
           ),
         ),
       ),
@@ -446,8 +453,10 @@ class _TeacherSyllabusDetailsScreenState
     final unitsFiltered = _filteredUnits(variant);
     final filteredSessionsCount = _countFilteredSessions(unitsFiltered);
     final unitsCount = variant.units.length;
-    final sessionsCount =
-    variant.units.fold<int>(0, (p, u) => p + u.sessions.length);
+    final sessionsCount = variant.units.fold<int>(
+      0,
+      (p, u) => p + u.sessions.length,
+    );
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
@@ -482,10 +491,7 @@ class _TeacherSyllabusDetailsScreenState
         if (variant.units.isEmpty)
           _VariantEmptyState(variantLabel: _variantLabel(variant.key))
         else if (_query.isNotEmpty && unitsFiltered.isEmpty)
-          _EmptySearchResults(
-            query: _query,
-            onClear: () => _search.clear(),
-          )
+          _EmptySearchResults(query: _query, onClear: () => _search.clear())
         else
           ...unitsFiltered.map((u) => _UnitCard(unit: u)),
         const SizedBox(height: 12),
@@ -550,19 +556,21 @@ class _SearchCard extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w800),
             decoration: InputDecoration(
               hintText:
-              'Search sessions (title, objective, content, skill type, ID...)',
+                  'Search sessions (title, objective, content, skill type, ID...)',
               hintStyle: TextStyle(
                 color: UiK.mainText.withOpacity(0.55),
                 fontWeight: FontWeight.w700,
               ),
-              prefixIcon:
-              const Icon(Icons.search_rounded, color: UiK.primaryBlue),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: UiK.primaryBlue,
+              ),
               suffixIcon: hasText
                   ? IconButton(
-                tooltip: 'Clear',
-                onPressed: onClear,
-                icon: const Icon(Icons.clear_rounded),
-              )
+                      tooltip: 'Clear',
+                      onPressed: onClear,
+                      icon: const Icon(Icons.clear_rounded),
+                    )
                   : null,
               filled: true,
               fillColor: UiK.primaryBlue.withOpacity(0.04),
@@ -573,8 +581,10 @@ class _SearchCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
               ),
-              contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
             ),
           ),
           if (resultLabel != null) ...[
@@ -707,15 +717,14 @@ class _SummaryTableCard extends StatelessWidget {
         child: Table(
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           border: TableBorder(
-            horizontalInside:
-            BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
-            verticalInside:
-            BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            horizontalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            verticalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
           ),
           children: [
             TableRow(
-              decoration:
-              BoxDecoration(color: UiK.primaryBlue.withOpacity(0.04)),
+              decoration: BoxDecoration(
+                color: UiK.primaryBlue.withOpacity(0.04),
+              ),
               children: [
                 cell('Units', head: true),
                 cell('Sessions', head: true),
@@ -784,8 +793,10 @@ class _RecommendationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessionsTotal =
-    variant.units.fold<int>(0, (p, u) => p + u.sessions.length);
+    final sessionsTotal = variant.units.fold<int>(
+      0,
+      (p, u) => p + u.sessions.length,
+    );
 
     final missingDur = _countMissingDuration();
     final missingObj = _countMissingObjectives();
@@ -800,7 +811,7 @@ class _RecommendationsCard extends StatelessWidget {
           icon: Icons.flag_rounded,
           title: 'Add objectives',
           desc:
-          '$missingObj session(s) have no objective. Objectives help teachers and learners stay aligned.',
+              '$missingObj session(s) have no objective. Objectives help teachers and learners stay aligned.',
         ),
       );
     }
@@ -810,7 +821,7 @@ class _RecommendationsCard extends StatelessWidget {
           icon: Icons.article_rounded,
           title: 'Add content details',
           desc:
-          '$missingCont session(s) have empty content. Add key points / activities for consistency.',
+              '$missingCont session(s) have empty content. Add key points / activities for consistency.',
         ),
       );
     }
@@ -820,7 +831,7 @@ class _RecommendationsCard extends StatelessWidget {
           icon: Icons.timelapse_rounded,
           title: 'Add duration',
           desc:
-          '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
+              '$missingDur session(s) have no duration. Duration helps scheduling and pacing.',
         ),
       );
     }
@@ -831,7 +842,7 @@ class _RecommendationsCard extends StatelessWidget {
           icon: Icons.assignment_rounded,
           title: 'Consider homework',
           desc:
-          'No sessions have homework. Even short practice tasks improve retention.',
+              'No sessions have homework. Even short practice tasks improve retention.',
         ),
       );
     } else if (missingHw > 0) {
@@ -840,7 +851,7 @@ class _RecommendationsCard extends StatelessWidget {
           icon: Icons.assignment_rounded,
           title: 'Improve homework coverage',
           desc:
-          '$missingHw session(s) have no homework. Optional practice tasks are helpful.',
+              '$missingHw session(s) have no homework. Optional practice tasks are helpful.',
         ),
       );
     }
@@ -851,7 +862,7 @@ class _RecommendationsCard extends StatelessWidget {
           icon: Icons.verified_rounded,
           title: 'Looks consistent',
           desc:
-          'Objectives, content, and durations look complete. Keep the same structure for new courses.',
+              'Objectives, content, and durations look complete. Keep the same structure for new courses.',
         ),
       );
     }
@@ -880,7 +891,7 @@ class _RecommendationsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          ...recs.map((r) => _RecRow(item: r)).toList(),
+          ...recs.map((r) => _RecRow(item: r)),
         ],
       ),
     );
@@ -891,11 +902,7 @@ class _RecItem {
   final IconData icon;
   final String title;
   final String desc;
-  const _RecItem({
-    required this.icon,
-    required this.title,
-    required this.desc,
-  });
+  const _RecItem({required this.icon, required this.title, required this.desc});
 }
 
 class _RecRow extends StatelessWidget {
@@ -1127,9 +1134,7 @@ class _UnitCardState extends State<_UnitCard> {
               ],
             ),
             trailing: Icon(
-              _expanded
-                  ? Icons.expand_less_rounded
-                  : Icons.expand_more_rounded,
+              _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
               color: UiK.primaryBlue,
             ),
             children: [
@@ -1176,9 +1181,9 @@ class _SessionExpansionState extends State<_SessionExpansion> {
 
     if (cleanUrl.isEmpty || uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid materials link.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invalid materials link.')));
       return;
     }
 
@@ -1195,6 +1200,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
       ),
     );
   }
+
   List<_RecItem> _sessionRecs(_Session s) {
     final out = <_RecItem>[];
 
@@ -1204,7 +1210,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
           icon: Icons.flag_rounded,
           title: 'Objective missing',
           desc:
-          'Add a short objective (1–2 lines): what learners should be able to do after this session.',
+              'Add a short objective (1–2 lines): what learners should be able to do after this session.',
         ),
       );
     }
@@ -1214,7 +1220,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
           icon: Icons.article_rounded,
           title: 'Content missing',
           desc:
-          'Add key points + activities (warm-up, practice, production) for consistent delivery.',
+              'Add key points + activities (warm-up, practice, production) for consistent delivery.',
         ),
       );
     }
@@ -1233,7 +1239,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
           icon: Icons.assignment_rounded,
           title: 'Homework is optional',
           desc:
-          'Consider short practice (5–10 minutes) to reinforce the session.',
+              'Consider short practice (5–10 minutes) to reinforce the session.',
         ),
       );
     }
@@ -1243,8 +1249,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
         const _RecItem(
           icon: Icons.verified_rounded,
           title: 'Ready to teach',
-          desc:
-          'Objective, content, duration, and homework look good.',
+          desc: 'Objective, content, duration, and homework look good.',
         ),
       );
     }
@@ -1271,12 +1276,17 @@ class _SessionExpansionState extends State<_SessionExpansion> {
           child: ExpansionTile(
             initiallyExpanded: _expanded,
             onExpansionChanged: (v) => setState(() => _expanded = v),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: CircleAvatar(
               backgroundColor: UiK.primaryBlue.withOpacity(0.08),
-              child:
-              const Icon(Icons.play_lesson_rounded, color: UiK.primaryBlue),
+              child: const Icon(
+                Icons.play_lesson_rounded,
+                color: UiK.primaryBlue,
+              ),
             ),
             title: Text(
               title,
@@ -1299,9 +1309,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: Icon(
-              _expanded
-                  ? Icons.expand_less_rounded
-                  : Icons.expand_more_rounded,
+              _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
               color: UiK.primaryBlue,
             ),
             children: [
@@ -1381,7 +1389,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    ...recs.map((r) => _RecRow(item: r)).toList(),
+                    ...recs.map((r) => _RecRow(item: r)),
                   ],
                 ),
               ),
@@ -1394,11 +1402,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
 }
 
 class _Line extends StatelessWidget {
-  const _Line({
-    required this.icon,
-    required this.label,
-    required this.text,
-  });
+  const _Line({required this.icon, required this.label, required this.text});
   final IconData icon;
   final String label;
   final String text;

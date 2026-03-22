@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import '../services/route_state.dart'; // ✅ ADD THIS
+import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
 
@@ -94,9 +95,11 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   final _bodyC = TextEditingController();
 
   String get _meUid => FirebaseAuth.instance.currentUser!.uid;
-  String get _meName => (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+  String get _meName =>
+      (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
 
-  DatabaseReference get _threadRef => _db.ref('mail_threads/${widget.threadId}');
+  DatabaseReference get _threadRef =>
+      _db.ref('mail_threads/${widget.threadId}');
   DatabaseReference get _msgsRef => _db.ref('mail_messages/${widget.threadId}');
   DatabaseReference get _indexRef => _db.ref('mail_index');
   DatabaseReference get _stateRef => _db.ref('mail_state');
@@ -118,7 +121,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     _markRead();
   }
 
-
   @override
   void dispose() {
     RouteState.exitMailThread(widget.threadId);
@@ -126,10 +128,11 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     super.dispose();
   }
 
-
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   Future<void> _loadSubject() async {
@@ -153,8 +156,12 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   Future<void> _markRead() async {
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
-      await _stateRef.child(_meUid).child(widget.threadId).update({'lastReadAt': now});
-      await _indexRef.child(_meUid).child(widget.threadId).update({'unreadCount': 0});
+      await _stateRef.child(_meUid).child(widget.threadId).update({
+        'lastReadAt': now,
+      });
+      await _indexRef.child(_meUid).child(widget.threadId).update({
+        'unreadCount': 0,
+      });
     } catch (_) {}
   }
 
@@ -204,28 +211,36 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   }
 
   Future<void> _deleteThreadForMe() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete topic?'),
-        content: const Text('This deletes only for you.\nThe other user still sees it.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete topic?'),
+            content: const Text(
+              'This deletes only for you.\nThe other user still sees it.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-        ],
-      ),
-    ) ??
+        ) ??
         false;
 
     if (!ok) return;
 
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
-      await _indexRef.child(_meUid).child(widget.threadId).update({'deletedAt': now});
+      await _indexRef.child(_meUid).child(widget.threadId).update({
+        'deletedAt': now,
+      });
       await _stateRef.child(_meUid).child(widget.threadId).remove();
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -266,7 +281,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       final msgRef = _msgsRef.push();
 
       final preview = bodyBackup.isEmpty ? '📎 Attachment' : bodyBackup;
-      final preview80 = preview.length > 80 ? preview.substring(0, 80) : preview;
+      final preview80 = preview.length > 80
+          ? preview.substring(0, 80)
+          : preview;
 
       // ✅ 1) write message
       await msgRef.set({
@@ -281,10 +298,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       });
 
       // ✅ 2) update thread meta
-      await _threadRef.update({
-        'updatedAt': now,
-        'lastMessage': preview80,
-      });
+      await _threadRef.update({'updatedAt': now, 'lastMessage': preview80});
 
       // ✅ 3) update BOTH indexes (no unreadCount read needed)
       await _indexRef.child(_meUid).child(widget.threadId).update({
@@ -298,20 +312,26 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       });
 
       // ✅ Increment peer unread using transaction (fast + safe)
-      await _indexRef.child(widget.peerUid).child(widget.threadId).runTransaction((cur) {
-        final m = (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-        final oldUnread = (m['unreadCount'] is num) ? (m['unreadCount'] as num).toInt() : 0;
+      await _indexRef
+          .child(widget.peerUid)
+          .child(widget.threadId)
+          .runTransaction((cur) {
+            final m =
+                (cur as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+            final oldUnread = (m['unreadCount'] is num)
+                ? (m['unreadCount'] as num).toInt()
+                : 0;
 
-        m['subject'] = _subject;
-        m['updatedAt'] = now;
-        m['lastMessage'] = preview80;
-        m['unreadCount'] = oldUnread + 1;
-        m['peerUid'] = _meUid;
-        m['peerName'] = _meName;
-        m['deletedAt'] = null;
+            m['subject'] = _subject;
+            m['updatedAt'] = now;
+            m['lastMessage'] = preview80;
+            m['unreadCount'] = oldUnread + 1;
+            m['peerUid'] = _meUid;
+            m['peerName'] = _meName;
+            m['deletedAt'] = null;
 
-        return Transaction.success(m);
-      });
+            return Transaction.success(m);
+          });
 
       // ✅ 4) mark read for me (don’t block UI if slow)
       unawaited(_markRead());
@@ -349,7 +369,6 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     final title = _subject.trim().isEmpty ? 'Topic' : _subject.trim();
@@ -363,7 +382,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               if (v == 'delete_topic') await _deleteThreadForMe();
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'delete_topic', child: Text('Delete topic (for me)')),
+              PopupMenuItem(
+                value: 'delete_topic',
+                child: Text('Delete topic (for me)'),
+              ),
             ],
           ),
         ],
@@ -375,7 +397,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               stream: _msgStream,
               builder: (_, snap) {
                 final msgs = _parseMessages(snap.data?.snapshot.value);
-                if (msgs.isEmpty) return const Center(child: Text('No messages yet.'));
+                if (msgs.isEmpty)
+                  return const Center(child: Text('No messages yet.'));
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(12),
@@ -385,16 +408,22 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                     final mine = m.fromUid == _meUid;
 
                     return Align(
-                      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment: mine
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 340),
                         child: Card(
                           elevation: 0,
-                          color: mine ? Colors.blue.withOpacity(0.12) : Colors.black.withOpacity(0.05),
+                          color: mine
+                              ? Colors.blue.withOpacity(0.12)
+                              : Colors.black.withOpacity(0.05),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
-                              crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                              crossAxisAlignment: mine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -410,16 +439,23 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                     const SizedBox(width: 8),
                                     Text(
                                       _fmt(m.createdAtMs),
-                                      style: TextStyle(fontSize: 11, color: Colors.black.withOpacity(0.55)),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black.withOpacity(0.55),
+                                      ),
                                     ),
                                     const SizedBox(width: 6),
                                     PopupMenuButton<String>(
                                       tooltip: 'Message actions',
                                       onSelected: (v) async {
-                                        if (v == 'delete_for_me') await _deleteMessageForMe(m);
+                                        if (v == 'delete_for_me')
+                                          await _deleteMessageForMe(m);
                                       },
                                       itemBuilder: (_) => const [
-                                        PopupMenuItem(value: 'delete_for_me', child: Text('Delete (for me)')),
+                                        PopupMenuItem(
+                                          value: 'delete_for_me',
+                                          child: Text('Delete (for me)'),
+                                        ),
                                       ],
                                     ),
                                   ],
@@ -441,7 +477,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                           '📎 $name',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
-                                            decoration: TextDecoration.underline,
+                                            decoration:
+                                                TextDecoration.underline,
                                           ),
                                         ),
                                       ),
@@ -475,7 +512,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                         children: _attachments.map((a) {
                           return Chip(
                             label: Text(a['name'] ?? 'file'),
-                            onDeleted: () => setState(() => _attachments.remove(a)),
+                            onDeleted: () =>
+                                setState(() => _attachments.remove(a)),
                           );
                         }).toList(),
                       ),

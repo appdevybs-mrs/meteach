@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -23,7 +22,14 @@ class AdminWagesExcelExporter {
 
   static Map<String, Map<String, dynamic>> _mapify(dynamic raw) {
     if (raw is! Map) return {};
-    return raw.map((k, v) => MapEntry(k.toString(), (v is Map) ? v.map((kk, vv) => MapEntry(kk.toString(), vv)) : <String, dynamic>{}));
+    return raw.map(
+      (k, v) => MapEntry(
+        k.toString(),
+        (v is Map)
+            ? v.map((kk, vv) => MapEntry(kk.toString(), vv))
+            : <String, dynamic>{},
+      ),
+    );
   }
 
   static String _str(dynamic v) => (v ?? '').toString().trim();
@@ -55,7 +61,9 @@ class AdminWagesExcelExporter {
       final first = _str(m['first_name'] ?? m['firstName']);
       final last = _str(m['last_name'] ?? m['lastName']);
 
-      String name = _str(m['learner_name'] ?? m['name'] ?? m['fullName'] ?? m['displayName']);
+      String name = _str(
+        m['learner_name'] ?? m['name'] ?? m['fullName'] ?? m['displayName'],
+      );
       if (name.isEmpty) {
         name = [first, last].where((x) => x.isNotEmpty).join(' ').trim();
       }
@@ -64,17 +72,18 @@ class AdminWagesExcelExporter {
         if (serial.isNotEmpty) {
           name = serial;
         } else {
-          name = uid.length > 6 ? 'ID …${uid.substring(uid.length - 6)}' : 'ID $uid';
+          name = uid.length > 6
+              ? 'ID …${uid.substring(uid.length - 6)}'
+              : 'ID $uid';
         }
       }
 
-      learners.add({
-        'name': name,
-        'serial': serial,
-      });
+      learners.add({'name': name, 'serial': serial});
     }
 
-    learners.sort((a, b) => a['name']!.toLowerCase().compareTo(b['name']!.toLowerCase()));
+    learners.sort(
+      (a, b) => a['name']!.toLowerCase().compareTo(b['name']!.toLowerCase()),
+    );
 
     // For course fallback: uid -> courseKey -> {course_title, course_code}
     final Map<String, Map<String, Map<String, String>>> userCourses = {};
@@ -164,7 +173,9 @@ class AdminWagesExcelExporter {
       final serial = _str(p['learner_serial']);
 
       final paidAt = _asInt(p['paidAt']);
-      final paidDate = _fmtYmdFromMs(paidAt).isNotEmpty ? _fmtYmdFromMs(paidAt) : _str(p['dayKey']);
+      final paidDate = _fmtYmdFromMs(paidAt).isNotEmpty
+          ? _fmtYmdFromMs(paidAt)
+          : _str(p['dayKey']);
 
       final startDate = _str(p['startDate']);
 
@@ -229,7 +240,9 @@ class AdminWagesExcelExporter {
       final learnerName = _str(p['learner_name']);
 
       final paidAt = _asInt(p['paidAt']);
-      final paidDate = _fmtYmdFromMs(paidAt).isNotEmpty ? _fmtYmdFromMs(paidAt) : _str(p['dayKey']);
+      final paidDate = _fmtYmdFromMs(paidAt).isNotEmpty
+          ? _fmtYmdFromMs(paidAt)
+          : _str(p['dayKey']);
 
       final startDate = _str(p['startDate']);
       final amount = _asInt(p['amount']);

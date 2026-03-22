@@ -12,7 +12,7 @@ Future<void> showBatteryOptimizationPopup(BuildContext context) async {
       title: const Text("Enable Reliable Reminders"),
       content: const Text(
         "To make class reminders work even when the app is closed, please set Battery to 'No restrictions' for this app.\n\n"
-            "On some phones (like Vivo), Battery saving can block alarms/notifications.",
+        "On some phones (like Vivo), Battery saving can block alarms/notifications.",
       ),
       actions: [
         TextButton(

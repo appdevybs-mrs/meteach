@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:dream_english_academy/course_syllabus_screen.dart';
+import 'package:dream_english_academy/shared/human_error.dart';
 
 class AdminCoursesScreen extends StatefulWidget {
   const AdminCoursesScreen({super.key});
@@ -74,7 +75,9 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
         bottom: TabBar(
           controller: _tabController,
           labelColor: AdminCoursesScreen.primaryBlue,
-          unselectedLabelColor: AdminCoursesScreen.primaryBlue.withOpacity(0.55),
+          unselectedLabelColor: AdminCoursesScreen.primaryBlue.withOpacity(
+            0.55,
+          ),
           indicatorColor: AdminCoursesScreen.primaryBlue,
           tabs: const [
             Tab(text: 'Courses'),
@@ -105,8 +108,10 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
                       _showSnack('Course created ✅');
                     }
                   },
-                  icon: const Icon(Icons.add_circle_outline,
-                      color: AdminCoursesScreen.actionOrange),
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    color: AdminCoursesScreen.actionOrange,
+                  ),
                 ),
               );
             },
@@ -166,7 +171,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
     final ok = await _confirm(
       title: 'Move to Trash?',
       message:
-      'This will remove the course from Courses and move it to Trash.\n\nYou can restore it later.',
+          'This will remove the course from Courses and move it to Trash.\n\nYou can restore it later.',
       confirmText: 'Move to Trash',
       danger: true,
     );
@@ -174,10 +179,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
 
     // Write into trash with metadata, then remove from courses
     final trashData = course.toMap()
-      ..addAll({
-        'trashedAt': ServerValue.timestamp,
-        'originalId': courseId,
-      });
+      ..addAll({'trashedAt': ServerValue.timestamp, 'originalId': courseId});
 
     await _trashRef.child(courseId).set(trashData);
     await _coursesRef.child(courseId).remove();
@@ -196,9 +198,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
     final restoreData = course.toMap()
       ..remove('trashedAt')
       ..remove('originalId')
-      ..addAll({
-        'updatedAt': ServerValue.timestamp,
-      });
+      ..addAll({'updatedAt': ServerValue.timestamp});
 
     await _coursesRef.child(courseId).set(restoreData);
     await _trashRef.child(courseId).remove();
@@ -210,7 +210,7 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
     final ok = await _confirm(
       title: 'Delete permanently?',
       message:
-      'This will permanently delete the course from Trash.\n\nThis cannot be undone.',
+          'This will permanently delete the course from Trash.\n\nThis cannot be undone.',
       confirmText: 'Delete',
       danger: true,
     );
@@ -227,32 +227,30 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
     bool danger = false,
   }) async {
     return (await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: danger ? Colors.red : null,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmText),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: danger ? Colors.red : null,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(confirmText),
-          ),
-        ],
-      ),
-    )) ??
+        )) ??
         false;
   }
 
   void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // NEW: persist ordering to Firebase
@@ -324,7 +322,7 @@ class _CoursesTabState extends State<_CoursesTab> {
               onTap: () => widget.onStatusFilterChanged(null),
             ),
             ...CourseStatus.values.map(
-                  (s) => _FilterChipItem(
+              (s) => _FilterChipItem(
                 label: s.label,
                 selected: widget.statusFilter == s,
                 onTap: () => widget.onStatusFilterChanged(s),
@@ -348,7 +346,10 @@ class _CoursesTabState extends State<_CoursesTab> {
               }
 
               final data = snapshot.data!.snapshot.value;
-              final items = _parseCoursesMap(data, orderField: widget.orderField);
+              final items = _parseCoursesMap(
+                data,
+                orderField: widget.orderField,
+              );
 
               // Ensure every item has an order_index once (lazy init).
               // This does NOT change other logic; only adds ordering metadata if missing.
@@ -368,13 +369,13 @@ class _CoursesTabState extends State<_CoursesTab> {
                 final matchesSearch = s.isEmpty
                     ? true
                     : x.course.title.toLowerCase().contains(s.toLowerCase()) ||
-                    x.course.shortDescription
-                        .toLowerCase()
-                        .contains(s.toLowerCase()) ||
-                    (x.course.tags
-                        .join(',')
-                        .toLowerCase()
-                        .contains(s.toLowerCase()));
+                          x.course.shortDescription.toLowerCase().contains(
+                            s.toLowerCase(),
+                          ) ||
+                          (x.course.tags
+                              .join(',')
+                              .toLowerCase()
+                              .contains(s.toLowerCase()));
                 final matchesStatus = widget.statusFilter == null
                     ? true
                     : x.course.status == widget.statusFilter!;
@@ -384,8 +385,9 @@ class _CoursesTabState extends State<_CoursesTab> {
               if (filtered.isEmpty) {
                 return _StateCard(
                   title: 'No courses',
-                  message: widget.statusFilter == null &&
-                      widget.search.trim().isEmpty
+                  message:
+                      widget.statusFilter == null &&
+                          widget.search.trim().isEmpty
                       ? 'Add your first course using the + button.'
                       : 'No results match your filters.',
                   icon: Icons.school_outlined,
@@ -401,17 +403,16 @@ class _CoursesTabState extends State<_CoursesTab> {
                   !_sameIds(_localFiltered!, filtered)) {
                 _localFiltered = List<_CourseRow>.from(filtered);
               } else {
-                _localFiltered = filtered
-                    .map((fresh) {
-                  final existingIndex = _localFiltered!
-                      .indexWhere((e) => e.id == fresh.id);
+                _localFiltered = filtered.map((fresh) {
+                  final existingIndex = _localFiltered!.indexWhere(
+                    (e) => e.id == fresh.id,
+                  );
                   if (existingIndex == -1) return fresh;
                   return _CourseRow(
                     id: _localFiltered![existingIndex].id,
                     course: fresh.course,
                   );
-                })
-                    .toList();
+                }).toList();
               }
 
               return Stack(
@@ -433,7 +434,8 @@ class _CoursesTabState extends State<_CoursesTab> {
                       // We persist current visible order (filtered view).
                       // BUT to avoid messing global order while filtered, we require no search & no filter.
                       // This is the safest behaviour.
-                      final isSafeToPersist = widget.search.trim().isEmpty &&
+                      final isSafeToPersist =
+                          widget.search.trim().isEmpty &&
                           widget.statusFilter == null;
 
                       if (!isSafeToPersist) {
@@ -465,7 +467,8 @@ class _CoursesTabState extends State<_CoursesTab> {
                         ),
                         onEdit: () => widget.onEdit(row.id, row.course),
                         onChangeStatus: (s) => widget.onChangeStatus(row.id, s),
-                        onMoveToTrash: () => widget.onMoveToTrash(row.id, row.course),
+                        onMoveToTrash: () =>
+                            widget.onMoveToTrash(row.id, row.course),
                       );
                     },
                   ),
@@ -532,14 +535,18 @@ class _CoursesTabState extends State<_CoursesTab> {
       await widget.coursesRef.update(updates);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order saved ✅')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Order saved ✅')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save order: $e')),
+          SnackBar(
+            content: Text(
+              toHumanError(e, fallback: 'Could not save course order.'),
+            ),
+          ),
         );
       }
     } finally {
@@ -666,8 +673,10 @@ class _TopBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide.none,
               ),
-              contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
             ),
           ),
           if (filters.isNotEmpty) ...[
@@ -677,7 +686,7 @@ class _TopBar extends StatelessWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: filters.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   final f = filters[i];
                   return ChoiceChip(
@@ -777,7 +786,6 @@ class _CourseCard extends StatelessWidget {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -835,14 +843,18 @@ class _CourseCard extends StatelessWidget {
                         bg: _statusBg(course.status),
                         fg: _statusFg(course.status),
                       ),
-                      if (course.level.trim().isNotEmpty) _Pill(label: course.level),
-                      if (course.language.trim().isNotEmpty) _Pill(label: course.language),
+                      if (course.level.trim().isNotEmpty)
+                        _Pill(label: course.level),
+                      if (course.language.trim().isNotEmpty)
+                        _Pill(label: course.language),
                       // show each delivery option as its own colored pill
-                      ...course.deliveryOptions.map((opt) => _Pill(
-                        label: _displayDeliveryLabel(opt),
-                        bg: _deliveryBg(opt),
-                        fg: _deliveryFg(opt),
-                      )),
+                      ...course.deliveryOptions.map(
+                        (opt) => _Pill(
+                          label: _displayDeliveryLabel(opt),
+                          bg: _deliveryBg(opt),
+                          fg: _deliveryFg(opt),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -995,11 +1007,15 @@ class _TrashCourseCard extends StatelessWidget {
                 }
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: _TrashAction.restore, child: Text('Restore')),
+                PopupMenuItem(
+                  value: _TrashAction.restore,
+                  child: Text('Restore'),
+                ),
                 PopupMenuDivider(),
                 PopupMenuItem(
-                    value: _TrashAction.deleteForever,
-                    child: Text('Delete permanently')),
+                  value: _TrashAction.deleteForever,
+                  child: Text('Delete permanently'),
+                ),
               ],
             ),
           ],
@@ -1028,24 +1044,24 @@ class _Thumb extends StatelessWidget {
         color: AdminCoursesScreen.appBg,
         child: hasUrl
             ? Image.network(
-          url,
-          fit: BoxFit.cover,
-          // ✅ prevents noisy logs for 404 / bad images
-          errorBuilder: (_, __, ___) =>
-          const Icon(Icons.image_not_supported_outlined),
-          // ✅ also helps avoid repeated reload attempts
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-            if (wasSynchronouslyLoaded) return child;
-            if (frame != null) return child;
-            return const Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          },
-        )
+                url,
+                fit: BoxFit.cover,
+                // ✅ prevents noisy logs for 404 / bad images
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.image_not_supported_outlined),
+                // ✅ also helps avoid repeated reload attempts
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  if (wasSynchronouslyLoaded) return child;
+                  if (frame != null) return child;
+                  return const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                },
+              )
             : const Icon(Icons.image_outlined),
       ),
     );
@@ -1053,12 +1069,7 @@ class _Thumb extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({
-    required this.label,
-    this.bg,
-    this.fg,
-    this.border,
-  });
+  const _Pill({required this.label, this.bg, this.fg, this.border});
 
   final String label;
   final Color? bg;
@@ -1139,6 +1150,7 @@ Color _deliveryBg(String d) {
       return AdminCoursesScreen.appBg;
   }
 }
+
 Color _deliveryFg(String d) {
   switch (d.toLowerCase().trim()) {
     case 'online':
@@ -1160,7 +1172,6 @@ Color _deliveryFg(String d) {
       return AdminCoursesScreen.primaryBlue;
   }
 }
-
 
 class _StateCard extends StatelessWidget {
   const _StateCard({
@@ -1228,28 +1239,32 @@ class _LoadingList extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                  width: 64,
-                  height: 64,
-                  child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                width: 64,
+                height: 64,
+                child: ColoredBox(color: AdminCoursesScreen.appBg),
+              ),
               SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
-                        height: 14,
-                        width: 160,
-                        child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                      height: 14,
+                      width: 160,
+                      child: ColoredBox(color: AdminCoursesScreen.appBg),
+                    ),
                     SizedBox(height: 10),
                     SizedBox(
-                        height: 12,
-                        width: 260,
-                        child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                      height: 12,
+                      width: 260,
+                      child: ColoredBox(color: AdminCoursesScreen.appBg),
+                    ),
                     SizedBox(height: 10),
                     SizedBox(
-                        height: 12,
-                        width: 200,
-                        child: ColoredBox(color: AdminCoursesScreen.appBg)),
+                      height: 12,
+                      width: 200,
+                      child: ColoredBox(color: AdminCoursesScreen.appBg),
+                    ),
                   ],
                 ),
               ),
@@ -1337,7 +1352,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         final existing = m['instructors_map'];
         if (existing is Map) {
           // normalize keys to String
-          final normalized = existing.map((k, val) => MapEntry(k.toString(), val));
+          final normalized = existing.map(
+            (k, val) => MapEntry(k.toString(), val),
+          );
           _pickedInstructorMap = Map<String, dynamic>.from(normalized);
         }
       }
@@ -1345,8 +1362,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       // ignore: best effort; we keep empty map if read fails
     }
   }
-
-
 
   Future<void> _loadCategorySuggestions() async {
     setState(() => _loadingCategories = true);
@@ -1466,13 +1481,16 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     longDescC = TextEditingController(text: initial?.longDescription ?? '');
     durationC = TextEditingController(text: initial?.duration ?? '');
     contentC = TextEditingController(text: initial?.contentText ?? '');
-    instructorsC =
-        TextEditingController(text: initial?.instructors.join(', ') ?? '');
+    instructorsC = TextEditingController(
+      text: initial?.instructors.join(', ') ?? '',
+    );
     levelC = TextEditingController(text: initial?.level ?? '');
     languageC = TextEditingController(text: initial?.language ?? '');
     deliveryC = TextEditingController(text: initial?.deliveryOption ?? '');
 
-    requirementsC = TextEditingController(text: initial?.requirementsText ?? '');
+    requirementsC = TextEditingController(
+      text: initial?.requirementsText ?? '',
+    );
     tagsC = TextEditingController(text: initial?.tags.join(', ') ?? '');
 
     _status = initial?.status ?? CourseStatus.draft;
@@ -1483,10 +1501,20 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final existingConfigs = initial?.deliveryConfigs ?? {};
 
     _deliveryEnabled = {
-      'online': (_deliverySelected.contains('Online') || _deliverySelected.contains('Flexible')) || (existingConfigs['online']?.enabled == true),
-      'live': (_deliverySelected.contains('Live') || _deliverySelected.contains('Private')) || (existingConfigs['live']?.enabled == true),
-      'recorded': _deliverySelected.contains('Recorded') || (existingConfigs['recorded']?.enabled == true),
-      'inclass': _deliverySelected.contains('In-Class') || (existingConfigs['inclass']?.enabled == true),
+      'online':
+          (_deliverySelected.contains('Online') ||
+              _deliverySelected.contains('Flexible')) ||
+          (existingConfigs['online']?.enabled == true),
+      'live':
+          (_deliverySelected.contains('Live') ||
+              _deliverySelected.contains('Private')) ||
+          (existingConfigs['live']?.enabled == true),
+      'recorded':
+          _deliverySelected.contains('Recorded') ||
+          (existingConfigs['recorded']?.enabled == true),
+      'inclass':
+          _deliverySelected.contains('In-Class') ||
+          (existingConfigs['inclass']?.enabled == true),
     };
 
     _deliveryFeeControllers = {
@@ -1519,10 +1547,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         text: existingConfigs['live']?.accessDurationMonths?.toString() ?? '',
       ),
       'recorded': TextEditingController(
-        text: existingConfigs['recorded']?.accessDurationMonths?.toString() ?? '',
+        text:
+            existingConfigs['recorded']?.accessDurationMonths?.toString() ?? '',
       ),
       'inclass': TextEditingController(
-        text: existingConfigs['inclass']?.accessDurationMonths?.toString() ?? '',
+        text:
+            existingConfigs['inclass']?.accessDurationMonths?.toString() ?? '',
       ),
     };
 
@@ -1534,9 +1564,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     Future.microtask(_loadExistingInstructorsMapIfEdit);
 
     _loadTeachers();
-
   }
-
 
   void _syncOldDeliveryFields() {
     final selected = <String>[];
@@ -1564,7 +1592,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     levelC.dispose();
     languageC.dispose();
     deliveryC.dispose();
-
 
     for (final c in _deliveryFeeControllers.values) {
       c.dispose();
@@ -1604,7 +1631,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Text(
-                  _saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Course')),
+                _saving
+                    ? 'Saving…'
+                    : (isEdit ? 'Save Changes' : 'Create Course'),
+              ),
             ),
           ),
         ),
@@ -1673,7 +1703,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       controller: contentC,
                       label: 'Content',
                       hint:
-                      'Write course content. Example:\n- Module 1: ...\n- Lesson 1: ...',
+                          'Write course content. Example:\n- Module 1: ...\n- Lesson 1: ...',
                       maxLines: 8,
                     ),
                     const SizedBox(height: 12),
@@ -1696,10 +1726,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                           final serial = (t["serial"] ?? "").trim();
 
                           if (name.isNotEmpty) names.add(name);
-                          map[uid] = {
-                            "name": name,
-                            "serial": serial,
-                          };
+                          map[uid] = {"name": name, "serial": serial};
                         }
 
                         // Store names in the existing controller (old behavior stays)
@@ -1712,13 +1739,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       },
                     ),
 
-
                     const SizedBox(height: 12),
                     _TextField(
                       controller: levelC,
                       label: 'Level',
-                      hint:
-                      'Beginner / Intermediate / Advanced (or your own)',
+                      hint: 'Beginner / Intermediate / Advanced (or your own)',
                     ),
                     const SizedBox(height: 12),
                     _TextField(
@@ -1793,20 +1818,20 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         _localThumbFile = File(xfile.path);
       });
 
-      final url = await widget.uploadClient.uploadFile(
-        file: File(xfile.path),
-      );
+      final url = await widget.uploadClient.uploadFile(file: File(xfile.path));
 
       if (!mounted) return;
 
       thumbnailUrlC.text = url;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Thumbnail uploaded ✅')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Thumbnail uploaded ✅')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not upload file.')),
+        ),
       );
     } finally {
       if (mounted) setState(() => _uploadingThumb = false);
@@ -1826,8 +1851,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           ? generateCourseCode(titleC.text)
           : (existing.isNotEmpty ? existing : generateCourseCode(titleC.text));
 
-
-
       final onlineAccessMode = _deliveryAccessModes['online'] ?? 'lifetime';
       final liveAccessMode = _deliveryAccessModes['live'] ?? 'lifetime';
       final recordedAccessMode = _deliveryAccessModes['recorded'] ?? 'lifetime';
@@ -1840,7 +1863,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               ? _parseDoubleOrNull(_deliveryFeeControllers['online']!.text)
               : null,
           accessMode: onlineAccessMode,
-          accessDurationMonths: (_deliveryEnabled['online'] == true && onlineAccessMode == 'duration')
+          accessDurationMonths:
+              (_deliveryEnabled['online'] == true &&
+                  onlineAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['online']!.text)
               : null,
         ),
@@ -1850,7 +1875,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               ? _parseDoubleOrNull(_deliveryFeeControllers['live']!.text)
               : null,
           accessMode: liveAccessMode,
-          accessDurationMonths: (_deliveryEnabled['live'] == true && liveAccessMode == 'duration')
+          accessDurationMonths:
+              (_deliveryEnabled['live'] == true && liveAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['live']!.text)
               : null,
         ),
@@ -1860,7 +1886,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               ? _parseDoubleOrNull(_deliveryFeeControllers['recorded']!.text)
               : null,
           accessMode: recordedAccessMode,
-          accessDurationMonths: (_deliveryEnabled['recorded'] == true && recordedAccessMode == 'duration')
+          accessDurationMonths:
+              (_deliveryEnabled['recorded'] == true &&
+                  recordedAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['recorded']!.text)
               : null,
         ),
@@ -1870,7 +1898,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               ? _parseDoubleOrNull(_deliveryFeeControllers['inclass']!.text)
               : null,
           accessMode: inclassAccessMode,
-          accessDurationMonths: (_deliveryEnabled['inclass'] == true && inclassAccessMode == 'duration')
+          accessDurationMonths:
+              (_deliveryEnabled['inclass'] == true &&
+                  inclassAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['inclass']!.text)
               : null,
         ),
@@ -1903,7 +1933,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 
         // NEW: add order_index for new courses (put at end)
         final currentSnap = await _coursesRef.get();
-        final current = _parseCoursesMap(currentSnap.value, orderField: 'order_index');
+        final current = _parseCoursesMap(
+          currentSnap.value,
+          orderField: 'order_index',
+        );
         int nextIndex = 0;
         if (current.isNotEmpty) {
           final maxIdx = current
@@ -1919,11 +1952,10 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           'updatedAt': nowTs,
           'order_index': nextIndex,
         });
-
-
       } else {
         final id = widget.courseId!;
-        final updateMap = course.toMap()..remove('course_code'); // don’t overwrite
+        final updateMap = course.toMap()
+          ..remove('course_code'); // don’t overwrite
 
         if (existing.isEmpty) {
           updateMap['course_code'] = computedCode; // fill once
@@ -1937,8 +1969,6 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
           'access_type': null,
           'updatedAt': nowTs,
         });
-
-
       }
 
       if (!mounted) return;
@@ -1946,7 +1976,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not save course.')),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1966,6 +1998,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     if (t.isEmpty) return null;
     return double.tryParse(t);
   }
+
   static int? _parseIntOrNull(String input) {
     final t = input.trim();
     if (t.isEmpty) return null;
@@ -1974,10 +2007,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
 }
 
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    required this.child,
-  });
+  const _SectionCard({required this.title, required this.child});
 
   final String title;
   final Widget child;
@@ -2068,8 +2098,9 @@ class _CategoryAutocomplete extends StatelessWidget {
 
         // startsWith first, then contains
         final starts = suggestions.where((s) => s.toLowerCase().startsWith(q));
-        final contains = suggestions.where((s) =>
-        !s.toLowerCase().startsWith(q) && s.toLowerCase().contains(q));
+        final contains = suggestions.where(
+          (s) => !s.toLowerCase().startsWith(q) && s.toLowerCase().contains(q),
+        );
 
         return [...starts, ...contains].take(10);
       },
@@ -2088,7 +2119,9 @@ class _CategoryAutocomplete extends StatelessWidget {
           focusNode: focusNode,
           decoration: InputDecoration(
             labelText: 'Category',
-            hintText: loading ? 'Loading categories…' : 'Type and pick a suggestion',
+            hintText: loading
+                ? 'Loading categories…'
+                : 'Type and pick a suggestion',
             filled: true,
             fillColor: AdminCoursesScreen.appBg,
             border: OutlineInputBorder(
@@ -2097,13 +2130,13 @@ class _CategoryAutocomplete extends StatelessWidget {
             ),
             suffixIcon: loading
                 ? const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
                 : null,
           ),
         );
@@ -2113,10 +2146,7 @@ class _CategoryAutocomplete extends StatelessWidget {
 }
 
 class _StatusPicker extends StatelessWidget {
-  const _StatusPicker({
-    required this.value,
-    required this.onChanged,
-  });
+  const _StatusPicker({required this.value, required this.onChanged});
 
   final CourseStatus value;
   final ValueChanged<CourseStatus> onChanged;
@@ -2124,7 +2154,7 @@ class _StatusPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<CourseStatus>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: 'Status',
         filled: true,
@@ -2136,11 +2166,9 @@ class _StatusPicker extends StatelessWidget {
       ),
       items: CourseStatus.values
           .map(
-            (s) => DropdownMenuItem<CourseStatus>(
-          value: s,
-          child: Text(s.label),
-        ),
-      )
+            (s) =>
+                DropdownMenuItem<CourseStatus>(value: s, child: Text(s.label)),
+          )
           .toList(),
       onChanged: (v) {
         if (v == null) return;
@@ -2177,8 +2205,8 @@ class _ThumbPicker extends StatelessWidget {
         return Image.network(
           url,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-          const Icon(Icons.image_not_supported_outlined),
+          errorBuilder: (_, _, _) =>
+              const Icon(Icons.image_not_supported_outlined),
         );
       }
       return const Icon(Icons.image_outlined);
@@ -2214,10 +2242,10 @@ class _ThumbPicker extends StatelessWidget {
                     onPressed: uploading ? null : onPickAndUpload,
                     icon: uploading
                         ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.upload),
                     label: Text(uploading ? 'Uploading…' : 'Pick & upload'),
                   ),
@@ -2280,9 +2308,7 @@ class UploadClient {
     final uri = Uri.parse(endpoint);
 
     final req = http.MultipartRequest('POST', uri)
-      ..headers.addAll({
-        'X-Requested-With': 'XMLHttpRequest',
-      })
+      ..headers.addAll({'X-Requested-With': 'XMLHttpRequest'})
       ..fields['key'] = key
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
@@ -2322,7 +2348,6 @@ class UploadClient {
 /// ----------------------------
 /// Data model
 /// ----------------------------
-
 
 class CourseDeliveryConfig {
   CourseDeliveryConfig({
@@ -2375,7 +2400,10 @@ class CourseDeliveryConfig {
       return int.tryParse(v.toString().trim());
     }
 
-    final accessMode = (m['access_mode'] ?? 'lifetime').toString().trim().toLowerCase();
+    final accessMode = (m['access_mode'] ?? 'lifetime')
+        .toString()
+        .trim()
+        .toLowerCase();
 
     return CourseDeliveryConfig(
       enabled: m['enabled'] == true,
@@ -2501,7 +2529,7 @@ class Course {
       'delivery_option': deliveryOption,
       'delivery_options': deliveryOptions,
       'delivery_configs': deliveryConfigs.map(
-            (key, value) => MapEntry(key, value.toMap()),
+        (key, value) => MapEntry(key, value.toMap()),
       ),
       'status': status.value,
       'requirement': requirementsText,
@@ -2552,6 +2580,7 @@ class Course {
 
       return out;
     }
+
     return Course(
       title: (m['title'] ?? '').toString(),
       category: (m['category'] ?? '').toString(),
@@ -2706,7 +2735,7 @@ class _DeliveryConfigsEditor extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: accessMode,
+                      initialValue: accessMode,
                       decoration: InputDecoration(
                         labelText: '$label access',
                         filled: true,
@@ -2749,7 +2778,8 @@ class _DeliveryConfigsEditor extends StatelessWidget {
                         onChanged: (_) => onChanged(),
                         validator: (v) {
                           if (!enabled) return null;
-                          if ((accessModes[key] ?? 'lifetime') != 'duration') return null;
+                          if ((accessModes[key] ?? 'lifetime') != 'duration')
+                            return null;
                           if (v == null || v.trim().isEmpty) {
                             return 'Months required';
                           }
@@ -2770,8 +2800,8 @@ class _DeliveryConfigsEditor extends StatelessWidget {
     );
   }
 }
-class _DeliveryCheckboxes extends StatelessWidget {
 
+class _DeliveryCheckboxes extends StatelessWidget {
   const _DeliveryCheckboxes({
     required this.options,
     required this.selected,
@@ -2815,7 +2845,7 @@ class _DeliveryCheckboxes extends StatelessWidget {
                 onChanged(next);
               },
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -2868,6 +2898,7 @@ String generateCourseCode(String title) {
 
   return '$initials-$padded';
 }
+
 class _InstructorsPicker extends StatelessWidget {
   const _InstructorsPicker({
     required this.loading,
@@ -2877,7 +2908,6 @@ class _InstructorsPicker extends StatelessWidget {
     required this.onApply,
     required this.initiallySelectedUids,
   });
-
 
   final bool loading;
   final String currentText;
@@ -2916,10 +2946,10 @@ class _InstructorsPicker extends StatelessWidget {
               onPressed: loading ? null : () async => onRefresh(),
               icon: loading
                   ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.refresh),
             ),
           ],
@@ -2954,20 +2984,16 @@ class _InstructorsPicker extends StatelessWidget {
             if (pickedUids != null) {
               onApply(pickedUids);
             }
-
-
           },
           icon: const Icon(Icons.people_alt_rounded),
           label: Text(
             teachers.isEmpty
                 ? 'Pick instructors (no teachers found)'
                 : (current.isEmpty
-                ? 'Pick instructors'
-                : 'Edit instructors (${current.length})'),
+                      ? 'Pick instructors'
+                      : 'Edit instructors (${current.length})'),
           ),
         ),
-
-
       ],
     );
   }
@@ -2982,9 +3008,9 @@ class _TeacherMultiPickDialog extends StatefulWidget {
   final List<Map<String, String>> teachers; // {uid,name,serial}
   final List<String> initiallySelectedUids; // ✅ UIDs
 
-
   @override
-  State<_TeacherMultiPickDialog> createState() => _TeacherMultiPickDialogState();
+  State<_TeacherMultiPickDialog> createState() =>
+      _TeacherMultiPickDialogState();
 }
 
 class _TeacherMultiPickDialogState extends State<_TeacherMultiPickDialog> {
@@ -2998,7 +3024,6 @@ class _TeacherMultiPickDialogState extends State<_TeacherMultiPickDialog> {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toSet();
-
   }
 
   @override
@@ -3038,33 +3063,34 @@ class _TeacherMultiPickDialogState extends State<_TeacherMultiPickDialog> {
               child: filtered.isEmpty
                   ? const Center(child: Text('No teachers found'))
                   : ListView.builder(
-                itemCount: filtered.length,
-                itemBuilder: (_, i) {
-                  final t = filtered[i];
-                  final uid = (t["uid"] ?? "").trim();
-                  final name = (t["name"] ?? "").trim();
-                  final serial = (t["serial"] ?? "").trim();
-                  final checked = uid.isNotEmpty && _selected.contains(uid);
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final t = filtered[i];
+                        final uid = (t["uid"] ?? "").trim();
+                        final name = (t["name"] ?? "").trim();
+                        final serial = (t["serial"] ?? "").trim();
+                        final checked =
+                            uid.isNotEmpty && _selected.contains(uid);
 
-
-                  return CheckboxListTile(
-                    value: checked,
-                    onChanged: (v) {
-                      setState(() {
-                        if (uid.isEmpty) return;
-                        if (v == true) {
-                          _selected.add(uid);
-                        } else {
-                          _selected.remove(uid);
-                        }
-
-                      });
-                    },
-                    title: Text(name.isEmpty ? '(Unnamed)' : name),
-                    subtitle: serial.isEmpty ? null : Text('Serial: $serial'),
-                  );
-                },
-              ),
+                        return CheckboxListTile(
+                          value: checked,
+                          onChanged: (v) {
+                            setState(() {
+                              if (uid.isEmpty) return;
+                              if (v == true) {
+                                _selected.add(uid);
+                              } else {
+                                _selected.remove(uid);
+                              }
+                            });
+                          },
+                          title: Text(name.isEmpty ? '(Unnamed)' : name),
+                          subtitle: serial.isEmpty
+                              ? null
+                              : Text('Serial: $serial'),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
