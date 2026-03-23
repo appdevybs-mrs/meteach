@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "723227930816",
+    "firebase_url": "https://taqymn-dz-default-rtdb.firebaseio.com",
+    "project_id": "taqymn-dz",
+    "storage_bucket": "taqymn-dz.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:723227930816:android:14df4f0edc2fc7b4c67d25",
+        "android_client_info": {
+          "package_name": "com.intilak.taqyimdz"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDH9PvQnz52kLziF7_M5i0ww6WeojNmRI8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
