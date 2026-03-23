@@ -6,6 +6,7 @@ import 'learner_mail_thread_screen.dart';
 import '../shared/human_error.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerHomeworkScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2...
@@ -491,7 +492,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: UiK.primaryBlue.withValues(alpha: 0.85)),
+            Icon(
+              icon,
+              size: 18,
+              color: UiK.primaryBlue.withValues(alpha: 0.85),
+            ),
             const SizedBox(width: 8),
             Text(
               '$label: ',
@@ -566,6 +571,21 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_homework',
+      hints: const [
+        LearnerTourHint(
+          title: 'قائمة الواجبات',
+          line: 'هنا تشوف الواجبات المطلوبة منك حسب الجلسات.',
+        ),
+        LearnerTourHint(
+          title: 'التحديث',
+          line: 'استخدم زر التحديث لمزامنة اخر حالة للواجبات.',
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: UiK.appBg,
       appBar: AppBar(
@@ -738,7 +758,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                       child: Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: accent.withValues(alpha: 0.22)),
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.22),
+                          ),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(14),
@@ -764,8 +786,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                               ? Icons.expand_less_rounded
                                               : Icons.expand_more_rounded,
                                           size: 20,
-                                          color: UiK.primaryBlue.withValues(alpha: 
-                                            0.7,
+                                          color: UiK.primaryBlue.withValues(
+                                            alpha: 0.7,
                                           ),
                                         ),
                                       ],
@@ -781,13 +803,17 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     Icon(
                                       Icons.check_circle_rounded,
                                       size: 18,
-                                      color: UiK.primaryBlue.withValues(alpha: 0.85),
+                                      color: UiK.primaryBlue.withValues(
+                                        alpha: 0.85,
+                                      ),
                                     )
                                   else if (isSeen)
                                     Icon(
                                       Icons.visibility_rounded,
                                       size: 18,
-                                      color: UiK.actionOrange.withValues(alpha: 0.85),
+                                      color: UiK.actionOrange.withValues(
+                                        alpha: 0.85,
+                                      ),
                                     ),
                                 ],
                               ),
@@ -862,7 +888,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     Text(
                                       'Teacher asked you to redo this homework.',
                                       style: TextStyle(
-                                        color: Colors.red.withValues(alpha: 0.85),
+                                        color: Colors.red.withValues(
+                                          alpha: 0.85,
+                                        ),
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -873,7 +901,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                       'Teacher note:',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w900,
-                                        color: UiK.mainText.withValues(alpha: 0.9),
+                                        color: UiK.mainText.withValues(
+                                          alpha: 0.9,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 6),

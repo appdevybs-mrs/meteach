@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -21,6 +22,7 @@ import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -31,10 +33,42 @@ class LearnerHome extends StatefulWidget {
 
 class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey _menuKey = GlobalKey();
+  final GlobalKey _drawerCoursesKey = GlobalKey();
+  final GlobalKey _drawerGamesKey = GlobalKey();
+  final GlobalKey _drawerCoachKey = GlobalKey();
+  final GlobalKey _drawerStoriesKey = GlobalKey();
+  final GlobalKey _drawerProfileKey = GlobalKey();
+  final GlobalKey _drawerMailKey = GlobalKey();
+  final GlobalKey _drawerRegulationsKey = GlobalKey();
+  final GlobalKey _drawerThemeKey = GlobalKey();
+  final GlobalKey _drawerRestartTourKey = GlobalKey();
+  final GlobalKey _drawerLogoutKey = GlobalKey();
+
+  bool _drawerTourAttempted = false;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<String>? _displayNameFuture;
   Future<String>? _profilePhotoFuture;
+
+  static const List<LearnerTourHint> _quickStartHints = [
+    LearnerTourHint(
+      title: 'اهلا بك',
+      line: 'هذا شرح سريع يساعدك تعرف التطبيق خلال دقيقة.',
+    ),
+    LearnerTourHint(
+      title: 'صفحة البداية',
+      line: 'من هنا تقدر تتابع الدورات، الحجز، الواجبات، والتذكيرات.',
+    ),
+    LearnerTourHint(
+      title: 'القائمة الجانبية',
+      line: 'اضغط زر القائمة للتنقل بين كل صفحات المتعلم.',
+    ),
+    LearnerTourHint(
+      title: 'اعادة الشرح',
+      line: 'تقدر تعيد الجولة لاحقا من القائمة الجانبية في اي وقت.',
+    ),
+  ];
 
   @override
   void initState() {
@@ -85,6 +119,78 @@ class _LearnerHomeState extends State<LearnerHome> {
       _profilePhotoFuture = _myProfilePhoto();
     });
     await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
+  Future<void> _maybeStartDrawerTour() async {
+    if (_drawerTourAttempted || !mounted) return;
+    _drawerTourAttempted = true;
+
+    final shouldShow = await LearnerTourGuide.shouldShow('learner_drawer_menu');
+    if (!shouldShow || !mounted) return;
+
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
+    _scaffoldKey.currentState?.openDrawer();
+
+    await Future<void>.delayed(const Duration(milliseconds: 420));
+    if (!mounted) return;
+
+    await LearnerTourGuide.maybeStart(
+      context,
+      screenId: 'learner_drawer_menu',
+      hints: [
+        LearnerTourHint(
+          title: 'دوراتي',
+          line: 'من هنا تفتح كل دوراتك بسرعة.',
+          targetKey: _drawerCoursesKey,
+        ),
+        LearnerTourHint(
+          title: 'الالعاب',
+          line: 'قسم الالعاب للتدريب بطريقة ممتعة.',
+          targetKey: _drawerGamesKey,
+        ),
+        LearnerTourHint(
+          title: 'مدرب الدراسة',
+          line: 'يساعدك في الاهداف والخطة الاسبوعية.',
+          targetKey: _drawerCoachKey,
+        ),
+        LearnerTourHint(
+          title: 'القصص',
+          line: 'هنا القصص للقراءة والاستماع والمشاهدة.',
+          targetKey: _drawerStoriesKey,
+        ),
+        LearnerTourHint(
+          title: 'الملف الشخصي',
+          line: 'حدث بياناتك وصورتك من هذا القسم.',
+          targetKey: _drawerProfileKey,
+        ),
+        LearnerTourHint(
+          title: 'البريد',
+          line: 'تابع الرسائل والمحادثات مع المعلمين.',
+          targetKey: _drawerMailKey,
+        ),
+        LearnerTourHint(
+          title: 'اللوائح',
+          line: 'راجع قوانين وسياسات الاكاديمية.',
+          targetKey: _drawerRegulationsKey,
+        ),
+        LearnerTourHint(
+          title: 'اعدادات المظهر',
+          line: 'غير شكل التطبيق من هنا.',
+          targetKey: _drawerThemeKey,
+        ),
+        LearnerTourHint(
+          title: 'اعادة الجولة',
+          line: 'لو حاب تعيد الشرح، اضغط هذا الخيار.',
+          targetKey: _drawerRestartTourKey,
+        ),
+        LearnerTourHint(
+          title: 'تسجيل الخروج',
+          line: 'هذا الزر للخروج من الحساب.',
+          targetKey: _drawerLogoutKey,
+        ),
+      ],
+    );
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -211,6 +317,29 @@ class _LearnerHomeState extends State<LearnerHome> {
   Widget build(BuildContext context) {
     final p = palette;
 
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_quick_start',
+      hints: _quickStartHints,
+      isQuickStart: true,
+    );
+
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_home',
+      hints: [
+        LearnerTourHint(
+          title: 'زر القائمة',
+          line: 'هذا الزر يفتح القائمة الجانبية للتنقل بين كل الصفحات.',
+          targetKey: _menuKey,
+        ),
+      ],
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeStartDrawerTour();
+    });
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: p.appBg,
@@ -218,6 +347,16 @@ class _LearnerHomeState extends State<LearnerHome> {
         palette: p,
         displayNameFuture: _displayNameFuture,
         profilePhotoFuture: _profilePhotoFuture,
+        coursesTileKey: _drawerCoursesKey,
+        gamesTileKey: _drawerGamesKey,
+        coachTileKey: _drawerCoachKey,
+        storiesTileKey: _drawerStoriesKey,
+        profileTileKey: _drawerProfileKey,
+        mailTileKey: _drawerMailKey,
+        regulationsTileKey: _drawerRegulationsKey,
+        themeTileKey: _drawerThemeKey,
+        restartTourTileKey: _drawerRestartTourKey,
+        logoutButtonKey: _drawerLogoutKey,
         onOpenProfile: () => _pushScreen(const LearnerProfileScreen()),
         onOpenMail: () => _pushScreen(LearnerMailScreen()),
         onOpenCourses: () => _pushScreen(const LearnerCoursesScreen()),
@@ -226,6 +365,50 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenStudyCoach: () => _pushScreen(const LearnerStudyCoachScreen()),
         onOpenRegulations: () => _pushScreen(const LearnerRegulationsScreen()),
         onOpenThemeSettings: _openThemeSheet,
+        onRestartTour: () async {
+          await LearnerTourGuide.resetAll();
+          if (!mounted) return;
+          await LearnerTourGuide.startNow(
+            context,
+            screenId: 'learner_quick_start',
+            hints: _quickStartHints,
+            isQuickStart: true,
+          );
+          if (!mounted) return;
+          await LearnerTourGuide.startNow(
+            context,
+            screenId: 'learner_home',
+            hints: [
+              LearnerTourHint(
+                title: 'زر القائمة',
+                line: 'هذا الزر يفتح القائمة الجانبية للتنقل بين كل الصفحات.',
+                targetKey: _menuKey,
+              ),
+            ],
+          );
+          if (!mounted) return;
+          await LearnerTourGuide.startNow(
+            context,
+            screenId: 'learner_home_dashboard',
+            hints: const [
+              LearnerTourHint(
+                title: 'بطاقة الواجبات',
+                line: 'من هنا تتابع الواجبات المعلقة وتفتح التفاصيل.',
+              ),
+              LearnerTourHint(
+                title: 'بطاقة الحجز',
+                line: 'هذه البطاقة تفتح شاشة حجز الحصص القادمة.',
+              ),
+              LearnerTourHint(
+                title: 'قائمة الدورات',
+                line: 'هنا تشوف تقدمك في كل دورة وتفتح تفاصيلها.',
+              ),
+            ],
+          );
+          _drawerTourAttempted = false;
+          if (!mounted) return;
+          await _maybeStartDrawerTour();
+        },
         onLogout: () => _logout(context),
       ),
 
@@ -235,6 +418,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         centerTitle: false,
         surfaceTintColor: p.cardBg,
         leading: IconButton(
+          key: _menuKey,
           icon: Icon(Icons.menu_rounded, color: p.primary),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
@@ -270,6 +454,27 @@ class _LearnerHomeState extends State<LearnerHome> {
         ),
         actions: [
           IconButton(
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            tooltip: 'Guide',
+            onPressed: () async {
+              await LearnerTourGuide.startNow(
+                context,
+                screenId: 'learner_home',
+                hints: [
+                  LearnerTourHint(
+                    title: 'زر القائمة',
+                    line:
+                        'هذا الزر يفتح القائمة الجانبية للتنقل بين كل الصفحات.',
+                    targetKey: _menuKey,
+                  ),
+                ],
+              );
+              if (!mounted) return;
+              _drawerTourAttempted = false;
+              await _maybeStartDrawerTour();
+            },
+          ),
+          IconButton(
             icon: Icon(Icons.logout_rounded, color: p.accent),
             onPressed: () => _logout(context),
           ),
@@ -292,6 +497,9 @@ class _LearnerDashboardLite extends StatefulWidget {
 
 class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final GlobalKey _homeworkCardKey = GlobalKey();
+  final GlobalKey _bookingCardKey = GlobalKey();
+  final GlobalKey _coursesListKey = GlobalKey();
 
   _HomePalette get palette => _toHomePalette(appThemeController.palette);
 
@@ -1004,6 +1212,28 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     final p = palette;
 
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_home_dashboard',
+      hints: [
+        LearnerTourHint(
+          title: 'بطاقة الواجبات',
+          line: 'من هنا تتابع الواجبات المعلقة وتفتح التفاصيل.',
+          targetKey: _homeworkCardKey,
+        ),
+        LearnerTourHint(
+          title: 'بطاقة الحجز',
+          line: 'هذه البطاقة تفتح شاشة حجز الحصص القادمة.',
+          targetKey: _bookingCardKey,
+        ),
+        LearnerTourHint(
+          title: 'قائمة الدورات',
+          line: 'هنا تشوف تقدمك في كل دورة وتفتح تفاصيلها.',
+          targetKey: _coursesListKey,
+        ),
+      ],
+    );
+
     if (uid.isEmpty) {
       return Center(
         child: Text(
@@ -1029,7 +1259,12 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _LearnerHomeworkHomeCard()),
+              Expanded(
+                child: KeyedSubtree(
+                  key: _homeworkCardKey,
+                  child: _LearnerHomeworkHomeCard(),
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(child: _RemindersHomeCard()),
             ],
@@ -1050,7 +1285,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 children: [
                   _SectionTitle(palette: p, title: 'Booking'),
                   const SizedBox(height: 10),
-                  const _BookingTopCard(),
+                  KeyedSubtree(
+                    key: _bookingCardKey,
+                    child: const _BookingTopCard(),
+                  ),
                   const SizedBox(height: 16),
                 ],
               );
@@ -1058,38 +1296,61 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           ),
 
           const SizedBox(height: 10),
-          FutureBuilder<List<_CourseProgressItem>>(
-            future: _loadProgressItems(),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return _LoadingCard(
-                  palette: p,
-                  text: 'Loading your progress...',
-                );
-              }
+          KeyedSubtree(
+            key: _coursesListKey,
+            child: FutureBuilder<List<_CourseProgressItem>>(
+              future: _loadProgressItems(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return _LoadingCard(
+                    palette: p,
+                    text: 'Loading your progress...',
+                  );
+                }
 
-              final items = snap.data ?? const <_CourseProgressItem>[];
-              if (items.isEmpty) {
-                return _EmptyCard(
-                  palette: p,
-                  text: 'No course progress found yet.',
-                );
-              }
+                final items = snap.data ?? const <_CourseProgressItem>[];
+                if (items.isEmpty) {
+                  return _EmptyCard(
+                    palette: p,
+                    text: 'No course progress found yet.',
+                  );
+                }
 
-              return Column(
-                children: [
-                  for (int i = 0; i < items.length; i++) ...[
-                    _ProgressCard(
-                      palette: p,
-                      item: items[i],
-                      onTap: () =>
-                          _openCoursesScreen(courseKey: items[i].courseKey),
-                    ),
-                    if (i != items.length - 1) const SizedBox(height: 10),
-                  ],
-                ],
-              );
-            },
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final textScale = MediaQuery.textScalerOf(context).scale(1);
+                    final useSingle =
+                        constraints.maxWidth < 360 ||
+                        (textScale > 1.15 && constraints.maxWidth < 900);
+                    final crossAxisCount = useSingle
+                        ? 1
+                        : constraints.maxWidth >= 960
+                        ? 3
+                        : 2;
+
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: items.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: 1,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                      ),
+                      itemBuilder: (context, i) {
+                        return _ProgressCard(
+                          palette: p,
+                          item: items[i],
+                          onTap: () =>
+                              _openCoursesScreen(courseKey: items[i].courseKey),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1480,188 +1741,243 @@ class _ProgressCard extends StatelessWidget {
     final variantAccent = _variantAccentColor(item.variantKey);
     final variantIcon = _variantIcon(item.variantKey);
     final variantBadge = _variantBadgeText(item.variantKey);
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+
     return Material(
       color: palette.cardBg,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: palette.cardBg,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: palette.border.withValues(alpha: 0.85)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 7),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: variantAccent.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(
-                        color: variantAccent.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    child: Icon(variantIcon, color: variantAccent),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final side = constraints.biggest.shortestSide;
+            final compact = side < 180 || textScale > 1.15;
+            final iconSize = compact ? 34.0 : 38.0;
+            final ringSize = compact ? 64.0 : 84.0;
+
+            return Container(
+              padding: EdgeInsets.all(compact ? 10 : 12),
+              decoration: BoxDecoration(
+                color: palette.cardBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: palette.border.withValues(alpha: 0.85),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 7),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: iconSize,
+                        height: iconSize,
+                        decoration: BoxDecoration(
+                          color: variantAccent.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: variantAccent.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Icon(
+                          variantIcon,
+                          color: variantAccent,
+                          size: compact ? 18 : 20,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
                           item.title,
-                          maxLines: 1,
+                          maxLines: compact ? 1 : 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: palette.primary,
                             fontWeight: FontWeight.w900,
-                            fontSize: 15,
+                            fontSize: compact ? 12 : 14,
+                            height: 1.1,
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: variantAccent.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: variantAccent.withValues(alpha: 0.22),
-                                ),
-                              ),
-                              child: Text(
-                                variantBadge,
-                                style: TextStyle(
-                                  color: variantAccent,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              item.code.isEmpty
-                                  ? item.classType
-                                  : '${item.classType} • Code: ${item.code}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: palette.text.withValues(alpha: 0.60),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
+                      horizontal: 8,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: palette.soft,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '$percentText%',
-                      style: TextStyle(
-                        color: palette.primary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                item.detailsLine,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.text.withValues(alpha: 0.70),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 14),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  minHeight: 10,
-                  value: item.total > 0 ? item.progress : 0,
-                  backgroundColor: palette.soft.withValues(alpha: 0.8),
-                  valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.total > 0
-                          ? '${item.completed} of ${item.total} completed'
-                          : '${item.completed} completed',
-                      style: TextStyle(
-                        color: palette.text.withValues(alpha: 0.68),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: palette.accent.withValues(alpha: 0.10),
+                      color: variantAccent.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color: palette.accent.withValues(alpha: 0.25),
+                        color: variantAccent.withValues(alpha: 0.22),
                       ),
                     ),
                     child: Text(
-                      'Open Course',
+                      variantBadge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: palette.accent,
+                        color: variantAccent,
                         fontWeight: FontWeight.w900,
-                        fontSize: 12,
+                        fontSize: compact ? 9 : 10,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: Center(
+                      child: _CourseProgressRing(
+                        progress: item.total > 0 ? item.progress : 0,
+                        label: '$percentText%',
+                        palette: palette,
+                        accent: variantAccent,
+                        size: ringSize,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    item.classType,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.text.withValues(alpha: 0.70),
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 10 : 11,
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
+  }
+}
+
+class _CourseProgressRing extends StatelessWidget {
+  const _CourseProgressRing({
+    required this.progress,
+    required this.label,
+    required this.palette,
+    required this.accent,
+    required this.size,
+  });
+
+  final double progress;
+  final String label;
+  final _HomePalette palette;
+  final Color accent;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final clamped = progress.clamp(0.0, 1.0);
+    final track = palette.soft.withValues(alpha: 0.85);
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: Size.square(size),
+            painter: _RingProgressPainter(
+              progress: clamped,
+              trackColor: track,
+              progressColor: accent,
+              glowColor: accent.withValues(alpha: 0.22),
+            ),
+          ),
+          Container(
+            width: size * 0.66,
+            height: size * 0.66,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: palette.cardBg,
+              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: size * 0.16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RingProgressPainter extends CustomPainter {
+  const _RingProgressPainter({
+    required this.progress,
+    required this.trackColor,
+    required this.progressColor,
+    required this.glowColor,
+  });
+
+  final double progress;
+  final Color trackColor;
+  final Color progressColor;
+  final Color glowColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.11;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - stroke) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final start = -math.pi / 2;
+    final sweep = 2 * math.pi * progress;
+
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    final glowPaint = Paint()
+      ..color = glowColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke + 4
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+    final progressPaint = Paint()
+      ..color = progressColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(rect, 0, 2 * math.pi, false, trackPaint);
+    if (progress > 0) {
+      canvas.drawArc(rect, start, sweep, false, glowPaint);
+      canvas.drawArc(rect, start, sweep, false, progressPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RingProgressPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.trackColor != trackColor ||
+        oldDelegate.progressColor != progressColor ||
+        oldDelegate.glowColor != glowColor;
   }
 }
 
@@ -2074,14 +2390,20 @@ class _BookingTopCardState extends State<_BookingTopCard>
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (context.mounted) {
-        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Invalid meeting link.')));
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('Invalid meeting link.')),
+        );
       }
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Could not open the link.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open the link.')),
+      );
     }
   }
 
@@ -2171,7 +2493,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.25),
+                    ),
                   ),
                   child: const Icon(
                     Icons.calendar_month_rounded,
@@ -2417,8 +2741,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: (canJoin ? statusColor : idleColor).withValues(alpha: 
-                          0.18 + (urgency * 0.20),
+                        color: (canJoin ? statusColor : idleColor).withValues(
+                          alpha: 0.18 + (urgency * 0.20),
                         ),
                         blurRadius: 14 + (urgency * 10),
                         offset: const Offset(0, 8),
@@ -2474,7 +2798,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                         decoration: BoxDecoration(
                           color: canJoin
                               ? statusColor.withValues(alpha: 0.12)
-                              : idleColor.withValues(alpha: 0.06 + (urgency * 0.10)),
+                              : idleColor.withValues(
+                                  alpha: 0.06 + (urgency * 0.10),
+                                ),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: canJoin
@@ -2615,7 +2941,10 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
-    AppToast.fromSnackBar(context,  const SnackBar(content: Text('Not logged in.')));
+    AppToast.fromSnackBar(
+      context,
+      const SnackBar(content: Text('Not logged in.')),
+    );
     return;
   }
 
@@ -2674,7 +3003,8 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
       );
     }
   } catch (e) {
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(
         content: Text(
           toHumanError(e, fallback: 'Could not load your courses right now.'),
@@ -2687,7 +3017,8 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   if (!context.mounted) return;
 
   if (courses.isEmpty) {
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       const SnackBar(
         content: Text('No Seats available. Please try again later.'),
       ),
@@ -2747,7 +3078,9 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -2815,7 +3148,10 @@ Future<void> _openHomeworkCoursePicker(
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
-    AppToast.fromSnackBar(context,  const SnackBar(content: Text('Not logged in.')));
+    AppToast.fromSnackBar(
+      context,
+      const SnackBar(content: Text('Not logged in.')),
+    );
     return;
   }
 
@@ -2855,7 +3191,8 @@ Future<void> _openHomeworkCoursePicker(
       );
     }
   } catch (e) {
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(
         content: Text(
           toHumanError(e, fallback: 'Could not load your courses right now.'),
@@ -2868,7 +3205,8 @@ Future<void> _openHomeworkCoursePicker(
   if (!context.mounted) return;
 
   if (courses.isEmpty) {
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       const SnackBar(
         content: Text('All slots are full, please try again later'),
       ),
@@ -2930,7 +3268,9 @@ Future<void> _openHomeworkCoursePicker(
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
                         ),
                         child: Row(
                           children: [
@@ -2988,7 +3328,9 @@ Future<void> _openHomeworkCoursePicker(
                                       color: Colors.red.withValues(alpha: 0.10),
                                       borderRadius: BorderRadius.circular(999),
                                       border: Border.all(
-                                        color: Colors.red.withValues(alpha: 0.25),
+                                        color: Colors.red.withValues(
+                                          alpha: 0.25,
+                                        ),
                                       ),
                                     ),
                                     child: const Text(
@@ -3125,7 +3467,9 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: p.soft,
                         borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
                       ),
                       child: Icon(Icons.assignment_rounded, color: p.primary),
                     ),
@@ -3245,7 +3589,9 @@ class _RemindersHomeCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: p.soft,
                         borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
                       ),
                       child: Icon(
                         Icons.notifications_active_rounded,
@@ -3472,6 +3818,16 @@ class _LearnerDrawer extends StatelessWidget {
     required this.palette,
     required this.displayNameFuture,
     required this.profilePhotoFuture,
+    required this.coursesTileKey,
+    required this.gamesTileKey,
+    required this.coachTileKey,
+    required this.storiesTileKey,
+    required this.profileTileKey,
+    required this.mailTileKey,
+    required this.regulationsTileKey,
+    required this.themeTileKey,
+    required this.restartTourTileKey,
+    required this.logoutButtonKey,
     required this.onOpenProfile,
     required this.onOpenMail,
     required this.onOpenCourses,
@@ -3480,12 +3836,23 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenStudyCoach,
     required this.onOpenRegulations,
     required this.onOpenThemeSettings,
+    required this.onRestartTour,
     required this.onLogout,
   });
 
   final _HomePalette palette;
   final Future<String>? displayNameFuture;
   final Future<String>? profilePhotoFuture;
+  final GlobalKey coursesTileKey;
+  final GlobalKey gamesTileKey;
+  final GlobalKey coachTileKey;
+  final GlobalKey storiesTileKey;
+  final GlobalKey profileTileKey;
+  final GlobalKey mailTileKey;
+  final GlobalKey regulationsTileKey;
+  final GlobalKey themeTileKey;
+  final GlobalKey restartTourTileKey;
+  final GlobalKey logoutButtonKey;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenCourses;
@@ -3494,6 +3861,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenStudyCoach;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenThemeSettings;
+  final VoidCallback onRestartTour;
   final VoidCallback onLogout;
 
   @override
@@ -3585,6 +3953,7 @@ class _LearnerDrawer extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 children: [
                   _DrawerTile(
+                    key: coursesTileKey,
                     palette: palette,
                     icon: Icons.menu_book_rounded,
                     title: 'My Courses',
@@ -3594,6 +3963,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
+                    key: gamesTileKey,
                     palette: palette,
                     icon: Icons.sports_esports_rounded,
                     title: 'Games',
@@ -3603,6 +3973,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
+                    key: coachTileKey,
                     palette: palette,
                     icon: Icons.psychology_alt_rounded,
                     title: 'Study Coach',
@@ -3614,6 +3985,7 @@ class _LearnerDrawer extends StatelessWidget {
                   ),
 
                   _DrawerTile(
+                    key: storiesTileKey,
                     palette: palette,
                     icon: Icons.auto_stories_rounded,
                     title: 'Stories',
@@ -3625,6 +3997,7 @@ class _LearnerDrawer extends StatelessWidget {
                   ),
 
                   _DrawerTile(
+                    key: profileTileKey,
                     palette: palette,
                     icon: Icons.person_rounded,
                     title: 'Profile',
@@ -3634,6 +4007,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
+                    key: mailTileKey,
                     palette: palette,
                     icon: Icons.mail_rounded,
                     title: 'Mail',
@@ -3643,6 +4017,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
+                    key: regulationsTileKey,
                     palette: palette,
                     icon: Icons.policy_rounded,
                     title: 'Regulations',
@@ -3652,6 +4027,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
+                    key: themeTileKey,
                     palette: palette,
                     icon: Icons.palette_rounded,
                     title: 'Theme Settings',
@@ -3659,6 +4035,17 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenThemeSettings();
+                    },
+                  ),
+                  _DrawerTile(
+                    key: restartTourTileKey,
+                    palette: palette,
+                    icon: Icons.tour_rounded,
+                    title: 'اعادة الجولة',
+                    subtitle: 'اعرض تعليمات التطبيق من جديد',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onRestartTour();
                     },
                   ),
                 ],
@@ -3669,6 +4056,7 @@ class _LearnerDrawer extends StatelessWidget {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
+                  key: logoutButtonKey,
                   onPressed: onLogout,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: palette.accent,
@@ -3696,6 +4084,7 @@ class _LearnerDrawer extends StatelessWidget {
 
 class _DrawerTile extends StatelessWidget {
   const _DrawerTile({
+    super.key,
     required this.palette,
     required this.icon,
     required this.title,
@@ -3809,7 +4198,9 @@ class _ThemeChoiceTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected ? preview1 : palette.border.withValues(alpha: 0.9),
+              color: selected
+                  ? preview1
+                  : palette.border.withValues(alpha: 0.9),
               width: selected ? 1.6 : 1,
             ),
           ),

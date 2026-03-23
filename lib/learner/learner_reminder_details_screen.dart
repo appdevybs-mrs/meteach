@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerReminderDetailsScreen extends StatefulWidget {
   const LearnerReminderDetailsScreen({super.key, required this.reminderId});
@@ -39,6 +40,17 @@ class _LearnerReminderDetailsScreenState
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_reminder_details',
+      hints: const [
+        LearnerTourHint(
+          title: 'تفاصيل التذكير',
+          line: 'اقرأ تفاصيل التذكير بالكامل وتابع الحالة من هنا.',
+        ),
+      ],
+    );
+
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final ref = _db.child('reminders/$uid/${widget.reminderId}');
 

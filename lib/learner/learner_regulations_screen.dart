@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerRegulationsScreen extends StatefulWidget {
   const LearnerRegulationsScreen({super.key});
@@ -206,6 +207,17 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_regulations',
+      hints: const [
+        LearnerTourHint(
+          title: 'لوائح الاكاديمية',
+          line: 'هنا تجد القوانين والسياسات المهمة الخاصة بالدراسة.',
+        ),
+      ],
+    );
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -549,7 +561,9 @@ class _SectionCardState extends State<_SectionCard> {
                     decoration: BoxDecoration(
                       color: p.accent.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: p.accent.withValues(alpha: 0.22)),
+                      border: Border.all(
+                        color: p.accent.withValues(alpha: 0.22),
+                      ),
                     ),
                     child: Text(
                       widget.updatedAtLabel,

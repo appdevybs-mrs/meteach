@@ -3,7 +3,7 @@ description: "Your Bridge School  – Not for The Certificate for The Skill"
 
 publish_to: 'none'
 
-version: 2.0.0+91
+version: 2.0.0+93
 
 environment:
   sdk: ">=3.10.0 <4.0.0"

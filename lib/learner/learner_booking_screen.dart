@@ -8,6 +8,7 @@ import '../services/notification_service.dart';
 import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -3189,6 +3190,21 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
   Widget build(BuildContext context) {
     final cid = courseId;
     final busy = loading || booking || refreshing || progressLabel.isNotEmpty;
+
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_booking',
+      hints: const [
+        LearnerTourHint(
+          title: 'فلاتر الجدول',
+          line: 'استخدم الفلاتر لاختيار اليوم والمعلم والوقت المناسب لك.',
+        ),
+        LearnerTourHint(
+          title: 'تأكيد الحجز',
+          line: 'بعد اختيار الموعد اضغط زر الحجز لتأكيد الحصة مباشرة.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: appBg,

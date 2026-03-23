@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/services.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerGalleryScreen extends StatefulWidget {
   const LearnerGalleryScreen({super.key});
@@ -66,6 +67,21 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
   @override
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_gallery',
+      hints: const [
+        LearnerTourHint(
+          title: 'المعرض',
+          line: 'في هذه الصفحة ستجد الصور والفيديوهات المرسلة لك من المعلمين.',
+        ),
+        LearnerTourHint(
+          title: 'فتح الوسائط',
+          line: 'اضغط اي عنصر لعرضه بالحجم الكامل.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -197,7 +213,9 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.58),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.58,
+                                      ),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(

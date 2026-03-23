@@ -34,6 +34,7 @@ import '../shared/human_error.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2 ...
@@ -882,6 +883,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_course_detail',
+      hints: const [
+        LearnerTourHint(
+          title: 'تبويبات الدورة',
+          line: 'بدل بين تبويبات الدفع والحضور والتقدم لمتابعة كل شيء.',
+        ),
+        LearnerTourHint(
+          title: 'الواجبات',
+          line: 'زر الواجبات في الاعلى ينقلك مباشرة الى واجبات هذه الدورة.',
+        ),
+      ],
+    );
+
     final counts = _attendanceCountsAll();
 
     // ✅ Meetings = attendance records (in-class + online)
@@ -1037,7 +1053,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+                    border: Border.all(
+                      color: UiK.uiBorder.withValues(alpha: 0.85),
+                    ),
                     color: UiK.primaryBlue.withValues(alpha: 0.04),
                   ),
                   child: Column(
@@ -1169,8 +1187,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         child: Table(
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           border: TableBorder(
-            horizontalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
-            verticalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
+            horizontalInside: BorderSide(
+              color: UiK.uiBorder.withValues(alpha: 0.65),
+            ),
+            verticalInside: BorderSide(
+              color: UiK.uiBorder.withValues(alpha: 0.65),
+            ),
           ),
           children: [
             TableRow(
@@ -1727,7 +1749,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                               ? 0
                               : (unitPassed / unitTotal).clamp(0, 1),
                           minHeight: 8,
-                          backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
+                          backgroundColor: UiK.primaryBlue.withValues(
+                            alpha: 0.08,
+                          ),
                           valueColor: const AlwaysStoppedAnimation(
                             UiK.actionOrange,
                           ),
@@ -1913,7 +1937,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(22),
                   ),
-                  border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+                  border: Border.all(
+                    color: UiK.uiBorder.withValues(alpha: 0.85),
+                  ),
                 ),
                 child: Column(
                   children: [
@@ -1963,8 +1989,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                               : Icons.schedule_rounded,
                                           color: passed
                                               ? UiK.primaryBlue
-                                              : UiK.primaryBlue.withValues(alpha: 
-                                                  0.6,
+                                              : UiK.primaryBlue.withValues(
+                                                  alpha: 0.6,
                                                 ),
                                         ),
                                       ),
@@ -2001,12 +2027,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                                   fg: passed
                                                       ? UiK.primaryBlue
                                                       : UiK.primaryBlue
-                                                            .withValues(alpha: 0.75),
+                                                            .withValues(
+                                                              alpha: 0.75,
+                                                            ),
                                                   bg: passed
                                                       ? UiK.primaryBlue
-                                                            .withValues(alpha: 0.10)
-                                                      : UiK.uiBorder
-                                                            .withValues(alpha: 0.18),
+                                                            .withValues(
+                                                              alpha: 0.10,
+                                                            )
+                                                      : UiK.uiBorder.withValues(
+                                                          alpha: 0.18,
+                                                        ),
                                                 ),
                                               ],
                                             ),
@@ -2059,7 +2090,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                                 ClipboardData(text: hw),
                                               );
                                               if (!mounted) return;
-                                              AppToast.fromSnackBar(context,  
+                                              AppToast.fromSnackBar(
+                                                context,
                                                 const SnackBar(
                                                   content: Text(
                                                     'Homework copied',

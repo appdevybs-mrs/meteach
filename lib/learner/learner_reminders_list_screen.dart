@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../shared/learner_tour_guide.dart';
 import 'learner_reminder_details_screen.dart';
 
 class LearnerRemindersListScreen extends StatelessWidget {
@@ -11,6 +12,17 @@ class LearnerRemindersListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_reminders',
+      hints: const [
+        LearnerTourHint(
+          title: 'قائمة التذكيرات',
+          line: 'كل اشعاراتك المهمة تظهر هنا. اضغط اي تذكير لقراءة التفاصيل.',
+        ),
+      ],
+    );
+
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final ref = FirebaseDatabase.instance.ref('reminders/$uid');
 
@@ -100,7 +112,9 @@ class LearnerRemindersListScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+                      border: Border.all(
+                        color: UiK.uiBorder.withValues(alpha: 0.85),
+                      ),
                     ),
                     child: Row(
                       children: [

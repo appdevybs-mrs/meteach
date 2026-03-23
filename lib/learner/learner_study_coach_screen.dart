@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerStudyCoachScreen extends StatefulWidget {
   const LearnerStudyCoachScreen({super.key});
@@ -344,6 +345,21 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_study_coach',
+      hints: const [
+        LearnerTourHint(
+          title: 'مدرب الدراسة',
+          line: 'هذه الصفحة تساعدك تبني خطة اسبوعية وتتابع الانجاز اليومي.',
+        ),
+        LearnerTourHint(
+          title: 'المهام اليومية',
+          line: 'ضع علامة صح عند اتمام كل مهمة حتى يظهر تقدمك.',
+        ),
+      ],
+    );
+
     final p = palette;
 
     return Directionality(
@@ -1050,7 +1066,9 @@ class _DayCard extends StatelessWidget {
                         Text(
                           day.title(lang),
                           style: TextStyle(
-                            color: const Color(0xFF555777).withValues(alpha: 0.80),
+                            color: const Color(
+                              0xFF555777,
+                            ).withValues(alpha: 0.80),
                             fontWeight: FontWeight.w800,
                             fontSize: 12,
                           ),

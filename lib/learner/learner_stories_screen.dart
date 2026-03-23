@@ -6,6 +6,7 @@ import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
@@ -259,14 +260,20 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final uri = Uri.tryParse(url);
     if (uri == null) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Invalid story link.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid story link.')),
+      );
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!ok && mounted) {
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Could not open browser.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open browser.')),
+      );
     }
   }
 
@@ -1077,6 +1084,21 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_stories',
+      hints: const [
+        LearnerTourHint(
+          title: 'البحث في القصص',
+          line: 'اضغط البحث لايجاد القصة المناسبة بسرعة.',
+        ),
+        LearnerTourHint(
+          title: 'فتح القصة',
+          line: 'من كل بطاقة يمكنك القراءة او الاستماع او مشاهدة المحتوى.',
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -1297,7 +1319,9 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
                         ),
                         child: Text(
                           'No stories match your filters.',

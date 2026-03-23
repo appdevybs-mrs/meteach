@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
+import '../shared/learner_tour_guide.dart';
 import 'learner_course_detail_screen.dart';
 import 'recorded_course_study_screen.dart';
 
@@ -563,6 +564,21 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_courses',
+      hints: const [
+        LearnerTourHint(
+          title: 'الدورات المسندة',
+          line: 'هذه الصفحة تعرض كل دوراتك الحالية مع حالة كل دورة.',
+        ),
+        LearnerTourHint(
+          title: 'فتح الدورة',
+          line: 'اضغط زر فتح الدورة للدخول الى التفاصيل او المحتوى المسجل.',
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -595,7 +611,9 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                     decoration: BoxDecoration(
                       color: p.cardBg,
                       borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                      border: Border.all(
+                        color: p.border.withValues(alpha: 0.85),
+                      ),
                     ),
                     child: Text(
                       _error!,
@@ -773,13 +791,13 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDue ? Colors.red : p.accent).withValues(alpha: 
-                            0.12,
+                          color: (isDue ? Colors.red : p.accent).withValues(
+                            alpha: 0.12,
                           ),
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(
-                            color: (isDue ? Colors.red : p.accent).withValues(alpha: 
-                              0.28,
+                            color: (isDue ? Colors.red : p.accent).withValues(
+                              alpha: 0.28,
                             ),
                           ),
                         ),
@@ -1210,7 +1228,9 @@ class _EmptyCoursesState extends StatelessWidget {
                 label: const Text('Refresh'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: palette.primary,
-                  side: BorderSide(color: palette.border.withValues(alpha: 0.9)),
+                  side: BorderSide(
+                    color: palette.border.withValues(alpha: 0.9),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),

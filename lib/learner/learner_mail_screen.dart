@@ -8,6 +8,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_thread_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerMailScreen extends StatefulWidget {
   const LearnerMailScreen({super.key});
@@ -273,6 +274,21 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     final uid = _meUid;
     final ref = _db.child('mail_index/$uid');
 
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_mail',
+      hints: const [
+        LearnerTourHint(
+          title: 'صندوق الرسائل',
+          line: 'هذه الصفحة تعرض كل المحادثات بينك وبين المعلم او الصف.',
+        ),
+        LearnerTourHint(
+          title: 'رسالة جديدة',
+          line: 'زر الرسالة الجديدة يفتح لك ارسال رسالة مباشرة.',
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -357,7 +373,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: _navy.withValues(alpha: 0.14)),
+                            border: Border.all(
+                              color: _navy.withValues(alpha: 0.14),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -431,7 +449,9 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w800,
-                                            color: _navy.withValues(alpha: 0.55),
+                                            color: _navy.withValues(
+                                              alpha: 0.55,
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -444,12 +464,16 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                           vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: _orange.withValues(alpha: 0.14),
+                                          color: _orange.withValues(
+                                            alpha: 0.14,
+                                          ),
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
                                           border: Border.all(
-                                            color: _orange.withValues(alpha: 0.24),
+                                            color: _orange.withValues(
+                                              alpha: 0.24,
+                                            ),
                                           ),
                                         ),
                                         child: Text(

@@ -19,6 +19,7 @@ import '../services/route_state.dart';
 import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerMailThreadScreen extends StatefulWidget {
   const LearnerMailThreadScreen({
@@ -67,7 +68,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   static Color _datePillBg(BuildContext context) =>
       Colors.white.withValues(alpha: 0.88);
-  static Color _datePillBorder(BuildContext context) => _navy.withValues(alpha: 0.15);
+  static Color _datePillBorder(BuildContext context) =>
+      _navy.withValues(alpha: 0.15);
   static Color _mineText(BuildContext context) => Colors.white;
   static Color _theirsText(BuildContext context) => _navyDark;
 
@@ -198,7 +200,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
   }
 
   Future<String> _fetchDisplayName(String uid) async {
@@ -1678,6 +1683,21 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_mail_thread',
+      hints: const [
+        LearnerTourHint(
+          title: 'المحادثة',
+          line: 'هنا تتابع الرسائل بالكامل داخل نفس الموضوع.',
+        ),
+        LearnerTourHint(
+          title: 'الارسال',
+          line: 'اكتب رسالتك ثم اضغط ارسال. يمكنك ايضا ارسال صوت او ملف.',
+        ),
+      ],
+    );
+
     final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
     final subjectTrim = widget.subject.trim();
 
@@ -1744,7 +1764,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       decoration: BoxDecoration(
                         color: _orange.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _orange.withValues(alpha: 0.35)),
+                        border: Border.all(
+                          color: _orange.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         children: [

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/learner_tour_guide.dart';
 
 class LearnerGamesScreen extends StatefulWidget {
   const LearnerGamesScreen({super.key});
@@ -33,7 +34,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('This game has no link.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('This game has no link.')),
+      );
       return;
     }
 
@@ -115,8 +119,8 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     'By: $ownerName',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
-                        0.72,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(
+                        alpha: 0.72,
                       ),
                     ),
                   ),
@@ -205,7 +209,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                           .map(
                             (tag) => Chip(
                               label: Text(tag),
-                              backgroundColor: cs.primary.withValues(alpha: 0.08),
+                              backgroundColor: cs.primary.withValues(
+                                alpha: 0.08,
+                              ),
                               side: BorderSide(
                                 color: cs.primary.withValues(alpha: 0.14),
                               ),
@@ -424,11 +430,15 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.15)),
+                borderSide: BorderSide(
+                  color: cs.outline.withValues(alpha: 0.15),
+                ),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.15)),
+                borderSide: BorderSide(
+                  color: cs.outline.withValues(alpha: 0.15),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -515,7 +525,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.68),
+                  color: theme.textTheme.bodyMedium?.color?.withValues(
+                    alpha: 0.68,
+                  ),
                 ),
               ),
             ],
@@ -752,6 +764,21 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_games',
+      hints: const [
+        LearnerTourHint(
+          title: 'بحث الالعاب',
+          line: 'اكتب اسم اللعبة او التصنيف للوصول للعبة اسرع.',
+        ),
+        LearnerTourHint(
+          title: 'تفاصيل اللعبة',
+          line: 'اضغط بطاقة اللعبة لعرض الوصف والقواعد قبل اللعب.',
+        ),
+      ],
+    );
+
     return Scaffold(
       appBar: AppBar(title: const Text('Games')),
       body: StreamBuilder<DatabaseEvent>(

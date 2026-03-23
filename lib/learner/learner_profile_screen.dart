@@ -11,6 +11,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
+import '../shared/learner_tour_guide.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 
@@ -280,7 +281,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
     final remaining = _maxExtraPhotos - _photoUrls.length;
     if (remaining <= 0) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text('You already reached the 6 extra photo limit.'),
         ),
@@ -773,7 +775,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       if (!mounted) return true;
       if (showSuccessSnackBar) {
-        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Profile updated ✅')));
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('Profile updated ✅')),
+        );
       }
       await _load();
       return true;
@@ -956,7 +961,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final p = palette;
 
     if (currentUser == null) {
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('You must be logged in.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('You must be logged in.')),
+      );
       return;
     }
 
@@ -1015,7 +1023,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 if (!mounted) return;
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Password updated ✅')),
                 );
               } on FirebaseAuthException catch (e) {
@@ -1027,11 +1036,14 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                       'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  AppToast.fromSnackBar(context,  SnackBar(content: Text(msg)));
+                  AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
                 }
               } catch (e) {
                 if (mounted) {
-                  AppToast.fromSnackBar(context,  SnackBar(content: Text(toHumanError(e))));
+                  AppToast.fromSnackBar(
+                    context,
+                    SnackBar(content: Text(toHumanError(e))),
+                  );
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
@@ -1176,7 +1188,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: palette.border.withValues(alpha: 0.85)),
+              borderSide: BorderSide(
+                color: palette.border.withValues(alpha: 0.85),
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
@@ -1451,7 +1465,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       onSelected: (_) => onTap(),
       selectedColor: p.accent,
       backgroundColor: p.cardBg,
-      side: BorderSide(color: selected ? p.accent : p.border.withValues(alpha: 0.9)),
+      side: BorderSide(
+        color: selected ? p.accent : p.border.withValues(alpha: 0.9),
+      ),
       checkmarkColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       showCheckmark: false,
@@ -1782,7 +1798,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   label: const Text('Remove'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.28)),
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.28),
+                    ),
                     backgroundColor: Colors.white.withValues(alpha: 0.08),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -2087,6 +2105,21 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_profile',
+      hints: const [
+        LearnerTourHint(
+          title: 'تعديل الملف الشخصي',
+          line: 'حدث بياناتك وصورتك ومعلوماتك من هذه الصفحة.',
+        ),
+        LearnerTourHint(
+          title: 'حفظ التغييرات',
+          line: 'بعد اي تعديل اضغط زر الحفظ في الاعلى.',
+        ),
+      ],
+    );
+
     final p = palette;
     final email = (_user['email'] ?? '').toString();
     final serial = (_user['serial'] ?? '').toString();

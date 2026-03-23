@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/ybs_busy_logo.dart';
+import '../shared/learner_tour_guide.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
   const RecordedVideoPlayerScreen({
@@ -1070,6 +1071,21 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_recorded_video',
+      hints: const [
+        LearnerTourHint(
+          title: 'تشغيل الفيديو',
+          line: 'استخدم ازرار التشغيل والتقديم لمتابعة الدرس كما تريد.',
+        ),
+        LearnerTourHint(
+          title: 'الملاحظات',
+          line: 'يمكنك كتابة ملاحظاتك وحفظها لكل جلسة فيديو.',
+        ),
+      ],
+    );
+
     final title = widget.sessionTitle.trim().isEmpty
         ? 'Session Video'
         : widget.sessionTitle.trim();
