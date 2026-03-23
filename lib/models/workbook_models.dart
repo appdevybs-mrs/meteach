@@ -194,12 +194,16 @@ class ExportReport {
     required this.sheetCountMatches,
     required this.sheetNamesMatch,
     required this.message,
+    this.savedPath = '',
+    this.exportedFileName = 'workbook.xlsx',
   });
 
   final Uint8List encodedBytes;
   final bool sheetCountMatches;
   final bool sheetNamesMatch;
   final String message;
+  final String savedPath;
+  final String exportedFileName;
 
   bool get isSafe => sheetCountMatches && sheetNamesMatch;
 }

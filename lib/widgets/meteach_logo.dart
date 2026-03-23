@@ -20,12 +20,8 @@ class MeTeachLogo extends StatelessWidget {
           width: size,
           height: size,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(size * 0.28),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF114B5F), Color(0xFF1A936F)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            borderRadius: BorderRadius.circular(size * 0.2),
+            color: Colors.white,
             boxShadow: const [
               BoxShadow(
                 color: Color(0x33114B5F),
@@ -34,31 +30,12 @@ class MeTeachLogo extends StatelessWidget {
               ),
             ],
           ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Positioned(
-                top: size * 0.18,
-                child: Icon(
-                  Icons.menu_book_rounded,
-                  color: Colors.white,
-                  size: size * 0.42,
-                ),
-              ),
-              Positioned(
-                bottom: size * 0.16,
-                child: Icon(
-                  Icons.edit_note_rounded,
-                  color: const Color(0xFFF3E9D2),
-                  size: size * 0.4,
-                ),
-              ),
-            ],
-          ),
+          padding: EdgeInsets.all(size * 0.11),
+          child: Image.asset('assets/logo.png', fit: BoxFit.contain),
         ),
         if (showLabel) ...[
           const SizedBox(width: 10),
-          Text('Taqyim DZ', style: textStyle),
+          Text('Taqym DZ', style: textStyle),
         ],
       ],
     );

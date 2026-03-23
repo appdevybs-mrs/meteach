@@ -1,10 +1,15 @@
+import 'package:flutter/widgets.dart';
+
+import '../l10n/app_localizations.dart';
 import '../models/workbook_models.dart';
 
 class ValidationService {
   List<RowIssue> validateWorkbook(
     WorkbookData workbook,
     ValidationSettings settings,
+    String languageCode,
   ) {
+    final l10n = AppLocalizations(Locale(languageCode));
     final issues = <RowIssue>[];
     for (final sheet in workbook.sheets) {
       for (final row in sheet.learners) {
@@ -16,7 +21,7 @@ class ValidationService {
                 sheetName: sheet.name,
                 rowIndex: row.rowIndex,
                 type: RowIssueType.emptyScore,
-                message: 'Missing score',
+                message: l10n.t('issueEmptyScore'),
               ),
             );
             continue;
@@ -27,7 +32,7 @@ class ValidationService {
                 sheetName: sheet.name,
                 rowIndex: row.rowIndex,
                 type: RowIssueType.zeroScore,
-                message: 'Zero score is not allowed',
+                message: l10n.t('issueZeroScoreNotAllowed'),
               ),
             );
           }
@@ -37,8 +42,11 @@ class ValidationService {
                 sheetName: sheet.name,
                 rowIndex: row.rowIndex,
                 type: RowIssueType.outOfRange,
-                message:
-                    'Score $score outside ${settings.minScore}-${settings.maxScore}',
+                message: l10n.format('issueOutOfRange', {
+                  'score': score.toString(),
+                  'minScore': settings.minScore.toString(),
+                  'maxScore': settings.maxScore.toString(),
+                }),
               ),
             );
           }
@@ -50,7 +58,7 @@ class ValidationService {
               sheetName: sheet.name,
               rowIndex: row.rowIndex,
               type: RowIssueType.missingRemark,
-              message: 'Missing remark',
+              message: l10n.t('issueMissingRemark'),
             ),
           );
         }
@@ -61,7 +69,7 @@ class ValidationService {
               sheetName: sheet.name,
               rowIndex: row.rowIndex,
               type: RowIssueType.inconsistentRemark,
-              message: 'Score and remark look inconsistent',
+              message: l10n.t('issueInconsistentRemark'),
             ),
           );
         }
@@ -72,7 +80,7 @@ class ValidationService {
               sheetName: sheet.name,
               rowIndex: row.rowIndex,
               type: RowIssueType.incompleteRow,
-              message: 'Missing learner identity',
+              message: l10n.t('issueIncompleteRow'),
             ),
           );
         }
@@ -98,8 +106,33 @@ class ValidationService {
     }
     final avg = score / count;
     final text = row.remark.toLowerCase();
-    final negative = ['bad', 'poor', 'weak', 'insuffisant', 'ضعيف'];
-    final positive = ['excellent', 'good', 'great', 'bravo', 'ممتاز'];
+    final negative = [
+      'bad',
+      'poor',
+      'weak',
+      'insuffisant',
+      'faible',
+      'ضعيف',
+      'schwach',
+      'malo',
+      'insuficiente',
+      'debole',
+      'scarso',
+    ];
+    final positive = [
+      'excellent',
+      'good',
+      'great',
+      'bravo',
+      'ممتاز',
+      'bien',
+      'sehr gut',
+      'gut',
+      'excelente',
+      'bueno',
+      'ottimo',
+      'eccellente',
+    ];
     final hasNegative = negative.any(text.contains);
     final hasPositive = positive.any(text.contains);
 

@@ -7,7 +7,6 @@ import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../l10n/app_localizations.dart';
 import '../models/workbook_models.dart';
 import '../services/excel_service.dart';
 import '../services/validation_service.dart';
@@ -222,6 +221,7 @@ class MeTeachState extends ChangeNotifier {
       _issues = _validationService.validateWorkbook(
         parsed,
         _validationSettings,
+        _locale.languageCode,
       );
       _recentWorkbooks.removeWhere((entry) => entry.fileName == picked.name);
       _recentWorkbooks.insert(
@@ -265,7 +265,11 @@ class MeTeachState extends ChangeNotifier {
     _changedCells.clear();
     _changeHistory.clear();
     _snapshots.clear();
-    _issues = _validationService.validateWorkbook(parsed, _validationSettings);
+    _issues = _validationService.validateWorkbook(
+      parsed,
+      _validationSettings,
+      _locale.languageCode,
+    );
     _createSnapshot('Reopened ${recent.displayName}');
     _persistRecentWorkbooks();
     notifyListeners();
@@ -282,7 +286,7 @@ class MeTeachState extends ChangeNotifier {
         ..clear()
         ..addAll(_defaultFavoriteRemarksForLocale(locale));
     }
-    notifyListeners();
+    runValidation();
   }
 
   void renameRecentWorkbook(int index, String name) {
@@ -340,7 +344,11 @@ class MeTeachState extends ChangeNotifier {
     if (wb == null) {
       _issues = <RowIssue>[];
     } else {
-      _issues = _validationService.validateWorkbook(wb, _validationSettings);
+      _issues = _validationService.validateWorkbook(
+        wb,
+        _validationSettings,
+        _locale.languageCode,
+      );
     }
     notifyListeners();
   }
@@ -790,7 +798,7 @@ class MeTeachState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<ExportReport?> exportWorkbook(AppLocalizations l10n) async {
+  Future<ExportReport?> exportWorkbook() async {
     final wb = _workbook;
     if (wb == null) {
       return null;
@@ -799,16 +807,34 @@ class MeTeachState extends ChangeNotifier {
       workbook: wb,
       changedCells: _changedCells,
     );
-    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    await FileSaver.instance.saveFile(
-      name: '${wb.fileName}_$timestamp',
+    final exportName = _normalizeXlsxFileName(wb.fileName);
+    final baseName = exportName.substring(0, exportName.length - 5);
+    final savedPath = await FileSaver.instance.saveFile(
+      name: baseName,
       bytes: report.encodedBytes,
       fileExtension: 'xlsx',
       mimeType: MimeType.microsoftExcel,
     );
-    _createSnapshot('Exported $timestamp');
+    _createSnapshot('Exported $exportName');
     createEditableBackupCopy();
-    return report;
+    return ExportReport(
+      encodedBytes: report.encodedBytes,
+      sheetCountMatches: report.sheetCountMatches,
+      sheetNamesMatch: report.sheetNamesMatch,
+      message: report.message,
+      savedPath: savedPath,
+      exportedFileName: exportName,
+    );
+  }
+
+  String _normalizeXlsxFileName(String fileName) {
+    final normalized = fileName.trim().isEmpty
+        ? 'workbook.xlsx'
+        : fileName.trim();
+    if (normalized.toLowerCase().endsWith('.xlsx')) {
+      return normalized;
+    }
+    return '$normalized.xlsx';
   }
 
   Future<void> _loadPersistedRecentWorkbooks() async {
@@ -903,6 +929,27 @@ class MeTeachState extends ChangeNotifier {
           RemarkRule(min: 11, max: 15, remark: 'جيد'),
           RemarkRule(min: 16, max: 20, remark: 'ممتاز'),
         ];
+      case 'de':
+        return const [
+          RemarkRule(min: 0, max: 4, remark: 'Schwach'),
+          RemarkRule(min: 5, max: 10, remark: 'Kann besser werden'),
+          RemarkRule(min: 11, max: 15, remark: 'Gut'),
+          RemarkRule(min: 16, max: 20, remark: 'Ausgezeichnet'),
+        ];
+      case 'es':
+        return const [
+          RemarkRule(min: 0, max: 4, remark: 'Insuficiente'),
+          RemarkRule(min: 5, max: 10, remark: 'Puede mejorar'),
+          RemarkRule(min: 11, max: 15, remark: 'Bien'),
+          RemarkRule(min: 16, max: 20, remark: 'Excelente'),
+        ];
+      case 'it':
+        return const [
+          RemarkRule(min: 0, max: 4, remark: 'Insufficiente'),
+          RemarkRule(min: 5, max: 10, remark: 'Puo migliorare'),
+          RemarkRule(min: 11, max: 15, remark: 'Buono'),
+          RemarkRule(min: 16, max: 20, remark: 'Eccellente'),
+        ];
       default:
         return const [
           RemarkRule(min: 0, max: 4, remark: 'Bad'),
@@ -924,6 +971,27 @@ class MeTeachState extends ChangeNotifier {
         ];
       case 'ar':
         return const ['عمل ممتاز', 'مجهود جيد', 'يحتاج تحسين', 'غائب'];
+      case 'de':
+        return const [
+          'Ausgezeichnete Arbeit',
+          'Gute Leistung',
+          'Verbesserung notig',
+          'Abwesend',
+        ];
+      case 'es':
+        return const [
+          'Excelente trabajo',
+          'Buen esfuerzo',
+          'Necesita mejorar',
+          'Ausente',
+        ];
+      case 'it':
+        return const [
+          'Lavoro eccellente',
+          'Buon impegno',
+          'Da migliorare',
+          'Assente',
+        ];
       default:
         return const [
           'Excellent work',

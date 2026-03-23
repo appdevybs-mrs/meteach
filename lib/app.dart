@@ -1,11 +1,88 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'l10n/app_localizations.dart';
 import 'models/workbook_models.dart';
 import 'state/app_state.dart';
 import 'widgets/meteach_logo.dart';
+
+Widget _logoWatermark({double opacity = 0.06}) {
+  return IgnorePointer(
+    child: Center(
+      child: Opacity(
+        opacity: opacity,
+        child: Image.asset('assets/logo.png', width: 380, fit: BoxFit.contain),
+      ),
+    ),
+  );
+}
+
+Future<void> showProcessDoneLogoAnimation(BuildContext context) async {
+  await showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    barrierLabel: 'done-animation',
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    transitionDuration: const Duration(milliseconds: 220),
+    pageBuilder: (context, _, _) {
+      final l10n = AppLocalizations.of(context);
+      Future<void>.delayed(const Duration(milliseconds: 900), () {
+        if (context.mounted) {
+          Navigator.of(context).pop();
+        }
+      });
+      return Center(
+        child: TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 500),
+          tween: Tween<double>(begin: 0.6, end: 1),
+          curve: Curves.easeOutBack,
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: value.clamp(0, 1),
+              child: Transform.scale(scale: value, child: child),
+            );
+          },
+          child: Container(
+            width: 210,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/logo.png',
+                  width: 82,
+                  height: 82,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  l10n.t('done'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
 
 class MeTeachApp extends StatelessWidget {
   const MeTeachApp({super.key});
@@ -18,7 +95,8 @@ class MeTeachApp extends StatelessWidget {
         builder: (context, state, _) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
-            title: 'Taqyim DZ',
+            onGenerateTitle: (context) =>
+                AppLocalizations.of(context).t('appTitle'),
             locale: state.locale,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: const [
@@ -72,9 +150,16 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _animateLogoIn = false;
+
   @override
   void initState() {
     super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 40), () {
+      if (mounted) {
+        setState(() => _animateLogoIn = true);
+      }
+    });
     Future<void>.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
@@ -96,32 +181,58 @@ class _SplashScreenState extends State<SplashScreen> {
             end: Alignment.bottomRight,
           ),
         ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircleAvatar(
-                radius: 44,
-                backgroundColor: Colors.white,
-                child: MeTeachLogo(size: 58),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                l10n.t('appTitle'),
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _logoWatermark(opacity: 0.11),
+            Center(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 520),
+                opacity: _animateLogoIn ? 1 : 0,
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 520),
+                  scale: _animateLogoIn ? 1 : 0.82,
+                  curve: Curves.easeOutBack,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 98,
+                        height: 98,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        alignment: Alignment.center,
+                        child: Image.asset(
+                          'assets/logo.png',
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.t('appTitle'),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        l10n.t('welcome'),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyLarge?.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                l10n.t('welcome'),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: Colors.white),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -181,15 +292,27 @@ class HomeScreen extends StatelessWidget {
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: const Locale('en'),
-                child: Text(l10n.t('english')),
+                child: const Text('English'),
               ),
               PopupMenuItem(
                 value: const Locale('fr'),
-                child: Text(l10n.t('french')),
+                child: const Text('Français'),
               ),
               PopupMenuItem(
                 value: const Locale('ar'),
-                child: Text(l10n.t('arabic')),
+                child: const Text('العربية'),
+              ),
+              PopupMenuItem(
+                value: const Locale('de'),
+                child: const Text('Deutsch'),
+              ),
+              PopupMenuItem(
+                value: const Locale('es'),
+                child: const Text('Español'),
+              ),
+              PopupMenuItem(
+                value: const Locale('it'),
+                child: const Text('Italiano'),
               ),
             ],
           ),
@@ -206,52 +329,104 @@ class HomeScreen extends StatelessWidget {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 920),
-            child: ListView(
-              padding: const EdgeInsets.all(22),
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF114B5F), Color(0xFF1A936F)],
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: [
-                      const MeTeachLogo(size: 60),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              l10n.t('welcome'),
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
+                _logoWatermark(opacity: 0.055),
+                ListView(
+                  padding: const EdgeInsets.all(22),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF114B5F), Color(0xFF1A936F)],
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        children: [
+                          const MeTeachLogo(size: 60),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: const Color(0xFF114B5F),
-                                  ),
-                                  onPressed: state.busy
-                                      ? null
-                                      : () async {
-                                          final ok = await state
-                                              .importWorkbookFromPicker();
-                                          if (!context.mounted) {
-                                            return;
-                                          }
+                                Text(
+                                  l10n.t('welcome'),
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: [
+                                    FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: const Color(
+                                          0xFF114B5F,
+                                        ),
+                                      ),
+                                      onPressed: state.busy
+                                          ? null
+                                          : () async {
+                                              final ok = await state
+                                                  .importWorkbookFromPicker();
+                                              if (!context.mounted) {
+                                                return;
+                                              }
+                                              if (ok) {
+                                                await showProcessDoneLogoAnimation(
+                                                  context,
+                                                );
+                                                if (!context.mounted) {
+                                                  return;
+                                                }
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute<void>(
+                                                    builder: (_) =>
+                                                        const WorkspaceScreen(),
+                                                  ),
+                                                );
+                                              }
+                                            },
+                                      icon: state.busy
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.upload_file_rounded,
+                                            ),
+                                      label: Text(l10n.t('uploadWorkbook')),
+                                    ),
+                                    if (state.recentWorkbooks.isNotEmpty)
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: Colors.white,
+                                          ),
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        onPressed: () async {
+                                          final ok = state.reopenRecentWorkbook(
+                                            0,
+                                          );
                                           if (ok) {
+                                            await showProcessDoneLogoAnimation(
+                                              context,
+                                            );
+                                            if (!context.mounted) {
+                                              return;
+                                            }
                                             Navigator.of(context).push(
                                               MaterialPageRoute<void>(
                                                 builder: (_) =>
@@ -260,255 +435,240 @@ class HomeScreen extends StatelessWidget {
                                             );
                                           }
                                         },
-                                  icon: state.busy
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.upload_file_rounded),
-                                  label: Text(l10n.t('uploadWorkbook')),
-                                ),
-                                if (state.recentWorkbooks.isNotEmpty)
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(
-                                        color: Colors.white,
+                                        icon: const Icon(Icons.history_rounded),
+                                        label: Text(l10n.t('reopen')),
                                       ),
-                                      foregroundColor: Colors.white,
-                                    ),
-                                    onPressed: () {
-                                      final ok = state.reopenRecentWorkbook(0);
-                                      if (ok) {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
-                                            builder: (_) =>
-                                                const WorkspaceScreen(),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    icon: const Icon(Icons.history_rounded),
-                                    label: Text(l10n.t('reopen')),
-                                  ),
+                                  ],
+                                ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (state.showGuide)
-                  Card(
-                    color: const Color(0xFFF0F7FF),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.tips_and_updates_rounded,
-                                color: Color(0xFF1976D2),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                l10n.t('guideTitle'),
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const Spacer(),
-                              TextButton(
-                                onPressed: () => state.setShowGuide(false),
-                                child: Text(l10n.t('skipGuide')),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          _guideStep(
-                            context,
-                            const Color(0xFF1E88E5),
-                            Icons.upload_file_rounded,
-                            l10n.t('guideStep1'),
-                          ),
-                          _guideStep(
-                            context,
-                            const Color(0xFF43A047),
-                            Icons.rule_folder_rounded,
-                            l10n.t('guideStep2'),
-                          ),
-                          _guideStep(
-                            context,
-                            const Color(0xFFF57C00),
-                            Icons.verified_rounded,
-                            l10n.t('guideStep3'),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            l10n.t('guideHint'),
-                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
                       ),
                     ),
-                  ),
-                if (state.showGuide) const SizedBox(height: 14),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.folder_copy_rounded,
-                              color: Color(0xFF1976D2),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              l10n.t('recentFiles'),
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const Spacer(),
-                            Text('${state.recentWorkbooks.length}'),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        if (state.recentWorkbooks.isEmpty)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(18),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF7FAFF),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(0xFFD8E6FF),
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                const Icon(
-                                  Icons.auto_stories_rounded,
-                                  size: 30,
-                                  color: Color(0xFF42A5F5),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(l10n.t('noWorkbook')),
-                              ],
-                            ),
-                          )
-                        else
-                          ...state.recentWorkbooks.asMap().entries.map((entry) {
-                            final item = entry.value;
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FBFF),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
+                    const SizedBox(height: 14),
+                    if (state.showGuide)
+                      Card(
+                        color: const Color(0xFFF0F7FF),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
                                   const Icon(
-                                    Icons.description_outlined,
+                                    Icons.tips_and_updates_rounded,
                                     color: Color(0xFF1976D2),
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(item.displayName),
-                                        Text(
-                                          '${l10n.t('openedAt')}: ${item.openedAt.toLocal().toString().replaceFirst('.000', '')}',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
-                                        ),
-                                      ],
-                                    ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    l10n.t('guideTitle'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
                                   ),
-                                  OutlinedButton(
-                                    onPressed: () {
-                                      final ok = state.reopenRecentWorkbook(
-                                        entry.key,
-                                      );
-                                      if (ok) {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute<void>(
-                                            builder: (_) =>
-                                                const WorkspaceScreen(),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    child: Text(l10n.t('reopen')),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.drive_file_rename_outline,
-                                      color: Color(0xFF8E24AA),
-                                    ),
-                                    onPressed: () {
-                                      final controller = TextEditingController(
-                                        text: item.displayName,
-                                      );
-                                      showDialog<void>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          title: Text(l10n.t('rename')),
-                                          content: TextField(
-                                            controller: controller,
-                                            autofocus: true,
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context),
-                                              child: Text(l10n.t('cancel')),
-                                            ),
-                                            FilledButton(
-                                              onPressed: () {
-                                                state.renameRecentWorkbook(
-                                                  entry.key,
-                                                  controller.text,
-                                                );
-                                                Navigator.pop(context);
-                                              },
-                                              child: Text(
-                                                l10n.t('saveSettings'),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                      color: Color(0xFFE53935),
-                                    ),
-                                    onPressed: () =>
-                                        state.deleteRecentWorkbook(entry.key),
+                                  const Spacer(),
+                                  TextButton(
+                                    onPressed: () => state.setShowGuide(false),
+                                    child: Text(l10n.t('skipGuide')),
                                   ),
                                 ],
                               ),
-                            );
-                          }),
-                      ],
+                              const SizedBox(height: 6),
+                              _guideStep(
+                                context,
+                                const Color(0xFF1E88E5),
+                                Icons.upload_file_rounded,
+                                l10n.t('guideStep1'),
+                              ),
+                              _guideStep(
+                                context,
+                                const Color(0xFF43A047),
+                                Icons.rule_folder_rounded,
+                                l10n.t('guideStep2'),
+                              ),
+                              _guideStep(
+                                context,
+                                const Color(0xFFF57C00),
+                                Icons.verified_rounded,
+                                l10n.t('guideStep3'),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                l10n.t('guideHint'),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (state.showGuide) const SizedBox(height: 14),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.folder_copy_rounded,
+                                  color: Color(0xFF1976D2),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  l10n.t('recentFiles'),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                                const Spacer(),
+                                Text('${state.recentWorkbooks.length}'),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (state.recentWorkbooks.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF7FAFF),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(0xFFD8E6FF),
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    const Icon(
+                                      Icons.auto_stories_rounded,
+                                      size: 30,
+                                      color: Color(0xFF42A5F5),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(l10n.t('noWorkbook')),
+                                  ],
+                                ),
+                              )
+                            else
+                              ...state.recentWorkbooks.asMap().entries.map((
+                                entry,
+                              ) {
+                                final item = entry.value;
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FBFF),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.description_outlined,
+                                        color: Color(0xFF1976D2),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(item.displayName),
+                                            Text(
+                                              '${l10n.t('openedAt')}: ${item.openedAt.toLocal().toString().replaceFirst('.000', '')}',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      OutlinedButton(
+                                        onPressed: () async {
+                                          final ok = state.reopenRecentWorkbook(
+                                            entry.key,
+                                          );
+                                          if (ok) {
+                                            await showProcessDoneLogoAnimation(
+                                              context,
+                                            );
+                                            if (!context.mounted) {
+                                              return;
+                                            }
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute<void>(
+                                                builder: (_) =>
+                                                    const WorkspaceScreen(),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                        child: Text(l10n.t('reopen')),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.drive_file_rename_outline,
+                                          color: Color(0xFF8E24AA),
+                                        ),
+                                        onPressed: () {
+                                          final controller =
+                                              TextEditingController(
+                                                text: item.displayName,
+                                              );
+                                          showDialog<void>(
+                                            context: context,
+                                            builder: (context) => AlertDialog(
+                                              title: Text(l10n.t('rename')),
+                                              content: TextField(
+                                                controller: controller,
+                                                autofocus: true,
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(context),
+                                                  child: Text(l10n.t('cancel')),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () {
+                                                    state.renameRecentWorkbook(
+                                                      entry.key,
+                                                      controller.text,
+                                                    );
+                                                    Navigator.pop(context);
+                                                  },
+                                                  child: Text(
+                                                    l10n.t('saveSettings'),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          color: Color(0xFFE53935),
+                                        ),
+                                        onPressed: () => state
+                                            .deleteRecentWorkbook(entry.key),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -634,6 +794,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   ),
                 ),
               ),
+              _logoWatermark(opacity: 0.05),
               Row(
                 children: [
                   if (wide)
@@ -1130,7 +1291,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           '${result.learner.surname} ${result.learner.name}',
                         ),
                         subtitle: Text(
-                          '${result.sheetName} | row ${result.rowIndex + 1}',
+                          '${result.sheetName} | ${l10n.t('row')} ${result.rowIndex + 1}',
                         ),
                         trailing: FilledButton(
                           onPressed: () {
@@ -1404,6 +1565,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text(_bulkFeedback)),
                               );
+                              await showProcessDoneLogoAnimation(context);
                             },
                       icon: _bulkProcessing
                           ? const SizedBox(
@@ -1554,6 +1716,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             );
                             if (mounted) {
                               setState(() => _pageLoading = false);
+                              await showProcessDoneLogoAnimation(this.context);
                             }
                           },
                           child: Text(l10n.t('clearEditableCells')),
@@ -1608,9 +1771,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   leading: const Icon(Icons.warning_amber_rounded),
                   title: Text(issue.message),
                   subtitle: Text(
-                    '${issue.sheetName} | row ${issue.rowIndex + 1}',
+                    '${issue.sheetName} | ${l10n.t('row')} ${issue.rowIndex + 1}',
                   ),
-                  trailing: Text(issue.type.name),
+                  trailing: Text(_issueTypeLabel(issue.type, l10n)),
                   onTap: () {
                     final wb = state.workbook;
                     if (wb == null) {
@@ -1701,15 +1864,27 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   items: [
                     DropdownMenuItem(
                       value: const Locale('en'),
-                      child: Text(l10n.t('english')),
+                      child: const Text('English'),
                     ),
                     DropdownMenuItem(
                       value: const Locale('fr'),
-                      child: Text(l10n.t('french')),
+                      child: const Text('Français'),
                     ),
                     DropdownMenuItem(
                       value: const Locale('ar'),
-                      child: Text(l10n.t('arabic')),
+                      child: const Text('العربية'),
+                    ),
+                    DropdownMenuItem(
+                      value: const Locale('de'),
+                      child: const Text('Deutsch'),
+                    ),
+                    DropdownMenuItem(
+                      value: const Locale('es'),
+                      child: const Text('Español'),
+                    ),
+                    DropdownMenuItem(
+                      value: const Locale('it'),
+                      child: const Text('Italiano'),
                     ),
                   ],
                 ),
@@ -1794,6 +1969,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             state.resetCurrentSheet();
                             if (mounted) {
                               setState(() => _pageLoading = false);
+                              await showProcessDoneLogoAnimation(this.context);
                             }
                           },
                           child: Text(l10n.t('resetSheet')),
@@ -1816,6 +1992,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             state.restoreWorkbook();
                             if (mounted) {
                               setState(() => _pageLoading = false);
+                              await showProcessDoneLogoAnimation(this.context);
                             }
                           },
                           child: Text(l10n.t('restoreAll')),
@@ -1868,7 +2045,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       return;
                     }
                     setState(() => _pageLoading = true);
-                    final report = await state.exportWorkbook(l10n);
+                    final report = await state.exportWorkbook();
                     if (!context.mounted || report == null) {
                       if (mounted) {
                         setState(() => _pageLoading = false);
@@ -1880,21 +2057,28 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       SnackBar(
                         content: Text(
                           '${l10n.t('integrityCheck')}: '
-                          '${report.isSafe ? l10n.t('pass') : l10n.t('fail')} - ${report.message}',
+                          '${report.isSafe ? l10n.t('pass') : l10n.t('fail')} - '
+                          '${report.isSafe ? l10n.t('integrityPassed') : l10n.t('integrityDifferences')}',
                         ),
                       ),
                     );
+                    await showProcessDoneLogoAnimation(context);
+                    if (!context.mounted) {
+                      return;
+                    }
+                    await _showExportSavedDialog(context, l10n, report);
                   },
                   icon: const Icon(Icons.download_rounded, color: Colors.green),
                   label: Text(l10n.t('exportWorkbook')),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                     state.createEditableBackupCopy();
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text(l10n.t('createBackup'))),
                     );
+                    await showProcessDoneLogoAnimation(context);
                   },
                   icon: const Icon(Icons.backup_rounded, color: Colors.orange),
                   label: Text(l10n.t('createBackup')),
@@ -1997,5 +2181,92 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     String label,
   ) {
     return DropdownMenuItem<LearnerFilter>(value: value, child: Text(label));
+  }
+
+  String _issueTypeLabel(RowIssueType type, AppLocalizations l10n) {
+    switch (type) {
+      case RowIssueType.emptyScore:
+        return l10n.t('emptyScore');
+      case RowIssueType.zeroScore:
+        return l10n.t('zeroScore');
+      case RowIssueType.invalidScore:
+        return l10n.t('invalidScore');
+      case RowIssueType.outOfRange:
+        return l10n.t('outOfRange');
+      case RowIssueType.missingRemark:
+        return l10n.t('missingRemark');
+      case RowIssueType.inconsistentRemark:
+        return l10n.t('inconsistentRemark');
+      case RowIssueType.incompleteRow:
+        return l10n.t('incompleteRow');
+    }
+  }
+
+  Future<void> _showExportSavedDialog(
+    BuildContext context,
+    AppLocalizations l10n,
+    ExportReport report,
+  ) async {
+    final location = report.savedPath.trim().isEmpty
+        ? l10n.t('downloadsFolder')
+        : report.savedPath;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.t('exportDone')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${l10n.t('savedAs')}: ${report.exportedFileName}'),
+            const SizedBox(height: 8),
+            Text('${l10n.t('savedAt')}: $location'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(l10n.t('cancel')),
+          ),
+          OutlinedButton(
+            onPressed: report.savedPath.trim().isEmpty
+                ? null
+                : () async {
+                    final result = await OpenFilex.open(report.savedPath);
+                    if (!context.mounted) {
+                      return;
+                    }
+                    if (result.type != ResultType.done) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(result.message)));
+                    }
+                  },
+            child: Text(l10n.t('openFile')),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final xlsxMime =
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+              final xfile = report.savedPath.trim().isEmpty
+                  ? XFile.fromData(
+                      report.encodedBytes,
+                      mimeType: xlsxMime,
+                      name: report.exportedFileName,
+                    )
+                  : XFile(
+                      report.savedPath,
+                      mimeType: xlsxMime,
+                      name: report.exportedFileName,
+                    );
+              await SharePlus.instance.share(
+                ShareParams(files: [xfile], subject: report.exportedFileName),
+              );
+            },
+            child: Text(l10n.t('shareFile')),
+          ),
+        ],
+      ),
+    );
   }
 }
