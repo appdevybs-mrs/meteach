@@ -102,8 +102,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     }
 
     final picked = result.files.single;
-    final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
-    req.headers.addAll(await BackendApi.authHeaders());
+    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final req = http.MultipartRequest('POST', uploadUri);
+    await BackendApi.applyAuthToMultipart(req);
 
     req.fields['root'] = 'games';
     req.fields['path'] =
@@ -158,8 +159,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     required String gameName,
   }) async {
     final headers = await BackendApi.authHeaders();
+    final authFields = await BackendApi.authFormFields();
+    final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
     final response = await http.post(
-      Uri.parse(_deleteUrl),
+      deleteUri,
       headers: headers,
       body: {
         'root': 'games',
@@ -168,6 +171,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
           gameUid: gameUid,
           gameName: gameName,
         ),
+        ...authFields,
       },
     );
 

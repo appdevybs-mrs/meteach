@@ -130,8 +130,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     }
 
     final picked = result.files.single;
-    final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
-    req.headers.addAll(await BackendApi.authHeaders());
+    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final req = http.MultipartRequest('POST', uploadUri);
+    await BackendApi.applyAuthToMultipart(req);
 
     req.fields['root'] = 'stories';
     req.fields['path'] = folderPath;
@@ -184,10 +185,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
   Future<void> _deleteFromServer({required String folderPath}) async {
     final headers = await BackendApi.authHeaders();
+    final authFields = await BackendApi.authFormFields();
+    final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
     final response = await http.post(
-      Uri.parse(_deleteUrl),
+      deleteUri,
       headers: headers,
-      body: {'root': 'stories', 'path': folderPath},
+      body: {'root': 'stories', 'path': folderPath, ...authFields},
     );
 
     final raw = response.body.trim();

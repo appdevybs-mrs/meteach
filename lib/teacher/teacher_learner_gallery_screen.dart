@@ -92,14 +92,13 @@ class _TeacherLearnerGalleryScreenState
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
-    final request = http.MultipartRequest(
-      'POST',
+    final uploadUri = await BackendApi.withAuthQuery(
       BackendApi.uri('upload_secure.php'),
     );
-    final authHeaders = await BackendApi.authHeaders();
+    final request = http.MultipartRequest('POST', uploadUri);
 
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
-    request.headers.addAll(authHeaders);
+    await BackendApi.applyAuthToMultipart(request);
     request.fields['app_id'] = _teacherAppId(user.uid);
 
     if (kIsWeb) {

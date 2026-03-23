@@ -17,6 +17,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
@@ -4476,17 +4477,20 @@ class MailUploadClient {
     required List<int> bytes,
     required String filename,
   }) async {
-    final uri = Uri.parse(endpoint);
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
-    final token = await user.getIdToken(true);
+    final token = await BackendApi.authToken();
 
     final req = http.MultipartRequest('POST', uri)
       ..headers.addAll({
         'X-Requested-With': 'XMLHttpRequest',
         'Authorization': 'Bearer $token',
+        'X-Auth-Token': token,
         'X-Auth-Uid': user.uid,
       })
+      ..fields['auth_token'] = token
+      ..fields['auth_uid'] = user.uid
       ..fields['app_id'] = appId
       ..files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
@@ -4514,17 +4518,20 @@ class MailUploadClient {
     required String path,
     required String filename,
   }) async {
-    final uri = Uri.parse(endpoint);
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
-    final token = await user.getIdToken(true);
+    final token = await BackendApi.authToken();
 
     final req = http.MultipartRequest('POST', uri)
       ..headers.addAll({
         'X-Requested-With': 'XMLHttpRequest',
         'Authorization': 'Bearer $token',
+        'X-Auth-Token': token,
         'X-Auth-Uid': user.uid,
       })
+      ..fields['auth_token'] = token
+      ..fields['auth_uid'] = user.uid
       ..fields['app_id'] = appId
       ..files.add(
         await http.MultipartFile.fromPath('file', path, filename: filename),

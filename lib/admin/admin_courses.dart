@@ -9,6 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
 import 'package:dream_english_academy/course_syllabus_screen.dart';
 import 'package:dream_english_academy/shared/human_error.dart';
+import 'package:dream_english_academy/services/backend_api.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 class AdminCoursesScreen extends StatefulWidget {
   const AdminCoursesScreen({super.key});
@@ -2289,6 +2291,12 @@ class UploadClient {
   final String appId;
   final http.Client _http;
 
+  static void _debug(String message) {
+    if (kDebugMode) {
+      debugPrint('[AdminCoursesUploadClient] $message');
+    }
+  }
+
   /// Hardcoded default client per your requirements
   factory UploadClient.defaultClient() {
     return UploadClient(
@@ -2303,30 +2311,46 @@ class UploadClient {
   /// Header: X-Requested-With: XMLHttpRequest
   /// Returns url from JSON: { success: true, url: "..." }
   Future<String> uploadFile({required File file}) async {
-    final uri = Uri.parse(endpoint);
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
-    final token = await user.getIdToken(true);
+    final token = await BackendApi.authToken();
+    final authFields = await BackendApi.authFormFields();
+
+    _debug(
+      'upload start endpoint=$endpoint uri=$uri file=${file.path} '
+      'uid=${user.uid} tokenLen=${token.length}',
+    );
 
     final req = http.MultipartRequest('POST', uri)
       ..headers.addAll({
         'X-Requested-With': 'XMLHttpRequest',
         'Authorization': 'Bearer $token',
+        'Bearer-Token': token,
+        'X-Auth-Token': token,
         'X-Auth-Uid': user.uid,
       })
+      ..fields.addAll(authFields)
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
 
+    _debug(
+      'upload response status=${streamed.statusCode} '
+      'bodyPreview=${body.length > 200 ? '${body.substring(0, 200)}...' : body}',
+    );
+
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      _debug('upload failed httpStatus=${streamed.statusCode}');
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
     }
 
     // Expecting JSON {success: true, url: "..." }
     final decoded = _tryDecodeJson(body);
     if (decoded == null) {
+      _debug('upload failed invalidJson=true');
       throw Exception('Upload failed: invalid JSON response\n$body');
     }
 
@@ -2334,9 +2358,11 @@ class UploadClient {
     final url = (decoded['url'] ?? '').toString();
 
     if (!success || url.trim().isEmpty) {
+      _debug('upload failed success=$success urlEmpty=${url.trim().isEmpty}');
       throw Exception('Upload failed: $decoded');
     }
 
+    _debug('upload success url=$url');
     return url;
   }
 

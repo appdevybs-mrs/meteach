@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
+import '../services/backend_api.dart';
 import '../services/route_state.dart'; // ✅ ADD THIS
 import '../shared/human_error.dart';
 
@@ -32,17 +33,20 @@ class MailUploadClient {
   }
 
   Future<String> uploadFile({required File file}) async {
-    final uri = Uri.parse(endpoint);
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
-    final token = await user.getIdToken(true);
+    final token = await BackendApi.authToken();
 
     final req = http.MultipartRequest('POST', uri)
       ..headers.addAll({
         'X-Requested-With': 'XMLHttpRequest',
         'Authorization': 'Bearer $token',
+        'X-Auth-Token': token,
         'X-Auth-Uid': user.uid,
       })
+      ..fields['auth_token'] = token
+      ..fields['auth_uid'] = user.uid
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 

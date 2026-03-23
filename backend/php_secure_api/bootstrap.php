@@ -25,30 +25,74 @@ function request_json(): array
 
 function get_bearer_token(): ?string
 {
-    $xAuth = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? '';
-    if (is_string($xAuth) && trim($xAuth) !== '') {
-        return trim($xAuth);
+    $candidates = [
+        $_SERVER['HTTP_X_AUTH_TOKEN'] ?? null,
+        $_POST['auth_token'] ?? null,
+        $_POST['token'] ?? null,
+        $_POST['at'] ?? null,
+        $_POST['t'] ?? null,
+        $_GET['auth_token'] ?? null,
+        $_GET['token'] ?? null,
+        $_GET['at'] ?? null,
+        $_GET['t'] ?? null,
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (is_string($candidate) && trim($candidate) !== '') {
+            return trim($candidate);
+        }
     }
 
-    $postToken = $_POST['auth_token'] ?? '';
-    if (is_string($postToken) && trim($postToken) !== '') {
-        return trim($postToken);
+    $qs = (string) ($_SERVER['QUERY_STRING'] ?? '');
+    if ($qs !== '') {
+        $parsed = [];
+        parse_str($qs, $parsed);
+        if (is_array($parsed)) {
+            foreach (['auth_token', 'token', 'at', 't'] as $k) {
+                $v = $parsed[$k] ?? null;
+                if (is_string($v) && trim($v) !== '') {
+                    return trim($v);
+                }
+            }
+        }
     }
 
-    $getToken = $_GET['auth_token'] ?? '';
-    if (is_string($getToken) && trim($getToken) !== '') {
-        return trim($getToken);
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            foreach ($headers as $k => $v) {
+                $key = strtolower((string) $k);
+                $val = is_string($v) ? trim($v) : '';
+                if ($val === '') {
+                    continue;
+                }
+
+                if ($key === 'x-auth-token') {
+                    return $val;
+                }
+
+                if ($key === 'authorization' && preg_match('/Bearer\s+(.*)$/i', $val, $m)) {
+                    $token = trim((string) ($m[1] ?? ''));
+                    if ($token !== '') {
+                        return $token;
+                    }
+                }
+            }
+        }
     }
 
-    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-    if (!is_string($header) || $header === '') {
-        return null;
+    $authHeader = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+    if ($authHeader === '') {
+        $authHeader = (string) ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
     }
-    if (!preg_match('/Bearer\s+(.*)$/i', $header, $matches)) {
-        return null;
+    if ($authHeader !== '' && preg_match('/Bearer\s+(.*)$/i', $authHeader, $m)) {
+        $token = trim((string) ($m[1] ?? ''));
+        if ($token !== '') {
+            return $token;
+        }
     }
-    $token = trim($matches[1]);
-    return $token !== '' ? $token : null;
+
+    return null;
 }
 
 function firebase_factory(): Factory

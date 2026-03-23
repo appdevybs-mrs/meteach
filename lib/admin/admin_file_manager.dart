@@ -111,8 +111,14 @@ class _FileBrowserState extends State<_FileBrowser>
     required String url,
     required Map<String, String> body,
   }) async {
+    final authFields = await BackendApi.authFormFields();
+    final postUri = await BackendApi.withAuthQuery(Uri.parse(url));
     final headers = await BackendApi.authHeaders();
-    final r = await http.post(Uri.parse(url), body: body, headers: headers);
+    final r = await http.post(
+      postUri,
+      body: {...body, ...authFields},
+      headers: headers,
+    );
 
     final raw = r.body.trim();
     if (!raw.startsWith('{')) {
@@ -390,8 +396,9 @@ class _FileBrowserState extends State<_FileBrowser>
 
       final picked = result.files.single;
 
-      final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
-      req.headers.addAll(await BackendApi.authHeaders());
+      final uploadUri = await BackendApi.withAuthQuery(Uri.parse(uploadUrl));
+      final req = http.MultipartRequest('POST', uploadUri);
+      await BackendApi.applyAuthToMultipart(req);
       req.fields['root'] = widget.root;
       req.fields['path'] = path;
 
@@ -743,8 +750,9 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     }
 
     final picked = result.files.single;
-    final req = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
-    req.headers.addAll(await BackendApi.authHeaders());
+    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
+    final req = http.MultipartRequest('POST', uploadUri);
+    await BackendApi.applyAuthToMultipart(req);
 
     req.fields['root'] = 'games';
     req.fields['path'] =

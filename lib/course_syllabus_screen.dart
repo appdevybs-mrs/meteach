@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'shared/human_error.dart';
@@ -689,6 +691,12 @@ class _SyllabusServerStorage {
   static const String deleteUrl =
       'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
 
+  static void _debug(String message) {
+    if (kDebugMode) {
+      debugPrint('[SyllabusStorage] $message');
+    }
+  }
+
   static String sanitizeSegment(String value, {String fallback = 'item'}) {
     final cleaned = value
         .trim()
@@ -737,9 +745,20 @@ class _SyllabusServerStorage {
     required String path,
     required String customName,
   }) async {
-    final req = http.MultipartRequest('POST', Uri.parse(uploadUrl));
+    final token = await BackendApi.authToken();
+    final authFields = await BackendApi.authFormFields();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    _debug(
+      'upload start root=$root path=$path customName=$customName '
+      'file=${file.name} uidPresent=${uid.isNotEmpty} tokenLen=${token.length}',
+    );
+
+    final uploadUri = await BackendApi.withAuthQuery(Uri.parse(uploadUrl));
+
+    final req = http.MultipartRequest('POST', uploadUri);
     req.headers.addAll(await BackendApi.authHeaders());
-    req.fields.addAll(await BackendApi.authFormFields());
+    req.fields.addAll(authFields);
     req.fields['root'] = root;
     req.fields['path'] = path;
     req.fields['custom_name'] = customName;
@@ -767,6 +786,11 @@ class _SyllabusServerStorage {
     final response = await http.Response.fromStream(streamed);
     final raw = response.body.trim();
 
+    _debug(
+      'upload response status=${response.statusCode} '
+      'bodyPreview=${raw.length > 200 ? '${raw.substring(0, 200)}...' : raw}',
+    );
+
     if (!raw.startsWith('{')) {
       throw Exception('Server did not return JSON.\n$raw');
     }
@@ -779,11 +803,14 @@ class _SyllabusServerStorage {
     if (data['success'] == true) {
       final url = (data['url'] ?? '').toString().trim();
       if (url.isEmpty) {
+        _debug('upload failed: success=true but url is empty');
         throw Exception('Upload succeeded but no URL returned');
       }
+      _debug('upload success url=$url');
       return url;
     }
 
+    _debug('upload failed message=${data['message']}');
     throw Exception((data['message'] ?? 'Upload failed').toString());
   }
 
@@ -791,15 +818,29 @@ class _SyllabusServerStorage {
     required String root,
     required String path,
   }) async {
-    final headers = await BackendApi.authHeaders();
+    final token = await BackendApi.authToken();
     final authFields = await BackendApi.authFormFields();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final headers = await BackendApi.authHeaders();
+
+    _debug(
+      'delete start root=$root path=$path '
+      'uidPresent=${uid.isNotEmpty} tokenLen=${token.length}',
+    );
+
+    final deleteUri = await BackendApi.withAuthQuery(Uri.parse(deleteUrl));
+
     final r = await http.post(
-      Uri.parse(deleteUrl),
+      deleteUri,
       headers: headers,
       body: {'root': root, 'path': path, ...authFields},
     );
 
     final raw = r.body.trim();
+    _debug(
+      'delete response status=${r.statusCode} '
+      'bodyPreview=${raw.length > 200 ? '${raw.substring(0, 200)}...' : raw}',
+    );
     if (!raw.startsWith('{')) {
       throw Exception('Server did not return JSON.\n$raw');
     }
@@ -811,6 +852,7 @@ class _SyllabusServerStorage {
 
     if (data['success'] == true) return;
 
+    _debug('delete failed message=${data['message']}');
     throw Exception((data['message'] ?? 'Delete failed').toString());
   }
 
@@ -1303,6 +1345,12 @@ class _SessionEditorSheet extends StatefulWidget {
 }
 
 class _SessionEditorSheetState extends State<_SessionEditorSheet> {
+  void _debug(String message) {
+    if (kDebugMode) {
+      debugPrint('[RecordedSessionEditor] $message');
+    }
+  }
+
   String _fileNameFromUrl(String url) {
     final t = url.trim();
     if (t.isEmpty) return '';
@@ -1370,6 +1418,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   }
 
   void _showInlineError(String message) {
+    _debug('inlineError=$message');
     if (!mounted) return;
     setState(() => _inlineError = message);
   }
@@ -1420,8 +1469,14 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   }
 
   Future<void> _clearVideoOnly() async {
-    if (videoUrlC.text.trim().isEmpty && videoThumbC.text.trim().isEmpty)
+    _debug(
+      'clearVideo requested hasVideo=${videoUrlC.text.trim().isNotEmpty} '
+      'hasThumb=${videoThumbC.text.trim().isNotEmpty}',
+    );
+    if (videoUrlC.text.trim().isEmpty && videoThumbC.text.trim().isEmpty) {
+      _debug('clearVideo skipped (nothing to clear)');
       return;
+    }
 
     final ok = await _confirmClearAsset(
       title: 'Remove video?',
@@ -1430,7 +1485,10 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       confirmText: 'Remove',
     );
 
-    if (!ok) return;
+    if (!ok) {
+      _debug('clearVideo cancelled by user');
+      return;
+    }
 
     if (!mounted) return;
     setState(() {
@@ -1438,10 +1496,17 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       videoThumbC.clear();
       _inlineError = null;
     });
+    _debug('clearVideo completed (local form state only)');
   }
 
   Future<void> _clearHtmlOnly() async {
-    if (materialsUrlC.text.trim().isEmpty) return;
+    _debug(
+      'clearHtml requested hasHtml=${materialsUrlC.text.trim().isNotEmpty}',
+    );
+    if (materialsUrlC.text.trim().isEmpty) {
+      _debug('clearHtml skipped (nothing to clear)');
+      return;
+    }
 
     final ok = await _confirmClearAsset(
       title: 'Remove HTML?',
@@ -1450,19 +1515,37 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       confirmText: 'Remove',
     );
 
-    if (!ok) return;
+    if (!ok) {
+      _debug('clearHtml cancelled by user');
+      return;
+    }
 
     if (!mounted) return;
     setState(() {
       materialsUrlC.clear();
       _inlineError = null;
     });
+    _debug('clearHtml completed (local form state only)');
   }
 
   Future<bool> _prepareRecordedReplacementIfNeeded() async {
-    if (!widget.isRecorded) return true;
-    if (!_hasInitialRecordedAssets) return true;
-    if (_assetsResetForReplacement) return true;
+    _debug(
+      'prepareReplacement start isRecorded=${widget.isRecorded} '
+      'hasInitialAssets=$_hasInitialRecordedAssets '
+      'alreadyReset=$_assetsResetForReplacement',
+    );
+    if (!widget.isRecorded) {
+      _debug('prepareReplacement skipped (not recorded)');
+      return true;
+    }
+    if (!_hasInitialRecordedAssets) {
+      _debug('prepareReplacement skipped (no initial assets)');
+      return true;
+    }
+    if (_assetsResetForReplacement) {
+      _debug('prepareReplacement skipped (already reset in this edit session)');
+      return true;
+    }
 
     final ok =
         await showDialog<bool>(
@@ -1486,9 +1569,17 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         ) ??
         false;
 
-    if (!ok) return false;
+    if (!ok) {
+      _debug('prepareReplacement cancelled by user');
+      return false;
+    }
 
     final folderPath = _resolvedSessionFolderPath();
+    _debug(
+      'prepareReplacement confirmed folderPath=$folderPath '
+      'hasInitialAssets=$_hasInitialRecordedAssets',
+    );
+
     if (folderPath.isNotEmpty) {
       try {
         await _SyllabusServerStorage.deletePath(
@@ -1496,11 +1587,13 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
           path: folderPath,
         );
       } catch (e) {
+        _debug('delete old assets failed folderPath=$folderPath error=$e');
         final msg = e.toString().toLowerCase();
         if (!msg.contains('item not found')) {
           _showInlineError('Could not replace old recorded files: $e');
           return false;
         }
+        _debug('delete old assets tolerated (item not found)');
       }
     }
 
@@ -1511,12 +1604,14 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       videoThumbC.clear();
       _inlineError = null;
     });
+    _debug('prepareReplacement completed; local media fields reset');
 
     return true;
   }
 
   Future<void> _pickAndUploadVideo() async {
     final title = titleC.text.trim();
+    _debug('video upload tapped titleEmpty=${title.isEmpty}');
     if (title.isEmpty) {
       _showInlineError('Enter session title first.');
       return;
@@ -1525,7 +1620,10 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     _clearInlineError();
 
     final prepared = await _prepareRecordedReplacementIfNeeded();
-    if (!prepared) return;
+    if (!prepared) {
+      _debug('video upload aborted by prepareReplacement=false');
+      return;
+    }
 
     try {
       setState(() => _uploadingVideo = true);
@@ -1536,10 +1634,16 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         type: FileType.video,
       );
 
-      if (result == null || result.files.isEmpty) return;
+      if (result == null || result.files.isEmpty) {
+        _debug('video upload cancelled at file picker');
+        return;
+      }
 
       final file = result.files.single;
       final path = _resolvedSessionFolderPath();
+      _debug(
+        'video upload picked file=${file.name} bytes=${file.size} path=$path',
+      );
 
       final url = await _SyllabusServerStorage.uploadPlatformFile(
         file: file,
@@ -1556,15 +1660,19 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         videoUrlC.text = url;
         _inlineError = null;
       });
+      _debug('video upload success url=$url');
     } catch (e) {
+      _debug('video upload error=$e');
       _showInlineError('Video upload failed: $e');
     } finally {
       if (mounted) setState(() => _uploadingVideo = false);
+      _debug('video upload finished uploading=$_uploadingVideo');
     }
   }
 
   Future<void> _pickAndUploadHtml() async {
     final title = titleC.text.trim();
+    _debug('html upload tapped titleEmpty=${title.isEmpty}');
     if (title.isEmpty) {
       _showInlineError('Enter session title first.');
       return;
@@ -1573,7 +1681,10 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     _clearInlineError();
 
     final prepared = await _prepareRecordedReplacementIfNeeded();
-    if (!prepared) return;
+    if (!prepared) {
+      _debug('html upload aborted by prepareReplacement=false');
+      return;
+    }
 
     try {
       setState(() => _uploadingMaterials = true);
@@ -1585,10 +1696,16 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         allowedExtensions: const ['html', 'htm'],
       );
 
-      if (result == null || result.files.isEmpty) return;
+      if (result == null || result.files.isEmpty) {
+        _debug('html upload cancelled at file picker');
+        return;
+      }
 
       final file = result.files.single;
       final path = _resolvedSessionFolderPath();
+      _debug(
+        'html upload picked file=${file.name} bytes=${file.size} path=$path',
+      );
 
       final url = await _SyllabusServerStorage.uploadPlatformFile(
         file: file,
@@ -1605,10 +1722,13 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         materialsUrlC.text = url;
         _inlineError = null;
       });
+      _debug('html upload success url=$url');
     } catch (e) {
+      _debug('html upload error=$e');
       _showInlineError('HTML upload failed: $e');
     } finally {
       if (mounted) setState(() => _uploadingMaterials = false);
+      _debug('html upload finished uploading=$_uploadingMaterials');
     }
   }
 
