@@ -242,7 +242,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
         final p = palette;
         return (
           bg: p.soft,
-          border: p.border.withOpacity(0.85),
+          border: p.border.withValues(alpha: 0.85),
           fg: p.primary,
           icon: Icons.school_rounded,
           label: 'COURSE',
@@ -595,7 +595,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                     decoration: BoxDecoration(
                       color: p.cardBg,
                       borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: p.border.withOpacity(0.85)),
+                      border: Border.all(color: p.border.withValues(alpha: 0.85)),
                     ),
                     child: Text(
                       _error!,
@@ -657,10 +657,10 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -707,7 +707,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                       Text(
                         code.isEmpty ? 'Code: -' : 'Code: $code',
                         style: TextStyle(
-                          color: p.text.withOpacity(0.66),
+                          color: p.text.withValues(alpha: 0.66),
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
                         ),
@@ -773,12 +773,12 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: (isDue ? Colors.red : p.accent).withOpacity(
+                          color: (isDue ? Colors.red : p.accent).withValues(alpha: 
                             0.12,
                           ),
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(
-                            color: (isDue ? Colors.red : p.accent).withOpacity(
+                            color: (isDue ? Colors.red : p.accent).withValues(alpha: 
                               0.28,
                             ),
                           ),
@@ -909,7 +909,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         color: bgColor,
       ),
       child: Row(
@@ -918,7 +918,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.55),
+              color: Colors.white.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(11),
             ),
             child: Icon(icon, size: 18, color: iconColor),
@@ -940,7 +940,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                 Text(
                   label,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.68),
+                    color: p.text.withValues(alpha: 0.68),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -966,14 +966,14 @@ class _CoursesHeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -985,9 +985,9 @@ class _CoursesHeroCard extends StatelessWidget {
             width: 58,
             height: 58,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
+              color: Colors.white.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withOpacity(0.18)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
             ),
             child: const Icon(
               Icons.menu_book_rounded,
@@ -1013,7 +1013,7 @@ class _CoursesHeroCard extends StatelessWidget {
                 Text(
                   '$coursesCount course${coursesCount == 1 ? '' : 's'} assigned',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.86),
+                    color: Colors.white.withValues(alpha: 0.86),
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
@@ -1086,9 +1086,9 @@ class _NeutralPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.7),
+        color: palette.soft.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1124,13 +1124,13 @@ class _InfoLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: palette.text.withOpacity(0.62)),
+        Icon(icon, size: 16, color: palette.text.withValues(alpha: 0.62)),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
             style: TextStyle(
-              color: palette.text.withOpacity(0.72),
+              color: palette.text.withValues(alpha: 0.72),
               fontWeight: FontWeight.w700,
               fontSize: 12.5,
             ),
@@ -1158,10 +1158,10 @@ class _EmptyCoursesState extends StatelessWidget {
           decoration: BoxDecoration(
             color: palette.cardBg,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: palette.border.withOpacity(0.85)),
+            border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 14,
                 offset: const Offset(0, 8),
               ),
@@ -1198,7 +1198,7 @@ class _EmptyCoursesState extends StatelessWidget {
                 'When courses are assigned to your account, they will appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: palette.text.withOpacity(0.68),
+                  color: palette.text.withValues(alpha: 0.68),
                   fontWeight: FontWeight.w700,
                   height: 1.4,
                 ),
@@ -1210,7 +1210,7 @@ class _EmptyCoursesState extends StatelessWidget {
                 label: const Text('Refresh'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: palette.primary,
-                  side: BorderSide(color: palette.border.withOpacity(0.9)),
+                  side: BorderSide(color: palette.border.withValues(alpha: 0.9)),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),

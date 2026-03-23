@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
+import '../shared/app_feedback.dart';
 
 // =======================================================
 // ADMIN SUBSCRIPTIONS (FULL REPLACEMENT FILE)
@@ -135,7 +136,7 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                                   : subtitleParts.join('  •  '),
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
-                                color: Colors.black.withOpacity(0.65),
+                                color: Colors.black.withValues(alpha: 0.65),
                                 fontSize: 12,
                               ),
                               maxLines: 2,
@@ -152,13 +153,13 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                                     _pill(
                                       label:
                                           '${s.selectedFee!.toStringAsFixed(0)} DA',
-                                      bg: actionOrange.withOpacity(0.10),
+                                      bg: actionOrange.withValues(alpha: 0.10),
                                       fg: actionOrange,
                                     ),
                                   if (s.accessLabel.trim().isNotEmpty)
                                     _pill(
                                       label: s.accessLabel,
-                                      bg: primaryBlue.withOpacity(0.08),
+                                      bg: primaryBlue.withValues(alpha: 0.08),
                                       fg: primaryBlue,
                                     ),
                                 ],
@@ -386,7 +387,7 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   color: p.isEmpty
-                      ? Colors.black.withOpacity(0.7)
+                      ? Colors.black.withValues(alpha: 0.7)
                       : actionOrange,
                   decoration: p.isEmpty
                       ? TextDecoration.none
@@ -426,7 +427,7 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               v.trim().isEmpty ? '-' : v,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.black.withOpacity(0.7),
+                color: Colors.black.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -526,7 +527,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
                 subtitle: Text(
                   c['id']!,
                   style: TextStyle(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withValues(alpha: 0.5),
                     fontSize: 12,
                   ),
                 ),
@@ -547,9 +548,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   Future<void> _save() async {
     if (selectedCourseId == null || selectedCourseId!.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Pick a course first')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Pick a course first')));
       return;
     }
 
@@ -560,7 +559,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     final email = emailC.text.trim();
 
     if (fn.isEmpty || ln.isEmpty || ph.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Fill first name, last name, phone')),
       );
       return;
@@ -589,7 +588,7 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not save subscription changes.'),

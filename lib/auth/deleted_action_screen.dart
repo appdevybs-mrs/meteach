@@ -352,7 +352,7 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.10),
+                color: Colors.black.withValues(alpha: 0.10),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -381,7 +381,7 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
           style: TextStyle(
             fontSize: 14,
             height: 1.4,
-            color: Colors.black.withOpacity(0.65),
+            color: Colors.black.withValues(alpha: 0.65),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -398,7 +398,7 @@ class _DeletedActionScreenState extends State<DeletedActionScreen> {
         border: Border.all(color: const Color(0xFFD9E1E8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),

@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+import 'app_feedback.dart';
 
 class SharedAudioPlayerScreen extends StatefulWidget {
   const SharedAudioPlayerScreen({
@@ -259,7 +260,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
   }
 
   void _toast(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(
         content: Text(text),
         behavior: SnackBarBehavior.floating,
@@ -457,7 +458,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                       Text(
                         '${_bookmarks.length}',
                         style: TextStyle(
-                          color: p.text.withOpacity(0.65),
+                          color: p.text.withValues(alpha: 0.65),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -470,7 +471,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                             child: Text(
                               'No bookmarks yet',
                               style: TextStyle(
-                                color: p.text.withOpacity(0.65),
+                                color: p.text.withValues(alpha: 0.65),
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -484,7 +485,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                                 contentPadding: EdgeInsets.zero,
                                 leading: CircleAvatar(
                                   radius: 14,
-                                  backgroundColor: p.primary.withOpacity(0.12),
+                                  backgroundColor: p.primary.withValues(alpha: 0.12),
                                   child: Text(
                                     '${index + 1}',
                                     style: TextStyle(
@@ -574,7 +575,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                                   child: Text(
                                     'Nothing saved yet',
                                     style: TextStyle(
-                                      color: p.text.withOpacity(0.65),
+                                      color: p.text.withValues(alpha: 0.65),
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -614,7 +615,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                                   child: Text(
                                     'No notes yet',
                                     style: TextStyle(
-                                      color: p.text.withOpacity(0.65),
+                                      color: p.text.withValues(alpha: 0.65),
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -865,8 +866,8 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              p.primary.withOpacity(0.12),
-              p.accent.withOpacity(0.08),
+              p.primary.withValues(alpha: 0.12),
+              p.accent.withValues(alpha: 0.08),
               p.appBg,
             ],
             begin: Alignment.topCenter,
@@ -886,15 +887,15 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
         ),
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(color: Colors.black.withOpacity(0.18)),
+          child: Container(color: Colors.black.withValues(alpha: 0.18)),
         ),
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.black.withOpacity(0.34),
-                p.primary.withOpacity(0.14),
-                p.appBg.withOpacity(0.95),
+                Colors.black.withValues(alpha: 0.34),
+                p.primary.withValues(alpha: 0.14),
+                p.appBg.withValues(alpha: 0.95),
               ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
@@ -982,7 +983,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.62),
+                    color: p.text.withValues(alpha: 0.62),
                     fontWeight: FontWeight.w700,
                     fontSize: 11,
                   ),
@@ -1027,9 +1028,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
               activeTrackColor: p.accent,
-              inactiveTrackColor: p.border.withOpacity(0.45),
+              inactiveTrackColor: p.border.withValues(alpha: 0.45),
               thumbColor: p.primary,
-              overlayColor: p.primary.withOpacity(0.12),
+              overlayColor: p.primary.withValues(alpha: 0.12),
             ),
             child: Slider(
               value: currentMs.clamp(0, totalMs),
@@ -1044,7 +1045,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               Text(
                 _format(_position),
                 style: TextStyle(
-                  color: p.text.withOpacity(0.72),
+                  color: p.text.withValues(alpha: 0.72),
                   fontWeight: FontWeight.w800,
                   fontSize: 11,
                 ),
@@ -1053,7 +1054,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               Text(
                 _formatRemaining(_duration, _position),
                 style: TextStyle(
-                  color: p.text.withOpacity(0.72),
+                  color: p.text.withValues(alpha: 0.72),
                   fontWeight: FontWeight.w800,
                   fontSize: 11,
                 ),
@@ -1188,13 +1189,13 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                 child: Container(
                   decoration: BoxDecoration(
                     color: selected
-                        ? p.primary.withOpacity(0.16)
-                        : p.cardBg.withOpacity(0.68),
+                        ? p.primary.withValues(alpha: 0.16)
+                        : p.cardBg.withValues(alpha: 0.68),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: selected
-                          ? p.primary.withOpacity(0.45)
-                          : p.border.withOpacity(0.70),
+                          ? p.primary.withValues(alpha: 0.45)
+                          : p.border.withValues(alpha: 0.70),
                     ),
                   ),
                   alignment: Alignment.center,
@@ -1229,7 +1230,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                 widget.imageUrl.trim(),
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) =>
-                    Container(color: p.soft.withOpacity(0.3)),
+                    Container(color: p.soft.withValues(alpha: 0.3)),
               ),
             )
           else
@@ -1238,8 +1239,8 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                 borderRadius: BorderRadius.circular(22),
                 gradient: LinearGradient(
                   colors: [
-                    p.primary.withOpacity(0.22),
-                    p.accent.withOpacity(0.16),
+                    p.primary.withValues(alpha: 0.22),
+                    p.accent.withValues(alpha: 0.16),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -1251,8 +1252,8 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               borderRadius: BorderRadius.circular(22),
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.16),
-                  Colors.black.withOpacity(0.30),
+                  Colors.black.withValues(alpha: 0.16),
+                  Colors.black.withValues(alpha: 0.30),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -1289,9 +1290,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                     vertical: 14,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.28),
+                    color: Colors.black.withValues(alpha: 0.28),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.12)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                   ),
                   child: Text(
                     widget.title.trim().isEmpty
@@ -1301,7 +1302,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.95),
+                      color: Colors.white.withValues(alpha: 0.95),
                       fontWeight: FontWeight.w900,
                       fontSize: _focusMode ? 18 : 16,
                       height: 1.2,
@@ -1382,9 +1383,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: p.cardBg.withOpacity(0.72),
+                color: p.cardBg.withValues(alpha: 0.72),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: p.border.withOpacity(0.75)),
+                border: Border.all(color: p.border.withValues(alpha: 0.75)),
               ),
               child: Icon(Icons.more_horiz_rounded, color: p.text, size: 20),
             ),
@@ -1400,9 +1401,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: p.soft.withOpacity(0.58),
+          color: p.soft.withValues(alpha: 0.58),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: p.border.withOpacity(0.65)),
+          border: Border.all(color: p.border.withValues(alpha: 0.65)),
         ),
         child: Row(
           children: [
@@ -1430,9 +1431,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: p.primary.withOpacity(0.10),
+        color: p.primary.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: p.border.withOpacity(0.65)),
+        border: Border.all(color: p.border.withValues(alpha: 0.65)),
       ),
       child: Text(
         text,
@@ -1449,9 +1450,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.28),
+        color: Colors.black.withValues(alpha: 0.28),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.12)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1485,9 +1486,9 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
         child: Container(
           height: double.infinity,
           decoration: BoxDecoration(
-            color: p.cardBg.withOpacity(0.72),
+            color: p.cardBg.withValues(alpha: 0.72),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: p.border.withOpacity(0.75)),
+            border: Border.all(color: p.border.withValues(alpha: 0.75)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Row(
@@ -1516,12 +1517,12 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
 
   BoxDecoration _glassDecoration(_AudioPalette p) {
     return BoxDecoration(
-      color: p.cardBg.withOpacity(0.86),
+      color: p.cardBg.withValues(alpha: 0.86),
       borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: p.border.withOpacity(0.82)),
+      border: Border.all(color: p.border.withValues(alpha: 0.82)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.05),
+          color: Colors.black.withValues(alpha: 0.05),
           blurRadius: 12,
           offset: const Offset(0, 6),
         ),
@@ -1533,7 +1534,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
     return Container(
       width: 48,
       height: 48,
-      color: Colors.white.withOpacity(0.12),
+      color: Colors.white.withValues(alpha: 0.12),
       child: const Icon(
         Icons.headphones_rounded,
         color: Colors.white,
@@ -1571,7 +1572,7 @@ class _SharedAudioPlayerScreenState extends State<SharedAudioPlayerScreen> {
   }) {
     final p = palette;
     return Material(
-      color: p.cardBg.withOpacity(0.72),
+      color: p.cardBg.withValues(alpha: 0.72),
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,

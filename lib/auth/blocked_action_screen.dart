@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/app_feedback.dart';
 
 class BlockedActionScreen extends StatefulWidget {
   final String uid;
@@ -113,7 +114,7 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
     } catch (e) {
       log('❌ finalize error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           SnackBar(
             content: Text(
               'Couldn’t finalize automatically.\nPlease sign out.\n$e',
@@ -178,7 +179,7 @@ class _BlockedActionScreenState extends State<BlockedActionScreen> {
                         BoxShadow(
                           blurRadius: 15,
                           offset: const Offset(0, 8),
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                         ),
                       ],
                     ),

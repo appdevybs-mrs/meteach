@@ -1,5 +1,4 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:http/http.dart' as http;
 
 class BackendApi {
@@ -11,9 +10,7 @@ class BackendApi {
   static Uri uri(String path) => Uri.parse('$secureBaseUrl/$path');
 
   static void _debug(String message) {
-    if (kDebugMode) {
-      debugPrint('[BackendApi] $message');
-    }
+    // no-op in production build
   }
 
   static Future<Uri> withAuthQuery(Uri original) async {

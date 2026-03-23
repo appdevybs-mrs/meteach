@@ -6,6 +6,7 @@ import 'dart:async';
 import '../shared/human_error.dart';
 
 import 'teacher_mail_thread_screen.dart';
+import '../shared/app_feedback.dart';
 
 class TeacherMailScreen extends StatefulWidget {
   const TeacherMailScreen({super.key});
@@ -46,9 +47,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   String _normalizeRole(dynamic raw) {
@@ -762,7 +761,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               width: 76,
               height: 76,
               decoration: BoxDecoration(
-                color: scheme.primary.withOpacity(0.10),
+                color: scheme.primary.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Icon(icon, size: 34, color: scheme.primary),
@@ -876,10 +875,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outline.withOpacity(0.18)),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -929,7 +928,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: scheme.primary.withOpacity(0.08),
+        color: scheme.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(18),
       ),
       child: TabBar(
@@ -939,7 +938,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -968,7 +967,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
       length: 3,
       child: Scaffold(
         backgroundColor: Color.alphaBlend(
-          scheme.primary.withOpacity(0.03),
+          scheme.primary.withValues(alpha: 0.03),
           Theme.of(context).scaffoldBackgroundColor,
         ),
         appBar: AppBar(
@@ -1079,12 +1078,12 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: _expanded
-              ? scheme.primary.withOpacity(0.30)
-              : scheme.outline.withOpacity(0.14),
+              ? scheme.primary.withValues(alpha: 0.30)
+              : scheme.outline.withValues(alpha: 0.14),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(_expanded ? 0.07 : 0.04),
+            color: Colors.black.withValues(alpha: _expanded ? 0.07 : 0.04),
             blurRadius: _expanded ? 22 : 14,
             offset: const Offset(0, 8),
           ),
@@ -1104,7 +1103,7 @@ class _InboxGroupCardState extends State<_InboxGroupCard> {
           ),
           leading: CircleAvatar(
             radius: 24,
-            backgroundColor: widget.avatarColor.withOpacity(0.14),
+            backgroundColor: widget.avatarColor.withValues(alpha: 0.14),
             child: Text(
               widget.displayName.isEmpty
                   ? '?'
@@ -1198,16 +1197,16 @@ class _ThreadTile extends StatelessWidget {
     final hwExtra = parts.length >= 3 ? parts[2] : '';
 
     final bgColor = isHomework
-        ? Colors.orange.withOpacity(row.unreadCount > 0 ? 0.10 : 0.07)
+        ? Colors.orange.withValues(alpha: row.unreadCount > 0 ? 0.10 : 0.07)
         : (row.unreadCount > 0
-              ? scheme.primary.withOpacity(0.05)
-              : scheme.surfaceContainerHighest.withOpacity(0.45));
+              ? scheme.primary.withValues(alpha: 0.05)
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.45));
 
     final borderColor = isHomework
-        ? Colors.orange.withOpacity(0.28)
+        ? Colors.orange.withValues(alpha: 0.28)
         : (row.unreadCount > 0
-              ? scheme.primary.withOpacity(0.18)
-              : scheme.outline.withOpacity(0.10));
+              ? scheme.primary.withValues(alpha: 0.18)
+              : scheme.outline.withValues(alpha: 0.10));
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -1230,7 +1229,7 @@ class _ThreadTile extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.14),
+                    color: Colors.orange.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -1250,7 +1249,7 @@ class _ThreadTile extends StatelessWidget {
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.12),
+                          color: Colors.orange.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: const Text(
@@ -1272,7 +1271,7 @@ class _ThreadTile extends StatelessWidget {
                               ? FontWeight.w900
                               : FontWeight.w800,
                           fontSize: 15,
-                          color: Colors.black.withOpacity(0.88),
+                          color: Colors.black.withValues(alpha: 0.88),
                         ),
                       ),
                       if (hwDate.isNotEmpty || hwExtra.isNotEmpty) ...[
@@ -1675,7 +1674,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: scheme.primary.withOpacity(0.08),
+                    color: scheme.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: SegmentedButton<_ComposeMode>(
@@ -1698,7 +1697,7 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                   Container(
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: scheme.outline.withOpacity(0.35),
+                        color: scheme.outline.withValues(alpha: 0.35),
                       ),
                       borderRadius: BorderRadius.circular(16),
                     ),

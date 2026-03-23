@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class TeacherOnlineBookingScreen extends StatefulWidget {
   const TeacherOnlineBookingScreen({super.key});
@@ -90,7 +91,7 @@ class _TeacherOnlineBookingScreenState
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(
         content: Text(humanizeUiMessage(msg)),
         behavior: SnackBarBehavior.floating,
@@ -687,7 +688,7 @@ class _TeacherOnlineBookingScreenState
                 decoration: BoxDecoration(
                   color: p.cardBg,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: p.border.withOpacity(0.85)),
+                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,13 +720,13 @@ class _TeacherOnlineBookingScreenState
                               ),
                               decoration: BoxDecoration(
                                 color: isOn
-                                    ? p.accent.withOpacity(0.10)
-                                    : p.soft.withOpacity(0.45),
+                                    ? p.accent.withValues(alpha: 0.10)
+                                    : p.soft.withValues(alpha: 0.45),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: isOn
-                                      ? p.accent.withOpacity(0.35)
-                                      : p.border.withOpacity(0.9),
+                                      ? p.accent.withValues(alpha: 0.35)
+                                      : p.border.withValues(alpha: 0.9),
                                 ),
                               ),
                               child: Row(
@@ -785,7 +786,7 @@ class _TeacherOnlineBookingScreenState
                             style: OutlinedButton.styleFrom(
                               foregroundColor: p.primary,
                               side: BorderSide(
-                                color: p.border.withOpacity(0.9),
+                                color: p.border.withValues(alpha: 0.9),
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -950,7 +951,7 @@ class _TeacherOnlineBookingScreenState
             Text(
               'Courses + weekly schedule',
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
                 fontSize: 11,
               ),
@@ -1054,10 +1055,10 @@ class _TeacherOnlineBookingScreenState
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: p.soft.withOpacity(0.65),
+                            color: p.soft.withValues(alpha: 0.65),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: p.border.withOpacity(0.85),
+                              color: p.border.withValues(alpha: 0.85),
                             ),
                           ),
                           child: Icon(
@@ -1096,7 +1097,7 @@ class _TeacherOnlineBookingScreenState
                                   color: p.cardBg,
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color: p.border.withOpacity(0.85),
+                                    color: p.border.withValues(alpha: 0.85),
                                   ),
                                 ),
                                 child: Row(
@@ -1269,14 +1270,14 @@ class _HeroAvailabilityCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1288,7 +1289,7 @@ class _HeroAvailabilityCard extends StatelessWidget {
           Text(
             'Online Booking',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
+              color: Colors.white.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
               fontSize: 11,
             ),
@@ -1309,7 +1310,7 @@ class _HeroAvailabilityCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.88),
+              color: Colors.white.withValues(alpha: 0.88),
               fontWeight: FontWeight.w700,
               fontSize: 13,
               height: 1.3,
@@ -1348,9 +1349,9 @@ class _HeroPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.14)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
       child: Text(
         label,
@@ -1383,10 +1384,10 @@ class _CardBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.border.withOpacity(0.88)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.88)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -1434,9 +1435,9 @@ class _MiniHelpButton extends StatelessWidget {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: palette.soft.withOpacity(0.65),
+          color: palette.soft.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: palette.border.withOpacity(0.85)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.85)),
         ),
         child: Icon(
           Icons.question_mark_rounded,
@@ -1460,15 +1461,15 @@ class _InfoBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.45),
+        color: palette.soft.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontWeight: FontWeight.w700,
-          color: palette.text.withOpacity(0.85),
+          color: palette.text.withValues(alpha: 0.85),
           height: 1.3,
           fontSize: 12,
         ),
@@ -1501,7 +1502,7 @@ class _ToggleRowCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
@@ -1535,7 +1536,7 @@ class _ToggleRowCard extends StatelessWidget {
                   subtitle,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: palette.text.withOpacity(0.68),
+                    color: palette.text.withValues(alpha: 0.68),
                     fontSize: 12,
                     height: 1.2,
                   ),
@@ -1595,7 +1596,7 @@ class _CoursesChecklist extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.cardBg,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: palette.border.withOpacity(0.85)),
+              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             ),
             child: CheckboxListTile(
               dense: true,
@@ -1666,9 +1667,9 @@ class _DayChips extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
             decoration: BoxDecoration(
-              color: enabled ? palette.cardBg : palette.soft.withOpacity(0.45),
+              color: enabled ? palette.cardBg : palette.soft.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: palette.border.withOpacity(0.85)),
+              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1679,7 +1680,7 @@ class _DayChips extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: enabled
                         ? palette.primary
-                        : palette.primary.withOpacity(0.5),
+                        : palette.primary.withValues(alpha: 0.5),
                     fontSize: 12,
                   ),
                 ),
@@ -1691,12 +1692,12 @@ class _DayChips extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: count == 0
-                        ? palette.soft.withOpacity(0.7)
-                        : palette.accent.withOpacity(0.10),
+                        ? palette.soft.withValues(alpha: 0.7)
+                        : palette.accent.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: (count == 0 ? palette.border : palette.accent)
-                          .withOpacity(0.35),
+                          .withValues(alpha: 0.35),
                     ),
                   ),
                   child: Text(
@@ -1704,7 +1705,7 @@ class _DayChips extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       color: count == 0
-                          ? palette.primary.withOpacity(0.6)
+                          ? palette.primary.withValues(alpha: 0.6)
                           : palette.accent,
                       fontSize: 11,
                     ),
@@ -1751,10 +1752,10 @@ class _DayCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: palette.cardBg,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: palette.border.withOpacity(0.85)),
+            border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 10,
                 offset: const Offset(0, 6),
               ),
@@ -1767,13 +1768,13 @@ class _DayCard extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: has
-                      ? palette.accent.withOpacity(0.10)
-                      : palette.primary.withOpacity(0.06),
+                      ? palette.accent.withValues(alpha: 0.10)
+                      : palette.primary.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: has
-                        ? palette.accent.withOpacity(0.25)
-                        : palette.border.withOpacity(0.85),
+                        ? palette.accent.withValues(alpha: 0.25)
+                        : palette.border.withValues(alpha: 0.85),
                   ),
                 ),
                 child: Icon(
@@ -1802,7 +1803,7 @@ class _DayCard extends StatelessWidget {
                       preview,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: palette.text.withOpacity(0.68),
+                        color: palette.text.withValues(alpha: 0.68),
                         fontSize: 12,
                       ),
                     ),
@@ -1814,11 +1815,11 @@ class _DayCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
                 decoration: BoxDecoration(
                   color: has
-                      ? palette.accent.withOpacity(0.10)
-                      : palette.soft.withOpacity(0.8),
+                      ? palette.accent.withValues(alpha: 0.10)
+                      : palette.soft.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: (has ? palette.accent : palette.border).withOpacity(
+                    color: (has ? palette.accent : palette.border).withValues(alpha: 
                       0.35,
                     ),
                   ),
@@ -1829,7 +1830,7 @@ class _DayCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: has
                         ? palette.accent
-                        : palette.primary.withOpacity(0.6),
+                        : palette.primary.withValues(alpha: 0.6),
                     fontSize: 11,
                   ),
                 ),
@@ -1838,7 +1839,7 @@ class _DayCard extends StatelessWidget {
               Icon(
                 Icons.chevron_right_rounded,
                 color: enabled
-                    ? palette.text.withOpacity(0.45)
+                    ? palette.text.withValues(alpha: 0.45)
                     : Colors.grey.shade400,
               ),
             ],
@@ -1870,7 +1871,7 @@ class _SheetHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
@@ -1878,9 +1879,9 @@ class _SheetHeader extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: palette.primary.withOpacity(0.08),
+              color: palette.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: palette.border.withOpacity(0.85)),
+              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             ),
             child: Icon(
               Icons.view_week_rounded,
@@ -1906,7 +1907,7 @@ class _SheetHeader extends StatelessWidget {
                   subtitle,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: palette.text.withOpacity(0.65),
+                    color: palette.text.withValues(alpha: 0.65),
                     fontSize: 12,
                   ),
                 ),
@@ -1916,9 +1917,9 @@ class _SheetHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
             decoration: BoxDecoration(
-              color: palette.accent.withOpacity(0.10),
+              color: palette.accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: palette.accent.withOpacity(0.25)),
+              border: Border.all(color: palette.accent.withValues(alpha: 0.25)),
             ),
             child: Text(
               '$count',
@@ -1960,7 +1961,7 @@ class _MeetLinkCard extends StatelessWidget {
           color: palette.cardBg,
 
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: palette.border.withOpacity(0.85)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.85)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1981,7 +1982,7 @@ class _MeetLinkCard extends StatelessWidget {
                 isDense: true,
                 hintText: 'https://meet.google.com/xxx-xxxx-xxx',
                 filled: true,
-                fillColor: palette.soft.withOpacity(0.55),
+                fillColor: palette.soft.withValues(alpha: 0.55),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'shared/human_error.dart';
+import 'shared/app_feedback.dart';
 
 /// ===== Brand Colors (from your palette) =====
 class Brand {
@@ -473,7 +474,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
     final selected = _selectedOption;
     if (selected == null || !selected.enabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Please choose a study type.')),
       );
       return;
@@ -481,7 +482,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
     if (selected.requiresStudyMode &&
         normalizeStudyMode(_privateStudyMode).isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(
           content: Text('Please choose Online or In-Class for Private.'),
         ),
@@ -493,7 +494,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
     if (!can) {
       final rem = await EnrollLimiter.remaining(widget.courseId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             'Too many attempts. Please wait ${_formatDuration(rem)} and try again.',
@@ -547,7 +548,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(
           content: Text('Enrollment sent ✅ We will contact you soon.'),
         ),
@@ -556,7 +557,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(
@@ -598,7 +599,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
       hintText: hint,
       prefixIcon: Icon(icon),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.92),
+      fillColor: Colors.white.withValues(alpha: 0.92),
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       alignLabelWithHint: true,
@@ -608,7 +609,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(radius),
-        borderSide: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+        borderSide: BorderSide(color: Brand.uiBorder.withValues(alpha: 0.9)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(radius),
@@ -664,8 +665,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
                     end: Alignment.bottomRight,
                     colors: [
                       Brand.appBg,
-                      Colors.white.withOpacity(0.8),
-                      Brand.appBg.withOpacity(0.7),
+                      Colors.white.withValues(alpha: 0.8),
+                      Brand.appBg.withValues(alpha: 0.7),
                     ],
                   ),
                 ),
@@ -675,7 +676,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
               top: -120,
               left: -120,
               child: _SoftBlob(
-                color: Brand.accentCyan.withOpacity(0.10),
+                color: Brand.accentCyan.withValues(alpha: 0.10),
                 size: 260,
               ),
             ),
@@ -683,7 +684,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
               bottom: -140,
               right: -140,
               child: _SoftBlob(
-                color: Brand.actionOrange.withOpacity(0.10),
+                color: Brand.actionOrange.withValues(alpha: 0.10),
                 size: 300,
               ),
             ),
@@ -708,7 +709,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
                         Text(
                           'Swipe to explore the available study options.',
                           style: TextStyle(
-                            color: Brand.mainText.withOpacity(0.72),
+                            color: Brand.mainText.withValues(alpha: 0.72),
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -965,15 +966,15 @@ class _DeliveryCarousel extends StatelessWidget {
                           end: Alignment.bottomRight,
                           colors: [
                             Brand.primaryBlue,
-                            Brand.primaryBlue.withOpacity(0.92),
+                            Brand.primaryBlue.withValues(alpha: 0.92),
                           ],
                         )
                       : LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            Colors.white.withOpacity(0.98),
-                            Colors.white.withOpacity(0.92),
+                            Colors.white.withValues(alpha: 0.98),
+                            Colors.white.withValues(alpha: 0.92),
                           ],
                         ),
                   borderRadius: BorderRadius.circular(22),
@@ -984,8 +985,8 @@ class _DeliveryCarousel extends StatelessWidget {
                   boxShadow: [
                     BoxShadow(
                       color: selected
-                          ? Brand.primaryBlue.withOpacity(0.18)
-                          : Colors.black.withOpacity(0.05),
+                          ? Brand.primaryBlue.withValues(alpha: 0.18)
+                          : Colors.black.withValues(alpha: 0.05),
                       blurRadius: selected ? 20 : 12,
                       offset: const Offset(0, 10),
                     ),
@@ -999,13 +1000,13 @@ class _DeliveryCarousel extends StatelessWidget {
                       height: 52,
                       decoration: BoxDecoration(
                         color: selected
-                            ? Colors.white.withOpacity(0.12)
-                            : Brand.accentCyan.withOpacity(0.14),
+                            ? Colors.white.withValues(alpha: 0.12)
+                            : Brand.accentCyan.withValues(alpha: 0.14),
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: selected
-                              ? Colors.white.withOpacity(0.18)
-                              : Brand.uiBorder.withOpacity(0.9),
+                              ? Colors.white.withValues(alpha: 0.18)
+                              : Brand.uiBorder.withValues(alpha: 0.9),
                         ),
                       ),
                       child: Icon(
@@ -1031,8 +1032,8 @@ class _DeliveryCarousel extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         color: selected
-                            ? Colors.white.withOpacity(0.92)
-                            : Brand.mainText.withOpacity(0.75),
+                            ? Colors.white.withValues(alpha: 0.92)
+                            : Brand.mainText.withValues(alpha: 0.75),
                         fontWeight: FontWeight.w700,
                         height: 1.2,
                       ),
@@ -1142,15 +1143,15 @@ class _DeliveryExplanation extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withOpacity(0.98),
-            Brand.accentCyan.withOpacity(0.04),
+            Colors.white.withValues(alpha: 0.98),
+            Brand.accentCyan.withValues(alpha: 0.04),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Brand.uiBorder.withOpacity(0.95)),
+        border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.95)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 8),
           ),
@@ -1211,9 +1212,9 @@ class _FeatureTag extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 120, maxWidth: 240),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.96),
+        color: Colors.white.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+        border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1254,14 +1255,14 @@ class _StudyModeSelector extends StatelessWidget {
       decoration: InputDecoration(
         labelText: 'Choose mode',
         filled: true,
-        fillColor: Colors.white.withOpacity(0.92),
+        fillColor: Colors.white.withValues(alpha: 0.92),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+          borderSide: BorderSide(color: Brand.uiBorder.withValues(alpha: 0.9)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+          borderSide: BorderSide(color: Brand.uiBorder.withValues(alpha: 0.9)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(16)),
@@ -1301,15 +1302,15 @@ class _SelectedOptionSummary extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Brand.actionOrange.withOpacity(0.16),
-            Brand.actionOrange.withOpacity(0.08),
+            Brand.actionOrange.withValues(alpha: 0.16),
+            Brand.actionOrange.withValues(alpha: 0.08),
           ],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Brand.actionOrange.withOpacity(0.45)),
+        border: Border.all(color: Brand.actionOrange.withValues(alpha: 0.45)),
         boxShadow: [
           BoxShadow(
-            color: Brand.actionOrange.withOpacity(0.10),
+            color: Brand.actionOrange.withValues(alpha: 0.10),
             blurRadius: 18,
             offset: const Offset(0, 12),
           ),
@@ -1322,9 +1323,9 @@ class _SelectedOptionSummary extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: Brand.actionOrange.withOpacity(0.16),
+              color: Brand.actionOrange.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.actionOrange.withOpacity(0.25)),
+              border: Border.all(color: Brand.actionOrange.withValues(alpha: 0.25)),
             ),
             child: Icon(option.icon(), color: Brand.actionOrange),
           ),
@@ -1348,7 +1349,7 @@ class _SelectedOptionSummary extends StatelessWidget {
                         ? '$modeText • $modeTextAr'
                         : modeText,
                     style: TextStyle(
-                      color: Brand.primaryBlue.withOpacity(0.85),
+                      color: Brand.primaryBlue.withValues(alpha: 0.85),
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1366,7 +1367,7 @@ class _SelectedOptionSummary extends StatelessWidget {
                 Text(
                   accessText,
                   style: TextStyle(
-                    color: Brand.mainText.withOpacity(0.82),
+                    color: Brand.mainText.withValues(alpha: 0.82),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1395,7 +1396,7 @@ class _SoftBlob extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.55),
+              color: color.withValues(alpha: 0.55),
               blurRadius: 90,
               spreadRadius: 20,
             ),
@@ -1420,12 +1421,12 @@ class _GlassCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.78),
+            color: Colors.white.withValues(alpha: 0.78),
             borderRadius: BorderRadius.circular(radius),
-            border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+            border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 24,
                 offset: const Offset(0, 14),
               ),
@@ -1457,7 +1458,7 @@ class _MascotHeader extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Brand.appBg,
-              border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+              border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
             ),
             padding: const EdgeInsets.all(8),
             child: ClipOval(
@@ -1519,9 +1520,9 @@ class _SectionTitle extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: Brand.accentCyan.withOpacity(0.14),
+            color: Brand.accentCyan.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+            border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
           ),
           child: Icon(icon, color: Brand.primaryBlue, size: 18),
         ),
@@ -1547,9 +1548,9 @@ class _InfoBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Brand.accentCyan.withOpacity(0.08),
+        color: Brand.accentCyan.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Brand.uiBorder.withOpacity(0.9)),
+        border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
       ),
       child: Row(
         children: [
@@ -1557,7 +1558,7 @@ class _InfoBanner extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: Brand.accentCyan.withOpacity(0.16),
+              color: Brand.accentCyan.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
@@ -1571,7 +1572,7 @@ class _InfoBanner extends StatelessWidget {
             child: Text(
               text,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Brand.mainText.withOpacity(0.80),
+                color: Brand.mainText.withValues(alpha: 0.80),
                 fontWeight: FontWeight.w700,
                 height: 1.25,
               ),
@@ -1599,13 +1600,13 @@ class _BottomActionBar extends StatelessWidget {
         child: Container(
           padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + mq.padding.bottom),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.78),
+            color: Colors.white.withValues(alpha: 0.78),
             border: Border(
-              top: BorderSide(color: Brand.uiBorder.withOpacity(0.9)),
+              top: BorderSide(color: Brand.uiBorder.withValues(alpha: 0.9)),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
+                color: Colors.black.withValues(alpha: 0.08),
                 blurRadius: 18,
                 offset: const Offset(0, -6),
               ),
@@ -1622,10 +1623,10 @@ class _BottomActionBar extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: Brand.primaryBlue,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Brand.primaryBlue.withOpacity(
+                    disabledBackgroundColor: Brand.primaryBlue.withValues(alpha: 
                       0.55,
                     ),
-                    disabledForegroundColor: Colors.white.withOpacity(0.9),
+                    disabledForegroundColor: Colors.white.withValues(alpha: 0.9),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),

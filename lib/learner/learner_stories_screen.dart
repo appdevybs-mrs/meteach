@@ -5,6 +5,7 @@ import '../shared/app_theme.dart';
 import '../shared/shared_story_audio_player_screen.dart';
 import '../shared/shared_pdf_reader_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../shared/app_feedback.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
   const LearnerStoriesScreen({super.key});
@@ -258,18 +259,14 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final uri = Uri.tryParse(url);
     if (uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Invalid story link.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Invalid story link.')));
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!ok && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open browser.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Could not open browser.')));
     }
   }
 
@@ -396,7 +393,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 Text(
                   'By $teacher',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.65),
+                    color: p.text.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -480,10 +477,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: p.accent.withOpacity(0.10),
+                              color: p.accent.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(999),
                               border: Border.all(
-                                color: p.accent.withOpacity(0.20),
+                                color: p.accent.withValues(alpha: 0.20),
                               ),
                             ),
                             child: Text(
@@ -587,7 +584,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       decoration: BoxDecoration(
         color: p.soft,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: p.border.withOpacity(0.90)),
+        border: Border.all(color: p.border.withValues(alpha: 0.90)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -632,7 +629,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
             color: selected ? p.primary : p.cardBg,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: selected ? p.primary : p.border.withOpacity(0.85),
+              color: selected ? p.primary : p.border.withValues(alpha: 0.85),
             ),
           ),
           child: Row(
@@ -843,10 +840,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
             decoration: BoxDecoration(
               color: p.cardBg,
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: p.border.withOpacity(0.90)),
+              border: Border.all(color: p.border.withValues(alpha: 0.90)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 12,
                   offset: const Offset(0, 6),
                 ),
@@ -882,7 +879,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
+                          color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Row(
@@ -941,7 +938,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: p.text.withOpacity(0.62),
+                            color: p.text.withValues(alpha: 0.62),
                             fontWeight: FontWeight.w700,
                             fontSize: 11,
                           ),
@@ -999,7 +996,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
               Text(
                 '${stories.length}',
                 style: TextStyle(
-                  color: p.text.withOpacity(0.60),
+                  color: p.text.withValues(alpha: 0.60),
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -1045,12 +1042,12 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: isAccent ? p.accent.withOpacity(0.10) : p.soft,
+        color: isAccent ? p.accent.withValues(alpha: 0.10) : p.soft,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
           color: isAccent
-              ? p.accent.withOpacity(0.20)
-              : p.border.withOpacity(0.90),
+              ? p.accent.withValues(alpha: 0.20)
+              : p.border.withValues(alpha: 0.90),
         ),
       ),
       child: Text(
@@ -1100,7 +1097,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   isDense: true,
                   border: InputBorder.none,
                   hintStyle: TextStyle(
-                    color: p.text.withOpacity(0.55),
+                    color: p.text.withValues(alpha: 0.55),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1164,7 +1161,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   decoration: BoxDecoration(
                     color: p.cardBg,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: p.border.withOpacity(0.85)),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1224,8 +1221,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            p.primary.withOpacity(0.96),
-                            p.accent.withOpacity(0.92),
+                            p.primary.withValues(alpha: 0.96),
+                            p.accent.withValues(alpha: 0.92),
                           ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -1233,7 +1230,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: p.primary.withOpacity(0.16),
+                            color: p.primary.withValues(alpha: 0.16),
                             blurRadius: 16,
                             offset: const Offset(0, 8),
                           ),
@@ -1245,10 +1242,10 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                             width: 52,
                             height: 52,
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.14),
+                              color: Colors.white.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.24),
+                                color: Colors.white.withValues(alpha: 0.24),
                               ),
                             ),
                             child: const Icon(
@@ -1274,7 +1271,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                                 Text(
                                   '${visibleItems.length} stories ready to explore',
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.84),
+                                    color: Colors.white.withValues(alpha: 0.84),
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -1300,7 +1297,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: p.border.withOpacity(0.85)),
+                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
                         ),
                         child: Text(
                           'No stories match your filters.',

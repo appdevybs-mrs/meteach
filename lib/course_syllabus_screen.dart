@@ -1,12 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'shared/app_feedback.dart';
 import 'shared/human_error.dart';
 import 'services/backend_api.dart';
 
@@ -20,7 +21,7 @@ import 'services/backend_api.dart';
 /// - upload 1 video file
 /// - upload 1 HTML material file
 /// - files stored under:
-///   courses/<course-folder>/<session-folder>/
+///   `courses/<course-folder>/<session-folder>/`
 /// - saved back into RTDB as:
 ///   videoUrl, materialsUrl, serverFolderPath
 ///
@@ -192,15 +193,13 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           .set(true);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Syllabus saved ✅')));
+      AppToast.show(context, 'Syllabus saved', type: AppToastType.success);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(toHumanError(e, fallback: 'Could not save changes.')),
-        ),
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not save changes.'),
+        type: AppToastType.error,
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -322,10 +321,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(toHumanError(e, fallback: 'Could not delete item.')),
-        ),
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not delete item.'),
+        type: AppToastType.error,
       );
     }
   }
@@ -397,10 +396,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Session added. Tap Save to apply in RTDB.'),
-        ),
+      AppToast.show(
+        context,
+        'Session added. Tap Save to apply in RTDB.',
+        type: AppToastType.success,
       );
     }
   }
@@ -461,10 +460,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     });
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Session updated. Tap Save to apply in RTDB.'),
-        ),
+      AppToast.show(
+        context,
+        'Session updated. Tap Save to apply in RTDB.',
+        type: AppToastType.success,
       );
     }
   }
@@ -494,10 +493,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(toHumanError(e, fallback: 'Could not delete item.')),
-        ),
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not delete item.'),
+        type: AppToastType.error,
       );
     }
   }
@@ -546,7 +545,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -580,7 +579,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         label: const Text('Add Unit'),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: BrandedInlineLoader(message: 'Loading syllabus...'),
+            )
           : _units.isEmpty
           ? _EmptyState(onAddUnit: _addUnit, courseTitle: widget.courseTitle)
           : Column(
@@ -708,9 +709,7 @@ class _SyllabusServerStorage {
       'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
 
   static void _debug(String message) {
-    if (kDebugMode) {
-      debugPrint('[SyllabusStorage] $message');
-    }
+    // no-op in production build
   }
 
   static String sanitizeSegment(String value, {String fallback = 'item'}) {
@@ -760,6 +759,7 @@ class _SyllabusServerStorage {
     required String root,
     required String path,
     required String customName,
+    void Function(double progress)? onProgress,
   }) async {
     final token = await BackendApi.authToken();
     final authFields = await BackendApi.authFormFields();
@@ -798,7 +798,28 @@ class _SyllabusServerStorage {
       );
     }
 
-    final streamed = await req.send();
+    final byteStream = req.finalize();
+    final totalBytes = req.contentLength;
+    int sent = 0;
+    final trackedStream = byteStream.transform(
+      StreamTransformer.fromHandlers(
+        handleData: (chunk, sink) {
+          sent += chunk.length;
+          if (onProgress != null && totalBytes > 0) {
+            final p = (sent / totalBytes).clamp(0.0, 1.0);
+            onProgress(p);
+          }
+          sink.add(chunk);
+        },
+      ),
+    );
+
+    final streamedReq = http.StreamedRequest(req.method, req.url)
+      ..headers.addAll(req.headers)
+      ..contentLength = totalBytes;
+
+    await trackedStream.pipe(streamedReq.sink);
+    final streamed = await streamedReq.send();
     final response = await http.Response.fromStream(streamed);
     final raw = response.body.trim();
 
@@ -823,6 +844,7 @@ class _SyllabusServerStorage {
         throw Exception('Upload succeeded but no URL returned');
       }
       _debug('upload success url=$url');
+      onProgress?.call(1.0);
       return url;
     }
 
@@ -936,7 +958,7 @@ class _HeaderStats extends StatelessWidget {
           const Spacer(),
           Text(
             'Drag units to reorder',
-            style: TextStyle(color: Colors.black.withOpacity(0.55)),
+            style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
           ),
         ],
       ),
@@ -981,7 +1003,7 @@ class _EmptyState extends StatelessWidget {
               Text(
                 'Create the syllabus for "$courseTitle" by adding your first unit.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.7)),
               ),
               const SizedBox(height: 12),
               FilledButton.icon(
@@ -1046,7 +1068,7 @@ class _UnitCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A2B48).withOpacity(0.08),
+                color: const Color(0xFF1A2B48).withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(
@@ -1094,7 +1116,7 @@ class _UnitCard extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   unit.description,
-                  style: TextStyle(color: Colors.black.withOpacity(0.65)),
+                  style: TextStyle(color: Colors.black.withValues(alpha: 0.65)),
                 ),
               ),
             ],
@@ -1103,7 +1125,7 @@ class _UnitCard extends StatelessWidget {
               children: [
                 Text(
                   '${unit.sessions.length} sessions',
-                  style: TextStyle(color: Colors.black.withOpacity(0.55)),
+                  style: TextStyle(color: Colors.black.withValues(alpha: 0.55)),
                 ),
                 const Spacer(),
                 TextButton.icon(
@@ -1120,7 +1142,9 @@ class _UnitCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     'Collapsed • ${unit.sessions.length} sessions',
-                    style: TextStyle(color: Colors.black.withOpacity(0.55)),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.55),
+                    ),
                   ),
                 ),
               )
@@ -1131,7 +1155,9 @@ class _UnitCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     'No sessions yet. Add your first session.',
-                    style: TextStyle(color: Colors.black.withOpacity(0.55)),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.55),
+                    ),
                   ),
                 ),
               )
@@ -1381,9 +1407,7 @@ class _SessionEditorSheet extends StatefulWidget {
 
 class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   void _debug(String message) {
-    if (kDebugMode) {
-      debugPrint('[RecordedSessionEditor] $message');
-    }
+    // no-op in production build
   }
 
   String _fileNameFromUrl(String url) {
@@ -1414,6 +1438,8 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
   bool _uploadingVideo = false;
   bool _uploadingMaterials = false;
+  double _videoUploadProgress = 0;
+  double _materialsUploadProgress = 0;
   bool _recordedAssetFlowBusy = false;
   late String _serverFolderPath;
 
@@ -1710,6 +1736,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       }
 
       setState(() => _uploadingVideo = true);
+      setState(() => _videoUploadProgress = 0);
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
@@ -1736,6 +1763,10 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
           sessionNumber: widget.suggestedSessionNumber,
           suffix: 'video',
         ),
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _videoUploadProgress = p);
+        },
       );
 
       if (!mounted) return;
@@ -1786,6 +1817,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       if (mounted) {
         setState(() {
           _uploadingVideo = false;
+          _videoUploadProgress = 0;
           _recordedAssetFlowBusy = false;
         });
       }
@@ -1824,6 +1856,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       }
 
       setState(() => _uploadingMaterials = true);
+      setState(() => _materialsUploadProgress = 0);
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
@@ -1851,6 +1884,10 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
           sessionNumber: widget.suggestedSessionNumber,
           suffix: 'materials',
         ),
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _materialsUploadProgress = p);
+        },
       );
 
       if (!mounted) return;
@@ -1883,6 +1920,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       if (mounted) {
         setState(() {
           _uploadingMaterials = false;
+          _materialsUploadProgress = 0;
           _recordedAssetFlowBusy = false;
         });
       }
@@ -2071,12 +2109,24 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                               : const Icon(Icons.video_file_rounded),
                           label: Text(
                             _uploadingVideo
-                                ? 'Uploading...'
+                                ? 'Uploading ${(_videoUploadProgress * 100).round()}%'
                                 : (videoUrlC.text.trim().isEmpty
                                       ? 'Upload Video'
                                       : 'Replace Video'),
                           ),
                         ),
+                        if (_uploadingVideo) ...[
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              minHeight: 7,
+                              value: _videoUploadProgress
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                            ),
+                          ),
+                        ],
                         if (videoUrlC.text.trim().isNotEmpty) ...[
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
@@ -2126,12 +2176,24 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                               : const Icon(Icons.html_rounded),
                           label: Text(
                             _uploadingMaterials
-                                ? 'Uploading...'
+                                ? 'Uploading ${(_materialsUploadProgress * 100).round()}%'
                                 : (materialsUrlC.text.trim().isEmpty
                                       ? 'Upload HTML'
                                       : 'Replace HTML'),
                           ),
                         ),
+                        if (_uploadingMaterials) ...[
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              minHeight: 7,
+                              value: _materialsUploadProgress
+                                  .clamp(0.0, 1.0)
+                                  .toDouble(),
+                            ),
+                          ),
+                        ],
                         if (materialsUrlC.text.trim().isNotEmpty) ...[
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
@@ -2151,7 +2213,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           Text(
                             'Server folder: ${_serverFolderPath.trim()}',
                             style: TextStyle(
-                              color: Colors.black.withOpacity(0.55),
+                              color: Colors.black.withValues(alpha: 0.55),
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),

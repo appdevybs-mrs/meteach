@@ -15,6 +15,7 @@ import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
+import 'shared/app_feedback.dart';
 import 'shared/human_error.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
@@ -46,8 +47,6 @@ Future<void> main() async {
 
   runApp(const YourBridgeSchoolApp());
 
-  unawaited(appThemeController.loadSavedTheme());
-
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(FCMService.I.init());
   });
@@ -74,12 +73,172 @@ class YourBridgeSchoolApp extends StatelessWidget {
           navigatorKey: appNavigatorKey,
           scaffoldMessengerKey: messengerKey,
           debugShowCheckedModeBanner: false,
-          theme: appThemeController.themeData,
-          home: ForceUpdateGate(
-            child: const AuthGate(signedOutHome: HomeShell()),
+          theme: appThemeController.themeData.copyWith(
+            snackBarTheme: const SnackBarThemeData(
+              behavior: SnackBarBehavior.floating,
+              elevation: 8,
+              backgroundColor: Color(0xFF0F172A),
+              contentTextStyle: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(14)),
+              ),
+            ),
+          ),
+          home: AppStartupGate(
+            child: ForceUpdateGate(
+              child: const AuthGate(signedOutHome: HomeShell()),
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+class AppStartupGate extends StatefulWidget {
+  const AppStartupGate({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<AppStartupGate> createState() => _AppStartupGateState();
+}
+
+class _AppStartupGateState extends State<AppStartupGate> {
+  double _progress = 0;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _boot();
+  }
+
+  Future<void> _boot() async {
+    Future<void> step(Future<void> Function() fn, double progress) async {
+      await fn();
+      if (!mounted) return;
+      setState(() => _progress = progress);
+    }
+
+    await step(
+      () async => Future<void>.delayed(const Duration(milliseconds: 120)),
+      0.2,
+    );
+    await step(() async => appThemeController.loadSavedTheme(), 0.45);
+    await step(() async {
+      await PackageInfo.fromPlatform();
+    }, 0.7);
+    await step(
+      () async => Future<void>.delayed(const Duration(milliseconds: 220)),
+      0.9,
+    );
+    await step(
+      () async => Future<void>.delayed(const Duration(milliseconds: 180)),
+      1.0,
+    );
+
+    if (!mounted) return;
+    setState(() => _ready = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ready) return widget.child;
+    return _ProgressiveLogoSplash(progress: _progress);
+  }
+}
+
+class _ProgressiveLogoSplash extends StatelessWidget {
+  const _ProgressiveLogoSplash({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = progress.clamp(0.0, 1.0).toDouble();
+    return Scaffold(
+      backgroundColor: Brand.appBg,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 26),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 184,
+                  height: 184,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: Brand.uiBorder),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(26),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Opacity(
+                          opacity: 0.12,
+                          child: Image.asset(
+                            'assets/images/ybs_logo.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        ClipRect(
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            heightFactor: p,
+                            child: Image.asset(
+                              'assets/images/ybs_logo.png',
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => const Icon(
+                                Icons.school_rounded,
+                                size: 78,
+                                color: Brand.primaryBlue,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Preparing your learning space...',
+                  style: TextStyle(
+                    color: Brand.primaryBlue,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 8,
+                    value: p,
+                    backgroundColor: Brand.uiBorder,
+                    color: Brand.actionOrange,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -100,8 +259,8 @@ class SoftBackground extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: [
                 Brand.appBg,
-                Brand.appBg.withOpacity(0.85),
-                Colors.white.withOpacity(0.55),
+                Brand.appBg.withValues(alpha: 0.85),
+                Colors.white.withValues(alpha: 0.55),
               ],
             ),
           ),
@@ -229,8 +388,10 @@ class SimpleTopBar extends StatelessWidget {
     );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps.')),
+      AppToast.show(
+        context,
+        'Could not open Google Maps.',
+        type: AppToastType.error,
       );
     }
   }
@@ -252,9 +413,11 @@ class SimpleTopBar extends StatelessWidget {
     final uri = Uri.parse('https://wa.me/$waNumber');
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(
+      AppToast.show(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open WhatsApp.')));
+        'Could not open WhatsApp.',
+        type: AppToastType.error,
+      );
     }
   }
 
@@ -263,8 +426,10 @@ class SimpleTopBar extends StatelessWidget {
     if (!context.mounted) return;
 
     if (info == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Company details are not available yet.')),
+      AppToast.show(
+        context,
+        'Company details are not available yet.',
+        type: AppToastType.info,
       );
       return;
     }
@@ -292,7 +457,7 @@ class SimpleTopBar extends StatelessWidget {
                     border: Border.all(color: Brand.uiBorder),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         blurRadius: 14,
                         offset: const Offset(0, 7),
                       ),
@@ -371,12 +536,12 @@ class SimpleTopBar extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.94),
+                color: Colors.white.withValues(alpha: 0.94),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Brand.uiBorder),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -420,11 +585,11 @@ class CardShell extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        color: Colors.white.withOpacity(0.92),
-        border: Border.all(color: cs.outline.withOpacity(0.85)),
+        color: Colors.white.withValues(alpha: 0.92),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 28,
             offset: const Offset(0, 14),
           ),
@@ -512,18 +677,20 @@ class _LevelTestCard extends StatelessWidget {
         mode: LaunchMode.externalApplication,
       );
 
+      if (!context.mounted) return;
       if (!okWeb) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open Play Store')),
+        AppToast.show(
+          context,
+          'Could not open Play Store',
+          type: AppToastType.error,
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            toHumanError(e, fallback: 'Could not open Play Store.'),
-          ),
-        ),
+      if (!context.mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not open Play Store.'),
+        type: AppToastType.error,
       );
     }
   }
@@ -542,7 +709,7 @@ class _LevelTestCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: Brand.actionOrange.withOpacity(0.12),
+                  color: Brand.actionOrange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Brand.uiBorder),
                 ),
@@ -614,7 +781,7 @@ class _SectionHeader extends StatelessWidget {
               Text(
                 subtitle,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Brand.mainText.withOpacity(0.72),
+                  color: Brand.mainText.withValues(alpha: 0.72),
                   fontWeight: FontWeight.w600,
                   height: 1.35,
                 ),
@@ -627,9 +794,11 @@ class _SectionHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Brand.actionOrange.withOpacity(0.10),
+              color: Brand.actionOrange.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Brand.actionOrange.withOpacity(0.28)),
+              border: Border.all(
+                color: Brand.actionOrange.withValues(alpha: 0.28),
+              ),
             ),
             child: Text(
               trailingText!,
@@ -660,6 +829,8 @@ class _JoinOnlineCircleEntryButtonState
   static const String circlesPath = 'circle';
   late final AnimationController _pulseController;
   late final Animation<double> _scaleAnimation;
+  List<_OnlineCircle> _prefetchedOpenCircles = const [];
+  bool _prefetching = true;
   @override
   void initState() {
     super.initState();
@@ -674,6 +845,7 @@ class _JoinOnlineCircleEntryButtonState
     );
 
     _pulseController.repeat(reverse: true);
+    _prefetchCircles();
   }
 
   DatabaseReference get _circlesRef =>
@@ -723,6 +895,24 @@ class _JoinOnlineCircleEntryButtonState
     return out;
   }
 
+  Future<void> _prefetchCircles() async {
+    try {
+      final snap = await _circlesRef.get();
+      final circles = _parseCircles(snap.value).where((c) {
+        final status = c.status.toLowerCase();
+        return status == 'open' || status.isEmpty;
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        _prefetchedOpenCircles = circles;
+        _prefetching = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _prefetching = false);
+    }
+  }
+
   String _two(int n) => n < 10 ? '0$n' : '$n';
 
   String _formatDateTime(int ms) {
@@ -752,7 +942,7 @@ class _JoinOnlineCircleEntryButtonState
             border: Border.all(color: Brand.uiBorder),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.10),
+                color: Colors.black.withValues(alpha: 0.10),
                 blurRadius: 30,
                 offset: const Offset(0, 18),
               ),
@@ -891,26 +1081,24 @@ class _JoinOnlineCircleEntryButtonState
 
     if (!state.canJoin) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(state.message)));
+      AppToast.show(context, state.message, type: AppToastType.info);
       return;
     }
 
     final uri = Uri.tryParse(circle.meetingUrl);
     if (uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Invalid meeting link.')));
+      AppToast.show(context, 'Invalid meeting link.', type: AppToastType.error);
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Meet.')),
+      AppToast.show(
+        context,
+        'Could not open Google Meet.',
+        type: AppToastType.error,
       );
     }
   }
@@ -938,16 +1126,18 @@ class _JoinOnlineCircleEntryButtonState
                   );
                 }
 
-                if (!snap.hasData) {
+                if (!snap.hasData && _prefetching) {
                   return const SizedBox(
                     height: 260,
                     child: Center(child: YbsBusyLogo()),
                   );
                 }
 
-                final circles = _parseCircles(snap.data?.snapshot.value).where((
-                  c,
-                ) {
+                final source = snap.hasData
+                    ? _parseCircles(snap.data?.snapshot.value)
+                    : _prefetchedOpenCircles;
+
+                final circles = source.where((c) {
                   final status = c.status.toLowerCase();
                   return status == 'open' || status.isEmpty;
                 }).toList();
@@ -964,7 +1154,9 @@ class _JoinOnlineCircleEntryButtonState
                               width: 58,
                               height: 58,
                               decoration: BoxDecoration(
-                                color: Brand.primaryBlue.withOpacity(0.10),
+                                color: Brand.primaryBlue.withValues(
+                                  alpha: 0.10,
+                                ),
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: const Icon(
@@ -975,7 +1167,7 @@ class _JoinOnlineCircleEntryButtonState
                             ),
                             const SizedBox(height: 14),
                             Text(
-                              'No Available Classes',
+                              'No Available Meetings',
                               style: Theme.of(context).textTheme.titleLarge
                                   ?.copyWith(
                                     fontWeight: FontWeight.w900,
@@ -984,11 +1176,13 @@ class _JoinOnlineCircleEntryButtonState
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'There are no online classes to show right now.',
+                              'There are no online circle meetings right now.',
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(
-                                    color: Brand.mainText.withOpacity(0.75),
+                                    color: Brand.mainText.withValues(
+                                      alpha: 0.75,
+                                    ),
                                     height: 1.45,
                                   ),
                             ),
@@ -1008,7 +1202,7 @@ class _JoinOnlineCircleEntryButtonState
                           width: 48,
                           height: 48,
                           decoration: BoxDecoration(
-                            color: Brand.primaryBlue.withOpacity(0.10),
+                            color: Brand.primaryBlue.withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: const Icon(
@@ -1019,7 +1213,7 @@ class _JoinOnlineCircleEntryButtonState
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Online Classes',
+                            'Online Meetings',
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
                                   fontWeight: FontWeight.w900,
@@ -1033,9 +1227,9 @@ class _JoinOnlineCircleEntryButtonState
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Tap any class to see details',
+                        'Tap a meeting to see details',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Brand.mainText.withOpacity(0.75),
+                          color: Brand.mainText.withValues(alpha: 0.75),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1061,7 +1255,7 @@ class _JoinOnlineCircleEntryButtonState
                                 border: Border.all(color: Brand.uiBorder),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.04),
+                                    color: Colors.black.withValues(alpha: 0.04),
                                     blurRadius: 12,
                                     offset: const Offset(0, 6),
                                   ),
@@ -1074,8 +1268,12 @@ class _JoinOnlineCircleEntryButtonState
                                     height: 52,
                                     decoration: BoxDecoration(
                                       color: state.canJoin
-                                          ? Brand.actionOrange.withOpacity(0.12)
-                                          : Brand.primaryBlue.withOpacity(0.10),
+                                          ? Brand.actionOrange.withValues(
+                                              alpha: 0.12,
+                                            )
+                                          : Brand.primaryBlue.withValues(
+                                              alpha: 0.10,
+                                            ),
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Icon(
@@ -1108,8 +1306,8 @@ class _JoinOnlineCircleEntryButtonState
                                           _formatDateTime(circle.timeMs),
                                           style: TextStyle(
                                             fontWeight: FontWeight.w700,
-                                            color: Brand.mainText.withOpacity(
-                                              0.75,
+                                            color: Brand.mainText.withValues(
+                                              alpha: 0.75,
                                             ),
                                           ),
                                         ),
@@ -1162,7 +1360,7 @@ class _JoinOnlineCircleEntryButtonState
               border: Border.all(color: const Color(0xFFFFC107), width: 1.4),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFFFC107).withOpacity(0.35),
+                  color: const Color(0xFFFFC107).withValues(alpha: 0.35),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -1174,7 +1372,7 @@ class _JoinOnlineCircleEntryButtonState
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.35),
+                    color: Colors.white.withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: const Icon(
@@ -1189,7 +1387,7 @@ class _JoinOnlineCircleEntryButtonState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Join Online Circle',
+                        'Join Online Meeting',
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 17,
@@ -1198,7 +1396,7 @@ class _JoinOnlineCircleEntryButtonState
                       ),
                       SizedBox(height: 5),
                       Text(
-                        'Tap to view upcoming classes and join at the right time.',
+                        'Tap to view upcoming circle meetings and join on time.',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: Brand.primaryBlue,
@@ -1212,7 +1410,7 @@ class _JoinOnlineCircleEntryButtonState
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.35),
+                    color: Colors.white.withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -1304,8 +1502,8 @@ class _CircleJoinStatusBanner extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isOpen
-            ? Brand.actionOrange.withOpacity(0.10)
-            : Brand.primaryBlue.withOpacity(0.07),
+            ? Brand.actionOrange.withValues(alpha: 0.10)
+            : Brand.primaryBlue.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: isOpen ? Brand.actionOrange : Brand.uiBorder),
       ),
@@ -1357,7 +1555,7 @@ class _DetailRow extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: Brand.mainText.withOpacity(0.65),
+                  color: Brand.mainText.withValues(alpha: 0.65),
                   fontSize: 12,
                 ),
               ),
@@ -1451,7 +1649,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                               width: 54,
                               height: 54,
                               decoration: BoxDecoration(
-                                color: Brand.accentCyan.withOpacity(0.12),
+                                color: Brand.accentCyan.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(color: Brand.uiBorder),
                               ),
@@ -1472,7 +1670,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(
-                                    color: Brand.mainText.withOpacity(0.75),
+                                    color: Brand.mainText.withValues(
+                                      alpha: 0.75,
+                                    ),
                                     height: 1.4,
                                   ),
                             ),
@@ -1523,11 +1723,11 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: Brand.uiBorder.withOpacity(0.85),
+                            color: Brand.uiBorder.withValues(alpha: 0.85),
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
+                              color: Colors.black.withValues(alpha: 0.04),
                               blurRadius: 10,
                               offset: const Offset(0, 6),
                             ),
@@ -1541,17 +1741,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                               if (type == 'video')
                                 const _PublicGalleryVideoTile()
                               else
-                                Image.network(
-                                  url,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Container(
-                                    color: Colors.grey.shade200,
-                                    alignment: Alignment.center,
-                                    child: const Icon(
-                                      Icons.broken_image_outlined,
-                                    ),
-                                  ),
-                                ),
+                                _FastNetworkThumb(url: url, fit: BoxFit.cover),
                               Positioned(
                                 left: 10,
                                 right: 10,
@@ -1562,7 +1752,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.58),
+                                    color: Colors.black.withValues(alpha: 0.58),
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                   child: Row(
@@ -1625,7 +1815,7 @@ class _PublicGalleryVideoTile extends StatelessWidget {
             ),
           ),
         ),
-        Container(color: Colors.black.withOpacity(0.18)),
+        Container(color: Colors.black.withValues(alpha: 0.18)),
         const Center(
           child: Icon(
             Icons.play_circle_fill_rounded,
@@ -1694,9 +1884,9 @@ class _PublicGalleryViewerScreen extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
+              color: Colors.white.withValues(alpha: 0.08),
               border: Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.12)),
+                top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
               ),
             ),
             child: Column(
@@ -1836,6 +2026,40 @@ class _PublicGalleryViewerVideoState extends State<_PublicGalleryViewerVideo> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FastNetworkThumb extends StatelessWidget {
+  const _FastNetworkThumb({required this.url, this.fit = BoxFit.cover});
+
+  final String url;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.network(
+      url,
+      fit: fit,
+      filterQuality: FilterQuality.low,
+      cacheWidth: 720,
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return Container(
+          color: const Color(0xFFEFF3F8),
+          alignment: Alignment.center,
+          child: const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
+      errorBuilder: (_, _, _) => Container(
+        color: const Color(0xFFEFF3F8),
+        alignment: Alignment.center,
+        child: const Icon(Icons.broken_image_outlined),
       ),
     );
   }
@@ -2297,7 +2521,7 @@ class _CoursesByCategory extends StatelessWidget {
                       Text(
                         'Swipe courses, then enroll',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Brand.mainText.withOpacity(0.72),
+                          color: Brand.mainText.withValues(alpha: 0.72),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -2321,12 +2545,14 @@ class _CoursesByCategory extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(18),
                                 border: Border.all(
                                   color: i == currentIndex
-                                      ? Brand.actionOrange.withOpacity(0.35)
+                                      ? Brand.actionOrange.withValues(
+                                          alpha: 0.35,
+                                        )
                                       : Brand.uiBorder,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.06),
+                                    color: Colors.black.withValues(alpha: 0.06),
                                     blurRadius: 12,
                                     offset: const Offset(0, 7),
                                   ),
@@ -2391,8 +2617,8 @@ class _CoursesByCategory extends StatelessWidget {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            color: Brand.mainText.withOpacity(
-                                              0.72,
+                                            color: Brand.mainText.withValues(
+                                              alpha: 0.72,
                                             ),
                                             fontWeight: FontWeight.w700,
                                             fontSize: 12,
@@ -2504,25 +2730,33 @@ class _CoursesByCategory extends StatelessWidget {
 
         final cats = grouped.keys.toList()..sort();
 
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: cats.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 1.18,
-          ),
-          itemBuilder: (_, index) {
-            final cat = cats[index];
-            final list = grouped[cat] ?? const <_CourseLite>[];
-            return _CategoryGridCard(
-              title: cat,
-              count: list.length,
-              courses: list,
-              onTap: () =>
-                  _showCategoryCourses(context, category: cat, courses: list),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final oneColumn = constraints.maxWidth < 420;
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: cats.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: oneColumn ? 1 : 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: oneColumn ? 1.85 : 0.95,
+              ),
+              itemBuilder: (_, index) {
+                final cat = cats[index];
+                final list = grouped[cat] ?? const <_CourseLite>[];
+                return _CategoryGridCard(
+                  title: cat,
+                  count: list.length,
+                  courses: list,
+                  onTap: () => _showCategoryCourses(
+                    context,
+                    category: cat,
+                    courses: list,
+                  ),
+                );
+              },
             );
           },
         );
@@ -2546,6 +2780,8 @@ class _CategoryGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final previews = courses.take(2).toList();
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2558,31 +2794,31 @@ class _CategoryGridCard extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Colors.white, Brand.appBg.withOpacity(0.85)],
+              colors: [Colors.white, Brand.appBg.withValues(alpha: 0.85)],
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 6),
               ),
             ],
           ),
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: Brand.primaryBlue.withOpacity(0.10),
+                  color: Brand.primaryBlue.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
                   Icons.category_rounded,
                   color: Brand.primaryBlue,
-                  size: 20,
+                  size: 22,
                 ),
               ),
               const SizedBox(height: 10),
@@ -2596,102 +2832,40 @@ class _CategoryGridCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Expanded(
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: courses.length > 4 ? 4 : courses.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 6,
-                    mainAxisSpacing: 6,
-                    childAspectRatio: 1.72,
-                  ),
-                  itemBuilder: (_, i) {
-                    final c = courses[i];
-                    final isLastPreview = i == 3 && courses.length > 4;
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(color: Brand.uiBorder),
-                      ),
-                      padding: const EdgeInsets.all(4),
-                      child: Row(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: c.thumb.trim().isNotEmpty
-                                  ? Image.network(
-                                      c.thumb,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => Container(
-                                        color: Brand.appBg,
-                                        alignment: Alignment.center,
-                                        child: const Icon(
-                                          Icons.school_rounded,
-                                          size: 12,
-                                          color: Brand.primaryBlue,
-                                        ),
-                                      ),
-                                    )
-                                  : Container(
-                                      color: Brand.appBg,
-                                      alignment: Alignment.center,
-                                      child: const Icon(
-                                        Icons.school_rounded,
-                                        size: 12,
-                                        color: Brand.primaryBlue,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            child: Text(
-                              c.title.isEmpty ? 'Course' : c.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
+              Row(
+                children: [
+                  for (int i = 0; i < 2; i++) ...[
+                    Expanded(
+                      child: Container(
+                        height: 68,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Brand.uiBorder),
+                        ),
+                        child: previews.length > i
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(11),
+                                child: _FastNetworkThumb(
+                                  url: previews[i].thumb,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.school_rounded,
                                 color: Brand.primaryBlue,
                               ),
-                            ),
-                          ),
-                          if (isLastPreview)
-                            Container(
-                              margin: const EdgeInsets.only(left: 3),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Brand.actionOrange,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                '+${courses.length - 3}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                        ],
                       ),
-                    );
-                  },
-                ),
+                    ),
+                    if (i == 0) const SizedBox(width: 8),
+                  ],
+                ],
               ),
               const SizedBox(height: 8),
               Text(
                 '$count course${count == 1 ? '' : 's'}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Brand.mainText.withOpacity(0.72),
+                  color: Brand.mainText.withValues(alpha: 0.72),
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -2779,7 +2953,9 @@ class _InfoTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: highlight ? Brand.actionOrange.withOpacity(0.12) : Brand.appBg,
+        color: highlight
+            ? Brand.actionOrange.withValues(alpha: 0.12)
+            : Brand.appBg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: highlight ? Brand.actionOrange : Brand.uiBorder,
@@ -2855,7 +3031,7 @@ class _CourseDetailsSheet extends StatelessWidget {
         textAlign: TextAlign.right,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           height: height,
-          color: Brand.mainText.withOpacity(0.85),
+          color: Brand.mainText.withValues(alpha: 0.85),
         ),
       ),
     );
@@ -3201,9 +3377,11 @@ class UpdateRequiredScreen extends StatelessWidget {
     if (ok2) return;
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
+    AppToast.show(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Could not open store link.')));
+      'Could not open store link.',
+      type: AppToastType.error,
+    );
   }
 
   @override
@@ -3237,7 +3415,7 @@ class UpdateRequiredScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       height: 1.4,
-                      color: Brand.mainText.withOpacity(0.85),
+                      color: Brand.mainText.withValues(alpha: 0.85),
                       fontWeight: FontWeight.w700,
                     ),
                   ),

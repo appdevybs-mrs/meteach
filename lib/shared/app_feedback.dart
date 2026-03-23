@@ -1,0 +1,369 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import 'ybs_busy_logo.dart';
+
+enum AppToastType { info, success, error }
+
+/// App-wide branded feedback surface.
+///
+/// Guidelines:
+/// - Prefer `AppToast.show(...)` over raw SnackBars.
+/// - Keep messages short (1 sentence).
+/// - Use `success` for completed actions, `error` for failures, `info` for hints.
+class AppToast {
+  static OverlayEntry? _activeEntry;
+  static Timer? _activeTimer;
+
+  static void show(
+    BuildContext context,
+    String message, {
+    AppToastType type = AppToastType.info,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) return;
+
+    _activeTimer?.cancel();
+    _activeTimer = null;
+    _activeEntry?.remove();
+    _activeEntry = null;
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+
+    final _ToastStyle style = _styleFor(type);
+
+    final entry = OverlayEntry(
+      builder: (ctx) {
+        return SafeArea(
+          child: IgnorePointer(
+            ignoring: true,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 220),
+                tween: Tween<double>(begin: 0, end: 1),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) {
+                  final dy = (1 - value) * -16;
+                  return Transform.translate(
+                    offset: Offset(0, dy),
+                    child: Opacity(opacity: value, child: child),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  decoration: BoxDecoration(
+                    color: style.bg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: style.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: style.border),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(9),
+                            child: Image.asset(
+                              'assets/images/ybs_logo.png',
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => Icon(
+                                Icons.school_rounded,
+                                color: style.fg,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(style.icon, color: style.fg, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            trimmed,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: style.fg,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(entry);
+    _activeEntry = entry;
+
+    _activeTimer = Timer(duration, () {
+      _activeTimer?.cancel();
+      _activeTimer = null;
+      _activeEntry?.remove();
+      _activeEntry = null;
+    });
+  }
+
+  static void fromSnackBar(
+    BuildContext context,
+    SnackBar snackBar, {
+    AppToastType? type,
+  }) {
+    final message = _normalizeMessage(_extractMessage(snackBar.content));
+    show(
+      context,
+      message.isEmpty ? 'Done.' : message,
+      type: type ?? _inferTypeFromMessage(message),
+      duration: snackBar.duration,
+    );
+  }
+
+  static _ToastStyle _styleFor(AppToastType type) {
+    switch (type) {
+      case AppToastType.success:
+        return const _ToastStyle(
+          bg: Color(0xFFF0FDF4),
+          border: Color(0xFFBBF7D0),
+          fg: Color(0xFF166534),
+          icon: Icons.check_circle_rounded,
+        );
+      case AppToastType.error:
+        return const _ToastStyle(
+          bg: Color(0xFFFEF2F2),
+          border: Color(0xFFFECACA),
+          fg: Color(0xFFB91C1C),
+          icon: Icons.error_rounded,
+        );
+      case AppToastType.info:
+        return const _ToastStyle(
+          bg: Color(0xFFEEF6FF),
+          border: Color(0xFFBFDBFE),
+          fg: Color(0xFF1E3A8A),
+          icon: Icons.info_rounded,
+        );
+    }
+  }
+
+  static AppToastType _inferTypeFromMessage(String message) {
+    final m = message.toLowerCase();
+    if (m.contains('error') ||
+        m.contains('failed') ||
+        m.contains('could not') ||
+        m.contains('invalid') ||
+        m.contains('forbidden')) {
+      return AppToastType.error;
+    }
+
+    if (m.contains('saved') ||
+        m.contains('success') ||
+        m.contains('uploaded') ||
+        m.contains('deleted') ||
+        m.contains('updated') ||
+        m.contains('completed')) {
+      return AppToastType.success;
+    }
+
+    return AppToastType.info;
+  }
+
+  static String _extractMessage(Widget widget) {
+    if (widget is Text) {
+      final plain = widget.data?.trim() ?? '';
+      if (plain.isNotEmpty) return plain;
+      return widget.textSpan?.toPlainText().trim() ?? '';
+    }
+
+    if (widget is RichText) {
+      return widget.text.toPlainText().trim();
+    }
+
+    if (widget is Icon) return '';
+
+    if (widget is Row) {
+      for (final child in widget.children) {
+        final msg = _extractMessage(child);
+        if (msg.isNotEmpty) return msg;
+      }
+      return '';
+    }
+
+    if (widget is Column) {
+      for (final child in widget.children) {
+        final msg = _extractMessage(child);
+        if (msg.isNotEmpty) return msg;
+      }
+      return '';
+    }
+
+    if (widget is Padding) {
+      return _extractMessage(widget.child ?? const SizedBox.shrink());
+    }
+
+    if (widget is Center) {
+      return _extractMessage(widget.child ?? const SizedBox.shrink());
+    }
+
+    if (widget is Expanded) {
+      return _extractMessage(widget.child);
+    }
+
+    if (widget is Flexible) {
+      return _extractMessage(widget.child);
+    }
+
+    if (widget is SizedBox && widget.child != null) {
+      return _extractMessage(widget.child!);
+    }
+
+    return '';
+  }
+
+  static String _normalizeMessage(String raw) {
+    var m = raw.trim();
+    if (m.isEmpty) return m;
+
+    // Keep toast copy short and professional.
+    m = m
+        .replaceAll('✅', '')
+        .replaceAll('❌', '')
+        .replaceAll('🗑️', '')
+        .replaceAll('🗑', '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    if (m.isEmpty) return m;
+
+    // Ensure sentence-like ending.
+    if (!m.endsWith('.') && !m.endsWith('!') && !m.endsWith('?')) {
+      m = '$m.';
+    }
+
+    return m;
+  }
+}
+
+class AppLoading {
+  static Future<T> run<T>(
+    BuildContext context,
+    Future<T> Function() task, {
+    String message = 'Please wait...',
+  }) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          PopScope(canPop: false, child: _AppLoadingDialog(message: message)),
+    );
+
+    try {
+      return await task();
+    } finally {
+      if (Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+  }
+}
+
+class BrandedInlineLoader extends StatelessWidget {
+  const BrandedInlineLoader({super.key, this.message = 'Loading...'});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const YbsBusyLogo(size: 54),
+        const SizedBox(height: 10),
+        Text(message, style: const TextStyle(fontWeight: FontWeight.w700)),
+      ],
+    );
+  }
+}
+
+class _AppLoadingDialog extends StatelessWidget {
+  const _AppLoadingDialog({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 320),
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const YbsBusyLogo(size: 58),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToastStyle {
+  const _ToastStyle({
+    required this.bg,
+    required this.border,
+    required this.fg,
+    required this.icon,
+  });
+
+  final Color bg;
+  final Color border;
+  final Color fg;
+  final IconData icon;
+}

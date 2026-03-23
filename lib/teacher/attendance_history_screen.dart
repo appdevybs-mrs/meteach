@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import 'take_attendance_screen.dart';
+import '../shared/app_feedback.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -191,7 +192,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       await _loadHistory();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           const SnackBar(content: Text('Record deleted successfully')),
         );
       }
@@ -327,14 +328,14 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [p.primary, p.primary.withOpacity(0.88)],
+                          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(22),
                         boxShadow: [
                           BoxShadow(
-                            color: p.primary.withOpacity(0.14),
+                            color: p.primary.withValues(alpha: 0.14),
                             blurRadius: 18,
                             offset: const Offset(0, 8),
                           ),
@@ -346,7 +347,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                           Text(
                             'Session Details',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.82),
+                              color: Colors.white.withValues(alpha: 0.82),
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
                             ),
@@ -427,11 +428,11 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: p.border.withOpacity(0.9),
+                              color: p.border.withValues(alpha: 0.9),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
+                                color: Colors.black.withValues(alpha: 0.03),
                                 blurRadius: 10,
                                 offset: const Offset(0, 5),
                               ),
@@ -445,7 +446,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                 height: 42,
                                 decoration: BoxDecoration(
                                   color: isCustom
-                                      ? p.accent.withOpacity(0.10)
+                                      ? p.accent.withValues(alpha: 0.10)
                                       : p.soft,
                                   borderRadius: BorderRadius.circular(14),
                                 ),
@@ -465,7 +466,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                       Text(
                                         unitTitle,
                                         style: TextStyle(
-                                          color: p.text.withOpacity(0.65),
+                                          color: p.text.withValues(alpha: 0.65),
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
                                         ),
@@ -530,7 +531,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                             Text(
                                               'Objective',
                                               style: TextStyle(
-                                                color: p.text.withOpacity(0.65),
+                                                color: p.text.withValues(alpha: 0.65),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.4,
@@ -568,7 +569,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                             Text(
                                               'Notes',
                                               style: TextStyle(
-                                                color: p.text.withOpacity(0.65),
+                                                color: p.text.withValues(alpha: 0.65),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.4,
@@ -606,7 +607,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                             Text(
                                               'Lesson Homework',
                                               style: TextStyle(
-                                                color: p.text.withOpacity(0.65),
+                                                color: p.text.withValues(alpha: 0.65),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.4,
@@ -652,10 +653,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: p.border.withOpacity(0.9)),
+                          border: Border.all(color: p.border.withValues(alpha: 0.9)),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.03),
+                              color: Colors.black.withValues(alpha: 0.03),
                               blurRadius: 10,
                               offset: const Offset(0, 5),
                             ),
@@ -668,7 +669,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                               Text(
                                 'Instructions',
                                 style: TextStyle(
-                                  color: p.text.withOpacity(0.65),
+                                  color: p.text.withValues(alpha: 0.65),
                                   fontWeight: FontWeight.w800,
                                   fontSize: 11,
                                   letterSpacing: 1.0,
@@ -716,7 +717,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white24),
       ),
@@ -774,12 +775,12 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.9)),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: p.text.withOpacity(0.7),
+          color: p.text.withValues(alpha: 0.7),
           fontWeight: FontWeight.w700,
           fontSize: 13,
         ),
@@ -796,9 +797,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: tint.withOpacity(0.08),
+        color: tint.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: tint.withOpacity(0.22)),
+        border: Border.all(color: tint.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -863,7 +864,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -888,7 +889,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   child: Icon(
                     Icons.fact_check_rounded,
                     size: 220,
-                    color: p.primary.withOpacity(0.12),
+                    color: p.primary.withValues(alpha: 0.12),
                   ),
                 ),
               ),
@@ -923,14 +924,14 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.16),
+            color: p.primary.withValues(alpha: 0.16),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -942,7 +943,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             width: 54,
             height: 54,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(18),
             ),
             child: const Icon(
@@ -959,7 +960,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                 Text(
                   'Session Records',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.80),
+                    color: Colors.white.withValues(alpha: 0.80),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -977,7 +978,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                 Text(
                   'Tap the info icon to view full lesson and homework details.',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.86),
+                    color: Colors.white.withValues(alpha: 0.86),
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                     height: 1.35,
@@ -1009,10 +1010,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 14,
             offset: const Offset(0, 7),
           ),
@@ -1090,10 +1091,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         width: 34,
                         height: 34,
                         decoration: BoxDecoration(
-                          color: p.primary.withOpacity(0.08),
+                          color: p.primary.withValues(alpha: 0.08),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: p.primary.withOpacity(0.10),
+                            color: p.primary.withValues(alpha: 0.10),
                           ),
                         ),
                         child: Icon(
@@ -1164,7 +1165,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                 decoration: BoxDecoration(
                   color: p.appBg,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: p.border.withOpacity(0.65)),
+                  border: Border.all(color: p.border.withValues(alpha: 0.65)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1182,7 +1183,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       width: 1,
                       height: 120,
                       margin: const EdgeInsets.symmetric(horizontal: 12),
-                      color: p.border.withOpacity(0.9),
+                      color: p.border.withValues(alpha: 0.9),
                     ),
                     Expanded(
                       child: _studentList(
@@ -1207,9 +1208,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1259,7 +1260,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           Text(
             '—',
             style: TextStyle(
-              color: p.text.withOpacity(0.65),
+              color: p.text.withValues(alpha: 0.65),
               fontWeight: FontWeight.w700,
             ),
           )
@@ -1279,7 +1280,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         height: 7,
                         margin: const EdgeInsets.only(top: 5),
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.8),
+                          color: color.withValues(alpha: 0.8),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -1315,7 +1316,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: p.border.withOpacity(0.9)),
+            border: Border.all(color: p.border.withValues(alpha: 0.9)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1323,7 +1324,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               Icon(
                 Icons.history_toggle_off_rounded,
                 size: 56,
-                color: p.text.withOpacity(0.55),
+                color: p.text.withValues(alpha: 0.55),
               ),
               const SizedBox(height: 12),
               Text(
@@ -1340,7 +1341,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                 'Saved sessions will appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: p.text.withOpacity(0.7),
+                  color: p.text.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1361,7 +1362,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: absentRed.withOpacity(0.20)),
+            border: Border.all(color: absentRed.withValues(alpha: 0.20)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

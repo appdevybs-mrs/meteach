@@ -134,8 +134,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     ms.showMaterialBanner(
       MaterialBanner(
         backgroundColor: error
-            ? Colors.red.withOpacity(0.08)
-            : Colors.black.withOpacity(0.06),
+            ? Colors.red.withValues(alpha: 0.08)
+            : Colors.black.withValues(alpha: 0.06),
         content: Text(
           error ? humanizeUiMessage(msg) : msg,
           style: TextStyle(
@@ -897,9 +897,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.35)),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Text(
         text,
@@ -1054,12 +1054,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(999),
                                     color: isEnrolled
-                                        ? Colors.blue.withOpacity(0.12)
-                                        : Colors.orange.withOpacity(0.12),
+                                        ? Colors.blue.withValues(alpha: 0.12)
+                                        : Colors.orange.withValues(alpha: 0.12),
                                     border: Border.all(
                                       color: isEnrolled
-                                          ? Colors.blue.withOpacity(0.35)
-                                          : Colors.orange.withOpacity(0.35),
+                                          ? Colors.blue.withValues(alpha: 0.35)
+                                          : Colors.orange.withValues(alpha: 0.35),
                                     ),
                                   ),
                                   child: Text(
@@ -1319,7 +1319,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                             ),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(999),
-                              color: Colors.black.withOpacity(0.06),
+                              color: Colors.black.withValues(alpha: 0.06),
                             ),
                             child: Text(
                               "ID: $classId",
@@ -1339,9 +1339,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Colors.grey.withOpacity(0.35),
+                              color: Colors.grey.withValues(alpha: 0.35),
                             ),
-                            color: Colors.grey.withOpacity(0.06),
+                            color: Colors.grey.withValues(alpha: 0.06),
                           ),
                           child: Text(
                             // ✅ Removed course_code in preview
@@ -1533,9 +1533,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.grey.withOpacity(0.35),
+                            color: Colors.grey.withValues(alpha: 0.35),
                           ),
-                          color: Colors.grey.withOpacity(0.06),
+                          color: Colors.grey.withValues(alpha: 0.06),
                         ),
                         child: Row(
                           children: [
@@ -2252,7 +2252,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                             side: BorderSide(
-                              color: Colors.grey.withOpacity(0.25),
+                              color: Colors.grey.withValues(alpha: 0.25),
                             ),
                           ),
                           child: Padding(
@@ -2398,7 +2398,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                       .clamp(0, 1),
                                             minHeight: 8,
                                             backgroundColor: Colors.black
-                                                .withOpacity(0.06),
+                                                .withValues(alpha: 0.06),
                                           ),
                                         ),
                                       ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dream_english_academy/admin/admin_classes.dart';
+import '../shared/app_feedback.dart';
 
 class AdminTimetableScreen extends StatefulWidget {
   const AdminTimetableScreen({super.key});
@@ -89,7 +90,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   String _norm(String s) => s.trim().toLowerCase();
@@ -534,12 +535,12 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                       ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        color: (isOpen ? Colors.green : Colors.red).withOpacity(
+                        color: (isOpen ? Colors.green : Colors.red).withValues(alpha: 
                           0.12,
                         ),
                         border: Border.all(
                           color: (isOpen ? Colors.green : Colors.red)
-                              .withOpacity(0.35),
+                              .withValues(alpha: 0.35),
                         ),
                       ),
                       child: Text(
@@ -590,8 +591,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.grey.withOpacity(0.25)),
-                    color: Colors.black.withOpacity(0.03),
+                    border: Border.all(color: Colors.grey.withValues(alpha: 0.25)),
+                    color: Colors.black.withValues(alpha: 0.03),
                   ),
                   child: Row(
                     children: [
@@ -685,7 +686,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         padding: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
           border: Border(
-            bottom: BorderSide(color: Colors.grey.withOpacity(0.20)),
+            bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.20)),
           ),
         ),
         child: SingleChildScrollView(
@@ -817,8 +818,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   gradient: gradient,
                   border: Border.all(
                     color: isOpen
-                        ? borderColor.withOpacity(0.70)
-                        : Colors.red.withOpacity(0.75),
+                        ? borderColor.withValues(alpha: 0.70)
+                        : Colors.red.withValues(alpha: 0.75),
                   ),
                 ),
                 child: LayoutBuilder(
@@ -844,7 +845,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                   fontWeight: FontWeight.w900,
                                   fontSize: fsTitle,
                                   height: 1.0,
-                                  color: Colors.black.withOpacity(0.88),
+                                  color: Colors.black.withValues(alpha: 0.88),
                                 ),
                               ),
                               Text(
@@ -855,7 +856,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                   fontWeight: FontWeight.w800,
                                   fontSize: fsSub,
                                   height: 1.0,
-                                  color: Colors.black.withOpacity(0.84),
+                                  color: Colors.black.withValues(alpha: 0.84),
                                 ),
                               ),
                               Text(
@@ -866,7 +867,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                   fontWeight: FontWeight.w800,
                                   fontSize: fsSub,
                                   height: 1.0,
-                                  color: Colors.black.withOpacity(0.82),
+                                  color: Colors.black.withValues(alpha: 0.82),
                                 ),
                               ),
                               Text(
@@ -877,7 +878,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                                   fontWeight: FontWeight.w900,
                                   fontSize: fsSub,
                                   height: 1.0,
-                                  color: Colors.black.withOpacity(0.88),
+                                  color: Colors.black.withValues(alpha: 0.88),
                                 ),
                               ),
                               if (!isOpen)
@@ -923,7 +924,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+        side: BorderSide(color: Colors.grey.withValues(alpha: 0.25)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -944,8 +945,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                 ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
-                  color: Colors.blue.withOpacity(0.10),
-                  border: Border.all(color: Colors.blue.withOpacity(0.25)),
+                  color: Colors.blue.withValues(alpha: 0.10),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
                 ),
                 child: Text(
                   "$activeFiltersCount filter${activeFiltersCount == 1 ? '' : 's'}",
@@ -1089,7 +1090,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: Colors.grey.withOpacity(0.25)),
+          side: BorderSide(color: Colors.grey.withValues(alpha: 0.25)),
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -1298,11 +1299,11 @@ class _TimetableGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final line = Paint()
-      ..color = Colors.grey.withOpacity(0.20)
+      ..color = Colors.grey.withValues(alpha: 0.20)
       ..strokeWidth = 1;
 
     final strong = Paint()
-      ..color = Colors.grey.withOpacity(0.35)
+      ..color = Colors.grey.withValues(alpha: 0.35)
       ..strokeWidth = 1;
 
     for (int d = 0; d <= dayCount; d++) {

@@ -146,7 +146,7 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                             Text(
                               'Learner UID: $uid',
                               style: TextStyle(
-                                color: Colors.black.withOpacity(0.7),
+                                color: Colors.black.withValues(alpha: 0.7),
                               ),
                             ),
                             if (studyTypeText.isNotEmpty) ...[
@@ -154,7 +154,7 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                               Text(
                                 'Study type: $studyTypeText',
                                 style: TextStyle(
-                                  color: Colors.black.withOpacity(0.7),
+                                  color: Colors.black.withValues(alpha: 0.7),
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -182,7 +182,7 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
                               Text(
                                 'Notes: ${p['notes']}',
                                 style: TextStyle(
-                                  color: Colors.black.withOpacity(0.7),
+                                  color: Colors.black.withValues(alpha: 0.7),
                                 ),
                               ),
                             ],

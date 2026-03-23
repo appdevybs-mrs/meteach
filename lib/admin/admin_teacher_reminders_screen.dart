@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
+import '../shared/app_feedback.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
   const AdminTeacherRemindersScreen({super.key, this.teacherUid, this.teacher});
@@ -60,7 +61,7 @@ class _AdminTeacherRemindersScreenState
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   Future<String?> _getTeacherFcmToken(String teacherUid) async {
@@ -446,7 +447,7 @@ class _AdminTeacherRemindersScreenState
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: Colors.black.withOpacity(0.08)),
+                  bottom: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
                 ),
               ),
               child: Row(
@@ -485,7 +486,7 @@ class _AdminTeacherRemindersScreenState
                         Text(
                           'Could not load image.',
                           style: TextStyle(
-                            color: Colors.black.withOpacity(0.7),
+                            color: Colors.black.withValues(alpha: 0.7),
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -576,7 +577,7 @@ class _AdminTeacherRemindersScreenState
           url,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: Colors.black.withOpacity(0.55), fontSize: 12),
+          style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
         ),
       ],
     );
@@ -615,7 +616,7 @@ class _AdminTeacherRemindersScreenState
           Text(
             statusLine,
             style: TextStyle(
-              color: Colors.black.withOpacity(0.65),
+              color: Colors.black.withValues(alpha: 0.65),
               fontSize: 12,
             ),
           ),
@@ -624,7 +625,7 @@ class _AdminTeacherRemindersScreenState
             Text(
               teacherLine,
               style: TextStyle(
-                color: Colors.black.withOpacity(0.65),
+                color: Colors.black.withValues(alpha: 0.65),
                 fontSize: 12,
               ),
             ),
@@ -636,7 +637,7 @@ class _AdminTeacherRemindersScreenState
                 phones.isEmpty ? null : 'Phones: $phones',
               ].whereType<String>().join(' • '),
               style: TextStyle(
-                color: Colors.black.withOpacity(0.65),
+                color: Colors.black.withValues(alpha: 0.65),
                 fontSize: 12,
               ),
             ),
@@ -1284,7 +1285,7 @@ class _MiniPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.06),
+        color: Colors.black.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -1369,7 +1370,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not upload attachment.'),
@@ -1450,7 +1451,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Attachment (optional)',
-                  style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                  style: TextStyle(color: Colors.black.withValues(alpha: 0.7)),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1495,7 +1496,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                     'Selected teachers: ${widget.selectedCount}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                     ),
                   ),
                 )
@@ -1507,7 +1508,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                     '${teacherEmail.isEmpty ? '' : ' — $teacherEmail'}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                     ),
                   ),
                 ),

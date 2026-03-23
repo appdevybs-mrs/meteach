@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/app_feedback.dart';
 
 class AdminTeacherAvailabilityOverviewScreen extends StatefulWidget {
   const AdminTeacherAvailabilityOverviewScreen({super.key});
@@ -85,7 +86,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
@@ -501,8 +502,8 @@ class _AdminTeacherAvailabilityOverviewScreenState
                         ),
                         decoration: BoxDecoration(
                           color: list.isEmpty
-                              ? Colors.red.withOpacity(0.10)
-                              : successGreen.withOpacity(0.10),
+                              ? Colors.red.withValues(alpha: 0.10)
+                              : successGreen.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -525,7 +526,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                             width: double.infinity,
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.05),
+                              color: Colors.red.withValues(alpha: 0.05),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(color: uiBorder),
                             ),
@@ -572,7 +573,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                                             vertical: 5,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: statusColor.withOpacity(
+                                            color: statusColor.withValues(alpha: 
                                               0.10,
                                             ),
                                             borderRadius: BorderRadius.circular(
@@ -664,7 +665,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
+              color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 18),
@@ -768,9 +769,9 @@ class _AdminTeacherAvailabilityOverviewScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: chipColor.withOpacity(0.08),
+        color: chipColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: chipColor.withOpacity(0.20)),
+        border: Border.all(color: chipColor.withValues(alpha: 0.20)),
       ),
       child: Text(
         c.code.isEmpty ? c.title : '${c.title} • ${c.code}',
@@ -792,7 +793,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: uncoveredCourses.isEmpty
-              ? successGreen.withOpacity(0.08)
+              ? successGreen.withValues(alpha: 0.08)
               : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: uiBorder),
@@ -828,7 +829,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.10),
+                    color: Colors.red.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -870,7 +871,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.10),
+                    color: Colors.red.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: const Text(
@@ -952,7 +953,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: (isCovered ? successGreen : Colors.red).withOpacity(
+                    color: (isCovered ? successGreen : Colors.red).withValues(alpha: 
                       0.10,
                     ),
                     borderRadius: BorderRadius.circular(10),
@@ -1015,7 +1016,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                       ),
                       decoration: BoxDecoration(
                         color: (isCovered ? successGreen : Colors.red)
-                            .withOpacity(0.10),
+                            .withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
@@ -1054,7 +1055,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: successGreen.withOpacity(0.08),
+          color: successGreen.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: uiBorder),
         ),
@@ -1212,9 +1213,9 @@ class _AdminTeacherAvailabilityOverviewScreenState
     bool active = false,
   }) {
     final bg = header
-        ? primaryBlue.withOpacity(0.06)
+        ? primaryBlue.withValues(alpha: 0.06)
         : active
-        ? actionOrange.withOpacity(0.12)
+        ? actionOrange.withValues(alpha: 0.12)
         : Colors.white;
 
     final textColor = header
@@ -1259,7 +1260,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
       height: header ? 34 : 32,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: header ? primaryBlue.withOpacity(0.06) : Colors.grey.shade50,
+        color: header ? primaryBlue.withValues(alpha: 0.06) : Colors.grey.shade50,
         border: const Border(top: BorderSide(color: uiBorder)),
       ),
       child: Text(
@@ -1372,7 +1373,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.10),
+                          color: statusColor.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -1507,7 +1508,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                               decoration: BoxDecoration(
                                 color: slots.isEmpty
                                     ? Colors.grey.shade100
-                                    : actionOrange.withOpacity(0.10),
+                                    : actionOrange.withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
@@ -1544,9 +1545,9 @@ class _AdminTeacherAvailabilityOverviewScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Text(
         '$label: $value',
@@ -1691,7 +1692,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                       vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: primaryBlue.withOpacity(0.08),
+                      color: primaryBlue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -1724,7 +1725,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.06),
+                          color: Colors.red.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: uiBorder),
                         ),
@@ -1755,7 +1756,7 @@ class _AdminTeacherAvailabilityOverviewScreenState
                       vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: primaryBlue.withOpacity(0.08),
+                      color: primaryBlue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(

@@ -2,10 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 
 import 'payment_dialog_shared.dart';
@@ -70,15 +70,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   void _toast(String msg) {
     if (!mounted) return;
 
-    Fluttertoast.cancel();
-    Fluttertoast.showToast(
-      msg: humanizeUiMessage(msg),
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.CENTER,
-      backgroundColor: Colors.black.withOpacity(0.85),
-      textColor: Colors.white,
-      fontSize: 15,
-    );
+    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
   }
 
   Future<bool> _confirm({
@@ -260,7 +252,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,
-          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withOpacity(
+          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withValues(alpha: 
             0.55,
           ),
           indicatorColor: AdminLearnersScreen.primaryBlue,
@@ -486,15 +478,7 @@ class _LearnersListState extends State<_LearnersList>
   void _toast(String msg) {
     if (!mounted) return;
 
-    Fluttertoast.cancel();
-    Fluttertoast.showToast(
-      msg: humanizeUiMessage(msg),
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.CENTER,
-      backgroundColor: Colors.black.withOpacity(0.85),
-      textColor: Colors.white,
-      fontSize: 15,
-    );
+    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
   }
 
   String? _expandedUid;
@@ -1271,7 +1255,7 @@ class _LearnersListState extends State<_LearnersList>
                                                           FontWeight.w800,
                                                       color: AdminLearnersScreen
                                                           .primaryBlue
-                                                          .withOpacity(0.9),
+                                                          .withValues(alpha: 0.9),
                                                       decoration: TextDecoration
                                                           .underline,
                                                     ),
@@ -1289,7 +1273,7 @@ class _LearnersListState extends State<_LearnersList>
                                                         fontWeight:
                                                             FontWeight.w800,
                                                         color: Colors.black
-                                                            .withOpacity(0.65),
+                                                            .withValues(alpha: 0.65),
                                                       ),
                                                       maxLines: 1,
                                                       overflow:
@@ -1305,7 +1289,7 @@ class _LearnersListState extends State<_LearnersList>
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w700,
-                                                color: Colors.black.withOpacity(
+                                                color: Colors.black.withValues(alpha: 
                                                   0.5,
                                                 ),
                                               ),
@@ -1317,7 +1301,7 @@ class _LearnersListState extends State<_LearnersList>
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w700,
-                                                color: Colors.black.withOpacity(
+                                                color: Colors.black.withValues(alpha: 
                                                   0.65,
                                                 ),
                                               ),
@@ -1333,7 +1317,7 @@ class _LearnersListState extends State<_LearnersList>
                                           ? Icons.expand_less_rounded
                                           : Icons.expand_more_rounded,
                                       color: AdminLearnersScreen.primaryBlue
-                                          .withOpacity(0.7),
+                                          .withValues(alpha: 0.7),
                                     ),
                                     const SizedBox(width: 4),
                                     PopupMenuButton<_RowAction>(
@@ -1546,7 +1530,7 @@ class _StateCard extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.7)),
               ),
             ],
           ),
@@ -1737,15 +1721,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   void _toast(String msg) {
     if (!mounted) return;
 
-    Fluttertoast.cancel();
-    Fluttertoast.showToast(
-      msg: humanizeUiMessage(msg),
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.CENTER,
-      backgroundColor: Colors.black.withOpacity(0.85),
-      textColor: Colors.white,
-      fontSize: 15,
-    );
+    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
   }
 
   Future<void> _pickDob() async {
@@ -3084,7 +3060,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,
-          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withOpacity(
+          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withValues(alpha: 
             0.55,
           ),
           indicatorColor: AdminLearnersScreen.primaryBlue,
@@ -3409,7 +3385,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           Text(
                             'Sessions paid total: $sessionsPaidTotal',
                             style: TextStyle(
-                              color: Colors.black.withOpacity(0.75),
+                              color: Colors.black.withValues(alpha: 0.75),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3417,7 +3393,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           Text(
                             'Sessions left: $sessionsLeft',
                             style: TextStyle(
-                              color: Colors.black.withOpacity(0.75),
+                              color: Colors.black.withValues(alpha: 0.75),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3425,7 +3401,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           Text(
                             'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
                             style: TextStyle(
-                              color: Colors.black.withOpacity(0.75),
+                              color: Colors.black.withValues(alpha: 0.75),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3435,7 +3411,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 ? 'Duration: ${monthsValue > 0 ? monthsValue : 0} month(s)'
                                 : 'Expiry window: ${monthsValue > 0 ? monthsValue : 0} month(s)',
                             style: TextStyle(
-                              color: Colors.black.withOpacity(0.75),
+                              color: Colors.black.withValues(alpha: 0.75),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3443,7 +3419,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           Text(
                             'Expires on: $expiryText',
                             style: TextStyle(
-                              color: Colors.black.withOpacity(0.75),
+                              color: Colors.black.withValues(alpha: 0.75),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3601,7 +3577,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          color: Colors.black.withOpacity(0.65),
+                                          color: Colors.black.withValues(alpha: 0.65),
                                           fontWeight: FontWeight.w700,
                                           fontSize: 12,
                                         ),
@@ -3753,7 +3729,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                     Text(
                       'Progress: $progressPct%',
                       style: TextStyle(
-                        color: Colors.black.withOpacity(0.75),
+                        color: Colors.black.withValues(alpha: 0.75),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -3810,8 +3786,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                       ? const Color(0xFF157A3D)
                       : const Color(0xFF64748B);
                   final tint = done
-                      ? const Color(0xFF157A3D).withOpacity(0.08)
-                      : const Color(0xFF64748B).withOpacity(0.08);
+                      ? const Color(0xFF157A3D).withValues(alpha: 0.08)
+                      : const Color(0xFF64748B).withValues(alpha: 0.08);
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -3864,7 +3840,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                         'Read: ${readDone ? 'done' : 'pending'}',
                                     ].join(' • '),
                                     style: TextStyle(
-                                      color: Colors.black.withOpacity(0.65),
+                                      color: Colors.black.withValues(alpha: 0.65),
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12,
                                     ),
@@ -3965,13 +3941,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
                   if (status == 'present') {
                     bar = const Color(0xFF157A3D);
-                    tint = const Color(0xFF157A3D).withOpacity(0.08);
+                    tint = const Color(0xFF157A3D).withValues(alpha: 0.08);
                   } else if (status == 'absent') {
                     bar = Colors.red;
-                    tint = Colors.red.withOpacity(0.08);
+                    tint = Colors.red.withValues(alpha: 0.08);
                   } else {
                     bar = const Color(0xFF64748B);
-                    tint = const Color(0xFF64748B).withOpacity(0.08);
+                    tint = const Color(0xFF64748B).withValues(alpha: 0.08);
                   }
 
                   final shownStatus = statusRaw.isEmpty
@@ -4027,7 +4003,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                       if (teacher.trim().isNotEmpty) teacher,
                                     ].join(' • '),
                                     style: TextStyle(
-                                      color: Colors.black.withOpacity(0.65),
+                                      color: Colors.black.withValues(alpha: 0.65),
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12,
                                     ),
@@ -4135,13 +4111,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
                     if (status == 'present') {
                       bar = const Color(0xFF157A3D);
-                      tint = const Color(0xFF157A3D).withOpacity(0.08);
+                      tint = const Color(0xFF157A3D).withValues(alpha: 0.08);
                     } else if (status == 'absent') {
                       bar = Colors.red;
-                      tint = Colors.red.withOpacity(0.08);
+                      tint = Colors.red.withValues(alpha: 0.08);
                     } else {
                       bar = const Color(0xFF64748B);
-                      tint = const Color(0xFF64748B).withOpacity(0.08);
+                      tint = const Color(0xFF64748B).withValues(alpha: 0.08);
                     }
 
                     final shownStatus = statusRaw.isEmpty
@@ -4197,7 +4173,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                         if (teacher.trim().isNotEmpty) teacher,
                                       ].join(' • '),
                                       style: TextStyle(
-                                        color: Colors.black.withOpacity(0.65),
+                                        color: Colors.black.withValues(alpha: 0.65),
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12,
                                       ),

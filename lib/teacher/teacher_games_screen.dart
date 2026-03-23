@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/app_feedback.dart';
 
 class TeacherGamesScreen extends StatefulWidget {
   const TeacherGamesScreen({super.key});
@@ -282,9 +283,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('This game has no link.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('This game has no link.')));
       return;
     }
 
@@ -341,12 +340,12 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       await _gamesRef.child(gameId).remove();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Game deleted successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not delete game. Try again.'),
@@ -366,7 +365,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       final teacher = await _loadMyTeacherData();
       if (teacher == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           const SnackBar(content: Text('Could not load teacher details.')),
         );
         return;
@@ -387,12 +386,12 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       await ref.set(cloned);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Game duplicated successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
@@ -418,7 +417,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             nextStatus == 'archived'
@@ -429,7 +428,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update game. Try again.'),
@@ -529,7 +528,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             Future<void> uploadGameFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -537,7 +536,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Enter the game name before uploading.'),
                   ),
@@ -563,7 +562,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Game file uploaded successfully.'),
                     ),
@@ -571,7 +570,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload game file.'),
@@ -588,7 +587,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             Future<void> uploadThumbnail() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -596,7 +595,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text(
                       'Enter the game name before uploading thumbnail.',
@@ -624,7 +623,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Thumbnail uploaded successfully.'),
                     ),
@@ -632,7 +631,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload thumbnail.'),
@@ -659,14 +658,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   int.tryParse(durationController.text.trim()) ?? 0;
 
               if (name.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Please enter the game name.')),
                 );
                 return;
               }
 
               if (description.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please enter the game description.'),
                   ),
@@ -675,7 +674,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               }
 
               if (link.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please upload the game file first.'),
                   ),
@@ -686,7 +685,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final teacher = await _loadMyTeacherData();
               if (teacher == null) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Could not load teacher details.'),
                   ),
@@ -697,7 +696,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -761,7 +760,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 if (!mounted) return;
                 Navigator.of(ctx).pop();
 
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       isEdit
@@ -772,7 +771,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(
@@ -1060,9 +1059,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1157,9 +1154,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text(
                                             'Thumbnail link copied',
@@ -1304,9 +1299,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: backgroundColor ?? cs.primary.withOpacity(0.08),
+        color: backgroundColor ?? cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor ?? cs.primary.withOpacity(0.12)),
+        border: Border.all(color: borderColor ?? cs.primary.withValues(alpha: 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1353,10 +1348,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outline.withOpacity(0.22)),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 7),
           ),
@@ -1377,7 +1372,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               child: Container(
                 width: 52,
                 height: 52,
-                color: cs.primary.withOpacity(0.10),
+                color: cs.primary.withValues(alpha: 0.10),
                 child: thumbnail.isNotEmpty
                     ? Image.network(
                         thumbnail,
@@ -1414,7 +1409,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
                         0.70,
                       ),
                     ),
@@ -1428,8 +1423,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         context: context,
                         icon: Icons.verified_rounded,
                         text: status,
-                        backgroundColor: _statusColor(status).withOpacity(0.12),
-                        borderColor: _statusColor(status).withOpacity(0.35),
+                        backgroundColor: _statusColor(status).withValues(alpha: 0.12),
+                        borderColor: _statusColor(status).withValues(alpha: 0.35),
                         iconColor: _statusColor(status),
                         textColor: _statusColor(status),
                       ),
@@ -1452,8 +1447,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                               context: context,
                               icon: Icons.sell_rounded,
                               text: tag,
-                              backgroundColor: cs.secondary.withOpacity(0.08),
-                              borderColor: cs.secondary.withOpacity(0.14),
+                              backgroundColor: cs.secondary.withValues(alpha: 0.08),
+                              borderColor: cs.secondary.withValues(alpha: 0.14),
                               iconColor: cs.secondary,
                             ),
                           ),
@@ -1474,7 +1469,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     errorBuilder: (_, _, _) => Container(
                       height: 180,
                       alignment: Alignment.center,
-                      color: cs.primary.withOpacity(0.06),
+                      color: cs.primary.withValues(alpha: 0.06),
                       child: Icon(
                         Icons.image_not_supported_rounded,
                         color: cs.primary,
@@ -1502,8 +1497,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                       if (level.isNotEmpty)
                         Chip(
@@ -1513,8 +1508,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                       if (durationMinutes > 0)
                         Chip(
@@ -1524,8 +1519,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                     ],
                   ),
@@ -1553,9 +1548,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         .map(
                           (tag) => Chip(
                             label: Text(tag),
-                            backgroundColor: cs.secondary.withOpacity(0.08),
+                            backgroundColor: cs.secondary.withValues(alpha: 0.08),
                             side: BorderSide(
-                              color: cs.secondary.withOpacity(0.14),
+                              color: cs.secondary.withValues(alpha: 0.14),
                             ),
                           ),
                         )
@@ -1629,7 +1624,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   child: Text(
                     teacherNotes,
                     style: TextStyle(
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
                         0.78,
                       ),
                       fontWeight: FontWeight.w600,
@@ -1798,10 +1793,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         decoration: BoxDecoration(
           color: theme.cardColor,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: cs.outline.withOpacity(0.22)),
+          border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
@@ -1831,14 +1826,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         icon: const Icon(Icons.clear_rounded),
                       ),
                 filled: true,
-                fillColor: cs.surfaceContainerHighest.withOpacity(0.35),
+                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.35),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
+                  borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.18)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: cs.outline.withOpacity(0.18)),
+                  borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.18)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -1981,7 +1976,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   decoration: BoxDecoration(
                     color: theme.cardColor,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.outline.withOpacity(0.22)),
+                    border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -2069,7 +2064,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: theme.textTheme.bodyMedium?.color
-                                      ?.withOpacity(0.65),
+                                      ?.withValues(alpha: 0.65),
                                 ),
                               ),
                             ),

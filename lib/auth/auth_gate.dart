@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/app_feedback.dart';
 import '../shared/session_manager.dart';
 
 import '../learner/learner_home.dart';
@@ -46,7 +47,9 @@ class _AuthGateState extends State<AuthGate> {
       builder: (context, authSnap) {
         if (authSnap.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: BrandedInlineLoader(message: 'Checking account...'),
+            ),
           );
         }
 
@@ -71,7 +74,9 @@ class _AuthGateState extends State<AuthGate> {
           builder: (context, userEvent) {
             if (userEvent.connectionState == ConnectionState.waiting) {
               return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
+                body: Center(
+                  child: BrandedInlineLoader(message: 'Loading profile...'),
+                ),
               );
             }
 
@@ -100,7 +105,11 @@ class _AuthGateState extends State<AuthGate> {
                 builder: (context, checks) {
                   if (!checks.hasData) {
                     return const Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
+                      body: Center(
+                        child: BrandedInlineLoader(
+                          message: 'Checking status...',
+                        ),
+                      ),
                     );
                   }
 
@@ -175,7 +184,11 @@ class _AuthGateState extends State<AuthGate> {
               builder: (context, delSnapEarly) {
                 if (!delSnapEarly.hasData) {
                   return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
+                    body: Center(
+                      child: BrandedInlineLoader(
+                        message: 'Verifying access...',
+                      ),
+                    ),
                   );
                 }
 
@@ -217,7 +230,11 @@ class _AuthGateState extends State<AuthGate> {
                     builder: (context, snap2) {
                       if (!snap2.hasData) {
                         return const Scaffold(
-                          body: Center(child: CircularProgressIndicator()),
+                          body: Center(
+                            child: BrandedInlineLoader(
+                              message: 'Finalizing access...',
+                            ),
+                          ),
                         );
                       }
 

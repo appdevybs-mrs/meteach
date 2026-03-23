@@ -13,6 +13,54 @@ import '../services/backend_api.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 
+String _coursesRelativePathFromUrl(String rawUrl) {
+  final trimmed = rawUrl.trim();
+  if (trimmed.isEmpty) return '';
+
+  try {
+    final uri = Uri.parse(trimmed);
+    final parts = uri.pathSegments;
+    final coursesIndex = parts.indexOf('courses');
+    if (coursesIndex < 0 || coursesIndex + 1 >= parts.length) return '';
+    return parts.sublist(coursesIndex + 1).join('/');
+  } catch (_) {
+    return '';
+  }
+}
+
+Future<void> _deleteUploadedCoursesAsset(String fileUrl) async {
+  final relPath = _coursesRelativePathFromUrl(fileUrl);
+  if (relPath.isEmpty) return;
+
+  final uri = await BackendApi.withAuthQuery(
+    BackendApi.uri('delete_file_secure.php'),
+  );
+  final headers = await BackendApi.authHeaders();
+  final authFields = await BackendApi.authFormFields();
+
+  final r = await http.post(
+    uri,
+    headers: headers,
+    body: {'root': 'courses', 'path': relPath, ...authFields},
+  );
+
+  final raw = r.body.trim();
+  if (!raw.startsWith('{')) {
+    throw Exception('Delete endpoint did not return JSON.');
+  }
+
+  final data = jsonDecode(raw);
+  if (data is! Map<String, dynamic>) {
+    throw Exception('Invalid delete response.');
+  }
+
+  if (data['success'] == true) return;
+
+  final msg = (data['message'] ?? 'Delete failed').toString();
+  if (msg.toLowerCase().contains('not found')) return;
+  throw Exception(msg);
+}
+
 class TeacherLearnerGalleryScreen extends StatefulWidget {
   const TeacherLearnerGalleryScreen({
     super.key,
@@ -304,10 +352,20 @@ class _TeacherLearnerGalleryScreenState
     if (!ok) return;
 
     try {
+      final snap = await _galleryRef().child(itemId).get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final url = (m['url'] ?? '').toString().trim();
+        if (url.isNotEmpty) {
+          await _deleteUploadedCoursesAsset(url);
+        }
+      }
+
       await _galleryRef().child(itemId).remove();
       if (!mounted) return;
       setState(() {
-        _ok = 'Gallery item deleted';
+        _ok = 'Gallery item deleted from server and database';
         _error = null;
       });
     } catch (e) {
@@ -394,9 +452,9 @@ class _TeacherLearnerGalleryScreenState
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
@@ -417,12 +475,10 @@ class _TeacherLearnerGalleryScreenState
   }
 
   Widget _statChip({required String text, required IconData icon}) {
-    final p = palette;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white24),
       ),
@@ -482,7 +538,7 @@ class _TeacherLearnerGalleryScreenState
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -513,14 +569,14 @@ class _TeacherLearnerGalleryScreenState
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [p.primary, p.primary.withOpacity(0.88)],
+                      colors: [p.primary, p.primary.withValues(alpha: 0.88)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: p.primary.withOpacity(0.16),
+                        color: p.primary.withValues(alpha: 0.16),
                         blurRadius: 18,
                         offset: const Offset(0, 10),
                       ),
@@ -532,7 +588,7 @@ class _TeacherLearnerGalleryScreenState
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.12),
+                          color: Colors.white.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: const Icon(
@@ -560,7 +616,7 @@ class _TeacherLearnerGalleryScreenState
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.84),
+                                color: Colors.white.withValues(alpha: 0.84),
                                 fontWeight: FontWeight.w700,
                                 fontSize: 12,
                               ),
@@ -638,7 +694,7 @@ class _TeacherLearnerGalleryScreenState
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: p.primary,
-                          side: BorderSide(color: p.border.withOpacity(0.9)),
+                          side: BorderSide(color: p.border.withValues(alpha: 0.9)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -682,7 +738,7 @@ class _TeacherLearnerGalleryScreenState
                     Text(
                       '${items.length} item${items.length == 1 ? '' : 's'}',
                       style: TextStyle(
-                        color: p.text.withOpacity(0.7),
+                        color: p.text.withValues(alpha: 0.7),
                         fontWeight: FontWeight.w800,
                         fontSize: 12,
                       ),
@@ -696,14 +752,14 @@ class _TeacherLearnerGalleryScreenState
                     decoration: BoxDecoration(
                       color: p.cardBg,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: p.border.withOpacity(0.85)),
+                      border: Border.all(color: p.border.withValues(alpha: 0.85)),
                     ),
                     child: Column(
                       children: [
                         Icon(
                           Icons.perm_media_outlined,
                           size: 56,
-                          color: p.primary.withOpacity(0.22),
+                          color: p.primary.withValues(alpha: 0.22),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -719,7 +775,7 @@ class _TeacherLearnerGalleryScreenState
                           'Upload a photo or a video for this learner.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: p.text.withOpacity(0.7),
+                            color: p.text.withValues(alpha: 0.7),
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -758,11 +814,11 @@ class _TeacherLearnerGalleryScreenState
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: p.border.withOpacity(0.85),
+                              color: p.border.withValues(alpha: 0.85),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
+                                color: Colors.black.withValues(alpha: 0.03),
                                 blurRadius: 10,
                                 offset: const Offset(0, 5),
                               ),
@@ -789,7 +845,7 @@ class _TeacherLearnerGalleryScreenState
                                             alignment: Alignment.center,
                                             child: Icon(
                                               Icons.broken_image_outlined,
-                                              color: p.primary.withOpacity(
+                                              color: p.primary.withValues(alpha: 
                                                 0.55,
                                               ),
                                             ),
@@ -804,7 +860,7 @@ class _TeacherLearnerGalleryScreenState
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(
+                                            color: Colors.black.withValues(alpha: 
                                               0.58,
                                             ),
                                             borderRadius: BorderRadius.circular(
@@ -856,7 +912,7 @@ class _TeacherLearnerGalleryScreenState
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: p.text.withOpacity(0.72),
+                                        color: p.text.withValues(alpha: 0.72),
                                         fontWeight: FontWeight.w700,
                                         fontSize: 11,
                                       ),
@@ -1003,8 +1059,8 @@ class _TeacherVideoTileState extends State<_TeacherVideoTile> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.black.withOpacity(0.10),
-                Colors.black.withOpacity(0.35),
+                Colors.black.withValues(alpha: 0.10),
+                Colors.black.withValues(alpha: 0.35),
               ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
@@ -1016,7 +1072,7 @@ class _TeacherVideoTileState extends State<_TeacherVideoTile> {
             width: 58,
             height: 58,
             decoration: BoxDecoration(
-              color: p.accent.withOpacity(0.90),
+              color: p.accent.withValues(alpha: 0.90),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -1185,7 +1241,7 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
                       gradient: LinearGradient(
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.20),
+                          Colors.black.withValues(alpha: 0.20),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -1207,7 +1263,7 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-              color: Colors.black.withOpacity(0.88),
+              color: Colors.black.withValues(alpha: 0.88),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1387,10 +1443,10 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         border: Border(
                           top: BorderSide(
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),

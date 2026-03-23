@@ -13,6 +13,7 @@ import '../services/route_state.dart'; // ✅ ADD THIS
 import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
+import '../shared/app_feedback.dart';
 
 class MailUploadClient {
   MailUploadClient({
@@ -137,9 +138,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   Future<void> _loadSubject() async {
@@ -423,8 +422,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                         child: Card(
                           elevation: 0,
                           color: mine
-                              ? Colors.blue.withOpacity(0.12)
-                              : Colors.black.withOpacity(0.05),
+                              ? Colors.blue.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.05),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
@@ -439,7 +438,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                       mine ? 'Me' : widget.peerName,
                                       style: TextStyle(
                                         fontWeight: FontWeight.w800,
-                                        color: Colors.black.withOpacity(0.6),
+                                        color: Colors.black.withValues(alpha: 0.6),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -448,7 +447,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                       _fmt(m.createdAtMs),
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.black.withOpacity(0.55),
+                                        color: Colors.black.withValues(alpha: 0.55),
                                       ),
                                     ),
                                     const SizedBox(width: 6),

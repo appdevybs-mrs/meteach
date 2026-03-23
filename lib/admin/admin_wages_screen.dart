@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'admin_wages_export_excel.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
@@ -248,7 +249,7 @@ class AdminWagesScreen extends StatelessWidget {
                       'Nothing to show 🎉',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Colors.black.withOpacity(0.65),
+                        color: Colors.black.withValues(alpha: 0.65),
                       ),
                     ),
                   )
@@ -353,7 +354,7 @@ class AdminWagesScreen extends StatelessWidget {
       }
 
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(makePaid ? 'Marked PAID ✅' : 'Marked UNPAID ✅'),
           duration: const Duration(milliseconds: 900),
@@ -361,7 +362,7 @@ class AdminWagesScreen extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update this wage entry.'),
@@ -409,12 +410,10 @@ class AdminWagesScreen extends StatelessWidget {
       });
 
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Confirmation removed ✅')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Confirmation removed ✅')));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not complete this action.'),
@@ -450,12 +449,12 @@ class AdminWagesScreen extends StatelessWidget {
               try {
                 await AdminWagesExcelExporter.exportAndShareExcel();
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Excel exported ✅')),
                 );
               } catch (e) {
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not export wages file.'),
@@ -621,10 +620,10 @@ class AdminWagesScreen extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: uiBorder.withOpacity(0.8)),
+                          border: Border.all(color: uiBorder.withValues(alpha: 0.8)),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.03),
+                              color: Colors.black.withValues(alpha: 0.03),
                               blurRadius: 10,
                               offset: const Offset(0, 6),
                             ),
@@ -797,12 +796,12 @@ class _StatsHeaderCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFF4F7F9),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 18, color: primaryBlue.withOpacity(0.85)),
+            Icon(icon, size: 18, color: primaryBlue.withValues(alpha: 0.85)),
             const SizedBox(width: 8),
           ],
           Expanded(
@@ -816,7 +815,7 @@ class _StatsHeaderCard extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
-                    color: Colors.black.withOpacity(0.65),
+                    color: Colors.black.withValues(alpha: 0.65),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -837,7 +836,7 @@ class _StatsHeaderCard extends StatelessWidget {
             const SizedBox(width: 6),
             Icon(
               Icons.chevron_right_rounded,
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
             ),
           ],
         ],
@@ -859,7 +858,7 @@ class _StatsHeaderCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFF4F7F9),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Text(
         text,
@@ -875,10 +874,10 @@ class _StatsHeaderCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withOpacity(0.8)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 6),
           ),
@@ -1047,7 +1046,7 @@ class _TeacherSection extends StatelessWidget {
                       'Nothing to show 🎉',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Colors.black.withOpacity(0.65),
+                        color: Colors.black.withValues(alpha: 0.65),
                       ),
                     ),
                   )
@@ -1222,7 +1221,7 @@ class _TeacherSection extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.black.withOpacity(0.65),
+                      color: Colors.black.withValues(alpha: 0.65),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -1244,9 +1243,9 @@ class _TeacherSection extends StatelessWidget {
                         vertical: 7,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.08),
+                        color: Colors.red.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.red.withOpacity(0.45)),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.45)),
                       ),
                       child: Text(
                         'List ($notPaidYet)',
@@ -1363,7 +1362,7 @@ class _LearnerSection extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFF4F7F9),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1387,7 +1386,7 @@ class _LearnerSection extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.black.withOpacity(0.65),
+                color: Colors.black.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -1463,9 +1462,9 @@ class _PaymentRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.65)),
+        border: Border.all(color: color.withValues(alpha: 0.65)),
       ),
       child: Text(
         text,
@@ -1498,8 +1497,8 @@ class _PaymentRow extends StatelessWidget {
     final confirmed = _asBool(payment['teacherConfirmed']);
 
     final paidChipBg = isPaidStaff
-        ? Colors.green.withOpacity(0.15)
-        : Colors.red.withOpacity(0.12);
+        ? Colors.green.withValues(alpha: 0.15)
+        : Colors.red.withValues(alpha: 0.12);
     final paidChipBorder = isPaidStaff ? Colors.green : Colors.red;
     final paidChipText = isPaidStaff ? 'PAID' : 'UNPAID';
 
@@ -1508,7 +1507,7 @@ class _PaymentRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
       ),
       child: Row(
         children: [
@@ -1532,7 +1531,7 @@ class _PaymentRow extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.black.withOpacity(0.65),
+                    color: Colors.black.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -1562,7 +1561,7 @@ class _PaymentRow extends StatelessWidget {
                         label: const Text('Unconfirm'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
-                          side: BorderSide(color: Colors.red.withOpacity(0.5)),
+                          side: BorderSide(color: Colors.red.withValues(alpha: 0.5)),
                         ),
                         onPressed: () => onRemoveTeacherConfirm(paymentId),
                       ),
@@ -1582,7 +1581,7 @@ class _PaymentRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: paidChipBg,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: paidChipBorder.withOpacity(0.7)),
+                border: Border.all(color: paidChipBorder.withValues(alpha: 0.7)),
               ),
               child: Text(
                 paidChipText,

@@ -18,6 +18,7 @@ import '../learner/learner_courses_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../main.dart'; // appNavigatorKey + messengerKey
+import '../shared/app_feedback.dart';
 import '../teacher/teacher_reminder.dart';
 import '../teacher/teacher_schedule.dart';
 import '../teacher/teacher_mail_thread_screen.dart';
@@ -450,12 +451,14 @@ class FCMService {
     if (role == 'admin') {
       final teacher = await _fetchAdminTeacherMap(peerUid);
       if (teacher == null) {
-        messengerKey.currentState?.showSnackBar(
-          const SnackBar(
-            behavior: SnackBarBehavior.floating,
-            content: Text('Could not load mail user.'),
-          ),
-        );
+        final toastCtx = appNavigatorKey.currentContext;
+        if (toastCtx != null && toastCtx.mounted) {
+          AppToast.show(
+            toastCtx,
+            'Could not load mail user.',
+            type: AppToastType.error,
+          );
+        }
         return;
       }
 

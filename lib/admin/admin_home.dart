@@ -20,6 +20,7 @@ import 'admin_booking.dart';
 import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
+import '../shared/app_feedback.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -477,7 +478,7 @@ class _AdminHomeState extends State<AdminHome> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(
+                          color: Colors.black.withValues(alpha: 
                             _isAdminMode ? 0.04 : 0.03,
                           ),
                           blurRadius: _isAdminMode ? 16 : 12,
@@ -768,7 +769,7 @@ class _RoleSelectButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = isSelected
-        ? selectedColor.withOpacity(0.10)
+        ? selectedColor.withValues(alpha: 0.10)
         : const Color(0xFFF8FAFC);
 
     final border = isSelected ? selectedColor : AdminHome.uiBorder;
@@ -832,7 +833,7 @@ class _DrawerTile extends StatelessWidget {
         width: 42,
         height: 42,
         decoration: BoxDecoration(
-          color: color.withOpacity(0.10),
+          color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Icon(icon, color: color, size: 20),
@@ -1220,7 +1221,7 @@ class _LearnersDashCard extends StatelessWidget {
         border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(boxShadowOpacity),
+            color: Colors.black.withValues(alpha: boxShadowOpacity),
             blurRadius: isReceptionistStyle ? 10 : 14,
             offset: const Offset(0, 6),
           ),
@@ -1394,7 +1395,7 @@ class _DashCard extends StatelessWidget {
           border: Border.all(color: borderColor),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(shadowOpacity),
+              color: Colors.black.withValues(alpha: shadowOpacity),
               blurRadius: isReceptionistStyle ? 10 : 14,
               offset: const Offset(0, 6),
             ),
@@ -1413,7 +1414,7 @@ class _DashCard extends StatelessWidget {
                     height: 42,
                     decoration: BoxDecoration(
                       color: isReceptionistStyle
-                          ? _softBg(color).withOpacity(0.82)
+                          ? _softBg(color).withValues(alpha: 0.82)
                           : _softBg(color),
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -1676,7 +1677,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       _fillCompanyControllers(company);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not load app configuration.'),
@@ -1716,12 +1717,10 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Saved all ✅')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Saved all ✅')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not save force-update settings.'),
@@ -1740,12 +1739,10 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       await _companyRoot.set(_companyControllersToMap());
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Company info saved ✅')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Company info saved ✅')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not save company information.'),
@@ -2049,7 +2046,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         bottom: TabBar(
           controller: _tabController,
           labelColor: primaryBlue,
-          unselectedLabelColor: primaryBlue.withOpacity(0.55),
+          unselectedLabelColor: primaryBlue.withValues(alpha: 0.55),
           indicatorColor: actionOrange,
           tabs: const [
             Tab(text: 'Force Update'),

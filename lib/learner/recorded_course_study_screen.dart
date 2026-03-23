@@ -1,8 +1,16 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import 'recorded_video_player_screen.dart';
@@ -31,9 +39,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
   void _debug(String message) {
-    if (kDebugMode) {
-      debugPrint('[RecordedCourseStudy] $message');
-    }
+    // no-op in production build
   }
 
   bool _busy = true;
@@ -488,15 +494,271 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     await _loadAll();
   }
 
-  void _onCertificateTap() {
-    _snack('Certificate download will be added soon.');
+  Future<String> _learnerDisplayName() async {
+    try {
+      final snap = await _usersRef.child(_uid).get();
+      if (!snap.exists || snap.value is! Map) return 'Learner';
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final first = (m['first_name'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? '').toString().trim();
+      final full = '$first $last'.trim();
+      if (full.isNotEmpty) return full;
+    } catch (_) {}
+    return 'Learner';
+  }
+
+  Future<Uint8List> _buildCertificatePdfBytes({
+    required String learnerName,
+    required String courseTitle,
+  }) async {
+    final doc = pw.Document();
+    final now = DateTime.now();
+    final date =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    Uint8List? logo;
+    try {
+      logo = (await rootBundle.load(
+        'assets/images/ybs_logo.png',
+      )).buffer.asUint8List();
+    } catch (_) {}
+
+    final logoImage = logo != null ? pw.MemoryImage(logo) : null;
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(28),
+        build: (context) {
+          return pw.Stack(
+            children: [
+              pw.Positioned.fill(
+                child: pw.Container(
+                  decoration: pw.BoxDecoration(
+                    gradient: pw.LinearGradient(
+                      colors: [
+                        PdfColor.fromInt(0xFFF8FAFC),
+                        PdfColor.fromInt(0xFFEAF2FF),
+                      ],
+                      begin: pw.Alignment.topLeft,
+                      end: pw.Alignment.bottomRight,
+                    ),
+                    border: pw.Border.all(
+                      color: PdfColor.fromInt(0xFF1A2B48),
+                      width: 2,
+                    ),
+                    borderRadius: pw.BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+              if (logoImage != null)
+                pw.Positioned(
+                  right: 28,
+                  bottom: 20,
+                  child: pw.Opacity(
+                    opacity: 0.08,
+                    child: pw.Image(logoImage, width: 210, height: 210),
+                  ),
+                ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(28),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    pw.Row(
+                      children: [
+                        if (logoImage != null)
+                          pw.Container(
+                            width: 58,
+                            height: 58,
+                            padding: const pw.EdgeInsets.all(6),
+                            decoration: pw.BoxDecoration(
+                              color: PdfColors.white,
+                              borderRadius: pw.BorderRadius.circular(12),
+                              border: pw.Border.all(
+                                color: PdfColor.fromInt(0xFFD1D9E0),
+                              ),
+                            ),
+                            child: pw.Image(logoImage),
+                          )
+                        else
+                          pw.SizedBox(width: 58, height: 58),
+                        pw.SizedBox(width: 12),
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              'YOUR BRIDGE SCHOOL',
+                              style: pw.TextStyle(
+                                fontSize: 18,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromInt(0xFF1A2B48),
+                              ),
+                            ),
+                            pw.Text(
+                              'Certificate of Completion',
+                              style: pw.TextStyle(
+                                fontSize: 12,
+                                color: PdfColor.fromInt(0xFF334155),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    pw.Spacer(),
+                    pw.Center(
+                      child: pw.Column(
+                        children: [
+                          pw.Text(
+                            'This certifies that',
+                            style: pw.TextStyle(
+                              fontSize: 18,
+                              color: PdfColor.fromInt(0xFF334155),
+                            ),
+                          ),
+                          pw.SizedBox(height: 10),
+                          pw.Text(
+                            learnerName,
+                            style: pw.TextStyle(
+                              fontSize: 34,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromInt(0xFF0F172A),
+                            ),
+                          ),
+                          pw.SizedBox(height: 12),
+                          pw.Text(
+                            'has successfully completed',
+                            style: pw.TextStyle(
+                              fontSize: 16,
+                              color: PdfColor.fromInt(0xFF334155),
+                            ),
+                          ),
+                          pw.SizedBox(height: 8),
+                          pw.Text(
+                            courseTitle,
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(
+                              fontSize: 24,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromInt(0xFF1A2B48),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.Spacer(),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Issued on $date',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            color: PdfColor.fromInt(0xFF475569),
+                          ),
+                        ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColor.fromInt(0xFF1A2B48),
+                            borderRadius: pw.BorderRadius.circular(999),
+                          ),
+                          child: pw.Text(
+                            'Verified Completion',
+                            style: pw.TextStyle(
+                              color: PdfColors.white,
+                              fontSize: 10,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc.save();
+  }
+
+  Future<void> _onCertificateTap() async {
+    try {
+      final learnerName = await _learnerDisplayName();
+      final bytes = await _buildCertificatePdfBytes(
+        learnerName: learnerName,
+        courseTitle: _title,
+      );
+
+      if (!mounted) return;
+
+      final action = await showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Certificate Ready'),
+          content: const Text('Print now or save/share to your device.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'share'),
+              child: const Text('Save / Share'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'print'),
+              child: const Text('Print'),
+            ),
+          ],
+        ),
+      );
+
+      if (action == 'print') {
+        await Printing.layoutPdf(onLayout: (_) async => bytes);
+        if (mounted) {
+          AppToast.show(
+            context,
+            'Certificate opened in print preview.',
+            type: AppToastType.success,
+          );
+        }
+        return;
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/certificate_${widget.courseKey}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles([
+        XFile(file.path, mimeType: 'application/pdf', name: 'certificate.pdf'),
+      ]);
+
+      if (mounted) {
+        AppToast.show(
+          context,
+          'Certificate is ready to save or share.',
+          type: AppToastType.success,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not generate certificate.'),
+        type: AppToastType.error,
+      );
+    }
   }
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message, type: AppToastType.info);
   }
 
   int _countCompletedInUnit(_RecordedUnit unit) {
@@ -726,7 +988,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             Text(
               session.objective.trim(),
               style: TextStyle(
-                color: Colors.black.withOpacity(0.67),
+                color: Colors.black.withValues(alpha: 0.67),
                 fontWeight: FontWeight.w600,
                 height: 1.3,
                 fontSize: 12.5,
@@ -996,7 +1258,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 child: Text(
                                   unit.description.trim(),
                                   style: TextStyle(
-                                    color: Colors.black.withOpacity(0.70),
+                                    color: Colors.black.withValues(alpha: 0.70),
                                     fontWeight: FontWeight.w600,
                                     height: 1.3,
                                     fontSize: 12.5,
@@ -1094,7 +1356,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         actions: [_buildMenuButton()],
       ),
       body: _busy
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: BrandedInlineLoader(message: 'Loading course...'),
+            )
           : _error != null
           ? Center(
               child: Padding(

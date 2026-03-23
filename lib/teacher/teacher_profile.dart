@@ -13,6 +13,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
+import '../shared/app_feedback.dart';
 
 enum _LeaveChoice { save, discard, cancel }
 
@@ -341,7 +342,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         ),
         content: Text(
           'You have profile changes. Save before leaving or discard them?',
-          style: TextStyle(color: p.text.withOpacity(0.8)),
+          style: TextStyle(color: p.text.withValues(alpha: 0.8)),
         ),
         actions: [
           TextButton(
@@ -466,7 +467,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
     final remaining = _maxPhotos - _photoUrls.length;
     if (remaining <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('You already reached the 6 photo limit.')),
       );
       return;
@@ -648,9 +649,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   Future<void> _showChangePasswordSheet() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('You must be logged in.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('You must be logged in.')));
       return;
     }
 
@@ -709,7 +708,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 if (!mounted) return;
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Password updated ✅')),
                 );
               } on FirebaseAuthException catch (e) {
@@ -722,15 +721,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(msg)));
+                  AppToast.fromSnackBar(context,  SnackBar(content: Text(msg)));
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(toHumanError(e))));
+                  AppToast.fromSnackBar(context,  SnackBar(content: Text(toHumanError(e))));
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
@@ -763,7 +758,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       Text(
                         'Minimum 8 characters and at least 1 special character.',
                         style: TextStyle(
-                          color: p.text.withOpacity(0.7),
+                          color: p.text.withValues(alpha: 0.7),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -852,7 +847,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: p.border.withOpacity(0.95)),
+        borderSide: BorderSide(color: p.border.withValues(alpha: 0.95)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -876,7 +871,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         Text(
           label,
           style: TextStyle(
-            color: p.text.withOpacity(0.78),
+            color: p.text.withValues(alpha: 0.78),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -913,9 +908,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: p.soft.withOpacity(0.55),
+        color: p.soft.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
@@ -936,7 +931,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 Text(
                   label,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.62),
+                    color: p.text.withValues(alpha: 0.62),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -975,7 +970,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         Text(
           'Upload up to 6 photos to present yourself professionally.',
           style: TextStyle(
-            color: p.text.withOpacity(0.68),
+            color: p.text.withValues(alpha: 0.68),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -994,7 +989,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       border: Border.all(color: p.border),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
+                          color: Colors.black.withValues(alpha: 0.03),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -1099,7 +1094,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         Text(
           'Upload one short introduction video for your profile.',
           style: TextStyle(
-            color: p.text.withOpacity(0.68),
+            color: p.text.withValues(alpha: 0.68),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1141,7 +1136,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   'A short intro helps learners know you better.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.68),
+                    color: p.text.withValues(alpha: 0.68),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1189,7 +1184,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 14,
                       offset: const Offset(0, 8),
                     ),
@@ -1244,7 +1239,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: p.soft.withOpacity(0.48),
+                  color: p.soft.withValues(alpha: 0.48),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Text(
@@ -1252,7 +1247,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1483,14 +1478,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.18),
+            color: p.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1502,7 +1497,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             width: 68,
             height: 68,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
+              color: Colors.white.withValues(alpha: 0.16),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white24),
             ),
@@ -1537,7 +1532,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 Text(
                   subtitle.isEmpty ? 'Teacher' : subtitle,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.84),
+                    color: Colors.white.withValues(alpha: 0.84),
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
@@ -1569,7 +1564,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -1599,10 +1594,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: p.border.withOpacity(0.9)),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -1625,7 +1620,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             Text(
               subtitle,
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
@@ -1644,7 +1639,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final bool isError = _error != null;
     final Color bg = isError
         ? const Color(0xFFFFEBEE)
-        : p.soft.withOpacity(0.75);
+        : p.soft.withValues(alpha: 0.75);
     final Color border = isError ? const Color(0xFFFFCDD2) : p.border;
     final Color textColor = isError ? const Color(0xFFC62828) : p.primary;
     final IconData icon = isError
@@ -1705,7 +1700,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               Text(
                 'Professional profile and media',
                 style: TextStyle(
-                  color: p.text.withOpacity(0.65),
+                  color: p.text.withValues(alpha: 0.65),
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
@@ -1732,7 +1727,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           bottom: TabBar(
             controller: _tabController,
             labelColor: p.primary,
-            unselectedLabelColor: p.text.withOpacity(0.65),
+            unselectedLabelColor: p.text.withValues(alpha: 0.65),
             indicatorColor: p.accent,
             tabs: const [
               Tab(icon: Icon(Icons.badge_rounded), text: 'Credentials'),

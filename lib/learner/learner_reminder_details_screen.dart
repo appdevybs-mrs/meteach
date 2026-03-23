@@ -106,10 +106,10 @@ class _LearnerReminderDetailsScreenState
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: UiK.primaryBlue.withOpacity(0.06),
+                            color: UiK.primaryBlue.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: UiK.uiBorder.withOpacity(0.85),
+                              color: UiK.uiBorder.withValues(alpha: 0.85),
                             ),
                           ),
                           child: Text(

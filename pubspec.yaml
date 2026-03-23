@@ -49,9 +49,10 @@ dependencies:
 
   # 🌐 HTTP (PHP upload endpoint)
   http: ^1.2.2
-  fluttertoast: ^8.2.12
   audioplayers: ^6.0.0
   record: ^6.2.0
+  pdf: ^3.11.1
+  printing: ^5.14.0
   syncfusion_flutter_pdfviewer: ^28.2.12
   crypto: ^3.0.7
   webview_flutter_android: ^4.10.13

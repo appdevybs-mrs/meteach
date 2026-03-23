@@ -7,6 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_thread_screen.dart';
+import '../shared/app_feedback.dart';
 
 class LearnerMailScreen extends StatefulWidget {
   const LearnerMailScreen({super.key});
@@ -20,7 +21,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   Color get _navy => UiK.primaryBlue;
   Color get _orange => UiK.actionOrange;
-  Color get _navyDark => UiK.primaryBlue.withOpacity(0.92);
+  Color get _navyDark => UiK.primaryBlue.withValues(alpha: 0.92);
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -47,7 +48,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   bool _looksLikeThreadObject(Map<String, dynamic> m) {
@@ -285,7 +286,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: _navy.withOpacity(0.14)),
+          child: Container(height: 1, color: _navy.withValues(alpha: 0.14)),
         ),
       ),
       floatingActionButton: uid.isEmpty
@@ -356,7 +357,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: _navy.withOpacity(0.14)),
+                            border: Border.all(color: _navy.withValues(alpha: 0.14)),
                           ),
                           child: Row(
                             children: [
@@ -367,15 +368,15 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                     width: 46,
                                     height: 46,
                                     decoration: BoxDecoration(
-                                      color: _navy.withOpacity(0.06),
+                                      color: _navy.withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(
-                                        color: _navy.withOpacity(0.14),
+                                        color: _navy.withValues(alpha: 0.14),
                                       ),
                                     ),
                                     child: Icon(
                                       Icons.mail_rounded,
-                                      color: _navy.withOpacity(0.92),
+                                      color: _navy.withValues(alpha: 0.92),
                                     ),
                                   ),
                                   if (unread > 0)
@@ -430,7 +431,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w800,
-                                            color: _navy.withOpacity(0.55),
+                                            color: _navy.withValues(alpha: 0.55),
                                           ),
                                         ),
                                       ],
@@ -443,12 +444,12 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                           vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: _orange.withOpacity(0.14),
+                                          color: _orange.withValues(alpha: 0.14),
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
                                           border: Border.all(
-                                            color: _orange.withOpacity(0.24),
+                                            color: _orange.withValues(alpha: 0.24),
                                           ),
                                         ),
                                         child: Text(
@@ -471,7 +472,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontWeight: FontWeight.w800,
-                                        color: _navy.withOpacity(0.62),
+                                        color: _navy.withValues(alpha: 0.62),
                                         fontSize: 13,
                                       ),
                                     ),
@@ -481,7 +482,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                               const SizedBox(width: 10),
                               Icon(
                                 Icons.chevron_right_rounded,
-                                color: _orange.withOpacity(0.85),
+                                color: _orange.withValues(alpha: 0.85),
                               ),
                             ],
                           ),
@@ -872,13 +873,13 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: tint.withOpacity(0.10),
+            color: tint.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: tint.withOpacity(0.18)),
+            border: Border.all(color: tint.withValues(alpha: 0.18)),
           ),
           child: Icon(
             _recipientIcon(r.type),
-            color: tint.withOpacity(0.95),
+            color: tint.withValues(alpha: 0.95),
             size: 19,
           ),
         ),
@@ -905,7 +906,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
-                  color: Colors.black.withOpacity(0.58),
+                  color: Colors.black.withValues(alpha: 0.58),
                 ),
               ),
             ],
@@ -922,13 +923,13 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: Colors.indigo.withOpacity(0.08),
+            color: Colors.indigo.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.indigo.withOpacity(0.16)),
+            border: Border.all(color: Colors.indigo.withValues(alpha: 0.16)),
           ),
           child: Icon(
             Icons.groups_rounded,
-            color: Colors.indigo.withOpacity(0.95),
+            color: Colors.indigo.withValues(alpha: 0.95),
             size: 19,
           ),
         ),
@@ -955,7 +956,7 @@ class _LearnerComposeSheetState extends State<_LearnerComposeSheet> {
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
-                  color: Colors.black.withOpacity(0.58),
+                  color: Colors.black.withValues(alpha: 0.58),
                 ),
               ),
             ],

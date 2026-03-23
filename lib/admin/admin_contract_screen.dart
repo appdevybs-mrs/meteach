@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class AdminContractScreen extends StatefulWidget {
   const AdminContractScreen({super.key});
@@ -62,7 +63,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
       if (l.value == null) await _learnerRoot.set({});
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           SnackBar(
             content: Text(
               toHumanError(e, fallback: 'Could not initialize contract data.'),
@@ -139,13 +140,11 @@ class _AdminContractScreenState extends State<AdminContractScreen>
           .toList();
 
       if (t.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Title is required')));
+        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Title is required')));
         return;
       }
       if (items.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           const SnackBar(content: Text('Add at least 1 item (one per line)')),
         );
         return;
@@ -170,7 +169,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
 
         if (!mounted) return;
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           SnackBar(
             content: Text(
               existingId == null ? '$kindLabel contract added ✅' : 'Updated ✅',
@@ -179,7 +178,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
         );
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           SnackBar(
             content: Text(
               toHumanError(e, fallback: 'Could not save contract settings.'),
@@ -214,10 +213,10 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: primaryBlue.withOpacity(0.08),
+                        color: primaryBlue.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: primaryBlue.withOpacity(0.12),
+                          color: primaryBlue.withValues(alpha: 0.12),
                         ),
                       ),
                       child: Icon(
@@ -293,7 +292,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryBlue,
-                          side: BorderSide(color: primaryBlue.withOpacity(0.5)),
+                          side: BorderSide(color: primaryBlue.withValues(alpha: 0.5)),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -381,7 +380,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                   width: 46,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.15),
+                    color: Colors.black.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -391,9 +390,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: primaryBlue.withOpacity(0.08),
+                      color: primaryBlue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                      border: Border.all(color: primaryBlue.withValues(alpha: 0.12)),
                     ),
                     child: const Icon(Icons.edit_rounded, color: primaryBlue),
                   ),
@@ -418,9 +417,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.08),
+                      color: Colors.red.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.red.withOpacity(0.12)),
+                      border: Border.all(color: Colors.red.withValues(alpha: 0.12)),
                     ),
                     child: const Icon(
                       Icons.delete_outline_rounded,
@@ -440,12 +439,12 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     try {
                       await root.child(id).remove();
                       if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      AppToast.fromSnackBar(context, 
                         const SnackBar(content: Text('Deleted ✅')),
                       );
                     } catch (e) {
                       if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      AppToast.fromSnackBar(context, 
                         SnackBar(
                           content: Text(
                             toHumanError(e, fallback: 'Could not delete item.'),
@@ -477,7 +476,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: uiBorder.withOpacity(0.85)),
+            border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -486,9 +485,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                 width: 54,
                 height: 54,
                 decoration: BoxDecoration(
-                  color: primaryBlue.withOpacity(0.08),
+                  color: primaryBlue.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: primaryBlue.withOpacity(0.12)),
+                  border: Border.all(color: primaryBlue.withValues(alpha: 0.12)),
                 ),
                 child: Icon(icon, color: primaryBlue, size: 26),
               ),
@@ -556,7 +555,7 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                 indicator: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: uiBorder.withOpacity(0.9)),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 labelColor: primaryBlue,
@@ -756,10 +755,10 @@ class _ContractsTabState extends State<_ContractsTab>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 10,
                       offset: const Offset(0, 6),
                     ),
@@ -774,10 +773,10 @@ class _ContractsTabState extends State<_ContractsTab>
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: primaryBlue.withOpacity(0.08),
+                          color: primaryBlue.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: primaryBlue.withOpacity(0.12),
+                            color: primaryBlue.withValues(alpha: 0.12),
                           ),
                         ),
                         child: const Icon(

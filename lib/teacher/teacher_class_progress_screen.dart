@@ -417,7 +417,7 @@ class _TeacherClassProgressScreenState
                     child: Icon(
                       Icons.auto_graph_rounded,
                       size: 220,
-                      color: p.primary.withOpacity(0.12),
+                      color: p.primary.withValues(alpha: 0.12),
                     ),
                   ),
                 ),
@@ -457,14 +457,14 @@ class _TeacherClassProgressScreenState
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.16),
+            color: p.primary.withValues(alpha: 0.16),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -476,7 +476,7 @@ class _TeacherClassProgressScreenState
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(18),
             ),
             child: const Icon(
@@ -507,7 +507,7 @@ class _TeacherClassProgressScreenState
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.86),
+                    color: Colors.white.withValues(alpha: 0.86),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -537,7 +537,7 @@ class _TeacherClassProgressScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white24),
       ),
@@ -560,10 +560,10 @@ class _TeacherClassProgressScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -584,8 +584,8 @@ class _TeacherClassProgressScreenState
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: p.border.withOpacity(0.9)),
-              color: p.primary.withOpacity(0.04),
+              border: Border.all(color: p.border.withValues(alpha: 0.9)),
+              color: p.primary.withValues(alpha: 0.04),
             ),
             child: Row(
               children: [
@@ -620,7 +620,7 @@ class _TeacherClassProgressScreenState
               child: Text(
                 'Learner view is disabled because there are no learners in this class.',
                 style: TextStyle(
-                  color: p.text.withOpacity(0.75),
+                  color: p.text.withValues(alpha: 0.75),
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -649,7 +649,7 @@ class _TeacherClassProgressScreenState
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? p.primary : p.primary.withOpacity(0.7),
+              color: selected ? p.primary : p.primary.withValues(alpha: 0.7),
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -667,7 +667,7 @@ class _TeacherClassProgressScreenState
         decoration: BoxDecoration(
           color: p.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withOpacity(0.85)),
+          border: Border.all(color: p.border.withValues(alpha: 0.85)),
         ),
         child: Text(
           'No learners in this class.',
@@ -710,10 +710,10 @@ class _TeacherClassProgressScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -740,13 +740,13 @@ class _TeacherClassProgressScreenState
             items: items,
             decoration: InputDecoration(
               filled: true,
-              fillColor: p.primary.withOpacity(0.04),
+              fillColor: p.primary.withValues(alpha: 0.04),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: p.border.withOpacity(0.9)),
+                borderSide: BorderSide(color: p.border.withValues(alpha: 0.9)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -798,10 +798,10 @@ class _TeacherClassProgressScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -864,7 +864,7 @@ class _TeacherClassProgressScreenState
             child: LinearProgressIndicator(
               value: totalS <= 0 ? 0 : (coveredCount / totalS).clamp(0, 1),
               minHeight: 10,
-              backgroundColor: progressColor.withOpacity(0.12),
+              backgroundColor: progressColor.withValues(alpha: 0.12),
               valueColor: AlwaysStoppedAnimation(progressColor),
             ),
           ),
@@ -886,7 +886,7 @@ class _TeacherClassProgressScreenState
                       ? 'Learner progress is based on covered sessions where this learner was present.'
                       : 'Class progress is based on syllabus sessions already taught.',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -906,7 +906,7 @@ class _TeacherClassProgressScreenState
         decoration: BoxDecoration(
           color: p.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withOpacity(0.85)),
+          border: Border.all(color: p.border.withValues(alpha: 0.85)),
         ),
         child: Text(
           'Syllabus not found for this course.',
@@ -929,10 +929,10 @@ class _TeacherClassProgressScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -955,7 +955,7 @@ class _TeacherClassProgressScreenState
                 ? 'Sessions marked as Passed were taught and attended by the selected learner.'
                 : 'Sessions marked as Passed were already taught in class.',
             style: TextStyle(
-              color: p.text.withOpacity(0.72),
+              color: p.text.withValues(alpha: 0.72),
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -991,7 +991,7 @@ class _TeacherClassProgressScreenState
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         color: p.cardBg,
       ),
       child: ClipRRect(
@@ -1027,7 +1027,7 @@ class _TeacherClassProgressScreenState
                     child: Text(
                       'Passed: $unitPassed / $unitTotal',
                       style: TextStyle(
-                        color: p.text.withOpacity(0.7),
+                        color: p.text.withValues(alpha: 0.7),
                         fontWeight: FontWeight.w800,
                       ),
                       maxLines: 1,
@@ -1051,7 +1051,7 @@ class _TeacherClassProgressScreenState
                 child: LinearProgressIndicator(
                   value: unitTotal == 0 ? 0 : unitPassed / unitTotal,
                   minHeight: 8,
-                  backgroundColor: unitColor.withOpacity(0.12),
+                  backgroundColor: unitColor.withValues(alpha: 0.12),
                   valueColor: AlwaysStoppedAnimation(unitColor),
                 ),
               ),
@@ -1083,7 +1083,7 @@ class _TeacherClassProgressScreenState
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         color: p.cardBg,
       ),
       child: ClipRRect(
@@ -1100,7 +1100,7 @@ class _TeacherClassProgressScreenState
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.10),
+                color: statusColor.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -1117,7 +1117,7 @@ class _TeacherClassProgressScreenState
             subtitle: Text(
               [if (skill.isNotEmpty) skill, statusText].join(' • '),
               style: TextStyle(
-                color: p.text.withOpacity(0.7),
+                color: p.text.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w700,
               ),
               maxLines: 2,
@@ -1128,8 +1128,8 @@ class _TeacherClassProgressScreenState
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: p.border.withOpacity(0.85)),
-                  color: p.primary.withOpacity(0.04),
+                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  color: p.primary.withValues(alpha: 0.04),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1195,7 +1195,7 @@ class _TeacherClassProgressScreenState
           child: Text(
             k,
             style: TextStyle(
-              color: p.text.withOpacity(0.70),
+              color: p.text.withValues(alpha: 0.70),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -1222,8 +1222,8 @@ class _TeacherClassProgressScreenState
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.border.withOpacity(0.85)),
-        color: p.primary.withOpacity(0.04),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        color: p.primary.withValues(alpha: 0.04),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1238,7 +1238,7 @@ class _TeacherClassProgressScreenState
           Text(
             label,
             style: TextStyle(
-              color: p.text.withOpacity(0.7),
+              color: p.text.withValues(alpha: 0.7),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -1257,7 +1257,7 @@ class _TeacherClassProgressScreenState
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: dangerRed.withOpacity(0.20)),
+            border: Border.all(color: dangerRed.withValues(alpha: 0.20)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
+import '../shared/app_feedback.dart';
 
 class LearnerStudyCoachScreen extends StatefulWidget {
   const LearnerStudyCoachScreen({super.key});
@@ -219,7 +220,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6C63FF).withOpacity(0.12),
+                    color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
@@ -293,7 +294,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
 
   void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(text)));
   }
 
   Map<String, bool> _extractCheckedMap(dynamic raw) {
@@ -368,7 +369,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6C63FF).withOpacity(0.12),
+                    color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
@@ -464,7 +465,7 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
                         'افتح يوماً واحداً فقط، اتبع خطواته، ثم علّم المهام كمكتملة.',
                       ),
                       style: TextStyle(
-                        color: p.text.withOpacity(0.70),
+                        color: p.text.withValues(alpha: 0.70),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -543,7 +544,7 @@ class _HeroCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6C63FF).withOpacity(0.28),
+            color: const Color(0xFF6C63FF).withValues(alpha: 0.28),
             blurRadius: 22,
             offset: const Offset(0, 10),
           ),
@@ -559,7 +560,7 @@ class _HeroCard extends StatelessWidget {
               width: 130,
               height: 130,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
             ),
@@ -572,7 +573,7 @@ class _HeroCard extends StatelessWidget {
               width: 110,
               height: 110,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
                 shape: BoxShape.circle,
               ),
             ),
@@ -601,7 +602,7 @@ class _HeroCard extends StatelessWidget {
               Text(
                 subtitle,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.92),
+                  color: Colors.white.withValues(alpha: 0.92),
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                   height: 1.35,
@@ -611,13 +612,13 @@ class _HeroCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.20),
+                  color: Colors.white.withValues(alpha: 0.20),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Container(
                   height: 18,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.16),
+                    color: Colors.white.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   clipBehavior: Clip.antiAlias,
@@ -642,7 +643,7 @@ class _HeroCard extends StatelessWidget {
                     ? '$done من $total مهام مكتملة — ${((progress * 100).round())}%'
                     : '$done / $total tasks completed — ${((progress * 100).round())}%',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.96),
+                  color: Colors.white.withValues(alpha: 0.96),
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
                 ),
@@ -674,10 +675,10 @@ class _LangSwitch extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: active ? Colors.white : Colors.white.withOpacity(0.16),
+            color: active ? Colors.white : Colors.white.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: Colors.white.withOpacity(active ? 0 : 0.25),
+              color: Colors.white.withValues(alpha: active ? 0 : 0.25),
             ),
           ),
           child: Text(
@@ -727,7 +728,7 @@ class _QuoteBanner extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -775,7 +776,7 @@ class _TodayFocusCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -822,7 +823,7 @@ class _TodayFocusCard extends StatelessWidget {
                       ? '$doneCount من $totalCount مهام مكتملة'
                       : '$doneCount / $totalCount tasks completed',
                   style: TextStyle(
-                    color: const Color(0xFF2F3152).withOpacity(0.70),
+                    color: const Color(0xFF2F3152).withValues(alpha: 0.70),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -880,7 +881,7 @@ class _StatsRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
@@ -973,13 +974,13 @@ class _DayCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: isToday
-              ? day.color.withOpacity(0.28)
+              ? day.color.withValues(alpha: 0.28)
               : const Color(0xFFF0F1F8),
           width: isToday ? 1.4 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -1002,7 +1003,7 @@ class _DayCard extends StatelessWidget {
                     width: 54,
                     height: 54,
                     decoration: BoxDecoration(
-                      color: day.color.withOpacity(0.13),
+                      color: day.color.withValues(alpha: 0.13),
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
@@ -1032,7 +1033,7 @@ class _DayCard extends StatelessWidget {
                             if (isToday)
                               _MiniTag(
                                 text: _tr('Today', 'اليوم'),
-                                background: day.color.withOpacity(0.16),
+                                background: day.color.withValues(alpha: 0.16),
                                 color: day.color,
                               ),
                             if (allDone)
@@ -1040,7 +1041,7 @@ class _DayCard extends StatelessWidget {
                                 text: _tr('Done', 'مكتمل'),
                                 background: const Color(
                                   0xFF43B89C,
-                                ).withOpacity(0.16),
+                                ).withValues(alpha: 0.16),
                                 color: const Color(0xFF43B89C),
                               ),
                           ],
@@ -1049,7 +1050,7 @@ class _DayCard extends StatelessWidget {
                         Text(
                           day.title(lang),
                           style: TextStyle(
-                            color: const Color(0xFF555777).withOpacity(0.80),
+                            color: const Color(0xFF555777).withValues(alpha: 0.80),
                             fontWeight: FontWeight.w800,
                             fontSize: 12,
                           ),
@@ -1061,7 +1062,7 @@ class _DayCard extends StatelessWidget {
                           children: [
                             _MiniTag(
                               text: day.skill(lang),
-                              background: day.color.withOpacity(0.14),
+                              background: day.color.withValues(alpha: 0.14),
                               color: day.color,
                             ),
                             _MiniTag(
@@ -1147,7 +1148,7 @@ class _DayCard extends StatelessWidget {
                                   style: TextStyle(
                                     color: const Color(
                                       0xFF35375A,
-                                    ).withOpacity(done ? 0.45 : 1),
+                                    ).withValues(alpha: done ? 0.45 : 1),
                                     fontWeight: FontWeight.w700,
                                     fontSize: 14,
                                     height: 1.45,
@@ -1268,7 +1269,7 @@ class _ResetCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),

@@ -2,6 +2,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/material_webview_screen.dart';
+import '../shared/app_feedback.dart';
 
 class LearnerGamesScreen extends StatefulWidget {
   const LearnerGamesScreen({super.key});
@@ -32,9 +33,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('This game has no link.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('This game has no link.')));
       return;
     }
 
@@ -90,7 +89,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                           height: 200,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: cs.primary.withOpacity(0.08),
+                            color: cs.primary.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(18),
                           ),
                           child: Icon(
@@ -116,7 +115,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     'By: $ownerName',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
                         0.72,
                       ),
                     ),
@@ -206,9 +205,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                           .map(
                             (tag) => Chip(
                               label: Text(tag),
-                              backgroundColor: cs.primary.withOpacity(0.08),
+                              backgroundColor: cs.primary.withValues(alpha: 0.08),
                               side: BorderSide(
-                                color: cs.primary.withOpacity(0.14),
+                                color: cs.primary.withValues(alpha: 0.14),
                               ),
                             ),
                           )
@@ -384,10 +383,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: cs.outline.withOpacity(0.20)),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.20)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
@@ -418,18 +417,18 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       icon: const Icon(Icons.close_rounded, size: 20),
                     ),
               filled: true,
-              fillColor: cs.surfaceContainerHighest.withOpacity(0.28),
+              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.28),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 12,
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: cs.outline.withOpacity(0.15)),
+                borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.15)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: cs.outline.withOpacity(0.15)),
+                borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.15)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -451,11 +450,11 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     child: ChoiceChip(
                       label: Text(tag),
                       selected: selected,
-                      selectedColor: _funOrange.withOpacity(0.18),
+                      selectedColor: _funOrange.withValues(alpha: 0.18),
                       side: BorderSide(
                         color: selected
-                            ? _funOrange.withOpacity(0.40)
-                            : cs.outline.withOpacity(0.18),
+                            ? _funOrange.withValues(alpha: 0.40)
+                            : cs.outline.withValues(alpha: 0.18),
                       ),
                       labelStyle: TextStyle(
                         fontWeight: FontWeight.w700,
@@ -490,7 +489,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
           decoration: BoxDecoration(
             color: theme.cardColor,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: cs.outline.withOpacity(0.25)),
+            border: Border.all(color: cs.outline.withValues(alpha: 0.25)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -516,7 +515,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.68),
+                  color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.68),
                 ),
               ),
             ],
@@ -536,9 +535,9 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: cs.primary.withOpacity(0.08),
+        color: cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: cs.primary.withOpacity(0.12)),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -573,10 +572,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outline.withOpacity(0.18)),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -596,7 +595,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                   top: Radius.circular(22),
                 ),
                 child: Container(
-                  color: cs.primary.withOpacity(0.08),
+                  color: cs.primary.withValues(alpha: 0.08),
                   child: thumbnail.isNotEmpty
                       ? Image.network(
                           thumbnail,
@@ -661,7 +660,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       child: FilledButton(
                         onPressed: () => _showGameDetails(context, game),
                         style: FilledButton.styleFrom(
-                          backgroundColor: _funOrange.withOpacity(0.15),
+                          backgroundColor: _funOrange.withValues(alpha: 0.15),
                           foregroundColor: _funOrangeDark,
                           elevation: 0,
                           padding: EdgeInsets.zero,
@@ -720,7 +719,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: _funOrange.withOpacity(0.14),
+                    color: _funOrange.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(

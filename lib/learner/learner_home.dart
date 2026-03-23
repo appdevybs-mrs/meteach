@@ -20,6 +20,7 @@ import 'learner_games_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
+import '../shared/app_feedback.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -258,7 +259,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -1155,14 +1156,14 @@ class _LearnerHeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1174,10 +1175,10 @@ class _LearnerHeroCard extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               shape: BoxShape.circle,
               border: Border.all(
-                color: Colors.white.withOpacity(0.35),
+                color: Colors.white.withValues(alpha: 0.35),
                 width: 2,
               ),
             ),
@@ -1207,7 +1208,7 @@ class _LearnerHeroCard extends StatelessWidget {
                 Text(
                   'Welcome back',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.80),
+                    color: Colors.white.withValues(alpha: 0.80),
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
@@ -1259,7 +1260,7 @@ class _HeroMiniButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withOpacity(0.12),
+      color: Colors.white.withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -1344,7 +1345,7 @@ class _LoadingCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
@@ -1386,7 +1387,7 @@ class _EmptyCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
       ),
       child: Text(
         text,
@@ -1457,7 +1458,7 @@ class _ProgressCard extends StatelessWidget {
       case 'private':
       case 'live':
         return Color.alphaBlend(
-          palette.accent.withOpacity(0.35),
+          palette.accent.withValues(alpha: 0.35),
           palette.primary,
         );
       case 'inclass':
@@ -1465,7 +1466,7 @@ class _ProgressCard extends StatelessWidget {
       case 'in-class':
       case 'in class':
         return Color.alphaBlend(
-          palette.primary.withOpacity(0.18),
+          palette.primary.withValues(alpha: 0.18),
           palette.accent,
         );
       default:
@@ -1491,10 +1492,10 @@ class _ProgressCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: palette.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: palette.border.withOpacity(0.85)),
+            border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 12,
                 offset: const Offset(0, 7),
               ),
@@ -1509,10 +1510,10 @@ class _ProgressCard extends StatelessWidget {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color: variantAccent.withOpacity(0.10),
+                      color: variantAccent.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(15),
                       border: Border.all(
-                        color: variantAccent.withOpacity(0.18),
+                        color: variantAccent.withValues(alpha: 0.18),
                       ),
                     ),
                     child: Icon(variantIcon, color: variantAccent),
@@ -1544,10 +1545,10 @@ class _ProgressCard extends StatelessWidget {
                                 vertical: 5,
                               ),
                               decoration: BoxDecoration(
-                                color: variantAccent.withOpacity(0.10),
+                                color: variantAccent.withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(999),
                                 border: Border.all(
-                                  color: variantAccent.withOpacity(0.22),
+                                  color: variantAccent.withValues(alpha: 0.22),
                                 ),
                               ),
                               child: Text(
@@ -1566,7 +1567,7 @@ class _ProgressCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: palette.text.withOpacity(0.60),
+                                color: palette.text.withValues(alpha: 0.60),
                                 fontWeight: FontWeight.w700,
                                 fontSize: 12,
                               ),
@@ -1602,7 +1603,7 @@ class _ProgressCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: palette.text.withOpacity(0.70),
+                  color: palette.text.withValues(alpha: 0.70),
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
@@ -1613,7 +1614,7 @@ class _ProgressCard extends StatelessWidget {
                 child: LinearProgressIndicator(
                   minHeight: 10,
                   value: item.total > 0 ? item.progress : 0,
-                  backgroundColor: palette.soft.withOpacity(0.8),
+                  backgroundColor: palette.soft.withValues(alpha: 0.8),
                   valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
                 ),
               ),
@@ -1626,7 +1627,7 @@ class _ProgressCard extends StatelessWidget {
                           ? '${item.completed} of ${item.total} completed'
                           : '${item.completed} completed',
                       style: TextStyle(
-                        color: palette.text.withOpacity(0.68),
+                        color: palette.text.withValues(alpha: 0.68),
                         fontWeight: FontWeight.w800,
                         fontSize: 12,
                       ),
@@ -1639,10 +1640,10 @@ class _ProgressCard extends StatelessWidget {
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: palette.accent.withOpacity(0.10),
+                      color: palette.accent.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color: palette.accent.withOpacity(0.25),
+                        color: palette.accent.withValues(alpha: 0.25),
                       ),
                     ),
                     child: Text(
@@ -2073,18 +2074,14 @@ class _BookingTopCardState extends State<_BookingTopCard>
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Invalid meeting link.')));
+        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Invalid meeting link.')));
       }
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open the link.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Could not open the link.')));
     }
   }
 
@@ -2153,14 +2150,14 @@ class _BookingTopCardState extends State<_BookingTopCard>
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [p.accent, p.accent.withOpacity(0.88)],
+                colors: [p.accent, p.accent.withValues(alpha: 0.88)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: p.accent.withOpacity(0.22),
+                  color: p.accent.withValues(alpha: 0.22),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -2172,9 +2169,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
+                    color: Colors.white.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.25)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
                   ),
                   child: const Icon(
                     Icons.calendar_month_rounded,
@@ -2322,15 +2319,15 @@ class _BookingTopCardState extends State<_BookingTopCard>
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: idleColor.withOpacity(0.08),
+                      color: idleColor.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(
-                        color: idleColor.withOpacity(0.95),
+                        color: idleColor.withValues(alpha: 0.95),
                         width: 2.2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: idleColor.withOpacity(0.18),
+                          color: idleColor.withValues(alpha: 0.18),
                           blurRadius: 16,
                           offset: const Offset(0, 8),
                         ),
@@ -2369,17 +2366,17 @@ class _BookingTopCardState extends State<_BookingTopCard>
                           'Teacher: $teacherStr',
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: p.text.withOpacity(0.70),
+                            color: p.text.withValues(alpha: 0.70),
                           ),
                         ),
                         const SizedBox(height: 12),
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: p.soft.withOpacity(0.6),
+                            color: p.soft.withValues(alpha: 0.6),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: p.border.withOpacity(0.85),
+                              color: p.border.withValues(alpha: 0.85),
                             ),
                           ),
                           child: Text(
@@ -2411,8 +2408,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: canJoin
-                        ? statusColor.withOpacity(0.16)
-                        : idleColor.withOpacity(0.08 + (urgency * 0.14)),
+                        ? statusColor.withValues(alpha: 0.16)
+                        : idleColor.withValues(alpha: 0.08 + (urgency * 0.14)),
                     borderRadius: BorderRadius.circular(22),
                     border: Border.all(
                       color: canJoin ? statusColor : idleColor,
@@ -2420,7 +2417,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: (canJoin ? statusColor : idleColor).withOpacity(
+                        color: (canJoin ? statusColor : idleColor).withValues(alpha: 
                           0.18 + (urgency * 0.20),
                         ),
                         blurRadius: 14 + (urgency * 10),
@@ -2467,7 +2464,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                         'Teacher: $teacherStr',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: p.text.withOpacity(0.70),
+                          color: p.text.withValues(alpha: 0.70),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -2476,13 +2473,13 @@ class _BookingTopCardState extends State<_BookingTopCard>
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: canJoin
-                              ? statusColor.withOpacity(0.12)
-                              : idleColor.withOpacity(0.06 + (urgency * 0.10)),
+                              ? statusColor.withValues(alpha: 0.12)
+                              : idleColor.withValues(alpha: 0.06 + (urgency * 0.10)),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: canJoin
-                                ? statusColor.withOpacity(0.45)
-                                : idleColor.withOpacity(0.60),
+                                ? statusColor.withValues(alpha: 0.45)
+                                : idleColor.withValues(alpha: 0.60),
                           ),
                         ),
                         child: Column(
@@ -2509,7 +2506,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                     : beforeOpen
                                     ? _preJoinProgress(next.start)
                                     : 1,
-                                backgroundColor: p.soft.withOpacity(0.85),
+                                backgroundColor: p.soft.withValues(alpha: 0.85),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   canJoin ? statusColor : idleColor,
                                 ),
@@ -2524,7 +2521,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                                   : 'Wait for your next reserved class to appear here.',
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
-                                color: p.text.withOpacity(0.64),
+                                color: p.text.withValues(alpha: 0.64),
                                 fontSize: 12,
                               ),
                             ),
@@ -2540,7 +2537,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                           style: FilledButton.styleFrom(
                             backgroundColor: canJoin
                                 ? statusColor
-                                : p.accent.withOpacity(0.55),
+                                : p.accent.withValues(alpha: 0.55),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -2618,9 +2615,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Not logged in.')));
+    AppToast.fromSnackBar(context,  const SnackBar(content: Text('Not logged in.')));
     return;
   }
 
@@ -2679,7 +2674,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
       );
     }
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(
         content: Text(
           toHumanError(e, fallback: 'Could not load your courses right now.'),
@@ -2692,7 +2687,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   if (!context.mounted) return;
 
   if (courses.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       const SnackBar(
         content: Text('No Seats available. Please try again later.'),
       ),
@@ -2752,7 +2747,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: p.border.withOpacity(0.85)),
+                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
                         ),
                         child: Row(
                           children: [
@@ -2763,7 +2758,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                 color: p.soft,
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
-                                  color: p.border.withOpacity(0.85),
+                                  color: p.border.withValues(alpha: 0.85),
                                 ),
                               ),
                               child: Icon(
@@ -2790,7 +2785,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
                                     code.isEmpty ? '—' : 'Code: $code',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: p.text.withOpacity(0.62),
+                                      color: p.text.withValues(alpha: 0.62),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -2820,9 +2815,7 @@ Future<void> _openHomeworkCoursePicker(
   final me = FirebaseAuth.instance.currentUser;
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Not logged in.')));
+    AppToast.fromSnackBar(context,  const SnackBar(content: Text('Not logged in.')));
     return;
   }
 
@@ -2862,7 +2855,7 @@ Future<void> _openHomeworkCoursePicker(
       );
     }
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(
         content: Text(
           toHumanError(e, fallback: 'Could not load your courses right now.'),
@@ -2875,7 +2868,7 @@ Future<void> _openHomeworkCoursePicker(
   if (!context.mounted) return;
 
   if (courses.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       const SnackBar(
         content: Text('All slots are full, please try again later'),
       ),
@@ -2937,7 +2930,7 @@ Future<void> _openHomeworkCoursePicker(
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: p.border.withOpacity(0.85)),
+                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
                         ),
                         child: Row(
                           children: [
@@ -2948,7 +2941,7 @@ Future<void> _openHomeworkCoursePicker(
                                 color: p.soft,
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
-                                  color: p.border.withOpacity(0.85),
+                                  color: p.border.withValues(alpha: 0.85),
                                 ),
                               ),
                               child: Icon(
@@ -2975,7 +2968,7 @@ Future<void> _openHomeworkCoursePicker(
                                     code.isEmpty ? '—' : 'Code: $code',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: p.text.withOpacity(0.62),
+                                      color: p.text.withValues(alpha: 0.62),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -2992,10 +2985,10 @@ Future<void> _openHomeworkCoursePicker(
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.red.withOpacity(0.10),
+                                      color: Colors.red.withValues(alpha: 0.10),
                                       borderRadius: BorderRadius.circular(999),
                                       border: Border.all(
-                                        color: Colors.red.withOpacity(0.25),
+                                        color: Colors.red.withValues(alpha: 0.25),
                                       ),
                                     ),
                                     child: const Text(
@@ -3109,10 +3102,10 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: p.cardBg,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withOpacity(0.85)),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 12,
                   offset: const Offset(0, 7),
                 ),
@@ -3132,7 +3125,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: p.soft,
                         borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: p.border.withOpacity(0.85)),
+                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
                       ),
                       child: Icon(Icons.assignment_rounded, color: p.primary),
                     ),
@@ -3175,7 +3168,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                 Text(
                   subtitle,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.62),
+                    color: p.text.withValues(alpha: 0.62),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -3229,10 +3222,10 @@ class _RemindersHomeCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: p.cardBg,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withOpacity(0.85)),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 12,
                   offset: const Offset(0, 7),
                 ),
@@ -3252,7 +3245,7 @@ class _RemindersHomeCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: p.soft,
                         borderRadius: BorderRadius.circular(15),
-                        border: Border.all(color: p.border.withOpacity(0.85)),
+                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
                       ),
                       child: Icon(
                         Icons.notifications_active_rounded,
@@ -3298,7 +3291,7 @@ class _RemindersHomeCard extends StatelessWidget {
                 Text(
                   subtitle,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.62),
+                    color: p.text.withValues(alpha: 0.62),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -3331,10 +3324,10 @@ class _GalleryHomeCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: p.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withOpacity(0.85)),
+          border: Border.all(color: p.border.withValues(alpha: 0.85)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 12,
               offset: const Offset(0, 7),
             ),
@@ -3349,7 +3342,7 @@ class _GalleryHomeCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: p.soft,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: p.border.withOpacity(0.85)),
+                border: Border.all(color: p.border.withValues(alpha: 0.85)),
               ),
               child: Icon(Icons.photo_library_rounded, color: p.primary),
             ),
@@ -3370,7 +3363,7 @@ class _GalleryHomeCard extends StatelessWidget {
                   Text(
                     'Open your photos and videos',
                     style: TextStyle(
-                      color: p.text.withOpacity(0.62),
+                      color: p.text.withValues(alpha: 0.62),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -3412,10 +3405,10 @@ class _StudyCoachHomeCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: p.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withOpacity(0.85)),
+          border: Border.all(color: p.border.withValues(alpha: 0.85)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 12,
               offset: const Offset(0, 7),
             ),
@@ -3430,7 +3423,7 @@ class _StudyCoachHomeCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: p.soft,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: p.border.withOpacity(0.85)),
+                border: Border.all(color: p.border.withValues(alpha: 0.85)),
               ),
               child: Icon(Icons.psychology_alt_rounded, color: p.primary),
             ),
@@ -3451,7 +3444,7 @@ class _StudyCoachHomeCard extends StatelessWidget {
                   Text(
                     'Set goals, reminders, and track progress',
                     style: TextStyle(
-                      color: p.text.withOpacity(0.62),
+                      color: p.text.withValues(alpha: 0.62),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -3538,7 +3531,7 @@ class _LearnerDrawer extends StatelessWidget {
                               shape: BoxShape.circle,
                               color: Colors.white24,
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.35),
+                                color: Colors.white.withValues(alpha: 0.35),
                                 width: 2,
                               ),
                             ),
@@ -3574,7 +3567,7 @@ class _LearnerDrawer extends StatelessWidget {
                           Text(
                             'Learner Menu',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.82),
+                              color: Colors.white.withValues(alpha: 0.82),
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
                             ),
@@ -3730,7 +3723,7 @@ class _DrawerTile extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: palette.border.withOpacity(0.85)),
+              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             ),
             child: Row(
               children: [
@@ -3760,7 +3753,7 @@ class _DrawerTile extends StatelessWidget {
                         Text(
                           subtitle,
                           style: TextStyle(
-                            color: palette.text.withOpacity(0.55),
+                            color: palette.text.withValues(alpha: 0.55),
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
@@ -3771,7 +3764,7 @@ class _DrawerTile extends StatelessWidget {
                 ),
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: palette.text.withOpacity(0.45),
+                  color: palette.text.withValues(alpha: 0.45),
                 ),
               ],
             ),
@@ -3816,7 +3809,7 @@ class _ThemeChoiceTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected ? preview1 : palette.border.withOpacity(0.9),
+              color: selected ? preview1 : palette.border.withValues(alpha: 0.9),
               width: selected ? 1.6 : 1,
             ),
           ),
@@ -3842,7 +3835,7 @@ class _ThemeChoiceTile extends StatelessWidget {
                       subtitle,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: palette.text.withOpacity(0.62),
+                        color: palette.text.withValues(alpha: 0.62),
                         fontSize: 12,
                       ),
                     ),

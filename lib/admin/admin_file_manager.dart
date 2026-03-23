@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/app_feedback.dart';
 
 class AdminFileManager extends StatefulWidget {
   const AdminFileManager({super.key});
@@ -192,9 +193,7 @@ class _FileBrowserState extends State<_FileBrowser>
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(message))));
+    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(message))));
   }
 
   Future<void> _copyText(String text, String label) async {
@@ -878,9 +877,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
     if (link.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('This game has no link.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('This game has no link.')));
       return;
     }
 
@@ -924,12 +921,12 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     try {
       await _gamesRef.child(gameId).remove();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Game deleted successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not delete game. Try again.'),
@@ -958,12 +955,12 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       await ref.set(cloned);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Game duplicated successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
@@ -987,7 +984,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             nextStatus == 'archived'
@@ -998,7 +995,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update game. Try again.'),
@@ -1100,7 +1097,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (uid == null || uid.isEmpty || user == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Could not load admin details.'),
                   ),
@@ -1110,7 +1107,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Enter the game name before uploading.'),
                   ),
@@ -1136,7 +1133,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Game file uploaded successfully.'),
                     ),
@@ -1144,7 +1141,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload game file.'),
@@ -1163,7 +1160,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (uid == null || uid.isEmpty || user == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Could not load admin details.'),
                   ),
@@ -1173,7 +1170,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text(
                       'Enter the game name before uploading thumbnail.',
@@ -1201,7 +1198,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Thumbnail uploaded successfully.'),
                     ),
@@ -1209,7 +1206,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload thumbnail.'),
@@ -1236,14 +1233,14 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   int.tryParse(durationController.text.trim()) ?? 0;
 
               if (name.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Please enter the game name.')),
                 );
                 return;
               }
 
               if (description.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please enter the game description.'),
                   ),
@@ -1252,7 +1249,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               }
 
               if (link.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please upload the game file first.'),
                   ),
@@ -1265,7 +1262,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               if (currentUser == null || uid == null || uid.isEmpty) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Could not load admin details.'),
                   ),
@@ -1362,7 +1359,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 if (!mounted) return;
                 Navigator.of(ctx).pop();
 
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       isEdit
@@ -1373,7 +1370,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 );
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(
@@ -1559,9 +1556,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1656,9 +1651,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text(
                                             'Thumbnail link copied',
@@ -1943,7 +1936,7 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: _statusColor(status).withOpacity(0.12),
+                            color: _statusColor(status).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(

@@ -16,6 +16,7 @@ import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../shared/app_feedback.dart';
 
 class TeacherSyllabusDetailsScreen extends StatefulWidget {
   const TeacherSyllabusDetailsScreen({super.key, required this.courseId});
@@ -409,7 +410,7 @@ class _TeacherSyllabusDetailsScreenState
             controller: _tabController,
             isScrollable: true,
             labelColor: UiK.primaryBlue,
-            unselectedLabelColor: UiK.primaryBlue.withOpacity(0.55),
+            unselectedLabelColor: UiK.primaryBlue.withValues(alpha: 0.55),
             indicatorColor: UiK.primaryBlue,
             tabs: _variantKeys.map((e) => Tab(text: _variantLabel(e))).toList(),
           ),
@@ -537,7 +538,7 @@ class _SearchCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -558,7 +559,7 @@ class _SearchCard extends StatelessWidget {
               hintText:
                   'Search sessions (title, objective, content, skill type, ID...)',
               hintStyle: TextStyle(
-                color: UiK.mainText.withOpacity(0.55),
+                color: UiK.mainText.withValues(alpha: 0.55),
                 fontWeight: FontWeight.w700,
               ),
               prefixIcon: const Icon(
@@ -573,13 +574,13 @@ class _SearchCard extends StatelessWidget {
                     )
                   : null,
               filled: true,
-              fillColor: UiK.primaryBlue.withOpacity(0.04),
+              fillColor: UiK.primaryBlue.withValues(alpha: 0.04),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: UiK.uiBorder.withOpacity(0.9)),
+                borderSide: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.9)),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -615,7 +616,7 @@ class _EmptySearchResults extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,7 +657,7 @@ class _EmptySearchResults extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
-                side: BorderSide(color: UiK.uiBorder.withOpacity(0.95)),
+                side: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.95)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 foregroundColor: UiK.primaryBlue,
               ),
@@ -710,20 +711,20 @@ class _SummaryTableCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Table(
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           border: TableBorder(
-            horizontalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
-            verticalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            horizontalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
+            verticalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
           ),
           children: [
             TableRow(
               decoration: BoxDecoration(
-                color: UiK.primaryBlue.withOpacity(0.04),
+                color: UiK.primaryBlue.withValues(alpha: 0.04),
               ),
               children: [
                 cell('Units', head: true),
@@ -872,7 +873,7 @@ class _RecommendationsCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -915,9 +916,9 @@ class _RecRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: UiK.primaryBlue.withOpacity(0.04),
+        color: UiK.primaryBlue.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -979,7 +980,7 @@ class _CourseTopCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -990,9 +991,9 @@ class _CourseTopCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: UiK.primaryBlue.withOpacity(0.08),
+                  color: UiK.primaryBlue.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                  border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
                 ),
                 child: const Icon(
                   Icons.menu_book_rounded,
@@ -1058,7 +1059,7 @@ class _UnitCardState extends State<_UnitCard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
@@ -1079,10 +1080,10 @@ class _UnitCardState extends State<_UnitCard> {
                   height: 34,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: UiK.actionOrange.withOpacity(0.10),
+                    color: UiK.actionOrange.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: UiK.actionOrange.withOpacity(0.22),
+                      color: UiK.actionOrange.withValues(alpha: 0.22),
                     ),
                   ),
                   child: Text(
@@ -1145,9 +1146,9 @@ class _UnitCardState extends State<_UnitCard> {
                   margin: const EdgeInsets.only(top: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: UiK.primaryBlue.withOpacity(0.04),
+                    color: UiK.primaryBlue.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+                    border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
                   ),
                   child: Text(
                     'No sessions in this unit.',
@@ -1181,9 +1182,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
 
     if (cleanUrl.isEmpty || uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Invalid materials link.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Invalid materials link.')));
       return;
     }
 
@@ -1267,7 +1266,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
@@ -1282,7 +1281,7 @@ class _SessionExpansionState extends State<_SessionExpansion> {
             ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: CircleAvatar(
-              backgroundColor: UiK.primaryBlue.withOpacity(0.08),
+              backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
               child: const Icon(
                 Icons.play_lesson_rounded,
                 color: UiK.primaryBlue,
@@ -1316,9 +1315,9 @@ class _SessionExpansionState extends State<_SessionExpansion> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: UiK.primaryBlue.withOpacity(0.04),
+                  color: UiK.primaryBlue.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+                  border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1450,9 +1449,9 @@ class _Pill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: UiK.primaryBlue.withOpacity(0.06),
+        color: UiK.primaryBlue.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.75)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.75)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1483,7 +1482,7 @@ class _FooterHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
@@ -1491,9 +1490,9 @@ class _FooterHint extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: UiK.actionOrange.withOpacity(0.10),
+              color: UiK.actionOrange.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+              border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
             ),
             child: const Icon(
               Icons.info_outline_rounded,
@@ -1536,7 +1535,7 @@ class _InfoBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1582,7 +1581,7 @@ class _ErrorBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

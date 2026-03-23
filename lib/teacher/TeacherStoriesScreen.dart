@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/app_feedback.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
   const TeacherStoriesScreen({super.key});
@@ -314,9 +315,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     if (cleanUrl.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(emptyMessage)));
+      AppToast.fromSnackBar(context,  SnackBar(content: Text(emptyMessage)));
       return;
     }
 
@@ -411,12 +410,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       await _storiesRef.child(storyId).remove();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Story deleted successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not delete story. Try again.'),
@@ -436,7 +435,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       final teacher = await _loadMyTeacherData();
       if (teacher == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           const SnackBar(content: Text('Could not load teacher details.')),
         );
         return;
@@ -458,12 +457,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       await ref.set(cloned);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Story duplicated successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not duplicate story. Try again.'),
@@ -489,7 +488,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             nextStatus == 'archived'
@@ -500,7 +499,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update story. Try again.'),
@@ -629,7 +628,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadStoryFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -637,7 +636,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Enter the story title before uploading.'),
                   ),
@@ -663,7 +662,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Story file uploaded successfully.'),
                     ),
@@ -671,7 +670,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload story file.'),
@@ -688,7 +687,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadAudioFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -696,7 +695,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text(
                       'Enter the story title before uploading audio.',
@@ -725,7 +724,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Audio uploaded successfully.'),
                     ),
@@ -733,7 +732,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload audio file.'),
@@ -750,7 +749,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadPdfFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -758,7 +757,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text(
                       'Enter the story title before uploading PDF.',
@@ -787,13 +786,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(content: Text('PDF uploaded successfully.')),
                   );
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload PDF file.'),
@@ -810,7 +809,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadThumbnail() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -818,7 +817,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text(
                       'Enter the story title before uploading thumbnail.',
@@ -846,7 +845,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  AppToast.fromSnackBar(context, 
                     const SnackBar(
                       content: Text('Thumbnail uploaded successfully.'),
                     ),
@@ -854,7 +853,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload thumbnail.'),
@@ -883,7 +882,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final thumbnail = uploadedThumbnail.trim();
 
               if (name.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please enter the story title.'),
                   ),
@@ -892,7 +891,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (description.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please enter the story description.'),
                   ),
@@ -901,14 +900,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (genre.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Please select the genre.')),
                 );
                 return;
               }
 
               if (lengthApprox.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please select the approximate length.'),
                   ),
@@ -917,7 +916,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (scriptType.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please select the script type.'),
                   ),
@@ -926,14 +925,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (level.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Please select the level.')),
                 );
                 return;
               }
 
               if (link.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please upload the story file first.'),
                   ),
@@ -942,7 +941,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (audioUrl.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please upload the audio file first.'),
                   ),
@@ -951,7 +950,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (pdfUrl.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Please upload the PDF file first.'),
                   ),
@@ -962,7 +961,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final teacher = await _loadMyTeacherData();
               if (teacher == null) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(
                     content: Text('Could not load teacher details.'),
                   ),
@@ -973,7 +972,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -1049,7 +1048,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 if (!mounted) return;
                 Navigator.of(ctx).pop();
 
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       isEdit
@@ -1060,7 +1059,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   SnackBar(
                     content: Text(
                       toHumanError(
@@ -1388,9 +1387,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1475,9 +1472,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedAudioUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text('Audio link copied'),
                                         ),
@@ -1562,9 +1557,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedPdfUrl),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text('PDF link copied'),
                                         ),
@@ -1661,9 +1654,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      AppToast.fromSnackBar(context,  
                                         const SnackBar(
                                           content: Text(
                                             'Thumbnail link copied',
@@ -2018,9 +2009,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: backgroundColor ?? cs.primary.withOpacity(0.08),
+        color: backgroundColor ?? cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor ?? cs.primary.withOpacity(0.12)),
+        border: Border.all(color: borderColor ?? cs.primary.withValues(alpha: 0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2056,10 +2047,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         decoration: BoxDecoration(
           color: theme.cardColor,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: cs.outline.withOpacity(0.22)),
+          border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
@@ -2093,17 +2084,17 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               icon: const Icon(Icons.clear_rounded),
                             ),
                       filled: true,
-                      fillColor: cs.surfaceContainerHighest.withOpacity(0.35),
+                      fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.35),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide(
-                          color: cs.outline.withOpacity(0.18),
+                          color: cs.outline.withValues(alpha: 0.18),
                         ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide(
-                          color: cs.outline.withOpacity(0.18),
+                          color: cs.outline.withValues(alpha: 0.18),
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
@@ -2185,7 +2176,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       children: [
         Material(
           color: active
-              ? cs.primary.withOpacity(0.12)
+              ? cs.primary.withValues(alpha: 0.12)
               : cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
@@ -2235,9 +2226,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withOpacity(0.45),
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: cs.outline.withOpacity(0.18)),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
@@ -2308,10 +2299,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: cs.outline.withOpacity(0.22)),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 7),
           ),
@@ -2332,7 +2323,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               child: Container(
                 width: 52,
                 height: 52,
-                color: cs.primary.withOpacity(0.10),
+                color: cs.primary.withValues(alpha: 0.10),
                 child: thumbnail.isNotEmpty
                     ? Image.network(
                         thumbnail,
@@ -2369,7 +2360,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
                         0.70,
                       ),
                     ),
@@ -2383,8 +2374,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         context: context,
                         icon: Icons.verified_rounded,
                         text: status,
-                        backgroundColor: _statusColor(status).withOpacity(0.12),
-                        borderColor: _statusColor(status).withOpacity(0.35),
+                        backgroundColor: _statusColor(status).withValues(alpha: 0.12),
+                        borderColor: _statusColor(status).withValues(alpha: 0.35),
                         iconColor: _statusColor(status),
                         textColor: _statusColor(status),
                       ),
@@ -2413,8 +2404,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               context: context,
                               icon: Icons.sell_rounded,
                               text: tag,
-                              backgroundColor: cs.secondary.withOpacity(0.08),
-                              borderColor: cs.secondary.withOpacity(0.14),
+                              backgroundColor: cs.secondary.withValues(alpha: 0.08),
+                              borderColor: cs.secondary.withValues(alpha: 0.14),
                               iconColor: cs.secondary,
                             ),
                           ),
@@ -2435,7 +2426,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     errorBuilder: (_, _, _) => Container(
                       height: 180,
                       alignment: Alignment.center,
-                      color: cs.primary.withOpacity(0.06),
+                      color: cs.primary.withValues(alpha: 0.06),
                       child: Icon(
                         Icons.image_not_supported_rounded,
                         color: cs.primary,
@@ -2464,8 +2455,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                       if (lengthApprox.isNotEmpty)
                         Chip(
@@ -2475,8 +2466,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                       if (scriptType.isNotEmpty)
                         Chip(
@@ -2486,8 +2477,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                       if (level.isNotEmpty)
                         Chip(
@@ -2497,8 +2488,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             size: 18,
                             color: cs.primary,
                           ),
-                          backgroundColor: cs.primary.withOpacity(0.08),
-                          side: BorderSide(color: cs.primary.withOpacity(0.12)),
+                          backgroundColor: cs.primary.withValues(alpha: 0.08),
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
                         ),
                     ],
                   ),
@@ -2550,9 +2541,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         .map(
                           (tag) => Chip(
                             label: Text(tag),
-                            backgroundColor: cs.secondary.withOpacity(0.08),
+                            backgroundColor: cs.secondary.withValues(alpha: 0.08),
                             side: BorderSide(
-                              color: cs.secondary.withOpacity(0.14),
+                              color: cs.secondary.withValues(alpha: 0.14),
                             ),
                           ),
                         )
@@ -2602,7 +2593,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   child: Text(
                     teacherNotes,
                     style: TextStyle(
-                      color: theme.textTheme.bodyMedium?.color?.withOpacity(
+                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
                         0.78,
                       ),
                       fontWeight: FontWeight.w600,
@@ -2769,7 +2760,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: cs.surfaceContainerHighest.withOpacity(0.55),
+                          color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Icon(Icons.more_horiz_rounded),
@@ -2904,7 +2895,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   decoration: BoxDecoration(
                     color: theme.cardColor,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.outline.withOpacity(0.22)),
+                    border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -2992,7 +2983,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: theme.textTheme.bodyMedium?.color
-                                      ?.withOpacity(0.65),
+                                      ?.withValues(alpha: 0.65),
                                 ),
                               ),
                             ),

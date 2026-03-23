@@ -1,10 +1,64 @@
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
+import '../services/backend_api.dart';
+import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
+import '../shared/human_error.dart';
+
+String _coursesRelativePathFromUrl(String rawUrl) {
+  final trimmed = rawUrl.trim();
+  if (trimmed.isEmpty) return '';
+
+  try {
+    final uri = Uri.parse(trimmed);
+    final parts = uri.pathSegments;
+    final coursesIndex = parts.indexOf('courses');
+    if (coursesIndex < 0 || coursesIndex + 1 >= parts.length) return '';
+    return parts.sublist(coursesIndex + 1).join('/');
+  } catch (_) {
+    return '';
+  }
+}
+
+Future<void> _deleteUploadedCoursesAsset(String fileUrl) async {
+  final relPath = _coursesRelativePathFromUrl(fileUrl);
+  if (relPath.isEmpty) return;
+
+  final uri = await BackendApi.withAuthQuery(
+    BackendApi.uri('delete_file_secure.php'),
+  );
+  final headers = await BackendApi.authHeaders();
+  final authFields = await BackendApi.authFormFields();
+
+  final r = await http.post(
+    uri,
+    headers: headers,
+    body: {'root': 'courses', 'path': relPath, ...authFields},
+  );
+
+  final raw = r.body.trim();
+  if (!raw.startsWith('{')) {
+    throw Exception('Delete endpoint did not return JSON.');
+  }
+
+  final data = jsonDecode(raw);
+  if (data is! Map<String, dynamic>) {
+    throw Exception('Invalid delete response.');
+  }
+
+  if (data['success'] == true) return;
+
+  final msg = (data['message'] ?? 'Delete failed').toString();
+  if (msg.toLowerCase().contains('not found')) return;
+  throw Exception(msg);
+}
 
 class TeacherPublicGalleryScreen extends StatefulWidget {
   const TeacherPublicGalleryScreen({super.key});
@@ -253,6 +307,76 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
     return items.take(count).toList();
   }
 
+  Future<bool> _confirmDeleteMyItem() async {
+    final p = palette;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: p.cardBg,
+        title: Text(
+          'Delete item',
+          style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          'Do you want to remove this gallery item from server and database?',
+          style: TextStyle(color: p.text, fontWeight: FontWeight.w700),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: p.accent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _deleteMyGalleryItem(Map<String, dynamic> item) async {
+    final ok = await _confirmDeleteMyItem();
+    if (!ok) return;
+
+    final itemId = (item['id'] ?? '').toString().trim();
+    final learnerUid = (item['learnerUid'] ?? '').toString().trim();
+    final url = (item['url'] ?? '').toString().trim();
+
+    if (itemId.isEmpty || learnerUid.isEmpty) return;
+
+    try {
+      if (url.isNotEmpty) {
+        await _deleteUploadedCoursesAsset(url);
+      }
+
+      await _db.child('learner_gallery/$learnerUid/$itemId').remove();
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Item deleted from server and database.',
+        type: AppToastType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not delete item.'),
+        type: AppToastType.error,
+      );
+    }
+  }
+
   Future<void> _openLearnerViewer(Map<String, dynamic> item) async {
     final type = (item['type'] ?? '').toString().trim().toLowerCase();
     final url = (item['url'] ?? '').toString().trim();
@@ -270,6 +394,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           learnerName: learnerName,
           classTitle: classTitle,
           createdAt: createdAt,
+          onDelete: () => _deleteMyGalleryItem(item),
         ),
       ),
     );
@@ -292,6 +417,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           learnerName: learnerName,
           classTitle: classTitle,
           createdAt: createdAt,
+          onDelete: null,
         ),
       ),
     );
@@ -315,7 +441,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           label: const Text('Load More'),
           style: OutlinedButton.styleFrom(
             foregroundColor: p.primary,
-            side: BorderSide(color: p.border.withOpacity(0.9)),
+            side: BorderSide(color: p.border.withValues(alpha: 0.9)),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -351,11 +477,11 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: p.border.withOpacity(0.9)),
+              borderSide: BorderSide(color: p.border.withValues(alpha: 0.9)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: p.border.withOpacity(0.9)),
+              borderSide: BorderSide(color: p.border.withValues(alpha: 0.9)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -381,7 +507,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                 decoration: BoxDecoration(
                   color: p.cardBg,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: p.border.withOpacity(0.9)),
+                  border: Border.all(color: p.border.withValues(alpha: 0.9)),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
@@ -464,14 +590,14 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [p.primary, p.primary.withOpacity(0.88)],
+                      colors: [p.primary, p.primary.withValues(alpha: 0.88)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: p.primary.withOpacity(0.16),
+                        color: p.primary.withValues(alpha: 0.16),
                         blurRadius: 18,
                         offset: const Offset(0, 10),
                       ),
@@ -568,11 +694,11 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: p.border.withOpacity(0.85),
+                              color: p.border.withValues(alpha: 0.85),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
+                                color: Colors.black.withValues(alpha: 0.03),
                                 blurRadius: 10,
                                 offset: const Offset(0, 5),
                               ),
@@ -599,7 +725,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                             alignment: Alignment.center,
                                             child: Icon(
                                               Icons.broken_image_outlined,
-                                              color: p.primary.withOpacity(
+                                              color: p.primary.withValues(alpha: 
                                                 0.55,
                                               ),
                                             ),
@@ -614,7 +740,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(
+                                            color: Colors.black.withValues(alpha: 
                                               0.58,
                                             ),
                                             borderRadius: BorderRadius.circular(
@@ -679,7 +805,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: p.text.withOpacity(0.72),
+                                        color: p.text.withValues(alpha: 0.72),
                                         fontWeight: FontWeight.w700,
                                         fontSize: 11,
                                       ),
@@ -753,14 +879,14 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [p.primary, p.primary.withOpacity(0.88)],
+                  colors: [p.primary, p.primary.withValues(alpha: 0.88)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: p.primary.withOpacity(0.16),
+                    color: p.primary.withValues(alpha: 0.16),
                     blurRadius: 18,
                     offset: const Offset(0, 10),
                   ),
@@ -858,10 +984,10 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                       decoration: BoxDecoration(
                         color: p.cardBg,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: p.border.withOpacity(0.85)),
+                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.03),
+                            color: Colors.black.withValues(alpha: 0.03),
                             blurRadius: 10,
                             offset: const Offset(0, 5),
                           ),
@@ -888,7 +1014,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                         alignment: Alignment.center,
                                         child: Icon(
                                           Icons.broken_image_outlined,
-                                          color: p.primary.withOpacity(0.55),
+                                          color: p.primary.withValues(alpha: 0.55),
                                         ),
                                       ),
                                     ),
@@ -901,7 +1027,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.58),
+                                        color: Colors.black.withValues(alpha: 0.58),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Row(
@@ -952,7 +1078,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: p.text.withOpacity(0.72),
+                                    color: p.text.withValues(alpha: 0.72),
                                     fontWeight: FontWeight.w700,
                                     fontSize: 11,
                                   ),
@@ -963,7 +1089,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: p.text.withOpacity(0.72),
+                                    color: p.text.withValues(alpha: 0.72),
                                     fontWeight: FontWeight.w700,
                                     fontSize: 11,
                                   ),
@@ -1010,7 +1136,7 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: p.primary,
-          unselectedLabelColor: p.primary.withOpacity(0.55),
+          unselectedLabelColor: p.primary.withValues(alpha: 0.55),
           indicatorColor: p.primary,
           tabs: const [
             Tab(text: 'My Gallery'),
@@ -1039,7 +1165,7 @@ class _TeacherGalleryStatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white24),
       ),
@@ -1077,14 +1203,14 @@ class _TeacherGalleryEmptyBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: Column(
         children: [
           Icon(
             Icons.perm_media_outlined,
             size: 56,
-            color: p.primary.withOpacity(0.22),
+            color: p.primary.withValues(alpha: 0.22),
           ),
           const SizedBox(height: 12),
           Text(
@@ -1100,7 +1226,7 @@ class _TeacherGalleryEmptyBox extends StatelessWidget {
             subtitle,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: p.text.withOpacity(0.7),
+              color: p.text.withValues(alpha: 0.7),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1209,8 +1335,8 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.black.withOpacity(0.10),
-                Colors.black.withOpacity(0.35),
+                Colors.black.withValues(alpha: 0.10),
+                Colors.black.withValues(alpha: 0.35),
               ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
@@ -1222,7 +1348,7 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
             width: 58,
             height: 58,
             decoration: BoxDecoration(
-              color: p.accent.withOpacity(0.90),
+              color: p.accent.withValues(alpha: 0.90),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -1392,7 +1518,7 @@ class _TeacherPublicVideoPreviewCardState
                       gradient: LinearGradient(
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.20),
+                          Colors.black.withValues(alpha: 0.20),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -1414,7 +1540,7 @@ class _TeacherPublicVideoPreviewCardState
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-              color: Colors.black.withOpacity(0.88),
+              color: Colors.black.withValues(alpha: 0.88),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1509,6 +1635,7 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
     required this.learnerName,
     required this.classTitle,
     required this.createdAt,
+    required this.onDelete,
   });
 
   final String type;
@@ -1517,6 +1644,7 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
   final String learnerName;
   final String classTitle;
   final String createdAt;
+  final Future<void> Function()? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1536,6 +1664,22 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
           ),
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
+        actions: [
+          if (onDelete != null)
+            IconButton(
+              tooltip: 'Delete',
+              onPressed: () async {
+                await onDelete!.call();
+                if (context.mounted) {
+                  Navigator.of(context).pop(true);
+                }
+              },
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.redAccent,
+              ),
+            ),
+        ],
       ),
       body: SafeArea(
         child: LayoutBuilder(
@@ -1573,10 +1717,10 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         border: Border(
                           top: BorderSide(
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),

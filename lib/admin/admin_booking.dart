@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/app_feedback.dart';
 
 class AdminBookingScreen extends StatefulWidget {
   const AdminBookingScreen({super.key});
@@ -58,7 +59,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
@@ -1204,7 +1205,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                           style: OutlinedButton.styleFrom(
                                             foregroundColor: primaryBlue,
                                             side: BorderSide(
-                                              color: primaryBlue.withOpacity(
+                                              color: primaryBlue.withValues(alpha: 
                                                 0.25,
                                               ),
                                             ),
@@ -1454,7 +1455,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: primaryBlue,
                               side: BorderSide(
-                                color: primaryBlue.withOpacity(0.20),
+                                color: primaryBlue.withValues(alpha: 0.20),
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(999),
@@ -1597,7 +1598,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                               vertical: 4,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: statusColor.withOpacity(
+                                              color: statusColor.withValues(alpha: 
                                                 0.10,
                                               ),
                                               borderRadius:
@@ -1801,10 +1802,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: on ? actionOrange.withOpacity(0.12) : Colors.white,
+          color: on ? actionOrange.withValues(alpha: 0.12) : Colors.white,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: on ? actionOrange.withOpacity(0.35) : uiBorder,
+            color: on ? actionOrange.withValues(alpha: 0.35) : uiBorder,
           ),
         ),
         child: Text(

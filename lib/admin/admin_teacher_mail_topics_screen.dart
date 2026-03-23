@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'mail_topic_thread_screen.dart';
+import '../shared/app_feedback.dart';
 
 class AdminTeacherMailTopicsScreen extends StatefulWidget {
   const AdminTeacherMailTopicsScreen({
@@ -43,7 +44,7 @@ class _AdminTeacherMailTopicsScreenState
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   String _teacherDisplayName() {

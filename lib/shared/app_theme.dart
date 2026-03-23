@@ -170,7 +170,7 @@ class AppThemeController extends ChangeNotifier {
         filled: true,
         fillColor: p.cardBg,
         hintStyle: TextStyle(
-          color: p.text.withOpacity(0.55),
+          color: p.text.withValues(alpha: 0.55),
           fontFamily: fontFamily,
         ),
         labelStyle: TextStyle(color: p.text, fontFamily: fontFamily),
@@ -209,7 +209,7 @@ class AppThemeController extends ChangeNotifier {
       ),
       tabBarTheme: TabBarThemeData(
         labelColor: p.primary,
-        unselectedLabelColor: p.text.withOpacity(0.65),
+        unselectedLabelColor: p.text.withValues(alpha: 0.65),
         indicatorColor: p.primary,
         labelStyle: TextStyle(
           fontWeight: FontWeight.w700,

@@ -35,7 +35,7 @@ class _YbsBusyLogoState extends State<YbsBusyLogo>
   @override
   Widget build(BuildContext context) {
     final spinnerColor =
-        widget.color ?? Theme.of(context).colorScheme.primary.withOpacity(0.9);
+        widget.color ?? Theme.of(context).colorScheme.primary.withValues(alpha: 0.9);
 
     return SizedBox(
       width: widget.size,
@@ -58,7 +58,7 @@ class _YbsBusyLogoState extends State<YbsBusyLogo>
                   child: CircularProgressIndicator(
                     strokeWidth: widget.strokeWidth ?? (widget.size * 0.07),
                     valueColor: AlwaysStoppedAnimation<Color>(spinnerColor),
-                    backgroundColor: spinnerColor.withOpacity(0.16),
+                    backgroundColor: spinnerColor.withValues(alpha: 0.16),
                   ),
                 ),
               ),

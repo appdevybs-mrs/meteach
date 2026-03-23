@@ -264,9 +264,9 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.08),
+                    color: Colors.red.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.red.withOpacity(0.20)),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.20)),
                   ),
                   child: Text(
                     _error!,

@@ -6,6 +6,8 @@ import '../shared/human_error.dart';
 import '../services/push_client.dart';
 import '../services/notification_service.dart';
 import '../widgets/teacher_media_sheet.dart';
+import '../shared/app_feedback.dart';
+import '../shared/ybs_busy_logo.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -90,9 +92,50 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(
+      context,
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  Future<bool> _confirmWithLogo({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    Color confirmColor = primaryBlue,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+        title: Row(
+          children: [
+            const YbsBusyLogo(size: 32),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ),
+        content: Text(message, style: const TextStyle(height: 1.35)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: confirmColor),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    return result == true;
   }
 
   String _two(int n) => n < 10 ? '0$n' : '$n';
@@ -1630,12 +1673,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? actionOrange.withOpacity(0.12) : Colors.white,
+          color: selected ? actionOrange.withValues(alpha: 0.12) : Colors.white,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected
-                ? actionOrange.withOpacity(0.40)
-                : uiBorder.withOpacity(0.95),
+                ? actionOrange.withValues(alpha: 0.40)
+                : uiBorder.withValues(alpha: 0.95),
           ),
         ),
         child: Text(
@@ -1660,9 +1703,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: actionOrange.withOpacity(0.12),
+              color: actionOrange.withValues(alpha: 0.12),
               shape: BoxShape.circle,
-              border: Border.all(color: actionOrange.withOpacity(0.25)),
+              border: Border.all(color: actionOrange.withValues(alpha: 0.25)),
             ),
             child: Center(
               child: Text(
@@ -2071,10 +2114,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: actionOrange.withOpacity(0.10),
+                        color: actionOrange.withValues(alpha: 0.10),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: actionOrange.withOpacity(0.25),
+                          color: actionOrange.withValues(alpha: 0.25),
                         ),
                       ),
                       child: const Icon(
@@ -2225,36 +2268,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                               return;
                             }
 
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (_) => AlertDialog(
-                                title: Text(
-                                  hasOther
-                                      ? (isSameTimeDifferentTeacher
-                                            ? 'Change teacher'
-                                            : 'Change booking')
-                                      : label,
-                                ),
-                                content: Text(msg),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, false),
-                                    child: const Text('No'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, true),
-                                    child: Text(
-                                      hasOther
-                                          ? (isSameTimeDifferentTeacher
-                                                ? 'Yes, Change Teacher'
-                                                : 'Yes, Change')
-                                          : 'Yes',
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            final ok = await _confirmWithLogo(
+                              title: hasOther
+                                  ? (isSameTimeDifferentTeacher
+                                        ? 'Change teacher'
+                                        : 'Change booking')
+                                  : label,
+                              message: msg,
+                              confirmLabel: hasOther
+                                  ? (isSameTimeDifferentTeacher
+                                        ? 'Yes, Change Teacher'
+                                        : 'Yes, Change')
+                                  : 'Yes',
                             );
 
                             if (ok == true) {
@@ -2307,26 +2332,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                         : () async {
                             Navigator.pop(context);
 
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (_) => AlertDialog(
-                                title: const Text('Cancel booking'),
-                                content: const Text(
+                            final ok = await _confirmWithLogo(
+                              title: 'Cancel booking',
+                              message:
                                   'Are you sure you want to cancel this booking?',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, false),
-                                    child: const Text('No'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, true),
-                                    child: const Text('Yes, Cancel'),
-                                  ),
-                                ],
-                              ),
+                              confirmLabel: 'Yes, Cancel',
+                              confirmColor: Colors.red.shade600,
                             );
 
                             if (ok == true) {
@@ -2362,7 +2373,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFB),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2509,7 +2520,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFB),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.9)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2537,9 +2548,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: actionOrange.withOpacity(0.10),
+                    color: actionOrange.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: actionOrange.withOpacity(0.25)),
+                    border: Border.all(
+                      color: actionOrange.withValues(alpha: 0.25),
+                    ),
                   ),
                   child: const Text(
                     'Active',
@@ -2559,7 +2572,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: uiBorder.withOpacity(0.9)),
+              border: Border.all(color: uiBorder.withValues(alpha: 0.9)),
             ),
             child: DropdownButton<String>(
               value: teacherFilter,
@@ -2647,12 +2660,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: value ? actionOrange.withOpacity(0.10) : Colors.white,
+          color: value ? actionOrange.withValues(alpha: 0.10) : Colors.white,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: value
-                ? actionOrange.withOpacity(0.30)
-                : uiBorder.withOpacity(0.9),
+                ? actionOrange.withValues(alpha: 0.30)
+                : uiBorder.withValues(alpha: 0.9),
           ),
         ),
         child: Row(
@@ -2687,12 +2700,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: on ? actionOrange.withOpacity(0.12) : Colors.white,
+          color: on ? actionOrange.withValues(alpha: 0.12) : Colors.white,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: on
-                ? actionOrange.withOpacity(0.35)
-                : uiBorder.withOpacity(0.9),
+                ? actionOrange.withValues(alpha: 0.35)
+                : uiBorder.withValues(alpha: 0.9),
           ),
         ),
         child: Text(
@@ -2811,9 +2824,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
-          color: actionOrange.withOpacity(0.10),
+          color: actionOrange.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: actionOrange.withOpacity(0.25)),
+          border: Border.all(color: actionOrange.withValues(alpha: 0.25)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2997,7 +3010,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: uiBorder.withOpacity(0.85)),
+          border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
         ),
         child: const Text(
           'No slots match your filters.',
@@ -3060,7 +3073,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       ),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
-                        border: Border.all(color: uiBorder.withOpacity(0.8)),
+                        border: Border.all(
+                          color: uiBorder.withValues(alpha: 0.8),
+                        ),
                         borderRadius: BorderRadius.circular(12),
                         color: Colors.white,
                       ),
@@ -3102,8 +3117,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
                               color: hasSlot
-                                  ? uiBorder.withOpacity(0.85)
-                                  : uiBorder.withOpacity(0.25),
+                                  ? uiBorder.withValues(alpha: 0.85)
+                                  : uiBorder.withValues(alpha: 0.25),
                             ),
                           ),
                           child: hasSlot
@@ -3136,7 +3151,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                                               999,
                                             ),
                                             border: Border.all(
-                                              color: uiBorder.withOpacity(0.9),
+                                              color: uiBorder.withValues(
+                                                alpha: 0.9,
+                                              ),
                                             ),
                                           ),
                                           child: Text(
@@ -3209,7 +3226,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           IgnorePointer(
             ignoring: busy,
             child: loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(
+                    child: BrandedInlineLoader(
+                      message: 'Loading booking schedule...',
+                    ),
+                  )
                 : (cid == null)
                 ? const Center(child: Text('No course selected.'))
                 : ListView(
@@ -3236,7 +3257,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
-                                    color: uiBorder.withOpacity(0.9),
+                                    color: uiBorder.withValues(alpha: 0.9),
                                   ),
                                 ),
                                 child: const Row(
@@ -3275,7 +3296,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
-                                    color: uiBorder.withOpacity(0.9),
+                                    color: uiBorder.withValues(alpha: 0.9),
                                   ),
                                 ),
                                 child: Row(
@@ -3323,7 +3344,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                       if (booking || refreshing)
                         const Padding(
                           padding: EdgeInsets.only(top: 14),
-                          child: Center(child: CircularProgressIndicator()),
+                          child: Center(
+                            child: BrandedInlineLoader(message: 'Updating...'),
+                          ),
                         ),
                     ],
                   ),
@@ -3331,7 +3354,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
           if (busy)
             Positioned.fill(
               child: Container(
-                color: Colors.black.withOpacity(0.16),
+                color: Colors.black.withValues(alpha: 0.16),
                 child: Center(
                   child: Container(
                     width: 220,
@@ -3347,11 +3370,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 3),
-                        ),
+                        const YbsBusyLogo(size: 44),
                         const SizedBox(height: 14),
                         Text(
                           progressLabel.isEmpty

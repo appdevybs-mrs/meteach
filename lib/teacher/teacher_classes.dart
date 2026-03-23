@@ -19,9 +19,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import 'teacher_learner_profile_screen.dart';
@@ -101,15 +101,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
 
   void _toast(String msg) {
     if (!mounted) return;
-    Fluttertoast.cancel();
-    Fluttertoast.showToast(
-      msg: humanizeUiMessage(msg),
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.CENTER,
-      backgroundColor: Colors.black.withOpacity(0.85),
-      textColor: Colors.white,
-      fontSize: 15,
-    );
+    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
   }
 
   String _norm(String s) => s.trim().toLowerCase();
@@ -663,7 +655,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     'Course: $courseId',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: p.text.withOpacity(0.7),
+                      color: p.text.withValues(alpha: 0.7),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -672,7 +664,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       'Duration: $duration min',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: p.text.withOpacity(0.7),
+                        color: p.text.withValues(alpha: 0.7),
                       ),
                     ),
                   const SizedBox(height: 14),
@@ -689,7 +681,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       objective,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -707,7 +699,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       content,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -725,7 +717,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       homework,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -813,7 +805,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     'Course: $courseLabel',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: p.text.withOpacity(0.72),
+                      color: p.text.withValues(alpha: 0.72),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -822,7 +814,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       'Duration: $duration min',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                   const SizedBox(height: 14),
@@ -839,7 +831,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       objective,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -857,7 +849,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       content,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -875,7 +867,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       homework,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: p.text.withOpacity(0.72),
+                        color: p.text.withValues(alpha: 0.72),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -1179,7 +1171,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             Text(
               'Classes, online sessions, and attendance',
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -1189,7 +1181,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: p.primary,
-          unselectedLabelColor: p.text.withOpacity(0.62),
+          unselectedLabelColor: p.text.withValues(alpha: 0.62),
           indicatorColor: p.accent,
           tabs: const [
             Tab(icon: Icon(Icons.groups_rounded), text: 'In-class'),
@@ -1274,14 +1266,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.18),
+            color: p.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1293,7 +1285,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             width: 62,
             height: 62,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
+              color: Colors.white.withValues(alpha: 0.14),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white24),
             ),
@@ -1326,7 +1318,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 Text(
                   'Your in-class teaching overview',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.82),
+                    color: Colors.white.withValues(alpha: 0.82),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -1354,10 +1346,10 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: p.border.withOpacity(0.9)),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -1438,7 +1430,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                                   1,
                                 ),
                           minHeight: 9,
-                          backgroundColor: p.primary.withOpacity(0.10),
+                          backgroundColor: p.primary.withValues(alpha: 0.10),
                           valueColor: AlwaysStoppedAnimation(p.accent),
                         ),
                       ),
@@ -1455,9 +1447,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: p.soft.withOpacity(0.42),
+              color: p.soft.withValues(alpha: 0.42),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: p.border.withOpacity(0.85)),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1475,7 +1467,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                   Text(
                     'No learners found in this class.',
                     style: TextStyle(
-                      color: p.text.withOpacity(0.72),
+                      color: p.text.withValues(alpha: 0.72),
                       fontWeight: FontWeight.w700,
                     ),
                   )
@@ -1491,7 +1483,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       decoration: BoxDecoration(
                         color: p.cardBg,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: p.border.withOpacity(0.8)),
+                        border: Border.all(color: p.border.withValues(alpha: 0.8)),
                       ),
                       child: Column(
                         children: [
@@ -1734,7 +1726,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           child: Text(
             '$label: $value',
             style: TextStyle(
-              color: p.text.withOpacity(0.80),
+              color: p.text.withValues(alpha: 0.80),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -1811,12 +1803,12 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
             decoration: BoxDecoration(
               color: p.cardBg,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: p.border.withOpacity(0.85)),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
             ),
             child: TabBar(
               controller: _onlineTab,
               labelColor: p.primary,
-              unselectedLabelColor: p.text.withOpacity(0.62),
+              unselectedLabelColor: p.text.withValues(alpha: 0.62),
               indicatorColor: p.accent,
               tabs: const [
                 Tab(text: 'Live'),
@@ -1860,14 +1852,14 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.18),
+            color: p.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1879,7 +1871,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           Text(
             'Online Sessions',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
+              color: Colors.white.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -1919,9 +1911,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.14)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
       child: Column(
         children: [
@@ -1937,7 +1929,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.80),
+              color: Colors.white.withValues(alpha: 0.80),
               fontWeight: FontWeight.w700,
               fontSize: 11,
             ),
@@ -1970,13 +1962,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontWeight: FontWeight.w800,
-          color: p.text.withOpacity(0.72),
+          color: p.text.withValues(alpha: 0.72),
         ),
       ),
     );
@@ -1997,24 +1989,24 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     final statusBg = inWindow
         ? const Color(0xFFEAF7EE)
         : (dt.isAfter(DateTime.now())
-              ? p.accent.withOpacity(0.12)
-              : p.soft.withOpacity(0.8));
+              ? p.accent.withValues(alpha: 0.12)
+              : p.soft.withValues(alpha: 0.8));
 
     final statusBorder = inWindow
         ? const Color(0xFFB9E2C5)
         : (dt.isAfter(DateTime.now())
-              ? p.accent.withOpacity(0.28)
-              : p.border.withOpacity(0.8));
+              ? p.accent.withValues(alpha: 0.28)
+              : p.border.withValues(alpha: 0.8));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: p.border.withOpacity(0.9)),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -2219,7 +2211,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           child: Text(
             text,
             style: TextStyle(
-              color: p.text.withOpacity(0.78),
+              color: p.text.withValues(alpha: 0.78),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -2239,9 +2231,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: p.soft.withOpacity(0.38),
+        color: p.soft.withValues(alpha: 0.38),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.8)),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2274,7 +2266,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                           full.isEmpty ? 'Learner' : full,
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: p.text.withOpacity(0.72),
+                            color: p.text.withValues(alpha: 0.72),
                           ),
                         ),
                       ),
@@ -2290,7 +2282,7 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
               '… +$more more',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
               ),
             ),
         ],
@@ -2466,15 +2458,8 @@ class _OnlineTakeAttendanceScreenState
   AppPalette get p => appThemeController.palette;
 
   void _toast(String msg) {
-    Fluttertoast.cancel();
-    Fluttertoast.showToast(
-      msg: humanizeUiMessage(msg),
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.CENTER,
-      backgroundColor: Colors.black.withOpacity(0.85),
-      textColor: Colors.white,
-      fontSize: 15,
-    );
+    if (!mounted) return;
+    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
   }
 
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
@@ -2707,7 +2692,7 @@ class _OnlineTakeAttendanceScreenState
                   'When: $when',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -2715,7 +2700,7 @@ class _OnlineTakeAttendanceScreenState
                   'Learners: ${b.learnerUids.length}',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -2723,7 +2708,7 @@ class _OnlineTakeAttendanceScreenState
                   'Meet: ${b.meetUrl.isEmpty ? '-' : b.meetUrl}',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: p.text.withOpacity(0.62),
+                    color: p.text.withValues(alpha: 0.62),
                   ),
                 ),
               ],
@@ -2747,7 +2732,7 @@ class _OnlineTakeAttendanceScreenState
                     'No learners found in this booking.',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      color: p.text.withOpacity(0.72),
+                      color: p.text.withValues(alpha: 0.72),
                     ),
                   )
                 else
@@ -2758,8 +2743,8 @@ class _OnlineTakeAttendanceScreenState
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: p.border.withOpacity(0.85)),
-                        color: p.soft.withOpacity(0.18),
+                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                        color: p.soft.withValues(alpha: 0.18),
                       ),
                       child: Row(
                         children: [
@@ -2819,7 +2804,7 @@ class _OnlineTakeAttendanceScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: child,
     );
@@ -2974,10 +2959,10 @@ class _OnlineAttendanceHistoryScreenState
                               return Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: p.soft.withOpacity(0.24),
+                                  color: p.soft.withValues(alpha: 0.24),
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color: p.border.withOpacity(0.8),
+                                    color: p.border.withValues(alpha: 0.8),
                                   ),
                                 ),
                                 child: Row(
@@ -3028,7 +3013,7 @@ class _OnlineAttendanceHistoryScreenState
                         'No learners map saved.',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: p.text.withOpacity(0.72),
+                          color: p.text.withValues(alpha: 0.72),
                         ),
                       ),
                   ],
@@ -3047,7 +3032,7 @@ class _OnlineAttendanceHistoryScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: child,
     );
@@ -3203,7 +3188,7 @@ class _OnlineAttendanceStatsScreenState
             label,
             style: TextStyle(
               fontWeight: FontWeight.w800,
-              color: p.text.withOpacity(0.78),
+              color: p.text.withValues(alpha: 0.78),
             ),
           ),
         ),
@@ -3222,7 +3207,7 @@ class _OnlineAttendanceStatsScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: child,
     );

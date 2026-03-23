@@ -185,7 +185,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: p.border.withOpacity(0.95)),
+        borderSide: BorderSide(color: p.border.withValues(alpha: 0.95)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -283,7 +283,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
     if (_error == null && _ok == null) return const SizedBox.shrink();
 
     final isError = _error != null;
-    final bg = isError ? const Color(0xFFFFEBEE) : p.soft.withOpacity(0.75);
+    final bg = isError ? const Color(0xFFFFEBEE) : p.soft.withValues(alpha: 0.75);
     final border = isError ? const Color(0xFFFFCDD2) : p.border;
     final textColor = isError ? const Color(0xFFC62828) : p.primary;
     final icon = isError
@@ -322,10 +322,10 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: p.border.withOpacity(0.9)),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -348,7 +348,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
             Text(
               subtitle,
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
@@ -387,7 +387,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                   ? 'Edit your live teacher circle'
                   : 'Create a live teacher circle',
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -501,7 +501,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                                 color: p.cardBg,
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: p.border.withOpacity(0.95),
+                                  color: p.border.withValues(alpha: 0.95),
                                 ),
                               ),
                               child: Row(
@@ -516,7 +516,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                                       _formattedDateTime(),
                                       style: TextStyle(
                                         color: _selectedDateTime == null
-                                            ? p.text.withOpacity(0.65)
+                                            ? p.text.withValues(alpha: 0.65)
                                             : p.text,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -546,10 +546,10 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                           Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: p.soft.withOpacity(0.55),
+                              color: p.soft.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: p.border.withOpacity(0.85),
+                                color: p.border.withValues(alpha: 0.85),
                               ),
                             ),
                             child: Row(
@@ -573,7 +573,7 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
                                             ? 'This circle is currently open'
                                             : 'This circle is currently closed',
                                         style: TextStyle(
-                                          color: p.text.withOpacity(0.68),
+                                          color: p.text.withValues(alpha: 0.68),
                                           fontWeight: FontWeight.w700,
                                           fontSize: 12,
                                         ),

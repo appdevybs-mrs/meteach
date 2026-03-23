@@ -612,7 +612,7 @@ class _AdminAttendanceOverviewScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,7 +655,7 @@ class _AdminAttendanceOverviewScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -705,7 +705,7 @@ class _AdminAttendanceOverviewScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -818,7 +818,7 @@ class _AdminAttendanceOverviewScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -887,7 +887,7 @@ class _AdminAttendanceOverviewScreenState
                 decoration: BoxDecoration(
                   color: appBg,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -937,7 +937,7 @@ class _AdminAttendanceOverviewScreenState
       decoration: BoxDecoration(
         color: appBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -975,9 +975,9 @@ class _AdminAttendanceOverviewScreenState
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: actionOrange.withOpacity(0.08),
+        color: actionOrange.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: actionOrange.withOpacity(0.25)),
+        border: Border.all(color: actionOrange.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
@@ -1016,7 +1016,7 @@ class _AdminAttendanceOverviewScreenState
       decoration: BoxDecoration(
         color: appBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withOpacity(0.85)),
+        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1235,7 +1235,7 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1244,7 +1244,7 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 16,
-                            backgroundColor: color.withOpacity(0.10),
+                            backgroundColor: color.withValues(alpha: 0.10),
                             child: Icon(
                               row.status == 'present'
                                   ? Icons.check
@@ -1270,10 +1270,10 @@ class AdminAttendanceDetailsScreen extends StatelessWidget {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: color.withOpacity(0.10),
+                              color: color.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(999),
                               border: Border.all(
-                                color: color.withOpacity(0.25),
+                                color: color.withValues(alpha: 0.25),
                               ),
                             ),
                             child: Text(
@@ -1405,7 +1405,7 @@ class AdminMissingAttendanceScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

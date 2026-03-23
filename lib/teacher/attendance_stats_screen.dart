@@ -124,7 +124,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                       decoration: BoxDecoration(
                         color: p.cardBg,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: p.border.withOpacity(0.9)),
+                        border: Border.all(color: p.border.withValues(alpha: 0.9)),
                       ),
                       child: Row(
                         children: [
@@ -164,7 +164,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                             child: Text(
                               'No saved months found yet.',
                               style: TextStyle(
-                                color: p.text.withOpacity(0.7),
+                                color: p.text.withValues(alpha: 0.7),
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -199,7 +199,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                                     border: Border.all(
                                       color: isSelected
                                           ? p.primary
-                                          : p.border.withOpacity(0.9),
+                                          : p.border.withValues(alpha: 0.9),
                                       width: isSelected ? 1.5 : 1,
                                     ),
                                   ),
@@ -209,7 +209,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                                         width: 42,
                                         height: 42,
                                         decoration: BoxDecoration(
-                                          color: p.primary.withOpacity(0.08),
+                                          color: p.primary.withValues(alpha: 0.08),
                                           borderRadius: BorderRadius.circular(
                                             14,
                                           ),
@@ -237,7 +237,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                                             Text(
                                               key,
                                               style: TextStyle(
-                                                color: p.text.withOpacity(0.6),
+                                                color: p.text.withValues(alpha: 0.6),
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 12,
                                               ),
@@ -443,7 +443,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -468,7 +468,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                   child: Icon(
                     Icons.analytics_rounded,
                     size: 220,
-                    color: p.primary.withOpacity(0.12),
+                    color: p.primary.withValues(alpha: 0.12),
                   ),
                 ),
               ),
@@ -529,14 +529,14 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.16),
+            color: p.primary.withValues(alpha: 0.16),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -548,7 +548,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
             width: 54,
             height: 54,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(18),
             ),
             child: const Icon(
@@ -565,7 +565,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                 Text(
                   selectedMonthLabel,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.82),
+                    color: Colors.white.withValues(alpha: 0.82),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -583,7 +583,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                 Text(
                   '$learnersCount learner${learnersCount == 1 ? '' : 's'} included in this overview.',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.86),
+                    color: Colors.white.withValues(alpha: 0.86),
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                     height: 1.35,
@@ -646,10 +646,10 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.border.withOpacity(0.8)),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -676,7 +676,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           Text(
             label,
             style: TextStyle(
-              color: p.text.withOpacity(0.65),
+              color: p.text.withValues(alpha: 0.65),
               fontWeight: FontWeight.w800,
               fontSize: 11,
             ),
@@ -692,7 +692,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
       ),
       child: Row(
         children: [
@@ -713,7 +713,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                 Text(
                   'Period',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.65),
+                    color: p.text.withValues(alpha: 0.65),
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.0,
@@ -739,9 +739,9 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: p.primary.withOpacity(0.08),
+                color: p.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: p.primary.withOpacity(0.12)),
+                border: Border.all(color: p.primary.withValues(alpha: 0.12)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -789,10 +789,10 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.85)),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 6),
           ),
@@ -841,7 +841,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                       Text(
                         'ID: $serial',
                         style: TextStyle(
-                          color: p.text.withOpacity(0.65),
+                          color: p.text.withValues(alpha: 0.65),
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -869,9 +869,9 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.08),
+                      color: color.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: color.withOpacity(0.18)),
+                      border: Border.all(color: color.withValues(alpha: 0.18)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -899,7 +899,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
             child: LinearProgressIndicator(
               value: pct / 100,
               minHeight: 10,
-              backgroundColor: color.withOpacity(0.12),
+              backgroundColor: color.withValues(alpha: 0.12),
               valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
@@ -938,9 +938,9 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -970,7 +970,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: p.border.withOpacity(0.9)),
+            border: Border.all(color: p.border.withValues(alpha: 0.9)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -978,7 +978,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
               Icon(
                 Icons.analytics_outlined,
                 size: 58,
-                color: p.primary.withOpacity(0.22),
+                color: p.primary.withValues(alpha: 0.22),
               ),
               const SizedBox(height: 14),
               Text(
@@ -997,7 +997,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                 'Try another month or save attendance first.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: p.text.withOpacity(0.7),
+                  color: p.text.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1018,7 +1018,7 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: dangerRed.withOpacity(0.20)),
+            border: Border.all(color: dangerRed.withValues(alpha: 0.20)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class PausedActionScreen extends StatefulWidget {
   const PausedActionScreen({super.key});
@@ -67,7 +68,7 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
       log('Sign out failed: $e');
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not sign out. Please try again.'),
@@ -131,7 +132,7 @@ class _PausedActionScreenState extends State<PausedActionScreen> {
                         BoxShadow(
                           blurRadius: 15,
                           offset: const Offset(0, 8),
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                         ),
                       ],
                     ),

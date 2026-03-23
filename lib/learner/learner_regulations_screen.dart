@@ -296,14 +296,14 @@ class _HeroHeaderCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -316,9 +316,9 @@ class _HeroHeaderCard extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
+              color: Colors.white.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withOpacity(0.18)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
             ),
             child: const Icon(
               Icons.policy_rounded,
@@ -344,7 +344,7 @@ class _HeroHeaderCard extends StatelessWidget {
                 Text(
                   'اطلع على التعليمات الرسمية الخاصة بالمتعلمين بشكل منظم وواضح. اضغط على أي قسم لعرض التفاصيل.',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.88),
+                    color: Colors.white.withValues(alpha: 0.88),
                     fontWeight: FontWeight.w700,
                     height: 1.45,
                     fontSize: 13,
@@ -411,10 +411,10 @@ class _MetaMiniCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 7),
           ),
@@ -439,7 +439,7 @@ class _MetaMiniCard extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    color: palette.text.withOpacity(0.64),
+                    color: palette.text.withValues(alpha: 0.64),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -492,12 +492,12 @@ class _SectionCardState extends State<_SectionCard> {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: _expanded
-              ? p.accent.withOpacity(0.35)
-              : p.border.withOpacity(0.85),
+              ? p.accent.withValues(alpha: 0.35)
+              : p.border.withValues(alpha: 0.85),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -547,9 +547,9 @@ class _SectionCardState extends State<_SectionCard> {
                       vertical: 7,
                     ),
                     decoration: BoxDecoration(
-                      color: p.accent.withOpacity(0.10),
+                      color: p.accent.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: p.accent.withOpacity(0.22)),
+                      border: Border.all(color: p.accent.withValues(alpha: 0.22)),
                     ),
                     child: Text(
                       widget.updatedAtLabel,
@@ -581,14 +581,14 @@ class _SectionCardState extends State<_SectionCard> {
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: p.soft.withOpacity(0.55),
+                  color: p.soft.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: p.border.withOpacity(0.75)),
+                  border: Border.all(color: p.border.withValues(alpha: 0.75)),
                 ),
                 child: Text(
                   '${s.items.length} بند',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
                   ),
@@ -617,9 +617,9 @@ class _RegItemRow extends StatelessWidget {
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.45),
+        color: palette.soft.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: palette.border.withOpacity(0.72)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.72)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -629,9 +629,9 @@ class _RegItemRow extends StatelessWidget {
             height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: palette.accent.withOpacity(0.12),
+              color: palette.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: palette.accent.withOpacity(0.25)),
+              border: Border.all(color: palette.accent.withValues(alpha: 0.25)),
             ),
             child: Text(
               isBullet ? '•' : item.n.toString(),
@@ -673,10 +673,10 @@ class _FooterHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 7),
           ),
@@ -689,9 +689,9 @@ class _FooterHint extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: palette.accent.withOpacity(0.10),
+              color: palette.accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: palette.accent.withOpacity(0.18)),
+              border: Border.all(color: palette.accent.withValues(alpha: 0.18)),
             ),
             child: Icon(Icons.info_outline_rounded, color: palette.accent),
           ),
@@ -701,7 +701,7 @@ class _FooterHint extends StatelessWidget {
               'للاستفسارات أو الاعتراضات، يرجى التواصل عبر القنوات الرسمية للمؤسسة.',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: palette.text.withOpacity(0.74),
+                color: palette.text.withValues(alpha: 0.74),
                 height: 1.4,
               ),
             ),
@@ -734,10 +734,10 @@ class _InfoBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.cardBg,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: palette.border.withOpacity(0.85)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.85)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 14,
               offset: const Offset(0, 8),
             ),
@@ -770,7 +770,7 @@ class _InfoBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: palette.text.withOpacity(0.72),
+                color: palette.text.withValues(alpha: 0.72),
                 height: 1.4,
               ),
             ),
@@ -801,10 +801,10 @@ class _ErrorBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.cardBg,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: palette.border.withOpacity(0.85)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.85)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 14,
               offset: const Offset(0, 8),
             ),
@@ -817,7 +817,7 @@ class _ErrorBox extends StatelessWidget {
               width: 58,
               height: 58,
               decoration: BoxDecoration(
-                color: palette.accent.withOpacity(0.10),
+                color: palette.accent.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Icon(
@@ -841,7 +841,7 @@ class _ErrorBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: palette.text.withOpacity(0.72),
+                color: palette.text.withValues(alpha: 0.72),
                 height: 1.4,
               ),
             ),

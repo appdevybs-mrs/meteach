@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/ybs_busy_logo.dart';
 
 class RecordedVideoPlayerScreen extends StatefulWidget {
   const RecordedVideoPlayerScreen({
@@ -60,9 +61,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _isDisposing = false;
 
   void _debug(String message) {
-    if (kDebugMode) {
-      debugPrint('[RecordedVideoPlayer] $message');
-    }
+    // no-op in production build
   }
 
   DatabaseReference get _progressRef => _db
@@ -396,12 +395,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _savedDurationMs = durationMs;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Video completed. This session video is now marked done.',
-        ),
-      ),
+    AppToast.show(
+      context,
+      'Video completed. This session video is now marked done.',
+      type: AppToastType.success,
     );
   }
 
@@ -467,14 +464,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _bookmarkPositionMs = nextBookmarkMs;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          nextBookmarked
-              ? 'Bookmark saved at ${_formatDurationMs(nextBookmarkMs)}.'
-              : 'Bookmark removed.',
-        ),
-      ),
+    AppToast.show(
+      context,
+      nextBookmarked
+          ? 'Bookmark saved at ${_formatDurationMs(nextBookmarkMs)}.'
+          : 'Bookmark removed.',
+      type: AppToastType.info,
     );
   }
 
@@ -559,9 +554,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _notes = nextNotes;
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Notes saved.')));
+    AppToast.show(context, 'Notes saved.', type: AppToastType.success);
   }
 
   void _startHideControlsTimer() {
@@ -724,7 +717,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.3,
-                    color: Colors.black.withOpacity(0.78),
+                    color: Colors.black.withValues(alpha: 0.78),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -784,7 +777,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Widget _buildVideoArea({required bool isLandscape}) {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: BrandedInlineLoader(message: 'Loading video...'),
+      );
     }
 
     final value = controller.value;
@@ -829,7 +824,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             if (_showControls)
               Positioned.fill(
                 child: Container(
-                  color: Colors.black.withOpacity(0.24),
+                  color: Colors.black.withValues(alpha: 0.24),
                   child: Column(
                     children: [
                       SafeArea(
@@ -873,7 +868,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                           const SizedBox(width: 8),
                           Container(
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.16),
+                              color: Colors.white.withValues(alpha: 0.16),
                               shape: BoxShape.circle,
                             ),
                             child: IconButton(
@@ -949,7 +944,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               ),
             if (value.isBuffering)
               const Positioned(
-                child: CircularProgressIndicator(color: Colors.white),
+                child: YbsBusyLogo(size: 36, color: Colors.white),
               ),
           ],
         ),
@@ -1102,7 +1097,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               : const Color(0xFFF4F7F9),
           appBar: _isFullscreen ? null : _buildAppBar(title, isLandscape),
           body: _busy
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(
+                  child: BrandedInlineLoader(message: 'Loading video...'),
+                )
               : _error != null
               ? _buildErrorState()
               : _initialized
@@ -1111,7 +1108,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                     : (isLandscape
                           ? _buildLandscapeLayout()
                           : _buildPortraitLayout()))
-              : const Center(child: CircularProgressIndicator()),
+              : const Center(
+                  child: BrandedInlineLoader(message: 'Preparing player...'),
+                ),
         ),
       ),
     );

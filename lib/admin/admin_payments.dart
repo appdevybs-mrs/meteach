@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
   const AdminPaymentsScreen({super.key});
@@ -29,7 +30,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(
         content: Text(humanizeUiMessage(msg)),
         duration: const Duration(milliseconds: 900),
@@ -818,11 +819,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           icon: Icons.check_circle_rounded,
                           text:
                               'Selected ($selectedCount): ${_fmtMoneyDa(selectedTotal)}',
-                          color: AdminPaymentsScreen.actionOrange.withOpacity(
+                          color: AdminPaymentsScreen.actionOrange.withValues(alpha: 
                             0.18,
                           ),
                           borderColor: AdminPaymentsScreen.actionOrange
-                              .withOpacity(0.35),
+                              .withValues(alpha: 0.35),
                         ),
                         IconButton(
                           tooltip: 'Clear selection',
@@ -882,7 +883,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             ),
                             Divider(
                               height: 1,
-                              color: Colors.black.withOpacity(0.07),
+                              color: Colors.black.withValues(alpha: 0.07),
                             ),
                             Expanded(
                               child: ListView.separated(
@@ -890,7 +891,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 itemCount: visible.length,
                                 separatorBuilder: (_, _) => Divider(
                                   height: 1,
-                                  color: Colors.black.withOpacity(0.07),
+                                  color: Colors.black.withValues(alpha: 0.07),
                                 ),
                                 itemBuilder: (context, i) {
                                   final p = visible[i];
@@ -935,12 +936,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
                                   final baseRowBg = (i % 2 == 0)
                                       ? Colors.white
-                                      : AdminPaymentsScreen.appBg.withOpacity(
+                                      : AdminPaymentsScreen.appBg.withValues(alpha: 
                                           0.7,
                                         );
                                   final rowBg = isSelected
                                       ? AdminPaymentsScreen.actionOrange
-                                            .withOpacity(0.14)
+                                            .withValues(alpha: 0.14)
                                       : baseRowBg;
 
                                   final selectionMode =
@@ -999,7 +1000,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                                         color:
                                                             AdminPaymentsScreen
                                                                 .primaryBlue
-                                                                .withOpacity(
+                                                                .withValues(alpha: 
                                                                   0.25,
                                                                 ),
                                                       ),
@@ -1111,7 +1112,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontWeight: isStrong ? FontWeight.w900 : FontWeight.w700,
-            color: AdminPaymentsScreen.primaryBlue.withOpacity(
+            color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 
               isStrong ? 1 : 0.85,
             ),
             fontSize: 12.5,
@@ -1443,7 +1444,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           color: AdminPaymentsScreen.appBg,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: Colors.black.withOpacity(0.06),
+                            color: Colors.black.withValues(alpha: 0.06),
                           ),
                         ),
                         child: Row(
@@ -2200,7 +2201,7 @@ class _Pill extends StatelessWidget {
         color: color ?? AdminPaymentsScreen.appBg,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: borderColor ?? Colors.black.withOpacity(0.06),
+          color: borderColor ?? Colors.black.withValues(alpha: 0.06),
         ),
       ),
       child: Row(
@@ -2209,14 +2210,14 @@ class _Pill extends StatelessWidget {
           Icon(
             icon,
             size: 16,
-            color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85),
+            color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 0.85),
           ),
           const SizedBox(width: 8),
           Text(
             text,
             style: TextStyle(
               fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
-              color: AdminPaymentsScreen.primaryBlue.withOpacity(0.92),
+              color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 0.92),
               fontSize: 12.5,
             ),
           ),
@@ -2246,7 +2247,7 @@ class _SmallDropdown<T> extends StatelessWidget {
       decoration: BoxDecoration(
         color: AdminPaymentsScreen.appBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2255,7 +2256,7 @@ class _SmallDropdown<T> extends StatelessWidget {
             '$label:',
             style: TextStyle(
               fontWeight: FontWeight.w900,
-              color: AdminPaymentsScreen.primaryBlue.withOpacity(0.85),
+              color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 0.85),
               fontSize: 12,
             ),
           ),
@@ -2267,7 +2268,7 @@ class _SmallDropdown<T> extends StatelessWidget {
               onChanged: onChanged,
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                color: AdminPaymentsScreen.primaryBlue.withOpacity(0.92),
+                color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 0.92),
                 fontSize: 12.5,
               ),
             ),
@@ -2287,7 +2288,7 @@ class _TableHeaderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     TextStyle s(bool strong) => TextStyle(
       fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
-      color: AdminPaymentsScreen.primaryBlue.withOpacity(0.9),
+      color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 0.9),
       fontSize: 12,
     );
 
@@ -2517,14 +2518,14 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black.withOpacity(0.08)),
+              border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
             ),
             child: ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
               separatorBuilder: (_, _) =>
-                  Divider(height: 1, color: Colors.black.withOpacity(0.06)),
+                  Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
               itemBuilder: (context, i) {
                 final r = _results[i];
                 final name =
@@ -2539,7 +2540,7 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
                   ),
                   subtitle: Text(
                     serial,
-                    style: TextStyle(color: Colors.black.withOpacity(0.6)),
+                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
                   ),
                   onTap: () async {
                     _c.text = name;
@@ -2567,7 +2568,7 @@ class _MiniHint extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          color: Colors.black.withOpacity(0.6),
+          color: Colors.black.withValues(alpha: 0.6),
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -2589,7 +2590,7 @@ class _InfoLine extends StatelessWidget {
       decoration: BoxDecoration(
         color: AdminPaymentsScreen.appBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
       ),
       child: Row(
         children: [

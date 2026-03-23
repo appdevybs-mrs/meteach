@@ -100,7 +100,7 @@ class LearnerRemindersListScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                      border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
                     ),
                     child: Row(
                       children: [
@@ -108,10 +108,10 @@ class LearnerRemindersListScreen extends StatelessWidget {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: UiK.primaryBlue.withOpacity(0.06),
+                            color: UiK.primaryBlue.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: UiK.uiBorder.withOpacity(0.85),
+                              color: UiK.uiBorder.withValues(alpha: 0.85),
                             ),
                           ),
                           child: Icon(

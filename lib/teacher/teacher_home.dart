@@ -618,7 +618,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: p.text.withOpacity(0.72),
+                    color: p.text.withValues(alpha: 0.72),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -1107,7 +1107,7 @@ class _DrawerTile extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: palette.border.withOpacity(0.85)),
+              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             ),
             child: Row(
               children: [
@@ -1137,7 +1137,7 @@ class _DrawerTile extends StatelessWidget {
                         Text(
                           subtitle,
                           style: TextStyle(
-                            color: palette.text.withOpacity(0.55),
+                            color: palette.text.withValues(alpha: 0.55),
                             fontWeight: FontWeight.w700,
                             fontSize: 12,
                           ),
@@ -1148,7 +1148,7 @@ class _DrawerTile extends StatelessWidget {
                 ),
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: palette.text.withOpacity(0.45),
+                  color: palette.text.withValues(alpha: 0.45),
                 ),
               ],
             ),
@@ -1178,14 +1178,14 @@ class _HeroSummaryCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1197,7 +1197,7 @@ class _HeroSummaryCard extends StatelessWidget {
           Text(
             'Peace Be Upon You',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.80),
+              color: Colors.white.withValues(alpha: 0.80),
               fontWeight: FontWeight.w700,
               fontSize: 13,
             ),
@@ -1306,10 +1306,10 @@ class _OverviewPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: palette.border.withOpacity(0.75)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.75)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -1387,7 +1387,7 @@ class _OverviewStatBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.7),
+        color: palette.soft.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Stack(
@@ -1413,7 +1413,7 @@ class _OverviewStatBox extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: palette.text.withOpacity(0.65),
+                  color: palette.text.withValues(alpha: 0.65),
                   fontWeight: FontWeight.w800,
                   fontSize: 10,
                 ),
@@ -1475,10 +1475,10 @@ class _SingleDashboardActionCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: palette.border.withOpacity(0.8)),
+            border: Border.all(color: palette.border.withValues(alpha: 0.8)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 10,
                 offset: const Offset(0, 5),
               ),
@@ -1516,7 +1516,7 @@ class _SingleDashboardActionCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: palette.text.withOpacity(0.60),
+                        color: palette.text.withValues(alpha: 0.60),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -1526,7 +1526,7 @@ class _SingleDashboardActionCard extends StatelessWidget {
               ),
               Icon(
                 Icons.chevron_right_rounded,
-                color: palette.text.withOpacity(0.45),
+                color: palette.text.withValues(alpha: 0.45),
               ),
             ],
           ),
@@ -1562,10 +1562,10 @@ class _NextComingClassCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: palette.border.withOpacity(0.8)),
+            border: Border.all(color: palette.border.withValues(alpha: 0.8)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 10,
                 offset: const Offset(0, 5),
               ),
@@ -1587,7 +1587,7 @@ class _NextComingClassCard extends StatelessWidget {
                     Text(
                       'No upcoming classes found.',
                       style: TextStyle(
-                        color: palette.text.withOpacity(0.70),
+                        color: palette.text.withValues(alpha: 0.70),
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
                       ),
@@ -1645,7 +1645,7 @@ class _NextComingClassCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: palette.text.withOpacity(0.65),
+                                  color: palette.text.withValues(alpha: 0.65),
                                   fontWeight: FontWeight.w700,
                                   fontSize: 12,
                                 ),
@@ -1702,7 +1702,7 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.75),
+        color: palette.soft.withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -1750,10 +1750,10 @@ class _MiniStatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.border.withOpacity(0.65)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.65)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 6),
           ),
@@ -1809,7 +1809,7 @@ class _MiniStatCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: palette.primary.withOpacity(0.7),
+                    color: palette.primary.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                   ),

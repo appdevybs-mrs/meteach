@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class TeacherWagesScreen extends StatefulWidget {
   const TeacherWagesScreen({super.key});
@@ -104,7 +105,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             content: Text(
               'Only confirm if you really received the money from the admin.\nAfter confirming, you cannot undo it.',
               style: TextStyle(
-                color: p.text.withOpacity(0.82),
+                color: p.text.withValues(alpha: 0.82),
                 fontWeight: FontWeight.w700,
                 height: 1.4,
               ),
@@ -151,9 +152,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final v = snap.value;
       if (v is! Map) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Payment not found.')));
+        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Payment not found.')));
         return;
       }
 
@@ -162,7 +161,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final teacherId = (m['teacherId'] ?? '').toString().trim();
       if (teacherId != myUid) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           const SnackBar(
             content: Text('Not allowed: this is not your payment.'),
           ),
@@ -173,7 +172,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final adminPaid = TeacherWagesScreen.asBool(m['teacherPaid']);
       if (!adminPaid) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(context, 
           const SnackBar(
             content: Text('Admin has not marked this as PAID yet.'),
           ),
@@ -184,9 +183,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final alreadyConfirmed = TeacherWagesScreen.asBool(m['teacherConfirmed']);
       if (alreadyConfirmed) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Already confirmed ✅')));
+        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Already confirmed ✅')));
         return;
       }
 
@@ -197,7 +194,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       });
 
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(
           content: Text('Confirmed ✅'),
           duration: Duration(milliseconds: 900),
@@ -205,7 +202,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not confirm this wage item.'),
@@ -241,7 +238,7 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             Text(
               'Track paid, pending, and confirmed wages',
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -381,14 +378,14 @@ class _WagesHeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -400,7 +397,7 @@ class _WagesHeroCard extends StatelessWidget {
           Text(
             'Wages Overview',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
+              color: Colors.white.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -419,7 +416,7 @@ class _WagesHeroCard extends StatelessWidget {
           Text(
             'All payments assigned to you',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.86),
+              color: Colors.white.withValues(alpha: 0.86),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -470,9 +467,9 @@ class _HeroMiniStat extends StatelessWidget {
       width: fullWidth ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.14)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
       child: Column(
         crossAxisAlignment: fullWidth
@@ -491,7 +488,7 @@ class _HeroMiniStat extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.80),
+              color: Colors.white.withValues(alpha: 0.80),
               fontWeight: FontWeight.w700,
               fontSize: 11,
             ),
@@ -548,10 +545,10 @@ class _MonthSection extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: palette.border.withOpacity(0.88)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.88)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -628,9 +625,9 @@ class _MonthPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.8),
+        color: palette.soft.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: palette.border.withOpacity(0.75)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.75)),
       ),
       child: Text(
         '$label: $value',
@@ -681,19 +678,19 @@ class _TeacherPaymentRow extends StatelessWidget {
     if (!adminPaid) {
       chipText = 'UNPAID';
       chipBorder = Colors.red;
-      chipBg = Colors.red.withOpacity(0.12);
+      chipBg = Colors.red.withValues(alpha: 0.12);
       chipIcon = Icons.cancel_rounded;
       canTap = false;
     } else if (adminPaid && !confirmed) {
       chipText = 'PAID';
       chipBorder = Colors.green;
-      chipBg = Colors.green.withOpacity(0.15);
+      chipBg = Colors.green.withValues(alpha: 0.15);
       chipIcon = Icons.payments_rounded;
       canTap = true;
     } else {
       chipText = 'CONFIRMED';
       chipBorder = Colors.green.shade800;
-      chipBg = Colors.green.withOpacity(0.18);
+      chipBg = Colors.green.withValues(alpha: 0.18);
       chipIcon = Icons.verified_rounded;
       canTap = false;
     }
@@ -701,9 +698,9 @@ class _TeacherPaymentRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.28),
+        color: palette.soft.withValues(alpha: 0.28),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.border.withOpacity(0.75)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.75)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -714,7 +711,7 @@ class _TeacherPaymentRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.cardBg,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: palette.border.withOpacity(0.8)),
+              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
             ),
             child: Icon(Icons.person_rounded, color: palette.primary),
           ),
@@ -743,7 +740,7 @@ class _TeacherPaymentRow extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: palette.text.withOpacity(0.62),
+                    color: palette.text.withValues(alpha: 0.62),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                     height: 1.35,
@@ -777,7 +774,7 @@ class _TeacherPaymentRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: chipBg,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: chipBorder.withOpacity(0.75)),
+                  border: Border.all(color: chipBorder.withValues(alpha: 0.75)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -818,7 +815,7 @@ class _EmptyWagesState extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.cardBg,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: palette.border.withOpacity(0.86)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.86)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

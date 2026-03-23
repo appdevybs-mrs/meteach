@@ -12,6 +12,54 @@ import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 
+String _coursesRelativePathFromUrl(String rawUrl) {
+  final trimmed = rawUrl.trim();
+  if (trimmed.isEmpty) return '';
+
+  try {
+    final uri = Uri.parse(trimmed);
+    final parts = uri.pathSegments;
+    final coursesIndex = parts.indexOf('courses');
+    if (coursesIndex < 0 || coursesIndex + 1 >= parts.length) return '';
+    return parts.sublist(coursesIndex + 1).join('/');
+  } catch (_) {
+    return '';
+  }
+}
+
+Future<void> _deleteUploadedCoursesAsset(String fileUrl) async {
+  final relPath = _coursesRelativePathFromUrl(fileUrl);
+  if (relPath.isEmpty) return;
+
+  final uri = await BackendApi.withAuthQuery(
+    BackendApi.uri('delete_file_secure.php'),
+  );
+  final headers = await BackendApi.authHeaders();
+  final authFields = await BackendApi.authFormFields();
+
+  final r = await http.post(
+    uri,
+    headers: headers,
+    body: {'root': 'courses', 'path': relPath, ...authFields},
+  );
+
+  final raw = r.body.trim();
+  if (!raw.startsWith('{')) {
+    throw Exception('Delete endpoint did not return JSON.');
+  }
+
+  final data = jsonDecode(raw);
+  if (data is! Map<String, dynamic>) {
+    throw Exception('Invalid delete response.');
+  }
+
+  if (data['success'] == true) return;
+
+  final msg = (data['message'] ?? 'Delete failed').toString();
+  if (msg.toLowerCase().contains('not found')) return;
+  throw Exception(msg);
+}
+
 class AdminPublicGalleryScreen extends StatefulWidget {
   const AdminPublicGalleryScreen({super.key});
 
@@ -292,10 +340,20 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     if (!ok) return;
 
     try {
+      final snap = await _galleryRef().child(itemId).get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final url = (m['url'] ?? '').toString().trim();
+        if (url.isNotEmpty) {
+          await _deleteUploadedCoursesAsset(url);
+        }
+      }
+
       await _galleryRef().child(itemId).remove();
       if (!mounted) return;
       setState(() {
-        _ok = 'Gallery item deleted';
+        _ok = 'Gallery item deleted from server and database';
         _error = null;
       });
     } catch (e) {
@@ -433,7 +491,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: primaryBlue,
-                      side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                      side: BorderSide(color: uiBorder.withValues(alpha: 0.9)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -482,7 +540,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: uiBorder.withOpacity(0.85)),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                 ),
                 child: const Text(
                   'No public teaser items yet.',
@@ -518,7 +576,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: uiBorder.withOpacity(0.85)),
+                        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(18),
@@ -549,7 +607,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.58),
+                                  color: Colors.black.withValues(alpha: 0.58),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Row(
@@ -810,7 +868,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: uiBorder.withOpacity(0.9)),
+                      borderSide: BorderSide(color: uiBorder.withValues(alpha: 0.9)),
                     ),
                     focusedBorder: const OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(14)),
@@ -853,7 +911,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: uiBorder.withOpacity(0.85)),
+                      border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                     ),
                     child: const Text(
                       'No learners found.',
@@ -908,7 +966,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: primaryBlue,
-          unselectedLabelColor: primaryBlue.withOpacity(0.55),
+          unselectedLabelColor: primaryBlue.withValues(alpha: 0.55),
           indicatorColor: primaryBlue,
           tabs: const [
             Tab(text: 'Public Gallery'),
@@ -970,13 +1028,13 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: uiBorder.withOpacity(0.85)),
+          border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
         ),
         child: Row(
           children: [
             CircleAvatar(
               radius: 24,
-              backgroundColor: primaryBlue.withOpacity(0.08),
+              backgroundColor: primaryBlue.withValues(alpha: 0.08),
               child: Text(
                 learner.fullName.trim().isNotEmpty
                     ? learner.fullName.trim()[0].toUpperCase()
@@ -1009,7 +1067,7 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: mainText.withOpacity(0.78),
+                        color: mainText.withValues(alpha: 0.78),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -1020,7 +1078,7 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: mainText.withOpacity(0.72),
+                        color: mainText.withValues(alpha: 0.72),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -1031,7 +1089,7 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: mainText.withOpacity(0.72),
+                        color: mainText.withValues(alpha: 0.72),
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
@@ -1042,7 +1100,7 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: mainText.withOpacity(0.72),
+                      color: mainText.withValues(alpha: 0.72),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -1059,7 +1117,7 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: primaryBlue.withOpacity(0.08),
+                    color: primaryBlue.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -1352,10 +1410,20 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
     if (!ok) return;
 
     try {
+      final snap = await _galleryRef().child(itemId).get();
+      final v = snap.value;
+      if (v is Map) {
+        final m = v.map((k, vv) => MapEntry(k.toString(), vv));
+        final url = (m['url'] ?? '').toString().trim();
+        if (url.isNotEmpty) {
+          await _deleteUploadedCoursesAsset(url);
+        }
+      }
+
       await _galleryRef().child(itemId).remove();
       if (!mounted) return;
       setState(() {
-        _ok = 'Gallery item deleted';
+        _ok = 'Gallery item deleted from server and database';
         _error = null;
       });
     } catch (e) {
@@ -1481,7 +1549,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: uiBorder.withOpacity(0.85)),
+                    border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1498,7 +1566,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                       Text(
                         'Manage this learner gallery individually from admin.',
                         style: TextStyle(
-                          color: mainText.withOpacity(0.78),
+                          color: mainText.withValues(alpha: 0.78),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1563,7 +1631,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryBlue,
-                          side: BorderSide(color: uiBorder.withOpacity(0.9)),
+                          side: BorderSide(color: uiBorder.withValues(alpha: 0.9)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -1612,7 +1680,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: uiBorder.withOpacity(0.85)),
+                      border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
                     ),
                     child: const Text(
                       'No learner gallery items yet.',
@@ -1652,7 +1720,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: uiBorder.withOpacity(0.85),
+                              color: uiBorder.withValues(alpha: 0.85),
                             ),
                           ),
                           child: Column(
@@ -1688,7 +1756,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(
+                                            color: Colors.black.withValues(alpha: 
                                               0.58,
                                             ),
                                             borderRadius: BorderRadius.circular(
@@ -1740,7 +1808,7 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: mainText.withOpacity(0.72),
+                                        color: mainText.withValues(alpha: 0.72),
                                         fontWeight: FontWeight.w700,
                                         fontSize: 11,
                                       ),
@@ -1796,7 +1864,7 @@ class _AdminCountPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: _AdminLearnerGalleryScreenState.primaryBlue.withOpacity(0.08),
+        color: _AdminLearnerGalleryScreenState.primaryBlue.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -1904,7 +1972,7 @@ class _AdminVideoTileState extends State<_AdminVideoTile> {
             child: VideoPlayer(_controller!),
           ),
         ),
-        Container(color: Colors.black.withOpacity(0.18)),
+        Container(color: Colors.black.withValues(alpha: 0.18)),
         const Center(
           child: Icon(
             Icons.play_circle_fill_rounded,
@@ -2078,7 +2146,7 @@ class _AdminVideoPreviewCardState extends State<_AdminVideoPreviewCard> {
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-              color: Colors.black.withOpacity(0.88),
+              color: Colors.black.withValues(alpha: 0.88),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2256,10 +2324,10 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         border: Border(
                           top: BorderSide(
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),
@@ -2406,10 +2474,10 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         border: Border(
                           top: BorderSide(
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),

@@ -12,6 +12,7 @@ import '../shared/human_error.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
+import '../shared/app_feedback.dart';
 
 enum _LeaveChoice { save, discard, cancel }
 
@@ -279,7 +280,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
     final remaining = _maxExtraPhotos - _photoUrls.length;
     if (remaining <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(
           content: Text('You already reached the 6 extra photo limit.'),
         ),
@@ -772,9 +773,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       if (!mounted) return true;
       if (showSuccessSnackBar) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Profile updated ✅')));
+        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Profile updated ✅')));
       }
       await _load();
       return true;
@@ -835,7 +834,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         ),
         content: Text(
           'You have profile changes. Save before leaving or discard them?',
-          style: TextStyle(color: p.text.withOpacity(0.8)),
+          style: TextStyle(color: p.text.withValues(alpha: 0.8)),
         ),
         actions: [
           TextButton(
@@ -922,7 +921,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         content: Text(
           message,
           style: TextStyle(
-            color: p.text.withOpacity(0.75),
+            color: p.text.withValues(alpha: 0.75),
             fontWeight: FontWeight.w700,
             height: 1.4,
           ),
@@ -957,9 +956,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final p = palette;
 
     if (currentUser == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('You must be logged in.')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('You must be logged in.')));
       return;
     }
 
@@ -1018,7 +1015,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 if (!mounted) return;
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppToast.fromSnackBar(context, 
                   const SnackBar(content: Text('Password updated ✅')),
                 );
               } on FirebaseAuthException catch (e) {
@@ -1030,15 +1027,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                       'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(msg)));
+                  AppToast.fromSnackBar(context,  SnackBar(content: Text(msg)));
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(toHumanError(e))));
+                  AppToast.fromSnackBar(context,  SnackBar(content: Text(toHumanError(e))));
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
@@ -1071,7 +1064,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                       Text(
                         'Min 8 characters + at least 1 special character.',
                         style: TextStyle(
-                          color: p.text.withOpacity(0.7),
+                          color: p.text.withValues(alpha: 0.7),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1163,7 +1156,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         Text(
           label,
           style: TextStyle(
-            color: palette.text.withOpacity(0.75),
+            color: palette.text.withValues(alpha: 0.75),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -1183,7 +1176,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: palette.border.withOpacity(0.85)),
+              borderSide: BorderSide(color: palette.border.withValues(alpha: 0.85)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
@@ -1370,7 +1363,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             child: Text(
               label,
               style: TextStyle(
-                color: p.text.withOpacity(0.7),
+                color: p.text.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1404,7 +1397,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         Text(
           label,
           style: TextStyle(
-            color: p.text.withOpacity(0.75),
+            color: p.text.withValues(alpha: 0.75),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -1427,7 +1420,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: p.border.withOpacity(0.85)),
+              borderSide: BorderSide(color: p.border.withValues(alpha: 0.85)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
@@ -1458,7 +1451,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       onSelected: (_) => onTap(),
       selectedColor: p.accent,
       backgroundColor: p.cardBg,
-      side: BorderSide(color: selected ? p.accent : p.border.withOpacity(0.9)),
+      side: BorderSide(color: selected ? p.accent : p.border.withValues(alpha: 0.9)),
       checkmarkColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       showCheckmark: false,
@@ -1489,7 +1482,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         Text(
           subtitle,
           style: TextStyle(
-            color: p.text.withOpacity(0.65),
+            color: p.text.withValues(alpha: 0.65),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1533,7 +1526,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         Text(
           subtitle,
           style: TextStyle(
-            color: p.text.withOpacity(0.65),
+            color: p.text.withValues(alpha: 0.65),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1564,9 +1557,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: p.soft.withOpacity(0.55),
+        color: p.soft.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withOpacity(0.9)),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1664,7 +1657,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             label: const Text('Clear selections'),
             style: OutlinedButton.styleFrom(
               foregroundColor: p.primary,
-              side: BorderSide(color: p.border.withOpacity(0.9)),
+              side: BorderSide(color: p.border.withValues(alpha: 0.9)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -1686,14 +1679,14 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.18),
+            color: p.primary.withValues(alpha: 0.18),
             blurRadius: 22,
             offset: const Offset(0, 12),
           ),
@@ -1707,10 +1700,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: Colors.white.withOpacity(0.80),
+                color: Colors.white.withValues(alpha: 0.80),
                 width: 3,
               ),
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
             ),
             clipBehavior: Clip.antiAlias,
             child: hasPhoto
@@ -1743,7 +1736,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
           Text(
             role.isEmpty ? 'Learner' : role,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
+              color: Colors.white.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1772,8 +1765,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
-                  side: BorderSide(color: Colors.white.withOpacity(0.35)),
-                  backgroundColor: Colors.white.withOpacity(0.10),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+                  backgroundColor: Colors.white.withValues(alpha: 0.10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -1789,8 +1782,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   label: const Text('Remove'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withOpacity(0.28)),
-                    backgroundColor: Colors.white.withOpacity(0.08),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.28)),
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -1828,7 +1821,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   height: 96,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: p.border.withOpacity(0.85)),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
                     color: p.soft,
                   ),
                   clipBehavior: Clip.antiAlias,
@@ -1851,7 +1844,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                     borderRadius: BorderRadius.circular(999),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
+                        color: Colors.black.withValues(alpha: 0.55),
                         shape: BoxShape.circle,
                       ),
                       padding: const EdgeInsets.all(5),
@@ -1917,8 +1910,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withOpacity(0.85)),
-        color: p.soft.withOpacity(0.5),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        color: p.soft.withValues(alpha: 0.5),
       ),
       child: Row(
         children: [
@@ -1926,7 +1919,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: p.accent.withOpacity(0.12),
+              color: p.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, size: 18, color: p.accent),
@@ -1936,7 +1929,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             child: Text(
               label,
               style: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -2023,7 +2016,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   label: const Text('Change password'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: p.primary,
-                    side: BorderSide(color: p.border.withOpacity(0.9)),
+                    side: BorderSide(color: p.border.withValues(alpha: 0.9)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -2140,7 +2133,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
             bottom: TabBar(
               dividerColor: Colors.transparent,
               labelColor: p.primary,
-              unselectedLabelColor: p.text.withOpacity(0.62),
+              unselectedLabelColor: p.text.withValues(alpha: 0.62),
               indicator: UnderlineTabIndicator(
                 borderSide: BorderSide(color: p.accent, width: 3),
                 insets: const EdgeInsets.symmetric(horizontal: 20),
@@ -2165,7 +2158,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                             color: p.cardBg,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: p.border.withOpacity(0.85),
+                              color: p.border.withValues(alpha: 0.85),
                             ),
                           ),
                           child: Text(
@@ -2223,10 +2216,10 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.cardBg,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: palette.border.withOpacity(0.85)),
+        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -2265,7 +2258,7 @@ class _SectionCard extends StatelessWidget {
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: palette.text.withOpacity(0.64),
+                          color: palette.text.withValues(alpha: 0.64),
                           fontWeight: FontWeight.w700,
                           height: 1.35,
                         ),

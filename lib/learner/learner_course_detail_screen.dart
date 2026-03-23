@@ -33,6 +33,7 @@ import 'learner_homework_screen.dart';
 import '../shared/human_error.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
+import '../shared/app_feedback.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2 ...
@@ -1036,8 +1037,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-                    color: UiK.primaryBlue.withOpacity(0.04),
+                    border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+                    color: UiK.primaryBlue.withValues(alpha: 0.04),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1087,7 +1088,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: UiK.uiBorder.withOpacity(0.85),
+                            color: UiK.uiBorder.withValues(alpha: 0.85),
                           ),
                           color: Colors.white,
                         ),
@@ -1160,7 +1161,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
         color: Colors.white,
       ),
       child: ClipRRect(
@@ -1168,13 +1169,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         child: Table(
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           border: TableBorder(
-            horizontalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
-            verticalInside: BorderSide(color: UiK.uiBorder.withOpacity(0.65)),
+            horizontalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
+            verticalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
           ),
           children: [
             TableRow(
               decoration: BoxDecoration(
-                color: UiK.primaryBlue.withOpacity(0.04),
+                color: UiK.primaryBlue.withValues(alpha: 0.04),
               ),
               children: [
                 cell('Sessions paid', strong: true),
@@ -1202,7 +1203,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           child: Text(
             k,
             style: TextStyle(
-              color: UiK.mainText.withOpacity(0.70),
+              color: UiK.mainText.withValues(alpha: 0.70),
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -1229,8 +1230,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.red.withOpacity(0.35)),
-        color: Colors.red.withOpacity(0.08),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+        color: Colors.red.withValues(alpha: 0.08),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1252,7 +1253,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 Text(
                   msg,
                   style: TextStyle(
-                    color: UiK.mainText.withOpacity(0.75),
+                    color: UiK.mainText.withValues(alpha: 0.75),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1361,8 +1362,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final isPresent = status == 'present';
 
     final tagBg = isOnline
-        ? UiK.actionOrange.withOpacity(0.10)
-        : UiK.primaryBlue.withOpacity(0.08);
+        ? UiK.actionOrange.withValues(alpha: 0.10)
+        : UiK.primaryBlue.withValues(alpha: 0.08);
     final tagFg = isOnline ? UiK.actionOrange : UiK.primaryBlue;
     final tagText = isOnline ? 'Online' : 'In-class';
 
@@ -1380,7 +1381,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           children: [
             CircleAvatar(
               backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red)
-                  .withOpacity(0.08),
+                  .withValues(alpha: 0.08),
               child: Icon(
                 isPresent ? Icons.check_rounded : Icons.close_rounded,
                 color: isPresent ? UiK.primaryBlue : Colors.red,
@@ -1409,7 +1410,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           borderRadius: BorderRadius.circular(999),
                           color: tagBg,
                           border: Border.all(
-                            color: UiK.uiBorder.withOpacity(0.85),
+                            color: UiK.uiBorder.withValues(alpha: 0.85),
                           ),
                         ),
                         child: Row(
@@ -1454,7 +1455,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     Text(
                       'Unit: $unitTitle',
                       style: TextStyle(
-                        color: UiK.mainText.withOpacity(0.6),
+                        color: UiK.mainText.withValues(alpha: 0.6),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1468,9 +1469,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: UiK.uiBorder.withOpacity(0.85),
+                          color: UiK.uiBorder.withValues(alpha: 0.85),
                         ),
-                        color: UiK.primaryBlue.withOpacity(0.04),
+                        color: UiK.primaryBlue.withValues(alpha: 0.04),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1617,7 +1618,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         ? 0
                         : (coveredLessons / totalLessons).clamp(0, 1),
                     minHeight: 10,
-                    backgroundColor: UiK.primaryBlue.withOpacity(0.10),
+                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
                     valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
                   ),
                 ),
@@ -1671,21 +1672,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         ? 'In progress'
         : 'Not started';
     final statusBg = completed
-        ? UiK.primaryBlue.withOpacity(0.10)
+        ? UiK.primaryBlue.withValues(alpha: 0.10)
         : started
-        ? UiK.actionOrange.withOpacity(0.10)
-        : UiK.uiBorder.withOpacity(0.18);
+        ? UiK.actionOrange.withValues(alpha: 0.10)
+        : UiK.uiBorder.withValues(alpha: 0.18);
     final statusFg = completed
         ? UiK.primaryBlue
         : started
         ? UiK.actionOrange
-        : UiK.primaryBlue.withOpacity(0.7);
+        : UiK.primaryBlue.withValues(alpha: 0.7);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
         color: Colors.white,
       ),
       child: ClipRRect(
@@ -1699,7 +1700,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             leading: CircleAvatar(
-              backgroundColor: UiK.primaryBlue.withOpacity(0.08),
+              backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
               child: Icon(
                 completed ? Icons.verified_rounded : Icons.folder_open_rounded,
                 color: UiK.primaryBlue,
@@ -1726,7 +1727,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                               ? 0
                               : (unitPassed / unitTotal).clamp(0, 1),
                           minHeight: 8,
-                          backgroundColor: UiK.primaryBlue.withOpacity(0.08),
+                          backgroundColor: UiK.primaryBlue.withValues(alpha: 0.08),
                           valueColor: const AlwaysStoppedAnimation(
                             UiK.actionOrange,
                           ),
@@ -1737,7 +1738,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     Text(
                       '$unitPassed/$unitTotal',
                       style: TextStyle(
-                        color: UiK.mainText.withOpacity(0.75),
+                        color: UiK.mainText.withValues(alpha: 0.75),
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -1796,7 +1797,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
           color: Colors.white,
         ),
         child: Row(
@@ -1804,12 +1805,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           children: [
             CircleAvatar(
               backgroundColor: (passed ? UiK.primaryBlue : UiK.uiBorder)
-                  .withOpacity(0.10),
+                  .withValues(alpha: 0.10),
               child: Icon(
                 passed ? Icons.check_circle_rounded : Icons.schedule_rounded,
                 color: passed
                     ? UiK.primaryBlue
-                    : UiK.primaryBlue.withOpacity(0.55),
+                    : UiK.primaryBlue.withValues(alpha: 0.55),
               ),
             ),
             const SizedBox(width: 12),
@@ -1838,17 +1839,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         text: statusText,
                         fg: passed
                             ? UiK.primaryBlue
-                            : UiK.primaryBlue.withOpacity(0.75),
+                            : UiK.primaryBlue.withValues(alpha: 0.75),
                         bg: passed
-                            ? UiK.primaryBlue.withOpacity(0.10)
-                            : UiK.uiBorder.withOpacity(0.18),
+                            ? UiK.primaryBlue.withValues(alpha: 0.10)
+                            : UiK.uiBorder.withValues(alpha: 0.18),
                       ),
                       if (hw.isNotEmpty)
                         _miniChip(
                           icon: Icons.assignment_rounded,
                           text: 'Homework',
                           fg: UiK.actionOrange,
-                          bg: UiK.actionOrange.withOpacity(0.10),
+                          bg: UiK.actionOrange.withValues(alpha: 0.10),
                         ),
                     ],
                   ),
@@ -1857,7 +1858,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     Text(
                       objective,
                       style: TextStyle(
-                        color: UiK.mainText.withOpacity(0.70),
+                        color: UiK.mainText.withValues(alpha: 0.70),
                         fontWeight: FontWeight.w700,
                       ),
                       maxLines: 2,
@@ -1870,7 +1871,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             const SizedBox(width: 10),
             Icon(
               Icons.chevron_right_rounded,
-              color: UiK.primaryBlue.withOpacity(0.65),
+              color: UiK.primaryBlue.withValues(alpha: 0.65),
             ),
           ],
         ),
@@ -1912,7 +1913,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(22),
                   ),
-                  border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+                  border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
                 ),
                 child: Column(
                   children: [
@@ -1922,7 +1923,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         width: 48,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: UiK.uiBorder.withOpacity(0.9),
+                          color: UiK.uiBorder.withValues(alpha: 0.9),
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
@@ -1955,14 +1956,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                             (passed
                                                     ? UiK.primaryBlue
                                                     : UiK.uiBorder)
-                                                .withOpacity(0.10),
+                                                .withValues(alpha: 0.10),
                                         child: Icon(
                                           passed
                                               ? Icons.check_circle_rounded
                                               : Icons.schedule_rounded,
                                           color: passed
                                               ? UiK.primaryBlue
-                                              : UiK.primaryBlue.withOpacity(
+                                              : UiK.primaryBlue.withValues(alpha: 
                                                   0.6,
                                                 ),
                                         ),
@@ -2000,12 +2001,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                                   fg: passed
                                                       ? UiK.primaryBlue
                                                       : UiK.primaryBlue
-                                                            .withOpacity(0.75),
+                                                            .withValues(alpha: 0.75),
                                                   bg: passed
                                                       ? UiK.primaryBlue
-                                                            .withOpacity(0.10)
+                                                            .withValues(alpha: 0.10)
                                                       : UiK.uiBorder
-                                                            .withOpacity(0.18),
+                                                            .withValues(alpha: 0.18),
                                                 ),
                                               ],
                                             ),
@@ -2058,9 +2059,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                                                 ClipboardData(text: hw),
                                               );
                                               if (!mounted) return;
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
+                                              AppToast.fromSnackBar(context,  
                                                 const SnackBar(
                                                   content: Text(
                                                     'Homework copied',
@@ -2123,10 +2122,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
+            border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
             color: submission
-                ? UiK.actionOrange.withOpacity(0.07)
-                : UiK.primaryBlue.withOpacity(0.04),
+                ? UiK.actionOrange.withValues(alpha: 0.07)
+                : UiK.primaryBlue.withValues(alpha: 0.04),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2265,8 +2264,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-        color: bg ?? UiK.primaryBlue.withOpacity(0.05),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+        color: bg ?? UiK.primaryBlue.withValues(alpha: 0.05),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2300,7 +2299,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: bg,
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.70)),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2329,8 +2328,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: UiK.uiBorder.withOpacity(0.85)),
-        color: UiK.primaryBlue.withOpacity(0.04),
+        border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+        color: UiK.primaryBlue.withValues(alpha: 0.04),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2348,7 +2347,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           Text(
             label,
             style: TextStyle(
-              color: UiK.mainText.withOpacity(0.7),
+              color: UiK.mainText.withValues(alpha: 0.7),
               fontWeight: FontWeight.w700,
             ),
           ),

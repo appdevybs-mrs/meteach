@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class PaymentDialogShared {
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
@@ -82,7 +83,7 @@ class PaymentDialogShared {
   // ---------- Small helpers ----------
 
   static void _snack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppToast.fromSnackBar(context, 
       SnackBar(
         content: Text(humanizeUiMessage(msg)),
         duration: const Duration(milliseconds: 900),
@@ -1484,7 +1485,7 @@ class PaymentDialogShared {
                           color: const Color(0xFFF4F7F9),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: Colors.black.withOpacity(0.06),
+                            color: Colors.black.withValues(alpha: 0.06),
                           ),
                         ),
                         child: Row(
@@ -1958,7 +1959,7 @@ class _MiniHint extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          color: Colors.black.withOpacity(0.6),
+          color: Colors.black.withValues(alpha: 0.6),
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -1980,7 +1981,7 @@ class _InfoLine extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFF4F7F9),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
       ),
       child: Row(
         children: [
@@ -2187,14 +2188,14 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black.withOpacity(0.08)),
+              border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
             ),
             child: ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
               separatorBuilder: (_, _) =>
-                  Divider(height: 1, color: Colors.black.withOpacity(0.06)),
+                  Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
               itemBuilder: (context, i) {
                 final r = _results[i];
                 final name =
@@ -2210,7 +2211,7 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
                   ),
                   subtitle: Text(
                     serial,
-                    style: TextStyle(color: Colors.black.withOpacity(0.6)),
+                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
                   ),
                   onTap: () async {
                     _c.text = name;

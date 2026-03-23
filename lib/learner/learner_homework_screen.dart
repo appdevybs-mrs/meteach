@@ -385,7 +385,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: fg.withOpacity(0.25)),
+        border: Border.all(color: fg.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -461,10 +461,10 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   // ---------- New: coloring helpers ----------
   Color _gradeTint(String grade) {
     final g = grade.trim().toUpperCase();
-    if (g == 'A') return Colors.green.withOpacity(0.08);
-    if (g == 'B') return Colors.blue.withOpacity(0.08);
-    if (g == 'C') return Colors.orange.withOpacity(0.10);
-    if (g == 'D') return Colors.red.withOpacity(0.08);
+    if (g == 'A') return Colors.green.withValues(alpha: 0.08);
+    if (g == 'B') return Colors.blue.withValues(alpha: 0.08);
+    if (g == 'C') return Colors.orange.withValues(alpha: 0.10);
+    if (g == 'D') return Colors.red.withValues(alpha: 0.08);
     return Colors.white;
   }
 
@@ -486,17 +486,17 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: UiK.uiBorder.withOpacity(0.7)),
+          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.7)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: UiK.primaryBlue.withOpacity(0.85)),
+            Icon(icon, size: 18, color: UiK.primaryBlue.withValues(alpha: 0.85)),
             const SizedBox(width: 8),
             Text(
               '$label: ',
               style: TextStyle(
-                color: UiK.mainText.withOpacity(0.75),
+                color: UiK.mainText.withValues(alpha: 0.75),
                 fontWeight: FontWeight.w800,
                 fontSize: 12,
               ),
@@ -661,7 +661,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                   // - else if reviewed + grade -> grade tint
                   // - else white
                   final Color cardBg = isRedo
-                      ? Colors.red.withOpacity(0.06)
+                      ? Colors.red.withValues(alpha: 0.06)
                       : (isReviewed && reviewGrade.isNotEmpty
                             ? _gradeTint(reviewGrade)
                             : Colors.white);
@@ -677,14 +677,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                       if (isRedo) {
                         return _statusBadge(
                           text: 'Redo',
-                          bg: Colors.red.withOpacity(0.10),
+                          bg: Colors.red.withValues(alpha: 0.10),
                           fg: Colors.red,
                           icon: Icons.refresh_rounded,
                         );
                       }
                       return _statusBadge(
                         text: 'Passed',
-                        bg: Colors.green.withOpacity(0.10),
+                        bg: Colors.green.withValues(alpha: 0.10),
                         fg: Colors.green,
                         icon: Icons.check_circle_rounded,
                       );
@@ -693,7 +693,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                     if (submittedAt != null) {
                       return _statusBadge(
                         text: 'Submitted',
-                        bg: Colors.amber.withOpacity(0.15),
+                        bg: Colors.amber.withValues(alpha: 0.15),
                         fg: Colors.orange,
                         icon: Icons.upload_file_rounded,
                       );
@@ -701,7 +701,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
                     return _statusBadge(
                       text: 'Not submitted',
-                      bg: Colors.red.withOpacity(0.08),
+                      bg: Colors.red.withValues(alpha: 0.08),
                       fg: Colors.red,
                       icon: Icons.error_outline_rounded,
                     );
@@ -738,7 +738,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                       child: Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: accent.withOpacity(0.22)),
+                          border: Border.all(color: accent.withValues(alpha: 0.22)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(14),
@@ -764,7 +764,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                               ? Icons.expand_less_rounded
                                               : Icons.expand_more_rounded,
                                           size: 20,
-                                          color: UiK.primaryBlue.withOpacity(
+                                          color: UiK.primaryBlue.withValues(alpha: 
                                             0.7,
                                           ),
                                         ),
@@ -781,13 +781,13 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     Icon(
                                       Icons.check_circle_rounded,
                                       size: 18,
-                                      color: UiK.primaryBlue.withOpacity(0.85),
+                                      color: UiK.primaryBlue.withValues(alpha: 0.85),
                                     )
                                   else if (isSeen)
                                     Icon(
                                       Icons.visibility_rounded,
                                       size: 18,
-                                      color: UiK.actionOrange.withOpacity(0.85),
+                                      color: UiK.actionOrange.withValues(alpha: 0.85),
                                     ),
                                 ],
                               ),
@@ -862,7 +862,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     Text(
                                       'Teacher asked you to redo this homework.',
                                       style: TextStyle(
-                                        color: Colors.red.withOpacity(0.85),
+                                        color: Colors.red.withValues(alpha: 0.85),
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -873,7 +873,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                       'Teacher note:',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w900,
-                                        color: UiK.mainText.withOpacity(0.9),
+                                        color: UiK.mainText.withValues(alpha: 0.9),
                                       ),
                                     ),
                                     const SizedBox(height: 6),

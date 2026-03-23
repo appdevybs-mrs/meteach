@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 import 'app_theme.dart';
+import 'app_feedback.dart';
 
 class SharedPdfReaderScreen extends StatefulWidget {
   const SharedPdfReaderScreen({
@@ -76,7 +77,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
               child: Text(
                 'Cancel',
                 style: TextStyle(
-                  color: p.text.withOpacity(0.75),
+                  color: p.text.withValues(alpha: 0.75),
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -97,7 +98,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
     if (result == null) return;
     if (result < 1 || result > _pageCount) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(content: Text('Enter a page between 1 and $_pageCount')),
       );
       return;
@@ -192,7 +193,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                   ? 'Page $_pageNumber of $_pageCount'
                   : 'PDF Reader',
               style: TextStyle(
-                color: p.text.withOpacity(0.62),
+                color: p.text.withValues(alpha: 0.62),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -271,7 +272,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
               children: [
                 Positioned.fill(
                   child: Container(
-                    color: p.soft.withOpacity(0.35),
+                    color: p.soft.withValues(alpha: 0.35),
                     child: SfPdfViewer.network(
                       widget.pdfUrl,
                       controller: _pdfController,
@@ -314,17 +315,17 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                 if (_loading)
                   Positioned.fill(
                     child: Container(
-                      color: p.appBg.withOpacity(0.78),
+                      color: p.appBg.withValues(alpha: 0.78),
                       alignment: Alignment.center,
                       child: Container(
                         padding: const EdgeInsets.all(22),
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: p.border.withOpacity(0.85)),
+                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
+                              color: Colors.black.withValues(alpha: 0.05),
                               blurRadius: 16,
                               offset: const Offset(0, 8),
                             ),
@@ -347,7 +348,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                             Text(
                               'Please wait while the PDF loads',
                               style: TextStyle(
-                                color: p.text.withOpacity(0.68),
+                                color: p.text.withValues(alpha: 0.68),
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -359,7 +360,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                 if (_error != null)
                   Positioned.fill(
                     child: Container(
-                      color: p.appBg.withOpacity(0.88),
+                      color: p.appBg.withValues(alpha: 0.88),
                       alignment: Alignment.center,
                       padding: const EdgeInsets.all(20),
                       child: Container(
@@ -369,7 +370,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: p.border.withOpacity(0.85)),
+                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -477,7 +478,7 @@ class _TopActionChip extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: p.border.withOpacity(0.85)),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

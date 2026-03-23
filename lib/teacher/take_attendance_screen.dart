@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -461,7 +462,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Future<void> _openSyllabusLessonPickerToAdd() async {
     if (_syllabiSessions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(
           content: Text('No syllabus sessions found for this course'),
         ),
@@ -708,9 +709,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tint.withOpacity(0.08),
+        color: tint.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: tint.withOpacity(0.25)),
+        border: Border.all(color: tint.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -732,13 +733,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Future<void> _saveAttendance() async {
     if (_classId.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Missing class id')));
+      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Missing class id')));
       return;
     }
     if (_taughtItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         const SnackBar(content: Text('Please add at least 1 taught lesson')),
       );
       return;
@@ -924,7 +923,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       await _db.update(updates);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(context, 
         SnackBar(content: Text(_isEdit ? 'Updated ✅' : 'Saved ✅')),
       );
       Navigator.pop(context);
@@ -947,7 +946,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
           width: 6,
           height: 14,
           decoration: BoxDecoration(
-            color: actionOrange.withOpacity(0.9),
+            color: actionOrange.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(99),
           ),
         ),
@@ -1018,7 +1017,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   Text(
                     'Auto',
                     style: TextStyle(
-                      color: Colors.black.withOpacity(0.55),
+                      color: Colors.black.withValues(alpha: 0.55),
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -1037,7 +1036,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             if (_taughtItems.isEmpty)
               Text(
                 "No lessons added yet.",
-                style: TextStyle(color: Colors.black.withOpacity(0.6)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
               )
             else
               Column(
@@ -1061,7 +1060,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                         children: [
                           CircleAvatar(
                             radius: 16,
-                            backgroundColor: actionOrange.withOpacity(0.12),
+                            backgroundColor: actionOrange.withValues(alpha: 0.12),
                             child: const Icon(
                               Icons.edit_note,
                               color: actionOrange,
@@ -1085,7 +1084,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                                   Text(
                                     notes,
                                     style: TextStyle(
-                                      color: Colors.black.withOpacity(0.65),
+                                      color: Colors.black.withValues(alpha: 0.65),
                                     ),
                                   ),
                                 ],
@@ -1386,8 +1385,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         ),
         leading: CircleAvatar(
           backgroundColor: isPresent
-              ? Colors.green.withOpacity(0.1)
-              : Colors.red.withOpacity(0.1),
+              ? Colors.green.withValues(alpha: 0.1)
+              : Colors.red.withValues(alpha: 0.1),
           child: Icon(
             isPresent ? Icons.check : Icons.close,
             color: isPresent ? Colors.green : Colors.red,

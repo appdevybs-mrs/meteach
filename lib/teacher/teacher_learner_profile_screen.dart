@@ -415,7 +415,7 @@ class _TeacherLearnerProfileScreenState
             child: Text(
               label,
               style: TextStyle(
-                color: p.text.withOpacity(0.7),
+                color: p.text.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -446,8 +446,8 @@ class _TeacherLearnerProfileScreenState
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withOpacity(0.85)),
-        color: p.primary.withOpacity(0.04),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        color: p.primary.withValues(alpha: 0.04),
       ),
       child: Row(
         children: [
@@ -455,7 +455,7 @@ class _TeacherLearnerProfileScreenState
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
+              color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, size: 18, color: color),
@@ -465,7 +465,7 @@ class _TeacherLearnerProfileScreenState
             child: Text(
               label,
               style: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -490,14 +490,14 @@ class _TeacherLearnerProfileScreenState
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [p.primary, p.primary.withOpacity(0.88)],
+          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: p.primary.withOpacity(0.16),
+            color: p.primary.withValues(alpha: 0.16),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -511,7 +511,7 @@ class _TeacherLearnerProfileScreenState
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white24, width: 2),
-              color: Colors.white.withOpacity(0.10),
+              color: Colors.white.withValues(alpha: 0.10),
             ),
             clipBehavior: Clip.antiAlias,
             child: (_profilePhotoUrl ?? '').isNotEmpty
@@ -544,7 +544,7 @@ class _TeacherLearnerProfileScreenState
           Text(
             role,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.84),
+              color: Colors.white.withValues(alpha: 0.84),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -572,7 +572,7 @@ class _TeacherLearnerProfileScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white24),
       ),
@@ -600,10 +600,10 @@ class _TeacherLearnerProfileScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.8)),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -625,7 +625,7 @@ class _TeacherLearnerProfileScreenState
             Text(
               'No extra photos yet.',
               style: TextStyle(
-                color: p.text.withOpacity(0.7),
+                color: p.text.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w700,
               ),
             )
@@ -648,7 +648,7 @@ class _TeacherLearnerProfileScreenState
                       alignment: Alignment.center,
                       child: Icon(
                         Icons.broken_image_outlined,
-                        color: p.primary.withOpacity(0.55),
+                        color: p.primary.withValues(alpha: 0.55),
                       ),
                     ),
                   ),
@@ -668,10 +668,10 @@ class _TeacherLearnerProfileScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.8)),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -692,9 +692,9 @@ class _TeacherLearnerProfileScreenState
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: p.primary.withOpacity(0.04),
+              color: p.primary.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: p.border.withOpacity(0.85)),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -702,7 +702,7 @@ class _TeacherLearnerProfileScreenState
                 Text(
                   'Attendance Health',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.7),
+                    color: p.text.withValues(alpha: 0.7),
                     fontWeight: FontWeight.w800,
                     fontSize: 12,
                   ),
@@ -735,7 +735,7 @@ class _TeacherLearnerProfileScreenState
                   child: LinearProgressIndicator(
                     value: (_statAttendancePct / 100).clamp(0, 1),
                     minHeight: 10,
-                    backgroundColor: attendanceColor.withOpacity(0.12),
+                    backgroundColor: attendanceColor.withValues(alpha: 0.12),
                     valueColor: AlwaysStoppedAnimation(attendanceColor),
                   ),
                 ),
@@ -779,10 +779,10 @@ class _TeacherLearnerProfileScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.8)),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -827,10 +827,10 @@ class _TeacherLearnerProfileScreenState
       decoration: BoxDecoration(
         color: p.cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withOpacity(0.8)),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -871,7 +871,7 @@ class _TeacherLearnerProfileScreenState
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
             border: Border.all(
-              color: const Color(0xFFEF4444).withOpacity(0.20),
+              color: const Color(0xFFEF4444).withValues(alpha: 0.20),
             ),
           ),
           child: Column(

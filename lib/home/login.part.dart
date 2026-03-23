@@ -21,12 +21,15 @@ class LoginScreen extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: Center(
+                child: Align(
+                  alignment: Alignment.topCenter,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 560),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                       child: SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: EdgeInsets.only(
                           bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                         ),
@@ -63,12 +66,15 @@ class _ClassroomHomeState extends State<ClassroomHome> {
         children: [
           const SimpleTopBar(title: 'Classroom'),
           Expanded(
-            child: Center(
+            child: Align(
+              alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                   child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                     ),
@@ -88,7 +94,9 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                                     width: 54,
                                     height: 54,
                                     decoration: BoxDecoration(
-                                      color: Brand.accentCyan.withOpacity(0.12),
+                                      color: Brand.accentCyan.withValues(
+                                        alpha: 0.12,
+                                      ),
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(color: Brand.uiBorder),
                                     ),
@@ -113,8 +121,8 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                                         .textTheme
                                         .bodyMedium
                                         ?.copyWith(
-                                          color: Brand.mainText.withOpacity(
-                                            0.75,
+                                          color: Brand.mainText.withValues(
+                                            alpha: 0.75,
                                           ),
                                           height: 1.4,
                                         ),
@@ -302,9 +310,10 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         failedAttempts = 0;
       });
 
-      ScaffoldMessenger.of(
+      AppToast.fromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Welcome back!')));
+        const SnackBar(content: Text('Welcome back!')),
+      );
 
       Navigator.of(context).pop();
     } on FirebaseAuthException catch (e) {
@@ -429,7 +438,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       if (!mounted) return;
       setState(() => loading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text(
             'If an account exists for that email, a reset link has been sent.',
@@ -440,7 +450,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       if (!mounted) return;
       setState(() => loading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text(
             'If an account exists for that email, a reset link has been sent.',
@@ -451,7 +462,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
       if (!mounted) return;
       setState(() => loading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text(
             'If an account exists for that email, a reset link has been sent.',
@@ -468,9 +480,10 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     final uri = Uri.parse('https://wa.me/$n');
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(
+      AppToast.fromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Could not open WhatsApp.')));
+        const SnackBar(content: Text('Could not open WhatsApp.')),
+      );
     }
   }
 
@@ -481,7 +494,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Could not open email app.')),
       );
     }
@@ -504,7 +518,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           textAlign: TextAlign.center,
           style: TextStyle(
             fontWeight: FontWeight.w800,
-            color: Brand.mainText.withOpacity(0.75),
+            color: Brand.mainText.withValues(alpha: 0.75),
           ),
         ),
         const SizedBox(height: 8),
@@ -551,7 +565,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                   border: Border.all(color: Brand.uiBorder),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 18,
                       offset: const Offset(0, 10),
                     ),
@@ -623,9 +637,11 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Brand.actionOrange.withOpacity(0.10),
+              color: Brand.actionOrange.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.actionOrange.withOpacity(0.35)),
+              border: Border.all(
+                color: Brand.actionOrange.withValues(alpha: 0.35),
+              ),
             ),
             child: Row(
               children: [
@@ -648,7 +664,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Brand.accentCyan.withOpacity(0.06),
+            color: Brand.accentCyan.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Brand.uiBorder),
           ),
@@ -658,7 +674,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: Brand.primaryBlue.withOpacity(0.08),
+                  color: Brand.primaryBlue.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Brand.uiBorder),
                 ),
@@ -734,9 +750,9 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: cs.error.withOpacity(0.08),
+              color: cs.error.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: cs.error.withOpacity(0.35)),
+              border: Border.all(color: cs.error.withValues(alpha: 0.35)),
             ),
             child: Row(
               children: [

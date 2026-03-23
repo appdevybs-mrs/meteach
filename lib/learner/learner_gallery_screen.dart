@@ -105,7 +105,7 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: uiBorder.withOpacity(0.85),
+                              color: uiBorder.withValues(alpha: 0.85),
                             ),
                           ),
                           child: const Text(
@@ -165,7 +165,7 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: uiBorder.withOpacity(0.85),
+                              color: uiBorder.withValues(alpha: 0.85),
                             ),
                           ),
                           child: ClipRRect(
@@ -197,7 +197,7 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
                                       vertical: 6,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.58),
+                                      color: Colors.black.withValues(alpha: 0.58),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
@@ -333,7 +333,7 @@ class _LearnerVideoTileState extends State<_LearnerVideoTile> {
             child: VideoPlayer(_controller!),
           ),
         ),
-        Container(color: Colors.black.withOpacity(0.18)),
+        Container(color: Colors.black.withValues(alpha: 0.18)),
         const Center(
           child: Icon(
             Icons.play_circle_fill_rounded,
@@ -509,7 +509,7 @@ class _LearnerVideoPreviewCardState extends State<_LearnerVideoPreviewCard> {
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-              color: Colors.black.withOpacity(0.88),
+              color: Colors.black.withValues(alpha: 0.88),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -669,10 +669,10 @@ class _LearnerGalleryViewerScreen extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         border: Border(
                           top: BorderSide(
-                            color: Colors.white.withOpacity(0.12),
+                            color: Colors.white.withValues(alpha: 0.12),
                           ),
                         ),
                       ),

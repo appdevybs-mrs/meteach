@@ -244,7 +244,7 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
             Text(
               'Browse course outlines and available variants',
               style: TextStyle(
-                color: p.text.withOpacity(0.65),
+                color: p.text.withValues(alpha: 0.65),
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -343,14 +343,14 @@ class _HeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -362,7 +362,7 @@ class _HeroCard extends StatelessWidget {
           Text(
             'Curriculum Center',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
+              color: Colors.white.withValues(alpha: 0.82),
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -381,7 +381,7 @@ class _HeroCard extends StatelessWidget {
           Text(
             'Open any course to view its detailed syllabus and structure.',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.86),
+              color: Colors.white.withValues(alpha: 0.86),
               fontWeight: FontWeight.w700,
               height: 1.35,
             ),
@@ -390,9 +390,9 @@ class _HeroCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.14)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -449,10 +449,10 @@ class _SyllabusTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.cardBg,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: palette.border.withOpacity(0.88)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.88)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,
               offset: const Offset(0, 5),
             ),
@@ -467,7 +467,7 @@ class _SyllabusTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.soft,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: palette.border.withOpacity(0.85)),
+                border: Border.all(color: palette.border.withValues(alpha: 0.85)),
               ),
               child: Icon(Icons.menu_book_rounded, color: palette.primary),
             ),
@@ -534,7 +534,7 @@ class _SyllabusTile extends StatelessWidget {
             const SizedBox(width: 10),
             Icon(
               Icons.chevron_right_rounded,
-              color: palette.text.withOpacity(0.45),
+              color: palette.text.withValues(alpha: 0.45),
             ),
           ],
         ),
@@ -559,9 +559,9 @@ class _Pill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: palette.soft.withOpacity(0.8),
+          color: palette.soft.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: palette.border.withOpacity(0.75)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.75)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -610,7 +610,7 @@ class _InfoBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.cardBg,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: palette.border.withOpacity(0.86)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.86)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -639,7 +639,7 @@ class _InfoBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: palette.text.withOpacity(0.72),
+                color: palette.text.withValues(alpha: 0.72),
                 height: 1.35,
               ),
             ),
@@ -670,7 +670,7 @@ class _ErrorBox extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.cardBg,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: palette.border.withOpacity(0.86)),
+          border: Border.all(color: palette.border.withValues(alpha: 0.86)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -695,7 +695,7 @@ class _ErrorBox extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: palette.text.withOpacity(0.72),
+                color: palette.text.withValues(alpha: 0.72),
                 height: 1.35,
               ),
             ),

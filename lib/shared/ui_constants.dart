@@ -10,7 +10,7 @@ class UiK {
 
   static RoundedRectangleBorder cardShape() => RoundedRectangleBorder(
     borderRadius: BorderRadius.circular(18),
-    side: BorderSide(color: uiBorder.withOpacity(0.8)),
+    side: BorderSide(color: uiBorder.withValues(alpha: 0.8)),
   );
 
   static TextStyle titleText({double size = 16}) => const TextStyle(
@@ -23,7 +23,7 @@ class UiK {
       const TextStyle(color: mainText, fontWeight: FontWeight.w900);
 
   static TextStyle subtleText() =>
-      TextStyle(color: mainText.withOpacity(0.7), fontWeight: FontWeight.w700);
+      TextStyle(color: mainText.withValues(alpha: 0.7), fontWeight: FontWeight.w700);
 
   static String yyyyMmDd(DateTime d) {
     final mm = d.month.toString().padLeft(2, '0');

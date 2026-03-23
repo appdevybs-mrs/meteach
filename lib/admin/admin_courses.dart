@@ -10,7 +10,7 @@ import 'dart:convert';
 import 'package:dream_english_academy/course_syllabus_screen.dart';
 import 'package:dream_english_academy/shared/human_error.dart';
 import 'package:dream_english_academy/services/backend_api.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import '../shared/app_feedback.dart';
 
 class AdminCoursesScreen extends StatefulWidget {
   const AdminCoursesScreen({super.key});
@@ -78,8 +78,8 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
         bottom: TabBar(
           controller: _tabController,
           labelColor: AdminCoursesScreen.primaryBlue,
-          unselectedLabelColor: AdminCoursesScreen.primaryBlue.withOpacity(
-            0.55,
+          unselectedLabelColor: AdminCoursesScreen.primaryBlue.withValues(
+            alpha: 0.55,
           ),
           indicatorColor: AdminCoursesScreen.primaryBlue,
           tabs: const [
@@ -96,25 +96,39 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
               if (!isCoursesTab) return const SizedBox.shrink();
               return Padding(
                 padding: const EdgeInsets.only(right: 8.0),
-                child: IconButton(
-                  tooltip: 'Add course',
-                  onPressed: () async {
-                    final created = await Navigator.of(context).push<Course?>(
-                      MaterialPageRoute(
-                        builder: (_) => CourseEditorScreen(
-                          mode: EditorMode.create,
-                          uploadClient: UploadClient.defaultClient(),
-                        ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Bulk pricing tool',
+                      onPressed: _openBulkPricingTool,
+                      icon: const Icon(
+                        Icons.price_change_outlined,
+                        color: AdminCoursesScreen.primaryBlue,
                       ),
-                    );
-                    if (created != null && mounted) {
-                      _showSnack('Course created ✅');
-                    }
-                  },
-                  icon: const Icon(
-                    Icons.add_circle_outline,
-                    color: AdminCoursesScreen.actionOrange,
-                  ),
+                    ),
+                    IconButton(
+                      tooltip: 'Add course',
+                      onPressed: () async {
+                        final created = await Navigator.of(context)
+                            .push<Course?>(
+                              MaterialPageRoute(
+                                builder: (_) => CourseEditorScreen(
+                                  mode: EditorMode.create,
+                                  uploadClient: UploadClient.defaultClient(),
+                                ),
+                              ),
+                            );
+                        if (created != null && mounted) {
+                          _showSnack('Course created successfully.');
+                        }
+                      },
+                      icon: const Icon(
+                        Icons.add_circle_outline,
+                        color: AdminCoursesScreen.actionOrange,
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -148,7 +162,6 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
             },
             onChangeStatus: _changeStatus,
             onMoveToTrash: _moveToTrash,
-            onPersistOrder: _persistOrderIndexes,
           ),
           _TrashTab(
             trashRef: _trashRef,
@@ -253,17 +266,43 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
   }
 
   void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
-  // NEW: persist ordering to Firebase
-  Future<void> _persistOrderIndexes(List<_CourseRow> ordered) async {
-    // write as multi-location update for speed
-    final updates = <String, dynamic>{};
-    for (int i = 0; i < ordered.length; i++) {
-      updates['${ordered[i].id}/$_CoursesTab.orderFieldKey'] = i;
+  Future<void> _openBulkPricingTool() async {
+    try {
+      final snap = await _coursesRef.get();
+      final rows = _parseCoursesMap(snap.value, orderField: _orderField)
+        ..sort(
+          (a, b) => a.course.title.toLowerCase().compareTo(
+            b.course.title.toLowerCase(),
+          ),
+        );
+
+      if (!mounted) return;
+      if (rows.isEmpty) {
+        _showSnack('No courses found to update.');
+        return;
+      }
+
+      final result = await showDialog<_BulkPricingApplyResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _BulkPricingDialog(coursesRef: _coursesRef, rows: rows),
+      );
+
+      if (!mounted || result == null) return;
+      _showSnack(
+        'Bulk update applied to ${result.courseCount} course${result.courseCount == 1 ? '' : 's'} across ${result.variantCount} variant${result.variantCount == 1 ? '' : 's'}.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not open bulk pricing tool.'),
+        type: AppToastType.error,
+      );
     }
-    // The key is passed via static constant to avoid mismatch; we set it below.
   }
 }
 
@@ -278,7 +317,6 @@ class _CoursesTab extends StatefulWidget {
     required this.onEdit,
     required this.onChangeStatus,
     required this.onMoveToTrash,
-    required this.onPersistOrder,
   });
 
   final DatabaseReference coursesRef;
@@ -294,11 +332,6 @@ class _CoursesTab extends StatefulWidget {
   final Future<void> Function(String courseId, CourseStatus newStatus)
   onChangeStatus;
   final Future<void> Function(String courseId, Course course) onMoveToTrash;
-
-  final Future<void> Function(List<_CourseRow> ordered) onPersistOrder;
-
-  // Used to pass field key into parent persist helper safely
-  static const String orderFieldKey = '__ORDER_FIELD_KEY__';
 
   @override
   State<_CoursesTab> createState() => _CoursesTabState();
@@ -442,7 +475,8 @@ class _CoursesTabState extends State<_CoursesTab> {
                           widget.statusFilter == null;
 
                       if (!isSafeToPersist) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        AppToast.fromSnackBar(
+                          context,
                           const SnackBar(
                             content: Text(
                               'Reordering is disabled while search/filters are active. Clear filters to save order.',
@@ -479,7 +513,7 @@ class _CoursesTabState extends State<_CoursesTab> {
                   if (_savingOrder)
                     Positioned.fill(
                       child: Container(
-                        color: Colors.white.withOpacity(0.6),
+                        color: Colors.white.withValues(alpha: 0.6),
                         child: const Center(
                           child: SizedBox(
                             width: 22,
@@ -538,13 +572,15 @@ class _CoursesTabState extends State<_CoursesTab> {
       await widget.coursesRef.update(updates);
 
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppToast.fromSnackBar(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Order saved ✅')));
+          const SnackBar(content: Text('Order saved ✅')),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppToast.fromSnackBar(
+          context,
           SnackBar(
             content: Text(
               toHumanError(e, fallback: 'Could not save course order.'),
@@ -719,6 +755,332 @@ class _FilterChipItem {
   final VoidCallback onTap;
 }
 
+class _BulkPricingApplyResult {
+  const _BulkPricingApplyResult({
+    required this.courseCount,
+    required this.variantCount,
+  });
+
+  final int courseCount;
+  final int variantCount;
+}
+
+class _BulkPricingDialog extends StatefulWidget {
+  const _BulkPricingDialog({required this.coursesRef, required this.rows});
+
+  final DatabaseReference coursesRef;
+  final List<_CourseRow> rows;
+
+  @override
+  State<_BulkPricingDialog> createState() => _BulkPricingDialogState();
+}
+
+class _BulkPricingDialogState extends State<_BulkPricingDialog> {
+  static const List<String> _variants = [
+    'online',
+    'live',
+    'recorded',
+    'inclass',
+  ];
+  static const Map<String, String> _labels = {
+    'online': 'Online',
+    'live': 'Live',
+    'recorded': 'Recorded',
+    'inclass': 'In-Class',
+  };
+
+  final Set<String> _selectedCourseIds = <String>{};
+  late final Map<String, bool> _applyVariant;
+  late final Map<String, String> _accessModes;
+  late final Map<String, TextEditingController> _feeControllers;
+  late final Map<String, TextEditingController> _durationControllers;
+
+  bool _applying = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCourseIds.addAll(widget.rows.map((e) => e.id));
+    _applyVariant = {for (final v in _variants) v: false};
+    _accessModes = {for (final v in _variants) v: 'lifetime'};
+    _feeControllers = {for (final v in _variants) v: TextEditingController()};
+    _durationControllers = {
+      for (final v in _variants) v: TextEditingController(),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final c in _feeControllers.values) {
+      c.dispose();
+    }
+    for (final c in _durationControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  bool get _allSelected => _selectedCourseIds.length == widget.rows.length;
+
+  void _toggleAll(bool? checked) {
+    setState(() {
+      if (checked == true) {
+        _selectedCourseIds
+          ..clear()
+          ..addAll(widget.rows.map((e) => e.id));
+      } else {
+        _selectedCourseIds.clear();
+      }
+    });
+  }
+
+  Future<void> _apply() async {
+    setState(() => _error = null);
+
+    if (_selectedCourseIds.isEmpty) {
+      setState(() => _error = 'Select at least one course.');
+      return;
+    }
+
+    final activeVariants = _variants
+        .where((v) => _applyVariant[v] == true)
+        .toList();
+    if (activeVariants.isEmpty) {
+      setState(() => _error = 'Enable at least one variant.');
+      return;
+    }
+
+    final updates = <String, dynamic>{};
+
+    for (final courseId in _selectedCourseIds) {
+      updates['$courseId/updatedAt'] = ServerValue.timestamp;
+
+      for (final variant in activeVariants) {
+        final feeText = _feeControllers[variant]!.text.trim();
+        final fee = double.tryParse(feeText);
+        if (fee == null || fee < 0) {
+          setState(() {
+            _error = '${_labels[variant]} fee must be a valid number.';
+          });
+          return;
+        }
+
+        final mode = _accessModes[variant] ?? 'lifetime';
+        final base = '$courseId/delivery_configs/$variant';
+        updates['$base/enabled'] = true;
+        updates['$base/fee'] = fee;
+        updates['$base/access_mode'] = mode;
+
+        if (mode == 'duration') {
+          final monthsText = _durationControllers[variant]!.text.trim();
+          final months = int.tryParse(monthsText);
+          if (months == null || months <= 0) {
+            setState(() {
+              _error =
+                  '${_labels[variant]} duration must be a positive number.';
+            });
+            return;
+          }
+          updates['$base/access_duration_months'] = months;
+        } else {
+          updates['$base/access_duration_months'] = null;
+        }
+      }
+    }
+
+    setState(() => _applying = true);
+    try {
+      await widget.coursesRef.update(updates);
+      if (!mounted) return;
+      Navigator.of(context).pop(
+        _BulkPricingApplyResult(
+          courseCount: _selectedCourseIds.length,
+          variantCount: activeVariants.length,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = toHumanError(e, fallback: 'Could not apply bulk update.');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _applying = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Bulk Course Pricing'),
+      content: SizedBox(
+        width: 720,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _allSelected,
+                tristate: true,
+                title: Text(
+                  'Select all courses (${widget.rows.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onChanged: _applying ? null : _toggleAll,
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: widget.rows.length,
+                  itemBuilder: (context, i) {
+                    final row = widget.rows[i];
+                    final checked = _selectedCourseIds.contains(row.id);
+                    return CheckboxListTile(
+                      dense: true,
+                      value: checked,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(
+                        row.course.title.isEmpty
+                            ? '(Untitled)'
+                            : row.course.title,
+                      ),
+                      subtitle: row.course.courseCode.trim().isEmpty
+                          ? null
+                          : Text(row.course.courseCode),
+                      onChanged: _applying
+                          ? null
+                          : (v) {
+                              setState(() {
+                                if (v == true) {
+                                  _selectedCourseIds.add(row.id);
+                                } else {
+                                  _selectedCourseIds.remove(row.id);
+                                }
+                              });
+                            },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              const Text(
+                'Variant pricing to apply',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              for (final variant in _variants) ...[
+                SwitchListTile(
+                  value: _applyVariant[variant] == true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_labels[variant]!),
+                  subtitle: const Text('Enable and set fee/access rule'),
+                  onChanged: _applying
+                      ? null
+                      : (v) => setState(() => _applyVariant[variant] = v),
+                ),
+                if (_applyVariant[variant] == true)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _feeControllers[variant],
+                          enabled: !_applying,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: '${_labels[variant]} fee',
+                            prefixText: '4 ',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: _accessModes[variant],
+                          decoration: InputDecoration(
+                            labelText: '${_labels[variant]} access mode',
+                            border: const OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'lifetime',
+                              child: Text('Lifetime access'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'duration',
+                              child: Text('Duration access'),
+                            ),
+                          ],
+                          onChanged: _applying
+                              ? null
+                              : (v) {
+                                  if (v == null) return;
+                                  setState(() => _accessModes[variant] = v);
+                                },
+                        ),
+                        if ((_accessModes[variant] ?? 'lifetime') ==
+                            'duration') ...[
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _durationControllers[variant],
+                            enabled: !_applying,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText:
+                                  '${_labels[variant]} duration (months)',
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                const Divider(height: 1),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _applying ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _applying ? null : _apply,
+          icon: _applying
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.check_circle_outline),
+          label: Text(_applying ? 'Applying...' : 'Apply'),
+        ),
+      ],
+    );
+  }
+}
+
 class _CourseCard extends StatelessWidget {
   const _CourseCard({
     super.key,
@@ -822,7 +1184,7 @@ class _CourseCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Colors.black.withOpacity(0.55),
+                        color: Colors.black.withValues(alpha: 0.55),
                       ),
                     ),
                   ],
@@ -834,7 +1196,9 @@ class _CourseCard extends StatelessWidget {
                         : course.shortDescription,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.black.withOpacity(0.65)),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.65),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -981,7 +1345,9 @@ class _TrashCourseCard extends StatelessWidget {
                         : course.shortDescription,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.black.withOpacity(0.65)),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.65),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -1214,7 +1580,7 @@ class _StateCard extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.7)),
               ),
             ],
           ),
@@ -1826,12 +2192,14 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       if (!mounted) return;
 
       thumbnailUrlC.text = url;
-      ScaffoldMessenger.of(
+      AppToast.fromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Thumbnail uploaded ✅')));
+        const SnackBar(content: Text('Thumbnail uploaded ✅')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(toHumanError(e, fallback: 'Could not upload file.')),
         ),
@@ -1978,7 +2346,8 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       Navigator.of(context).pop(course);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(toHumanError(e, fallback: 'Could not save course.')),
         ),
@@ -2292,9 +2661,7 @@ class UploadClient {
   final http.Client _http;
 
   static void _debug(String message) {
-    if (kDebugMode) {
-      debugPrint('[AdminCoursesUploadClient] $message');
-    }
+    // no-op in production build
   }
 
   /// Hardcoded default client per your requirements
@@ -2995,7 +3362,7 @@ class _InstructorsPicker extends StatelessWidget {
           ),
           child: Text(
             current.isEmpty ? 'No instructors selected' : current.join(', '),
-            style: TextStyle(color: Colors.black.withOpacity(0.75)),
+            style: TextStyle(color: Colors.black.withValues(alpha: 0.75)),
           ),
         ),
 

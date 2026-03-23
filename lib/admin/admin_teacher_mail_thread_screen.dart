@@ -13,6 +13,7 @@ import '../services/backend_api.dart';
 import '../services/push_client.dart';
 import '../services/route_state.dart';
 import '../shared/human_error.dart';
+import '../shared/app_feedback.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -188,9 +189,7 @@ class _AdminTeacherMailThreadScreenState
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   Future<String?> _getFcmToken(String uid) async {
@@ -541,7 +540,7 @@ class _AdminTeacherMailThreadScreenState
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               child: Text(
                 'Topic: $_subject',
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -572,8 +571,8 @@ class _AdminTeacherMailThreadScreenState
                         child: Card(
                           elevation: 0,
                           color: mine
-                              ? Colors.blue.withOpacity(0.12)
-                              : Colors.black.withOpacity(0.05),
+                              ? Colors.blue.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.05),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
@@ -591,7 +590,7 @@ class _AdminTeacherMailThreadScreenState
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontWeight: FontWeight.w800,
-                                          color: Colors.black.withOpacity(0.6),
+                                          color: Colors.black.withValues(alpha: 0.6),
                                           fontSize: 12,
                                         ),
                                       ),
@@ -601,7 +600,7 @@ class _AdminTeacherMailThreadScreenState
                                       _fmt(m.createdAtMs),
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.black.withOpacity(0.55),
+                                        color: Colors.black.withValues(alpha: 0.55),
                                       ),
                                     ),
                                     const SizedBox(width: 6),

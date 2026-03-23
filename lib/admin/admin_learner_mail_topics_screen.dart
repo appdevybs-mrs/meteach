@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../shared/human_error.dart';
 
 import 'mail_topic_thread_screen.dart'; // the topic thread screen you already have
+import '../shared/app_feedback.dart';
 
 class AdminLearnerMailTopicsScreen extends StatefulWidget {
   const AdminLearnerMailTopicsScreen({
@@ -43,9 +44,7 @@ class _AdminLearnerMailTopicsScreenState
 
   void _snack(String s) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(s))));
+    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(s))));
   }
 
   List<_InboxRow> _parseAndFilter(dynamic data) {

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import 'admin_teacher_mail_thread_screen.dart'; // reuse your existing thread screen
+import '../shared/app_feedback.dart';
 
 class AdminMailInboxScreen extends StatefulWidget {
   const AdminMailInboxScreen({super.key});
@@ -28,7 +29,7 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
   void _snack(String s) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+    AppToast.fromSnackBar(context, SnackBar(content: Text(s)));
   }
 
   Future<void> _deleteForMe(String threadId) async {

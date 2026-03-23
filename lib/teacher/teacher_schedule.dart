@@ -303,7 +303,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               Text(
                 'Classes, attendance, and reminders',
                 style: TextStyle(
-                  color: p.text.withOpacity(0.65),
+                  color: p.text.withValues(alpha: 0.65),
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
@@ -319,7 +319,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           ],
           bottom: TabBar(
             labelColor: p.primary,
-            unselectedLabelColor: p.text.withOpacity(0.65),
+            unselectedLabelColor: p.text.withValues(alpha: 0.65),
             indicatorColor: p.accent,
             tabs: const [
               Tab(
@@ -514,9 +514,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               margin: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 10),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: p.soft.withOpacity(0.8),
+                color: p.soft.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: p.border.withOpacity(0.85)),
+                border: Border.all(color: p.border.withValues(alpha: 0.85)),
               ),
               child: Row(
                 children: [
@@ -539,7 +539,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                   Text(
                     '${dayClasses.length} session${dayClasses.length == 1 ? '' : 's'}',
                     style: TextStyle(
-                      color: p.text.withOpacity(0.65),
+                      color: p.text.withValues(alpha: 0.65),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -587,10 +587,10 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
           decoration: BoxDecoration(
             color: p.cardBg,
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: p.border.withOpacity(0.85)),
+            border: Border.all(color: p.border.withValues(alpha: 0.85)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 14,
                 offset: const Offset(0, 8),
               ),
@@ -621,11 +621,11 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             ),
             daysOfWeekStyle: DaysOfWeekStyle(
               weekdayStyle: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontWeight: FontWeight.w700,
               ),
               weekendStyle: TextStyle(
-                color: p.text.withOpacity(0.72),
+                color: p.text.withValues(alpha: 0.72),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -659,7 +659,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 shape: BoxShape.circle,
               ),
               markersMaxCount: 3,
-              outsideTextStyle: TextStyle(color: p.text.withOpacity(0.35)),
+              outsideTextStyle: TextStyle(color: p.text.withValues(alpha: 0.35)),
             ),
             onDaySelected: (s, f) => setState(() {
               _selectedDay = s;
@@ -693,7 +693,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
               subtitle: Text(
                 'Disable = no reminders for all classes on this date',
                 style: TextStyle(
-                  color: p.text.withOpacity(0.68),
+                  color: p.text.withValues(alpha: 0.68),
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
@@ -706,7 +706,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                     : Icons.notifications_off_rounded,
                 color: _isDayEnabled(selected)
                     ? p.accent
-                    : p.text.withOpacity(0.45),
+                    : p.text.withValues(alpha: 0.45),
               ),
             ),
           ),
@@ -811,7 +811,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             border: Border.all(color: p.border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 10,
                 offset: const Offset(0, 6),
               ),
@@ -833,7 +833,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 subtitle: Text(
                   'A simple morning reminder to check the day schedule.',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.65),
+                    color: p.text.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -862,7 +862,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 subtitle: Text(
                   'Get alerted shortly before each class starts.',
                   style: TextStyle(
-                    color: p.text.withOpacity(0.65),
+                    color: p.text.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -1051,14 +1051,14 @@ class _ScheduleTopSummary extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withOpacity(0.88)],
+          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity(0.18),
+            color: palette.primary.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -1070,7 +1070,7 @@ class _ScheduleTopSummary extends StatelessWidget {
           Text(
             isAdmin ? 'Admin view' : 'Teacher view',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.80),
+              color: Colors.white.withValues(alpha: 0.80),
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -1121,9 +1121,9 @@ class _HeroStat extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.14)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
       child: Column(
         children: [
@@ -1139,7 +1139,7 @@ class _HeroStat extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.80),
+              color: Colors.white.withValues(alpha: 0.80),
               fontWeight: FontWeight.w700,
               fontSize: 11,
             ),
@@ -1177,24 +1177,24 @@ class _SessionCard extends StatelessWidget {
 
     Color statusColor = enabled
         ? palette.accent
-        : palette.text.withOpacity(0.35);
+        : palette.text.withValues(alpha: 0.35);
     if (isConflict) statusColor = const Color(0xFFD32F2F);
     if (isLive) statusColor = palette.primary;
-    if (isPast) statusColor = palette.text.withOpacity(0.30);
+    if (isPast) statusColor = palette.text.withValues(alpha: 0.30);
 
     final Color bgColor = isPast
-        ? palette.soft.withOpacity(0.35)
+        ? palette.soft.withValues(alpha: 0.35)
         : (isConflict ? const Color(0xFFFFEBEE) : palette.cardBg);
 
     final Color borderColor = isConflict
-        ? const Color(0xFFD32F2F).withOpacity(0.28)
+        ? const Color(0xFFD32F2F).withValues(alpha: 0.28)
         : palette.border;
 
     final Color titleColor = isPast
-        ? palette.text.withOpacity(0.45)
+        ? palette.text.withValues(alpha: 0.45)
         : palette.text;
     final Color timeColor = isPast
-        ? palette.text.withOpacity(0.45)
+        ? palette.text.withValues(alpha: 0.45)
         : (isLive ? palette.primary : palette.primary);
 
     return Opacity(
@@ -1208,14 +1208,14 @@ class _SessionCard extends StatelessWidget {
           boxShadow: isLive
               ? [
                   BoxShadow(
-                    color: palette.primary.withOpacity(0.10),
+                    color: palette.primary.withValues(alpha: 0.10),
                     blurRadius: 14,
                     offset: const Offset(0, 8),
                   ),
                 ]
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
+                    color: Colors.black.withValues(alpha: 0.03),
                     blurRadius: 10,
                     offset: const Offset(0, 5),
                   ),
@@ -1251,7 +1251,7 @@ class _SessionCard extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w900,
-                                  color: palette.text.withOpacity(0.45),
+                                  color: palette.text.withValues(alpha: 0.45),
                                 ),
                               ),
                             if (isConflict)
@@ -1273,7 +1273,7 @@ class _SessionCard extends StatelessWidget {
                                       : Icons.notifications_off_outlined,
                                   color: enabled
                                       ? palette.accent
-                                      : palette.text.withOpacity(0.45),
+                                      : palette.text.withValues(alpha: 0.45),
                                   size: 20,
                                 ),
                                 onPressed: onToggle,
@@ -1295,7 +1295,7 @@ class _SessionCard extends StatelessWidget {
                         Text(
                           '${o.courseCode} • ID: ${o.classId}',
                           style: TextStyle(
-                            color: palette.text.withOpacity(0.62),
+                            color: palette.text.withValues(alpha: 0.62),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1316,7 +1316,7 @@ class _SessionCard extends StatelessWidget {
                         ),
                         Divider(
                           height: 20,
-                          color: palette.border.withOpacity(0.9),
+                          color: palette.border.withValues(alpha: 0.9),
                         ),
                         Row(
                           children: [
@@ -1329,7 +1329,7 @@ class _SessionCard extends StatelessWidget {
                                     ? Icons.edit_note_rounded
                                     : Icons.how_to_reg_rounded,
                                 color: isPast
-                                    ? palette.text.withOpacity(0.55)
+                                    ? palette.text.withValues(alpha: 0.55)
                                     : palette.primary,
                                 onTap: onAttendance,
                               ),
@@ -1339,7 +1339,7 @@ class _SessionCard extends StatelessWidget {
                               child: _ActionButton(
                                 label: 'History',
                                 icon: Icons.history_rounded,
-                                color: palette.text.withOpacity(0.72),
+                                color: palette.text.withValues(alpha: 0.72),
                                 onTap: onHistory,
                               ),
                             ),
@@ -1374,7 +1374,7 @@ class _InfoPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: palette.soft.withOpacity(0.8),
+        color: palette.soft.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -1478,7 +1478,7 @@ class _ActionButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          border: Border.all(color: color.withOpacity(0.20)),
+          border: Border.all(color: color.withValues(alpha: 0.20)),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -1558,7 +1558,7 @@ class _EmptyState extends StatelessWidget {
                 subtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: palette.text.withOpacity(0.68),
+                  color: palette.text.withValues(alpha: 0.68),
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
                 ),

@@ -8,6 +8,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import 'admin_teacher_reminders_screen.dart';
 import 'admin_teacher_mail_topics_screen.dart';
+import '../shared/app_feedback.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key});
@@ -69,9 +70,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     // ✅ avoid using a context that is in the middle of dispose/pop
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
+      AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
     });
   }
 
@@ -312,7 +311,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: AdminStaffScreen.primaryBlue,
-          unselectedLabelColor: AdminStaffScreen.primaryBlue.withOpacity(0.55),
+          unselectedLabelColor: AdminStaffScreen.primaryBlue.withValues(alpha: 0.55),
           indicatorColor: AdminStaffScreen.primaryBlue,
           tabs: const [
             Tab(text: 'Users'),
@@ -696,7 +695,7 @@ class _StaffListState extends State<_StaffList>
                               children: [
                                 CircleAvatar(
                                   backgroundColor: AdminStaffScreen.appBg
-                                      .withOpacity(1),
+                                      .withValues(alpha: 1),
                                   child: Text(
                                     u.firstName.isNotEmpty
                                         ? u.firstName[0].toUpperCase()
@@ -808,7 +807,7 @@ class _StaffListState extends State<_StaffList>
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.black.withOpacity(0.55),
+                                        color: Colors.black.withValues(alpha: 0.55),
                                       ),
                                     ),
                                     const SizedBox(height: 6),
@@ -942,7 +941,7 @@ class _Pill extends StatelessWidget {
 }
 
 void _snackHere(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
 }
 
 Future<void> _openTeacherQuickActions(
@@ -1045,7 +1044,7 @@ class _StateCard extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black.withOpacity(0.7)),
+                style: TextStyle(color: Colors.black.withValues(alpha: 0.7)),
               ),
             ],
           ),
@@ -1205,9 +1204,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
   }
 
   String get _teacherFullName =>
@@ -1394,7 +1391,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                         subtitle: Text(
                           id,
                           style: TextStyle(
-                            color: Colors.black.withOpacity(0.5),
+                            color: Colors.black.withValues(alpha: 0.5),
                             fontSize: 12,
                           ),
                         ),
@@ -2125,7 +2122,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                               'Only teachers can be assigned to courses.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.black.withOpacity(0.55),
+                                color: Colors.black.withValues(alpha: 0.55),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -2146,7 +2143,7 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
                               'Teacher will be added to each course instructors list.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.black.withOpacity(0.55),
+                                color: Colors.black.withValues(alpha: 0.55),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -2447,8 +2444,8 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: Colors.black.withOpacity(0.06),
-        border: Border.all(color: Colors.black.withOpacity(0.12)),
+        color: Colors.black.withValues(alpha: 0.06),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.12)),
       ),
       child: Text(
         '$label: $value',
@@ -2473,7 +2470,7 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
       child: Text(
         '•',
         style: TextStyle(
-          color: Colors.black.withOpacity(0.4),
+          color: Colors.black.withValues(alpha: 0.4),
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -2612,8 +2609,8 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    color: Colors.black.withOpacity(0.06),
-                    border: Border.all(color: Colors.black.withOpacity(0.12)),
+                    color: Colors.black.withValues(alpha: 0.06),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.12)),
                   ),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
