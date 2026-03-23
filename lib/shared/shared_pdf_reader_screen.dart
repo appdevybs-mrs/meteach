@@ -26,6 +26,7 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
   int _pageNumber = 0;
   int _pageCount = 0;
   double _zoomLevel = 1.0;
+  bool _bookMode = true;
 
   _PdfPalette get palette => _toPdfPalette(appThemeController.palette);
 
@@ -98,7 +99,8 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
     if (result == null) return;
     if (result < 1 || result > _pageCount) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(content: Text('Enter a page between 1 and $_pageCount')),
       );
       return;
@@ -202,6 +204,18 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _bookMode ? 'Book mode on' : 'Book mode off',
+            onPressed: () {
+              setState(() {
+                _bookMode = !_bookMode;
+              });
+            },
+            icon: Icon(
+              _bookMode ? Icons.auto_stories_rounded : Icons.menu_book_outlined,
+              color: p.primary,
+            ),
+          ),
+          IconButton(
             tooltip: 'Refresh',
             onPressed: _reloadPdf,
             icon: Icon(Icons.refresh_rounded, color: p.primary),
@@ -272,43 +286,96 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
               children: [
                 Positioned.fill(
                   child: Container(
-                    color: p.soft.withValues(alpha: 0.35),
-                    child: SfPdfViewer.network(
-                      widget.pdfUrl,
-                      controller: _pdfController,
-                      canShowPaginationDialog: true,
-                      canShowScrollHead: true,
-                      canShowScrollStatus: true,
-                      enableDoubleTapZooming: true,
-                      onZoomLevelChanged: (details) {
-                        if (!mounted) return;
-                        setState(() {
-                          _zoomLevel = details.newZoomLevel;
-                        });
-                      },
-                      onDocumentLoaded: (details) {
-                        if (!mounted) return;
-                        setState(() {
-                          _loading = false;
-                          _pageCount = details.document.pages.count;
-                          _pageNumber = 1;
-                          _error = null;
-                          _zoomLevel = 1.0;
-                        });
-                      },
-                      onDocumentLoadFailed: (details) {
-                        if (!mounted) return;
-                        setState(() {
-                          _loading = false;
-                          _error = details.description;
-                        });
-                      },
-                      onPageChanged: (details) {
-                        if (!mounted) return;
-                        setState(() {
-                          _pageNumber = details.newPageNumber;
-                        });
-                      },
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          p.soft.withValues(alpha: 0.40),
+                          p.soft.withValues(alpha: 0.18),
+                        ],
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        if (_bookMode)
+                          Center(
+                            child: Container(
+                              width: 3,
+                              margin: const EdgeInsets.symmetric(vertical: 18),
+                              decoration: BoxDecoration(
+                                color: p.border.withValues(alpha: 0.75),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.75),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(17),
+                              child: SfPdfViewer.network(
+                                widget.pdfUrl,
+                                controller: _pdfController,
+                                canShowPaginationDialog: true,
+                                canShowScrollHead: true,
+                                canShowScrollStatus: true,
+                                enableDoubleTapZooming: true,
+                                pageLayoutMode: _bookMode
+                                    ? PdfPageLayoutMode.single
+                                    : PdfPageLayoutMode.continuous,
+                                scrollDirection: _bookMode
+                                    ? PdfScrollDirection.horizontal
+                                    : PdfScrollDirection.vertical,
+                                onZoomLevelChanged: (details) {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _zoomLevel = details.newZoomLevel;
+                                  });
+                                },
+                                onDocumentLoaded: (details) {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _loading = false;
+                                    _pageCount = details.document.pages.count;
+                                    _pageNumber = 1;
+                                    _error = null;
+                                    _zoomLevel = 1.0;
+                                  });
+                                },
+                                onDocumentLoadFailed: (details) {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _loading = false;
+                                    _error = details.description;
+                                  });
+                                },
+                                onPageChanged: (details) {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _pageNumber = details.newPageNumber;
+                                  });
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox.shrink(),
+                      ],
                     ),
                   ),
                 ),
@@ -322,7 +389,9 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.05),
@@ -370,7 +439,9 @@ class _SharedPdfReaderScreenState extends State<SharedPdfReaderScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,

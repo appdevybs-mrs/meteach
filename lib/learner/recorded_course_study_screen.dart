@@ -422,11 +422,24 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return false;
   }
 
+  bool _isValidWebUrl(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return false;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return false;
+    return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  String _lessonUnavailableMessage({required String lessonType}) {
+    return '$lessonType is currently unavailable or misconfigured. '
+        'Please refresh. If this continues, contact academy support and share your course name + session number.';
+  }
+
   Future<void> _openMaterials(_RecordedSession session) async {
     final url = session.materialsUrl.trim();
     _debug('openMaterials sessionId=${session.id} hasUrl=${url.isNotEmpty}');
-    if (url.isEmpty) {
-      _snack('No reading content available for this session.');
+    if (!_isValidWebUrl(url)) {
+      _snack(_lessonUnavailableMessage(lessonType: 'Reading lesson'));
       return;
     }
 
@@ -445,9 +458,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final bool? finished = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Finish this reading?'),
+        title: const Text('Finished this reading?'),
         content: const Text(
-          'Mark this session as completed only if you finished the reading.',
+          'Mark this only if you completed the reading content.',
         ),
         actions: [
           TextButton(
@@ -456,7 +469,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Mark as done'),
+            child: const Text('✓ Mark complete'),
           ),
         ],
       ),
@@ -465,15 +478,134 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (finished == true) {
       await _markMaterialsCompleted(session);
       if (!mounted) return;
-      _snack('Session marked as completed.');
+      _snack('Great work! Session completed ✅');
     }
+  }
+
+  Widget _buildTopOverviewCard() {
+    final style = _expiryStyle;
+    final progressPct = (_progressValue * 100).round();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFFFF), Color(0xFFF8FBFF)],
+        ),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -2,
+            right: 0,
+            child: Opacity(
+              opacity: 0.08,
+              child: Image.asset(
+                'assets/images/ybs_logo.png',
+                width: 54,
+                height: 54,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.track_changes_rounded,
+                    size: 16,
+                    color: Color(0xFF334155),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$progressPct% complete',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$_completedSessions/$_totalSessions',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 5,
+                  value: _progressValue.clamp(0, 1),
+                  backgroundColor: const Color(0xFFE2E8F0),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF4F46E5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _expirySubtitle(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: style.fg,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.7,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: _showCourseInfoSheet,
+                    icon: const Icon(Icons.info_outline_rounded, size: 16),
+                    label: const Text('Details'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1E293B),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      minimumSize: const Size(0, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openVideoPlaceholder(_RecordedSession session) async {
     final hasVideo = session.videoUrl.trim().isNotEmpty;
+    final videoUrl = session.videoUrl.trim();
     _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
-    if (!hasVideo) {
-      _snack('No video available for this session.');
+    if (!hasVideo || !_isValidWebUrl(videoUrl)) {
+      _snack(_lessonUnavailableMessage(lessonType: 'Video lesson'));
       return;
     }
 
@@ -485,7 +617,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           courseKey: widget.courseKey,
           sessionId: session.id,
           sessionTitle: session.title,
-          videoUrl: session.videoUrl.trim(),
+          videoUrl: videoUrl,
         ),
       ),
     );
@@ -932,8 +1064,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -973,7 +1112,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               ),
               _SessionBadge(
-                label: isCompleted ? 'Done' : (isUnlocked ? 'Open' : 'Locked'),
+                label: isCompleted ? '✓' : (isUnlocked ? 'Open' : '🔒'),
                 fg: accent,
                 bg: isCompleted
                     ? const Color(0xFFDCFCE7)
@@ -1002,7 +1141,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             children: [
               _StatusMiniPill(
                 label: requiresVideo
-                    ? (progress.videoCompleted ? 'Video done' : 'Video pending')
+                    ? (progress.videoCompleted ? '✓ Video' : 'Video')
                     : 'No video',
                 fg: progress.videoCompleted
                     ? const Color(0xFF15803D)
@@ -1016,9 +1155,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
               _StatusMiniPill(
                 label: requiresMaterials
-                    ? (progress.materialsCompleted
-                          ? 'Read done'
-                          : 'Read pending')
+                    ? (progress.materialsCompleted ? '✓ Read' : 'Read')
                     : 'No read',
                 fg: progress.materialsCompleted
                     ? const Color(0xFF15803D)
@@ -1036,19 +1173,31 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           if (!isUnlocked)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: const Text(
-                'Complete the previous session to unlock this one.',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF64748B),
-                  fontSize: 12.5,
-                ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 15,
+                    color: Color(0xFF64748B),
+                  ),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Finish the previous session to unlock this one.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B),
+                        fontSize: 12.3,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             )
           else if (requiresVideo || requiresMaterials)
@@ -1060,7 +1209,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       onPressed: () => _openVideoPlaceholder(session),
                       icon: const Icon(Icons.ondemand_video_rounded, size: 18),
                       label: Text(
-                        progress.videoCompleted ? 'Video done' : 'Video',
+                        progress.videoCompleted ? 'Rewatch 🔁' : 'Watch ▶',
                       ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF0F172A),
@@ -1086,7 +1235,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       onPressed: () => _openMaterials(session),
                       icon: const Icon(Icons.menu_book_rounded, size: 18),
                       label: Text(
-                        progress.materialsCompleted ? 'Read done' : 'Read',
+                        progress.materialsCompleted
+                            ? 'Read again 🔁'
+                            : 'Read 📘',
                       ),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF111827),
@@ -1160,9 +1311,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 width: double.infinity,
                 margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFE5E7EB)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.035),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Column(
                   children: [
@@ -1334,8 +1496,137 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget content;
+
+    if (_busy) {
+      content = const Center(
+        child: BrandedInlineLoader(message: 'Loading course...'),
+      );
+    } else if (_error != null) {
+      content = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFECACA)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.error_outline_rounded,
+                    color: Color(0xFFB91C1C),
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Could not open this recorded course',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF991B1B),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFB91C1C),
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'If this issue continues, please contact academy support and share your course title + session number.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.2,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _loadAll,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Try again'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0F172A),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } else {
+      content = RefreshIndicator(
+        onRefresh: _loadAll,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8, right: 8),
+                    child: Opacity(
+                      opacity: 0.045,
+                      child: Image.asset(
+                        'assets/images/ybs_logo.png',
+                        width: 180,
+                        height: 180,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            ListView(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
+              children: [
+                _buildTopOverviewCard(),
+                const SizedBox(height: 10),
+                _buildUnitsList(),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F6FA),
+      backgroundColor: const Color(0xFFF2F6FB),
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
@@ -1355,40 +1646,39 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         actions: [_buildMenuButton()],
       ),
-      body: _busy
-          ? const Center(
-              child: BrandedInlineLoader(message: 'Loading course...'),
-            )
-          : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFFECACA)),
-                  ),
-                  child: Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFFB91C1C),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+      body: Stack(
+        children: [
+          Positioned(
+            top: -110,
+            right: -95,
+            child: IgnorePointer(
+              child: Container(
+                width: 240,
+                height: 240,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.06),
                 ),
               ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadAll,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
-                children: [_buildUnitsList()],
+            ),
+          ),
+          Positioned(
+            bottom: -120,
+            left: -90,
+            child: IgnorePointer(
+              child: Container(
+                width: 230,
+                height: 230,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.06),
+                ),
               ),
             ),
+          ),
+          Positioned.fill(child: content),
+        ],
+      ),
     );
   }
 }

@@ -2446,16 +2446,19 @@ class _InstructorLite {
 class _CoursesByCategory extends StatelessWidget {
   const _CoursesByCategory();
 
-  Future<void> _openEnroll(BuildContext context, _CourseLite course) async {
-    final enrollOptions = course.toEnrollOptions();
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => EnrollScreen(
-          courseId: course.id,
-          courseTitle: course.title,
-          deliveryOptions: enrollOptions,
-        ),
+  Future<void> _openCourseDetails(
+    BuildContext context,
+    _CourseLite course,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      builder: (_) => _CourseDetailsSheet(course: course),
     );
   }
 
@@ -2519,7 +2522,7 @@ class _CoursesByCategory extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Swipe courses, then enroll',
+                        'Swipe courses, then open details',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Brand.mainText.withValues(alpha: 0.72),
                           fontWeight: FontWeight.w700,
@@ -2627,11 +2630,13 @@ class _CoursesByCategory extends StatelessWidget {
                                         const SizedBox(height: 8),
                                         SizedBox(
                                           width: double.infinity,
-                                          child: FilledButton.icon(
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor:
+                                          child: OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
                                                   Brand.primaryBlue,
-                                              foregroundColor: Colors.white,
+                                              side: const BorderSide(
+                                                color: Brand.primaryBlue,
+                                              ),
                                               shape: RoundedRectangleBorder(
                                                 borderRadius:
                                                     BorderRadius.circular(12),
@@ -2639,12 +2644,17 @@ class _CoursesByCategory extends StatelessWidget {
                                             ),
                                             onPressed: () async {
                                               Navigator.of(dialogContext).pop();
-                                              await _openEnroll(context, c);
+                                              await _openCourseDetails(
+                                                context,
+                                                c,
+                                              );
                                             },
                                             icon: const Icon(
-                                              Icons.how_to_reg_rounded,
+                                              Icons.info_outline_rounded,
                                             ),
-                                            label: const Text('Enroll'),
+                                            label: const Text(
+                                              'Details | التفاصيل',
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -2741,7 +2751,7 @@ class _CoursesByCategory extends StatelessWidget {
                 crossAxisCount: oneColumn ? 1 : 2,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
-                childAspectRatio: oneColumn ? 1.85 : 0.95,
+                childAspectRatio: oneColumn ? 1.72 : 1.04,
               ),
               itemBuilder: (_, index) {
                 final cat = cats[index];
@@ -2781,6 +2791,9 @@ class _CategoryGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final previews = courses.take(2).toList();
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 390;
+    final thumbHeight = compact ? 50.0 : 58.0;
 
     return Material(
       color: Colors.transparent,
@@ -2804,13 +2817,13 @@ class _CategoryGridCard extends StatelessWidget {
               ),
             ],
           ),
-          padding: const EdgeInsets.all(14),
+          padding: EdgeInsets.all(compact ? 10 : 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: compact ? 34 : 36,
+                height: compact ? 34 : 36,
                 decoration: BoxDecoration(
                   color: Brand.primaryBlue.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
@@ -2818,10 +2831,10 @@ class _CategoryGridCard extends StatelessWidget {
                 child: const Icon(
                   Icons.category_rounded,
                   color: Brand.primaryBlue,
-                  size: 22,
+                  size: 20,
                 ),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: compact ? 7 : 8),
               Text(
                 title,
                 maxLines: 2,
@@ -2829,23 +2842,24 @@ class _CategoryGridCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: Brand.primaryBlue,
                   fontWeight: FontWeight.w900,
+                  height: 1.15,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: compact ? 6 : 7),
               Row(
                 children: [
                   for (int i = 0; i < 2; i++) ...[
                     Expanded(
                       child: Container(
-                        height: 68,
+                        height: thumbHeight,
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: Brand.uiBorder),
                         ),
                         child: previews.length > i
                             ? ClipRRect(
-                                borderRadius: BorderRadius.circular(11),
+                                borderRadius: BorderRadius.circular(9),
                                 child: _FastNetworkThumb(
                                   url: previews[i].thumb,
                                   fit: BoxFit.cover,
@@ -2857,11 +2871,11 @@ class _CategoryGridCard extends StatelessWidget {
                               ),
                       ),
                     ),
-                    if (i == 0) const SizedBox(width: 8),
+                    if (i == 0) SizedBox(width: compact ? 6 : 7),
                   ],
                 ],
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: compact ? 5 : 6),
               Text(
                 '$count course${count == 1 ? '' : 's'}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -2869,7 +2883,7 @@ class _CategoryGridCard extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: compact ? 4 : 5),
               const Row(
                 children: [
                   Text(
@@ -3451,9 +3465,23 @@ class _TeacherChip extends StatelessWidget {
 
   final _InstructorLite teacher;
 
+  static bool _isSafeUid(String uid) {
+    final v = uid.trim();
+    if (v.length < 8) return false;
+    if (v.contains('/') ||
+        v.contains('.') ||
+        v.contains('#') ||
+        v.contains(r'$') ||
+        v.contains('[') ||
+        v.contains(']')) {
+      return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canOpen = teacher.uid.trim().isNotEmpty;
+    final canOpen = _isSafeUid(teacher.uid);
 
     return InkWell(
       borderRadius: BorderRadius.circular(999),

@@ -22,11 +22,26 @@ String toHumanError(
   }
 
   if (lower.contains('permission denied')) {
-    return 'You do not have permission for this action.';
+    return 'You do not have access to this section right now.';
   }
 
   if (lower.contains('type') && lower.contains('not a subtype')) {
-    return 'Some data is in an unexpected format. Please refresh and try again.';
+    return 'We could not read this data right now. Please refresh and try again.';
+  }
+
+  if (lower.contains('null check operator used on a null value')) {
+    return 'Some information is temporarily unavailable. Please refresh and try again.';
+  }
+
+  if (lower.contains('formatexception') ||
+      lower.contains('invalid format') ||
+      lower.contains('invalid argument')) {
+    return 'We hit a data formatting issue. Please refresh and try again.';
+  }
+
+  if (lower.contains('invalid firebase database path') ||
+      lower.contains('path specified is invalid')) {
+    return 'This profile link is currently unavailable. Please refresh and try again.';
   }
 
   if (lower.contains('socketexception') || lower.contains('timed out')) {

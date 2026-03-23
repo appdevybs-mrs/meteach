@@ -57,8 +57,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
   String? _pageTitle;
   String? _lastError;
   bool _didApplyInitialEnhancements = false;
-  bool _isPageReady = false;
-  String? _lastJsMessage;
   bool _openedWebUrl = false;
 
   bool get _isWebRuntime => kIsWeb;
@@ -140,7 +138,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
           _openedWebUrl = launched;
           _currentUrl = uri.toString();
           _pageTitle = widget.title;
-          _isPageReady = launched;
           _isLoading = false;
           if (!launched) {
             _lastError = 'Could not open this page in the browser.';
@@ -179,8 +176,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
     final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..enableZoom(false)
-      ..setBackgroundColor(const Color(0xFF000000))
+      ..enableZoom(true)
+      ..setBackgroundColor(const Color(0xFFFFFFFF))
       ..addJavaScriptChannel(
         'GameHost',
         onMessageReceived: (JavaScriptMessage message) {
@@ -196,7 +193,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               _lastError = null;
               _currentUrl = url;
               _didApplyInitialEnhancements = false;
-              _isPageReady = false;
             });
           },
           onProgress: (int progress) {
@@ -214,12 +210,12 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               _progress = 100;
               _currentUrl = url;
               _pageTitle = title;
-              _isPageReady = true;
             });
 
             await _applyGameEnhancementsIfNeeded();
             await _notifyViewportChanged();
             await _notifyGameLifecycle('resumed');
+            _scheduleStabilityRelayouts();
           },
           onWebResourceError: (WebResourceError error) {
             if (!mounted) return;
@@ -318,7 +314,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       _isLoading = true;
       _progress = 0;
       _didApplyInitialEnhancements = false;
-      _isPageReady = false;
     });
 
     if (_isWebRuntime) {
@@ -340,10 +335,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
   void _handleJsMessage(String message) {
     if (!mounted) return;
-
-    setState(() {
-      _lastJsMessage = message;
-    });
 
     if (message == 'requestFullscreen') {
       unawaited(_enterFullscreen());
@@ -380,7 +371,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     }
     existingViewport.setAttribute(
       'content',
-      'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
+      'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover'
     );
 
     var styleId = 'dea_game_host_style';
@@ -399,7 +390,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
         height: 100% !important;
         min-width: 100% !important;
         min-height: 100% !important;
-        background: #000 !important;
+        background: #fff !important;
+        color-scheme: light !important;
         overflow: hidden !important;
         overscroll-behavior: none !important;
         -webkit-text-size-adjust: 100% !important;
@@ -423,17 +415,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
         playsinline: true;
       }
 
-      .reveal,
-      .reveal .slides {
-        width: 100% !important;
-        height: 100% !important;
-        max-width: 100% !important;
-        max-height: 100% !important;
-      }
-
-      .reveal .slides section {
-        width: 100% !important;
-        height: 100% !important;
+      .reveal {
+        visibility: visible !important;
+        opacity: 1 !important;
       }
 
       canvas,
@@ -445,8 +429,8 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       }
     `;
 
-    document.documentElement.style.backgroundColor = '#000000';
-    document.body.style.backgroundColor = '#000000';
+    document.documentElement.style.backgroundColor = '#ffffff';
+    document.body.style.backgroundColor = '#ffffff';
 
     var videos = document.querySelectorAll('video');
     for (var i = 0; i < videos.length; i++) {
@@ -514,15 +498,44 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       } catch (_) {}
     };
 
+    var raf = function (cb) {
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(cb);
+      } else {
+        setTimeout(cb, 16);
+      }
+    };
+
     var relayoutReveal = function () {
       try {
+        var root = document.querySelector('.reveal');
+        if (root) {
+          root.style.opacity = '1';
+          root.style.visibility = 'visible';
+        }
+
         if (window.Reveal) {
-          if (typeof window.Reveal.layout === 'function') {
-            window.Reveal.layout();
-          }
-          if (typeof window.Reveal.sync === 'function') {
-            window.Reveal.sync();
-          }
+          raf(function () {
+            try {
+              if (typeof window.Reveal.layout === 'function') {
+                window.Reveal.layout();
+              }
+              if (typeof window.Reveal.sync === 'function') {
+                window.Reveal.sync();
+              }
+            } catch (_) {}
+          });
+
+          setTimeout(function () {
+            try {
+              if (typeof window.Reveal.layout === 'function') {
+                window.Reveal.layout();
+              }
+              if (typeof window.Reveal.sync === 'function') {
+                window.Reveal.sync();
+              }
+            } catch (_) {}
+          }, 90);
         }
       } catch (_) {}
     };
@@ -548,6 +561,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     if (window.Reveal && typeof window.Reveal.on === 'function') {
       window.Reveal.on('slidechanged', function () {
         relayoutReveal();
+        setTimeout(relayoutReveal, 140);
         sendMessage('slideChanged');
       });
 
@@ -561,10 +575,44 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
 
       window.Reveal.on('ready', function () {
         relayoutReveal();
+        setTimeout(relayoutReveal, 120);
         emitViewport();
         sendMessage('revealReady');
       });
     }
+
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        relayoutReveal();
+        emitViewport();
+      }, 40);
+      setTimeout(function () {
+        relayoutReveal();
+        emitViewport();
+      }, 180);
+      setTimeout(function () {
+        relayoutReveal();
+        emitViewport();
+      }, 520);
+    }, { passive: true });
+
+    try {
+      if (document.fonts && typeof document.fonts.ready !== 'undefined') {
+        document.fonts.ready.then(function () {
+          relayoutReveal();
+          emitViewport();
+        });
+      }
+    } catch (_) {}
+
+    try {
+      var imgs = document.querySelectorAll('.reveal img');
+      for (var i = 0; i < imgs.length; i++) {
+        imgs[i].addEventListener('load', function () {
+          relayoutReveal();
+        }, { passive: true });
+      }
+    } catch (_) {}
 
     setTimeout(function () {
       relayoutReveal();
@@ -678,6 +726,23 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     try {
       await _controller!.runJavaScript(script);
     } catch (_) {}
+  }
+
+  void _scheduleStabilityRelayouts() {
+    if (_isWebRuntime || !_hasController) return;
+
+    Future<void>.delayed(
+      const Duration(milliseconds: 80),
+      _notifyViewportChanged,
+    );
+    Future<void>.delayed(
+      const Duration(milliseconds: 220),
+      _notifyViewportChanged,
+    );
+    Future<void>.delayed(
+      const Duration(milliseconds: 520),
+      _notifyViewportChanged,
+    );
   }
 
   Future<void> _openUrlAgain() async {
@@ -842,36 +907,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     );
   }
 
-  Widget _buildDebugCorner() {
-    return Positioned(
-      right: 10,
-      bottom: 10,
-      child: IgnorePointer(
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 180),
-          opacity: _lastError == null && _isPageReady && _lastJsMessage != null
-              ? 0.14
-              : 0,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              _lastJsMessage ?? '',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildBody() {
     if (_lastError != null) {
       return _buildErrorState();
@@ -897,7 +932,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.white,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => unawaited(_enterFullscreen()),
@@ -911,7 +946,6 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
               children: [
                 Positioned.fill(child: _buildBody()),
                 if (_isLoading) Positioned.fill(child: _buildOverlayLoading()),
-                _buildDebugCorner(),
               ],
             ),
           ),

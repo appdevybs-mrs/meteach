@@ -474,7 +474,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
     final selected = _selectedOption;
     if (selected == null || !selected.enabled) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Please choose a study type.')),
       );
       return;
@@ -482,7 +483,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
     if (selected.requiresStudyMode &&
         normalizeStudyMode(_privateStudyMode).isEmpty) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text('Please choose Online or In-Class for Private.'),
         ),
@@ -494,7 +496,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
     if (!can) {
       final rem = await EnrollLimiter.remaining(widget.courseId);
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             'Too many attempts. Please wait ${_formatDuration(rem)} and try again.',
@@ -548,7 +551,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
       if (!mounted) return;
 
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text('Enrollment sent ✅ We will contact you soon.'),
         ),
@@ -557,7 +561,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(
@@ -938,8 +943,9 @@ class _DeliveryCarousel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 390;
     return SizedBox(
-      height: 170,
+      height: compact ? 162 : 170,
       child: PageView.builder(
         controller: controller,
         itemCount: options.length,
@@ -958,7 +964,7 @@ class _DeliveryCarousel extends StatelessWidget {
               onTap: () => onTapIndex(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(compact ? 12 : 14),
                 decoration: BoxDecoration(
                   gradient: selected
                       ? LinearGradient(
@@ -996,8 +1002,8 @@ class _DeliveryCarousel extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      width: 52,
-                      height: 52,
+                      width: compact ? 42 : 48,
+                      height: compact ? 42 : 48,
                       decoration: BoxDecoration(
                         color: selected
                             ? Colors.white.withValues(alpha: 0.12)
@@ -1012,30 +1018,34 @@ class _DeliveryCarousel extends StatelessWidget {
                       child: Icon(
                         option.icon(),
                         color: selected ? Colors.white : Brand.primaryBlue,
-                        size: 26,
+                        size: compact ? 22 : 24,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: compact ? 7 : 9),
                     Text(
                       option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         color: selected ? Colors.white : Brand.primaryBlue,
-                        fontSize: 18,
+                        fontSize: compact ? 15 : 16,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: compact ? 4 : 5),
                     Text(
                       option.shortLabelAr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: compact ? 11.5 : 12,
                         color: selected
                             ? Colors.white.withValues(alpha: 0.92)
                             : Brand.mainText.withValues(alpha: 0.75),
                         fontWeight: FontWeight.w700,
-                        height: 1.2,
+                        height: 1.1,
                       ),
                     ),
                   ],
@@ -1325,7 +1335,9 @@ class _SelectedOptionSummary extends StatelessWidget {
             decoration: BoxDecoration(
               color: Brand.actionOrange.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Brand.actionOrange.withValues(alpha: 0.25)),
+              border: Border.all(
+                color: Brand.actionOrange.withValues(alpha: 0.25),
+              ),
             ),
             child: Icon(option.icon(), color: Brand.actionOrange),
           ),
@@ -1623,10 +1635,12 @@ class _BottomActionBar extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: Brand.primaryBlue,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Brand.primaryBlue.withValues(alpha: 
-                      0.55,
+                    disabledBackgroundColor: Brand.primaryBlue.withValues(
+                      alpha: 0.55,
                     ),
-                    disabledForegroundColor: Colors.white.withValues(alpha: 0.9),
+                    disabledForegroundColor: Colors.white.withValues(
+                      alpha: 0.9,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),

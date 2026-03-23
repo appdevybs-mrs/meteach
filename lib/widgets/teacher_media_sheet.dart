@@ -32,6 +32,59 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
   VideoPlayerController? _videoController;
   bool _videoReady = false;
 
+  static bool _isLikelyUid(String uid) {
+    final v = uid.trim();
+    if (v.length < 8) return false;
+    if (v.contains('/') ||
+        v.contains('.') ||
+        v.contains('#') ||
+        v.contains(r'$') ||
+        v.contains('[') ||
+        v.contains(']')) {
+      return false;
+    }
+    return true;
+  }
+
+  static String _normalizeUrl(String input) {
+    final v = input.trim();
+    if (v.isEmpty) return '';
+    if (v.startsWith('//')) return 'https:$v';
+    if (v.startsWith('www.')) return 'https://$v';
+    return v;
+  }
+
+  static bool _isHttpUrl(String input) {
+    final uri = Uri.tryParse(input.trim());
+    if (uri == null) return false;
+    return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  static String _urlFromUnknown(dynamic raw) {
+    if (raw == null) return '';
+    if (raw is String) return _normalizeUrl(raw);
+    if (raw is Map) {
+      final m = raw.map((k, v) => MapEntry(k.toString(), v));
+      for (final key in const [
+        'url',
+        'photo_url',
+        'video_url',
+        'downloadUrl',
+        'download_url',
+        'value',
+        'src',
+        'link',
+      ]) {
+        final found = m[key];
+        if (found == null) continue;
+        final candidate = _normalizeUrl(found.toString());
+        if (candidate.isNotEmpty) return candidate;
+      }
+      return '';
+    }
+    return _normalizeUrl(raw.toString());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -47,9 +100,16 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
 
   Future<void> _loadTeacher() async {
     try {
-      final baseRef = FirebaseDatabase.instance.ref(
-        'users/${widget.teacherUid}',
-      );
+      final cleanUid = widget.teacherUid.trim();
+      if (!_isLikelyUid(cleanUid)) {
+        setState(() {
+          _error =
+              'This instructor profile is not available yet. Please refresh and try again.';
+        });
+        return;
+      }
+
+      final baseRef = FirebaseDatabase.instance.ref('users/$cleanUid');
 
       final firstSnap = await baseRef.child('first_name').get();
       final lastSnap = await baseRef.child('last_name').get();
@@ -66,8 +126,8 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
       if (rawPhotos != null) {
         if (rawPhotos is List) {
           for (final item in rawPhotos) {
-            final s = item?.toString().trim() ?? '';
-            if (s.isNotEmpty) photos.add(s);
+            final s = _urlFromUnknown(item);
+            if (s.isNotEmpty && _isHttpUrl(s)) photos.add(s);
           }
         } else if (rawPhotos is Map) {
           final entries = rawPhotos.entries.toList()
@@ -78,20 +138,20 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
             });
 
           for (final e in entries) {
-            final s = (e.value ?? '').toString().trim();
-            if (s.isNotEmpty) photos.add(s);
+            final s = _urlFromUnknown(e.value);
+            if (s.isNotEmpty && _isHttpUrl(s)) photos.add(s);
           }
         } else {
-          final s = rawPhotos.toString().trim();
-          if (s.isNotEmpty) photos.add(s);
+          final s = _urlFromUnknown(rawPhotos);
+          if (s.isNotEmpty && _isHttpUrl(s)) photos.add(s);
         }
       }
 
       String? video;
       final rawVideo = videoSnap.value;
       if (rawVideo != null) {
-        final s = rawVideo.toString().trim();
-        if (s.isNotEmpty) {
+        final s = _urlFromUnknown(rawVideo);
+        if (s.isNotEmpty && _isHttpUrl(s)) {
           video = s;
         }
       }
@@ -126,7 +186,10 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = toHumanError(e, fallback: 'Could not load teacher profile.');
+        _error = toHumanError(
+          e,
+          fallback: 'Could not load this instructor profile right now.',
+        );
       });
     } finally {
       if (!mounted) return;
@@ -266,7 +329,9 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.20)),
+                    border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.20),
+                    ),
                   ),
                   child: Text(
                     _error!,
