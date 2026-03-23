@@ -11,6 +11,7 @@ const ALLOWED_EXTENSIONS = [
     'mp4', 'm4v', 'mov', 'webm',
     'mp3', 'm4a', 'wav',
     'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'zip',
+    'html', 'htm',
 ];
 
 if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {

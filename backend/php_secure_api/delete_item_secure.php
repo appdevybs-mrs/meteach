@@ -29,8 +29,13 @@ function delete_recursive(string $path): bool
     return rmdir($path);
 }
 
-$root = (string) ($_POST['root'] ?? '');
-$path = (string) ($_POST['path'] ?? '');
+$root = trim((string) ($_POST['root'] ?? $_GET['root'] ?? ''));
+$path = trim((string) ($_POST['path'] ?? $_GET['path'] ?? ''));
+
+if ($root === '' || $path === '') {
+    json_response(['success' => false, 'message' => 'Missing root/path.'], 400);
+}
+
 $resolved = resolve_target_path($root, $path);
 
 if (!file_exists($resolved['full'])) {
@@ -41,4 +46,4 @@ if (!delete_recursive($resolved['full'])) {
     json_response(['success' => false, 'message' => 'Delete failed.'], 500);
 }
 
-json_response(['success' => true]);
+json_response(['success' => true, 'deleted' => $resolved['clean']]);

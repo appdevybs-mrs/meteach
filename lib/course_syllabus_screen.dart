@@ -395,6 +395,14 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       next[unitIndex] = unit.copyWith(sessions: [...unit.sessions, newSession]);
       _units = next;
     });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Session added. Tap Save to apply in RTDB.'),
+        ),
+      );
+    }
   }
 
   Future<void> _editSession(int unitIndex, int sessionIndex) async {
@@ -451,6 +459,14 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
       _units = nextUnits;
     });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Session updated. Tap Save to apply in RTDB.'),
+        ),
+      );
+    }
   }
 
   Future<void> _deleteSession(int unitIndex, int sessionIndex) async {
@@ -872,6 +888,25 @@ class _SyllabusServerStorage {
       if (folderSegments.length < 2) return '';
       final withoutFile = folderSegments.sublist(0, folderSegments.length - 1);
       return withoutFile.join('/');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static String extractRelativePathFromUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return '';
+
+    try {
+      final uri = Uri.parse(trimmed);
+      final segments = uri.pathSegments;
+      final coursesIndex = segments.indexOf('courses');
+      if (coursesIndex == -1 || segments.length <= coursesIndex + 1) {
+        return '';
+      }
+
+      final relSegments = segments.sublist(coursesIndex + 1);
+      return relSegments.join('/');
     } catch (_) {
       return '';
     }
@@ -1379,8 +1414,11 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
   bool _uploadingVideo = false;
   bool _uploadingMaterials = false;
-  bool _assetsResetForReplacement = false;
+  bool _recordedAssetFlowBusy = false;
   late String _serverFolderPath;
+
+  bool get _recordedAssetsBusy =>
+      _recordedAssetFlowBusy || _uploadingVideo || _uploadingMaterials;
 
   bool get _hasInitialRecordedAssets =>
       widget.initial.serverFolderPath.trim().isNotEmpty ||
@@ -1469,6 +1507,11 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   }
 
   Future<void> _clearVideoOnly() async {
+    if (_recordedAssetsBusy) {
+      _debug('clearVideo ignored busy=true');
+      return;
+    }
+
     _debug(
       'clearVideo requested hasVideo=${videoUrlC.text.trim().isNotEmpty} '
       'hasThumb=${videoThumbC.text.trim().isNotEmpty}',
@@ -1490,16 +1533,73 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       return;
     }
 
-    if (!mounted) return;
-    setState(() {
-      videoUrlC.clear();
-      videoThumbC.clear();
-      _inlineError = null;
-    });
-    _debug('clearVideo completed (local form state only)');
+    final oldVideoUrl = videoUrlC.text.trim();
+    final oldThumbUrl = videoThumbC.text.trim();
+
+    if (mounted) {
+      setState(() => _recordedAssetFlowBusy = true);
+    }
+
+    try {
+      if (oldVideoUrl.isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldVideoUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+            _debug('clearVideo removed old video relPath=$rel');
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) {
+              rethrow;
+            }
+            _debug('clearVideo old video already missing relPath=$rel');
+          }
+        }
+      }
+
+      if (oldThumbUrl.isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldThumbUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+            _debug('clearVideo removed old thumbnail relPath=$rel');
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) {
+              rethrow;
+            }
+            _debug('clearVideo old thumbnail already missing relPath=$rel');
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        videoUrlC.clear();
+        videoThumbC.clear();
+        _inlineError = null;
+      });
+      _debug('clearVideo completed (server + local)');
+    } catch (e) {
+      _debug('clearVideo error=$e');
+      _showInlineError('Could not remove old video: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _recordedAssetFlowBusy = false);
+      }
+    }
   }
 
   Future<void> _clearHtmlOnly() async {
+    if (_recordedAssetsBusy) {
+      _debug('clearHtml ignored busy=true');
+      return;
+    }
+
     _debug(
       'clearHtml requested hasHtml=${materialsUrlC.text.trim().isNotEmpty}',
     );
@@ -1520,96 +1620,72 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       return;
     }
 
-    if (!mounted) return;
-    setState(() {
-      materialsUrlC.clear();
-      _inlineError = null;
-    });
-    _debug('clearHtml completed (local form state only)');
+    final oldHtmlUrl = materialsUrlC.text.trim();
+
+    if (mounted) {
+      setState(() => _recordedAssetFlowBusy = true);
+    }
+
+    try {
+      if (oldHtmlUrl.isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldHtmlUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+            _debug('clearHtml removed old html relPath=$rel');
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) {
+              rethrow;
+            }
+            _debug('clearHtml old html already missing relPath=$rel');
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        materialsUrlC.clear();
+        _inlineError = null;
+      });
+      _debug('clearHtml completed (server + local)');
+    } catch (e) {
+      _debug('clearHtml error=$e');
+      _showInlineError('Could not remove old HTML: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _recordedAssetFlowBusy = false);
+      }
+    }
   }
 
   Future<bool> _prepareRecordedReplacementIfNeeded() async {
     _debug(
       'prepareReplacement start isRecorded=${widget.isRecorded} '
       'hasInitialAssets=$_hasInitialRecordedAssets '
-      'alreadyReset=$_assetsResetForReplacement',
+      'busy=$_recordedAssetsBusy',
     );
     if (!widget.isRecorded) {
       _debug('prepareReplacement skipped (not recorded)');
       return true;
     }
-    if (!_hasInitialRecordedAssets) {
-      _debug('prepareReplacement skipped (no initial assets)');
-      return true;
-    }
-    if (_assetsResetForReplacement) {
-      _debug('prepareReplacement skipped (already reset in this edit session)');
-      return true;
-    }
-
-    final ok =
-        await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Replace recorded files?'),
-            content: const Text(
-              'Replacing recorded files will delete the old video and HTML for this session first. You will need to upload both files again.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-
-    if (!ok) {
-      _debug('prepareReplacement cancelled by user');
-      return false;
-    }
-
     final folderPath = _resolvedSessionFolderPath();
     _debug(
-      'prepareReplacement confirmed folderPath=$folderPath '
+      'prepareReplacement ready folderPath=$folderPath '
       'hasInitialAssets=$_hasInitialRecordedAssets',
     );
-
-    if (folderPath.isNotEmpty) {
-      try {
-        await _SyllabusServerStorage.deletePath(
-          root: 'courses',
-          path: folderPath,
-        );
-      } catch (e) {
-        _debug('delete old assets failed folderPath=$folderPath error=$e');
-        final msg = e.toString().toLowerCase();
-        if (!msg.contains('item not found')) {
-          _showInlineError('Could not replace old recorded files: $e');
-          return false;
-        }
-        _debug('delete old assets tolerated (item not found)');
-      }
-    }
-
-    setState(() {
-      _assetsResetForReplacement = true;
-      videoUrlC.clear();
-      materialsUrlC.clear();
-      videoThumbC.clear();
-      _inlineError = null;
-    });
-    _debug('prepareReplacement completed; local media fields reset');
 
     return true;
   }
 
   Future<void> _pickAndUploadVideo() async {
+    if (_recordedAssetsBusy) {
+      _debug('video upload ignored busy=true');
+      return;
+    }
+
     final title = titleC.text.trim();
     _debug('video upload tapped titleEmpty=${title.isEmpty}');
     if (title.isEmpty) {
@@ -1617,15 +1693,22 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       return;
     }
 
-    _clearInlineError();
-
-    final prepared = await _prepareRecordedReplacementIfNeeded();
-    if (!prepared) {
-      _debug('video upload aborted by prepareReplacement=false');
-      return;
+    if (mounted) {
+      setState(() => _recordedAssetFlowBusy = true);
     }
 
     try {
+      _clearInlineError();
+
+      final oldVideoUrl = videoUrlC.text.trim();
+      final oldThumbUrl = videoThumbC.text.trim();
+
+      final prepared = await _prepareRecordedReplacementIfNeeded();
+      if (!prepared) {
+        _debug('video upload aborted by prepareReplacement=false');
+        return;
+      }
+
       setState(() => _uploadingVideo = true);
 
       final result = await FilePicker.platform.pickFiles(
@@ -1658,19 +1741,66 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       if (!mounted) return;
       setState(() {
         videoUrlC.text = url;
+        videoThumbC.clear();
         _inlineError = null;
       });
       _debug('video upload success url=$url');
+
+      if (oldVideoUrl.isNotEmpty && oldVideoUrl != url) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldVideoUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+            _debug('video replace removed old video relPath=$rel');
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) {
+              _debug('video replace could not remove old video error=$e');
+            }
+          }
+        }
+      }
+
+      if (oldThumbUrl.isNotEmpty) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldThumbUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+            _debug('video replace removed old thumbnail relPath=$rel');
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) {
+              _debug('video replace could not remove old thumbnail error=$e');
+            }
+          }
+        }
+      }
     } catch (e) {
       _debug('video upload error=$e');
       _showInlineError('Video upload failed: $e');
     } finally {
-      if (mounted) setState(() => _uploadingVideo = false);
-      _debug('video upload finished uploading=$_uploadingVideo');
+      if (mounted) {
+        setState(() {
+          _uploadingVideo = false;
+          _recordedAssetFlowBusy = false;
+        });
+      }
+      _debug(
+        'video upload finished uploading=$_uploadingVideo busy=$_recordedAssetFlowBusy',
+      );
     }
   }
 
   Future<void> _pickAndUploadHtml() async {
+    if (_recordedAssetsBusy) {
+      _debug('html upload ignored busy=true');
+      return;
+    }
+
     final title = titleC.text.trim();
     _debug('html upload tapped titleEmpty=${title.isEmpty}');
     if (title.isEmpty) {
@@ -1678,15 +1808,21 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       return;
     }
 
-    _clearInlineError();
-
-    final prepared = await _prepareRecordedReplacementIfNeeded();
-    if (!prepared) {
-      _debug('html upload aborted by prepareReplacement=false');
-      return;
+    if (mounted) {
+      setState(() => _recordedAssetFlowBusy = true);
     }
 
     try {
+      _clearInlineError();
+
+      final oldHtmlUrl = materialsUrlC.text.trim();
+
+      final prepared = await _prepareRecordedReplacementIfNeeded();
+      if (!prepared) {
+        _debug('html upload aborted by prepareReplacement=false');
+        return;
+      }
+
       setState(() => _uploadingMaterials = true);
 
       final result = await FilePicker.platform.pickFiles(
@@ -1723,12 +1859,36 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
         _inlineError = null;
       });
       _debug('html upload success url=$url');
+
+      if (oldHtmlUrl.isNotEmpty && oldHtmlUrl != url) {
+        final rel = _SyllabusServerStorage.extractRelativePathFromUrl(
+          oldHtmlUrl,
+        );
+        if (rel.isNotEmpty) {
+          try {
+            await _SyllabusServerStorage.deletePath(root: 'courses', path: rel);
+            _debug('html replace removed old html relPath=$rel');
+          } catch (e) {
+            final msg = e.toString().toLowerCase();
+            if (!msg.contains('item not found')) {
+              _debug('html replace could not remove old html error=$e');
+            }
+          }
+        }
+      }
     } catch (e) {
       _debug('html upload error=$e');
       _showInlineError('HTML upload failed: $e');
     } finally {
-      if (mounted) setState(() => _uploadingMaterials = false);
-      _debug('html upload finished uploading=$_uploadingMaterials');
+      if (mounted) {
+        setState(() {
+          _uploadingMaterials = false;
+          _recordedAssetFlowBusy = false;
+        });
+      }
+      _debug(
+        'html upload finished uploading=$_uploadingMaterials busy=$_recordedAssetFlowBusy',
+      );
     }
   }
 
@@ -1897,7 +2057,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           ),
                         const SizedBox(height: 10),
                         FilledButton.icon(
-                          onPressed: _uploadingVideo || _uploadingMaterials
+                          onPressed: _recordedAssetsBusy
                               ? null
                               : _pickAndUploadVideo,
                           icon: _uploadingVideo
@@ -1920,7 +2080,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                         if (videoUrlC.text.trim().isNotEmpty) ...[
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
-                            onPressed: _uploadingVideo || _uploadingMaterials
+                            onPressed: _recordedAssetsBusy
                                 ? null
                                 : _clearVideoOnly,
                             icon: const Icon(Icons.delete_outline_rounded),
@@ -1952,7 +2112,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           ),
                         const SizedBox(height: 10),
                         FilledButton.icon(
-                          onPressed: _uploadingVideo || _uploadingMaterials
+                          onPressed: _recordedAssetsBusy
                               ? null
                               : _pickAndUploadHtml,
                           icon: _uploadingMaterials
@@ -1975,7 +2135,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                         if (materialsUrlC.text.trim().isNotEmpty) ...[
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
-                            onPressed: _uploadingVideo || _uploadingMaterials
+                            onPressed: _recordedAssetsBusy
                                 ? null
                                 : _clearHtmlOnly,
                             icon: const Icon(Icons.delete_outline_rounded),
@@ -2017,33 +2177,37 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      _clearInlineError();
+                    onPressed: _recordedAssetsBusy
+                        ? null
+                        : () {
+                            _clearInlineError();
 
-                      if (!_form.currentState!.validate()) return;
+                            if (!_form.currentState!.validate()) return;
 
-                      Navigator.pop(
-                        context,
-                        _SessionDraft(
-                          title: titleC.text,
-                          skillType: _skill,
-                          objective: objectiveC.text,
-                          content: contentC.text,
-                          homework: homeworkC.text,
-                          durationMinutes: int.parse(durationC.text.trim()),
-                          videoUrl: widget.isRecorded
-                              ? videoUrlC.text.trim()
-                              : '',
-                          videoThumbnailUrl: widget.isRecorded
-                              ? videoThumbC.text.trim()
-                              : '',
-                          materialsUrl: materialsUrlC.text.trim(),
-                          serverFolderPath: widget.isRecorded
-                              ? _serverFolderPath.trim()
-                              : '',
-                        ),
-                      );
-                    },
+                            Navigator.pop(
+                              context,
+                              _SessionDraft(
+                                title: titleC.text,
+                                skillType: _skill,
+                                objective: objectiveC.text,
+                                content: contentC.text,
+                                homework: homeworkC.text,
+                                durationMinutes: int.parse(
+                                  durationC.text.trim(),
+                                ),
+                                videoUrl: widget.isRecorded
+                                    ? videoUrlC.text.trim()
+                                    : '',
+                                videoThumbnailUrl: widget.isRecorded
+                                    ? videoThumbC.text.trim()
+                                    : '',
+                                materialsUrl: materialsUrlC.text.trim(),
+                                serverFolderPath: widget.isRecorded
+                                    ? _serverFolderPath.trim()
+                                    : '',
+                              ),
+                            );
+                          },
                     child: const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text('Done'),

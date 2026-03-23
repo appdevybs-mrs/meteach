@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
@@ -56,6 +57,13 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   Timer? _saveDebounce;
   Timer? _hideControlsTimer;
+  bool _isDisposing = false;
+
+  void _debug(String message) {
+    if (kDebugMode) {
+      debugPrint('[RecordedVideoPlayer] $message');
+    }
+  }
 
   DatabaseReference get _progressRef => _db
       .ref(_usersNode)
@@ -75,6 +83,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   @override
   void dispose() {
+    _isDisposing = true;
     WidgetsBinding.instance.removeObserver(this);
     _progressSub?.cancel();
     _saveDebounce?.cancel();
@@ -130,7 +139,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Future<void> _exitFullscreen({bool restoreStateOnly = false}) async {
     if (!_isFullscreen && !restoreStateOnly) return;
 
-    if (mounted) {
+    final canSetState = mounted && !_isDisposing && !restoreStateOnly;
+    if (canSetState) {
       setState(() {
         _isFullscreen = false;
         _showControls = true;
@@ -162,6 +172,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Future<void> _loadAndInit() async {
+    _debug('loadAndInit start sessionId=${widget.sessionId}');
     setState(() {
       _busy = true;
       _error = null;
@@ -183,6 +194,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       if (uri == null) {
         throw Exception('Invalid video URL.');
       }
+      _debug('video uri=$uri');
 
       final controller = VideoPlayerController.networkUrl(uri);
       _controller = controller;
@@ -208,7 +220,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
       _listenForRemoteProgress();
       _startHideControlsTimer();
+      _debug('loadAndInit success initialized=true');
     } catch (e) {
+      _debug('loadAndInit error=$e');
       if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
@@ -275,6 +289,25 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     if (controller == null || !controller.value.isInitialized) return;
 
     final value = controller.value;
+    if (value.hasError) {
+      final raw = (value.errorDescription ?? '').trim();
+      final lower = raw.toLowerCase();
+      final pretty = lower.contains('response code: 404')
+          ? 'Video file not found on server (404). Please contact support.'
+          : (raw.isEmpty
+                ? 'Video playback failed.'
+                : 'Video playback failed: $raw');
+
+      if (mounted && _error != pretty) {
+        _debug('player error=$raw');
+        setState(() {
+          _error = pretty;
+          _busy = false;
+        });
+      }
+      return;
+    }
+
     final positionMs = value.position.inMilliseconds;
     final durationMs = value.duration.inMilliseconds;
 

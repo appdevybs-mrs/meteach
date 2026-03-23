@@ -9,7 +9,18 @@ function storage_root_dir(): string
 {
     $root = getenv('YBS_STORAGE_DIR');
     if (!is_string($root) || trim($root) === '') {
-        $root = __DIR__ . '/../public_assets';
+        $docRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
+        if (is_string($docRoot) && trim($docRoot) !== '' && is_dir($docRoot)) {
+            $root = $docRoot;
+        } else {
+            // Typical deployment path: /public_html/app/secure -> /public_html
+            $candidatePublic = dirname(__DIR__, 2);
+            if (is_dir($candidatePublic)) {
+                $root = $candidatePublic;
+            } else {
+                $root = __DIR__ . '/../public_assets';
+            }
+        }
     }
     if (!is_dir($root) && !mkdir($root, 0775, true) && !is_dir($root)) {
         json_response(['success' => false, 'message' => 'Cannot initialize storage root.'], 500);

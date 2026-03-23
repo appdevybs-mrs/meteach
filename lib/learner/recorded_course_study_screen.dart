@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../shared/human_error.dart';
@@ -28,6 +29,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   static const String _recordedProgressNode = 'recorded_progress';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
+
+  void _debug(String message) {
+    if (kDebugMode) {
+      debugPrint('[RecordedCourseStudy] $message');
+    }
+  }
 
   bool _busy = true;
   String? _error;
@@ -64,6 +71,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _courseUserRef.child(_recordedProgressNode);
 
   Future<void> _loadAll() async {
+    _debug('loadAll start courseKey=${widget.courseKey}');
     setState(() {
       _busy = true;
       _error = null;
@@ -77,6 +85,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
       _uid = user.uid;
       _courseId = _courseIdOf(widget.courseData);
+      _debug('resolved uid=$_uid courseId=$_courseId');
 
       if (_courseId.isEmpty) {
         throw Exception('Missing recorded course id.');
@@ -91,6 +100,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final DataSnapshot accessSnap = results[0] as DataSnapshot;
       final DataSnapshot progressSnap = results[1] as DataSnapshot;
       final DataSnapshot syllabusSnap = results[2] as DataSnapshot;
+      _debug(
+        'snapshots access=${accessSnap.exists} progress=${progressSnap.exists} '
+        'syllabus=${syllabusSnap.exists}',
+      );
 
       int expiresAt = 0;
       int durationMonths = 0;
@@ -143,7 +156,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _ensureExpandedUnits();
         _busy = false;
       });
+      _debug(
+        'loadAll success units=${_units.length} totalSessions=$_totalSessions '
+        'completed=$_completedSessions expiresAt=$_expiresAt',
+      );
     } catch (e) {
+      _debug('loadAll error=$e');
       if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
@@ -356,6 +374,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<void> _markMaterialsCompleted(_RecordedSession session) async {
+    _debug('markMaterialsCompleted sessionId=${session.id}');
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       materialsCompleted: true,
@@ -376,6 +395,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     setState(() {
       _progressBySessionId[session.id] = updated.copyWith(completed: completed);
     });
+    _debug(
+      'markMaterialsCompleted done sessionId=${session.id} completed=$completed',
+    );
   }
 
   bool _resolveCompleted(_RecordedSession session, _RecordedProgress progress) {
@@ -396,6 +418,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Future<void> _openMaterials(_RecordedSession session) async {
     final url = session.materialsUrl.trim();
+    _debug('openMaterials sessionId=${session.id} hasUrl=${url.isNotEmpty}');
     if (url.isEmpty) {
       _snack('No reading content available for this session.');
       return;
@@ -442,6 +465,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Future<void> _openVideoPlaceholder(_RecordedSession session) async {
     final hasVideo = session.videoUrl.trim().isNotEmpty;
+    _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
     if (!hasVideo) {
       _snack('No video available for this session.');
       return;
