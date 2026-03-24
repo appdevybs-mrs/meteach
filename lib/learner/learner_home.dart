@@ -62,7 +62,8 @@ class _LearnerHomeState extends State<LearnerHome> {
     ),
     LearnerTourHint(
       title: 'الشاشة الرئيسية للمتعلم',
-      line: 'تبدأ الجولة من هذه الشاشة لمتابعة الدورات والحجوزات والواجبات والتذكيرات.',
+      line:
+          'تبدأ الجولة من هذه الشاشة لمتابعة الدورات والحجوزات والواجبات والتذكيرات.',
       highlightShape: AppTourHighlightShape.fullscreen,
     ),
     LearnerTourHint(
@@ -1315,18 +1316,20 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         children: [
           const SizedBox(height: 8),
 
-          _SectionTitle(palette: p, title: 'Homework & Reminders'),
+          _SectionTitle(palette: p, title: 'Homework • Reminders • Mail'),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: KeyedSubtree(
                   key: _homeworkCardKey,
-                  child: _LearnerHomeworkHomeCard(),
+                  child: _LearnerHomeworkHomeCard(compact: true),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(child: _RemindersHomeCard()),
+              const SizedBox(width: 8),
+              const Expanded(child: _RemindersHomeCard(compact: true)),
+              const SizedBox(width: 8),
+              const Expanded(child: _LearnerMailHomeCard(compact: true)),
             ],
           ),
           FutureBuilder<bool>(
@@ -3589,7 +3592,9 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
 }
 
 class _RemindersHomeCard extends StatelessWidget {
-  const _RemindersHomeCard();
+  const _RemindersHomeCard({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -3637,7 +3642,7 @@ class _RemindersHomeCard extends StatelessWidget {
                 ),
               ],
             ),
-            padding: const EdgeInsets.all(14),
+            padding: EdgeInsets.all(compact ? 12 : 14),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3646,8 +3651,8 @@ class _RemindersHomeCard extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      width: 46,
-                      height: 46,
+                      width: compact ? 40 : 46,
+                      height: compact ? 40 : 46,
                       decoration: BoxDecoration(
                         color: p.soft,
                         borderRadius: BorderRadius.circular(15),
@@ -3686,18 +3691,144 @@ class _RemindersHomeCard extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                SizedBox(height: compact ? 12 : 18),
                 Text(
                   'Reminders',
                   style: TextStyle(
                     color: p.primary,
                     fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                    fontSize: compact ? 14 : 16,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.text.withValues(alpha: 0.62),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LearnerMailHomeCard extends StatelessWidget {
+  const _LearnerMailHomeCard({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final ref = FirebaseDatabase.instance.ref('mail_index/$uid');
+    final p = _paletteFromTheme();
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
+      builder: (context, snap) {
+        int unread = 0;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          for (final vv in v.values) {
+            if (vv is! Map) continue;
+            final m = vv.map((k, x) => MapEntry(k.toString(), x));
+            final dynamic n = m['unreadCount'];
+            final count = (n is num) ? n.toInt() : int.tryParse('$n') ?? 0;
+            unread += count;
+          }
+        }
+
+        final subtitle = unread == 0 ? 'No unread ✅' : '$unread unread';
+
+        return InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LearnerMailScreen()),
+            );
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            padding: EdgeInsets.all(compact ? 12 : 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: compact ? 40 : 46,
+                      height: compact ? 40 : 46,
+                      decoration: BoxDecoration(
+                        color: p.soft,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      child: Icon(Icons.mail_rounded, color: p.primary),
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: -8,
+                        top: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: Text(
+                            unread > 99 ? '99+' : '$unread',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                SizedBox(height: compact ? 12 : 18),
+                Text(
+                  'Mail',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: compact ? 14 : 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: p.text.withValues(alpha: 0.62),
                     fontWeight: FontWeight.w700,

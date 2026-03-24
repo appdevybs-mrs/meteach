@@ -103,7 +103,6 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     final threadId = '${_uid}_${teacherUid}_$sessionId';
 
     final subject = _hwSubject(date: date, taughtTitle: taughtTitle);
-    final hw = homeworkText.trim();
 
     final body = [
       'Homework',
@@ -1028,9 +1027,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                           icon: const Icon(
                                             Icons.mail_outline_rounded,
                                           ),
-                                          label: const Text(
-                                            'Open homework chat',
-                                          ),
+                                          label: const Text('Open HW chat'),
                                           style: OutlinedButton.styleFrom(
                                             shape: RoundedRectangleBorder(
                                               borderRadius:

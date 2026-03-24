@@ -83,6 +83,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
   String _meDisplayName = 'Learner';
   String _peerDisplayName = '';
+  bool _isHomeworkThread = false;
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -154,6 +155,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     _msgStream = _msgsRef.orderByChild('createdAt').onValue.asBroadcastStream();
     _markRead();
     _loadNames();
+    _loadThreadType();
 
     _posSub = _audio.onPositionChanged.listen((d) {
       if (!mounted) return;
@@ -255,6 +257,29 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         'unreadCount': 0,
       });
     } catch (_) {}
+  }
+
+  bool _subjectLooksHomework(String subject) {
+    return subject.trim().toLowerCase().startsWith('[hw]');
+  }
+
+  Future<void> _loadThreadType() async {
+    try {
+      final snap = await _threadRef.get();
+      bool isHomework = _subjectLooksHomework(widget.subject);
+      if (snap.exists && snap.value is Map) {
+        final m = Map<String, dynamic>.from(snap.value as Map);
+        final type = (m['type'] ?? '').toString().trim().toLowerCase();
+        if (type == 'homework') {
+          isHomework = true;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _isHomeworkThread = isHomework);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isHomeworkThread = _subjectLooksHomework(widget.subject));
+    }
   }
 
   Future<void> _markHomeworkSubmittedIfNeeded() async {
@@ -450,7 +475,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not delete this message. Please try again.',
+        ),
+      );
     }
   }
 
@@ -654,8 +684,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       _snack(
         toHumanError(
           e,
-          fallback:
-              'The audio recording could not start. Please try again.',
+          fallback: 'The audio recording could not start. Please try again.',
         ),
       );
       _resetRecUi();
@@ -800,8 +829,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       _snack(
         toHumanError(
           e,
-          fallback:
-              'The audio message could not be sent. Please try again.',
+          fallback: 'The audio message could not be sent. Please try again.',
         ),
       );
       await _recCancel();
@@ -939,7 +967,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       _snack(
         toHumanError(
           e,
-          fallback: 'Audio playback is not available right now. Please try again.',
+          fallback:
+              'Audio playback is not available right now. Please try again.',
         ),
       );
     }
@@ -965,7 +994,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         await path.set(true);
       }
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not update your reaction. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not update your reaction. Please try again.',
+        ),
+      );
     }
   }
 
@@ -1740,13 +1774,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         ),
         LearnerTourHint(
           title: 'الإرسال',
-          line: 'اكتب رسالتك ثم اضغط إرسال، ويمكنك أيضًا إرسال ملف صوتي أو مرفق.',
+          line:
+              'اكتب رسالتك ثم اضغط إرسال، ويمكنك أيضًا إرسال ملف صوتي أو مرفق.',
         ),
       ],
     );
 
     final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
     final subjectTrim = widget.subject.trim();
+    final chipText = _isHomeworkThread
+        ? (subjectTrim.isEmpty
+              ? 'Homework chat'
+              : 'Homework chat • $subjectTrim')
+        : subjectTrim;
 
     return Scaffold(
       appBar: AppBar(
@@ -1794,7 +1834,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             },
           ),
         ],
-        bottom: (subjectTrim.isEmpty)
+        bottom: (chipText.isEmpty)
             ? null
             : PreferredSize(
                 preferredSize: const Size.fromHeight(46),
@@ -1809,28 +1849,38 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                         vertical: 9,
                       ),
                       decoration: BoxDecoration(
-                        color: _orange.withValues(alpha: 0.14),
+                        color: _isHomeworkThread
+                            ? Colors.teal.withValues(alpha: 0.13)
+                            : _orange.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: _orange.withValues(alpha: 0.35),
+                          color: _isHomeworkThread
+                              ? Colors.teal.withValues(alpha: 0.32)
+                              : _orange.withValues(alpha: 0.35),
                         ),
                       ),
                       child: Row(
                         children: [
                           Icon(
-                            Icons.topic_rounded,
+                            _isHomeworkThread
+                                ? Icons.assignment_rounded
+                                : Icons.topic_rounded,
                             size: 18,
-                            color: _navy.withValues(alpha: 0.9),
+                            color: _isHomeworkThread
+                                ? Colors.teal.withValues(alpha: 0.95)
+                                : _navy.withValues(alpha: 0.9),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              subjectTrim,
+                              chipText,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
-                                color: _navy.withValues(alpha: 0.92),
+                                color: _isHomeworkThread
+                                    ? Colors.teal.withValues(alpha: 0.95)
+                                    : _navy.withValues(alpha: 0.92),
                               ),
                             ),
                           ),
@@ -2191,12 +2241,10 @@ class MailUploadClient {
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );
 
-    final streamed = await _http
-        .send(req)
-        .timeout(const Duration(seconds: 90));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(seconds: 90),
+    );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -2235,12 +2283,10 @@ class MailUploadClient {
         await http.MultipartFile.fromPath('file', path, filename: filename),
       );
 
-    final streamed = await _http
-        .send(req)
-        .timeout(const Duration(seconds: 90));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(seconds: 90),
+    );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');

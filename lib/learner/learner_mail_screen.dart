@@ -23,14 +23,10 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
   Color get _navy => UiK.primaryBlue;
   Color get _orange => UiK.actionOrange;
   Color get _navyDark => UiK.primaryBlue.withValues(alpha: 0.92);
+  Color get _hwAccent => const Color(0xFF0E8B76);
 
   String get _meUid => FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v?.toString() ?? '') ?? 0;
-  }
+  _MailListFilter _filter = _MailListFilter.all;
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
@@ -56,9 +52,16 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     return m.containsKey('peerUid') ||
         m.containsKey('peerName') ||
         m.containsKey('subject') ||
+        m.containsKey('type') ||
         m.containsKey('updatedAt') ||
         m.containsKey('lastMessage') ||
         m.containsKey('unreadCount');
+  }
+
+  bool _isHomeworkRow(_TopicRow r) {
+    final type = r.type.trim().toLowerCase();
+    if (type == 'homework') return true;
+    return r.subject.trim().toLowerCase().startsWith('[hw]');
   }
 
   List<_TopicRow> _parse(dynamic v) {
@@ -324,6 +327,24 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                 stream: ref.onValue,
                 builder: (context, snap) {
                   final rows = _parse(snap.data?.snapshot.value);
+                  final shown = rows.where((r) {
+                    final isHw = _isHomeworkRow(r);
+                    switch (_filter) {
+                      case _MailListFilter.homework:
+                        return isHw;
+                      case _MailListFilter.other:
+                        return !isHw;
+                      case _MailListFilter.all:
+                        return true;
+                    }
+                  }).toList();
+
+                  shown.sort((a, b) {
+                    final ah = _isHomeworkRow(a);
+                    final bh = _isHomeworkRow(b);
+                    if (ah != bh) return ah ? -1 : 1;
+                    return b.updatedAtMs.compareTo(a.updatedAtMs);
+                  });
 
                   if (rows.isEmpty) {
                     return Center(
@@ -337,182 +358,308 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
                     );
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (context, i) {
-                      final r = rows[i];
-
-                      final threadId = r.threadId;
-                      final peerUid = r.peerUid;
-                      final peerName = r.peerName.trim().isEmpty
-                          ? 'User'
-                          : r.peerName.trim();
-                      final subject = r.subject;
-                      final lastMessage = r.lastMessage;
-                      final unread = r.unreadCount;
-                      final updatedAt = r.updatedAtMs;
-
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => LearnerMailThreadScreen(
-                                threadId: threadId,
-                                peerUid: peerUid,
-                                peerName: peerName,
-                                subject: subject,
-                              ),
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('All'),
+                              selected: _filter == _MailListFilter.all,
+                              onSelected: (_) {
+                                setState(() => _filter = _MailListFilter.all);
+                              },
                             ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: _navy.withValues(alpha: 0.14),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('Homework'),
+                              selected: _filter == _MailListFilter.homework,
+                              onSelected: (_) {
+                                setState(
+                                  () => _filter = _MailListFilter.homework,
+                                );
+                              },
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Container(
-                                    width: 46,
-                                    height: 46,
-                                    decoration: BoxDecoration(
-                                      color: _navy.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: _navy.withValues(alpha: 0.14),
-                                      ),
-                                    ),
-                                    child: Icon(
-                                      Icons.mail_rounded,
-                                      color: _navy.withValues(alpha: 0.92),
-                                    ),
-                                  ),
-                                  if (unread > 0)
-                                    Positioned(
-                                      right: -8,
-                                      top: -8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _orange,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          unread > 99 ? '99+' : '$unread',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            peerName,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: _navy,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Text(
-                                          updatedAt <= 0 ? '' : _fmt(updatedAt),
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                            color: _navy.withValues(
-                                              alpha: 0.55,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    if (subject.trim().isNotEmpty)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _orange.withValues(
-                                            alpha: 0.14,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: _orange.withValues(
-                                              alpha: 0.24,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          _short(subject, 60),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: _navyDark,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      lastMessage.trim().isEmpty
-                                          ? '—'
-                                          : _short(lastMessage, 90),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: _navy.withValues(alpha: 0.62),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: _orange.withValues(alpha: 0.85),
-                              ),
-                            ],
-                          ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('Other'),
+                              selected: _filter == _MailListFilter.other,
+                              onSelected: (_) {
+                                setState(() => _filter = _MailListFilter.other);
+                              },
+                            ),
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                      Expanded(
+                        child: shown.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No messages in this filter.',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: _navyDark,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  8,
+                                  16,
+                                  16,
+                                ),
+                                itemCount: shown.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 10),
+                                itemBuilder: (context, i) {
+                                  final r = shown[i];
+                                  final isHomework = _isHomeworkRow(r);
+
+                                  final threadId = r.threadId;
+                                  final peerUid = r.peerUid;
+                                  final peerName = r.peerName.trim().isEmpty
+                                      ? 'User'
+                                      : r.peerName.trim();
+                                  final subject = r.subject;
+                                  final lastMessage = r.lastMessage;
+                                  final unread = r.unreadCount;
+                                  final updatedAt = r.updatedAtMs;
+
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () async {
+                                      await Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              LearnerMailThreadScreen(
+                                                threadId: threadId,
+                                                peerUid: peerUid,
+                                                peerName: peerName,
+                                                subject: subject,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: isHomework
+                                              ? _hwAccent.withValues(
+                                                  alpha: 0.26,
+                                                )
+                                              : _navy.withValues(alpha: 0.14),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          if (isHomework) ...[
+                                            Container(
+                                              width: 4,
+                                              height: 46,
+                                              decoration: BoxDecoration(
+                                                color: _hwAccent.withValues(
+                                                  alpha: 0.92,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                          ],
+                                          Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              Container(
+                                                width: 46,
+                                                height: 46,
+                                                decoration: BoxDecoration(
+                                                  color: _navy.withValues(
+                                                    alpha: 0.06,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                  border: Border.all(
+                                                    color: _navy.withValues(
+                                                      alpha: 0.14,
+                                                    ),
+                                                  ),
+                                                ),
+                                                child: Icon(
+                                                  isHomework
+                                                      ? Icons.assignment_rounded
+                                                      : Icons.mail_rounded,
+                                                  color: isHomework
+                                                      ? _hwAccent
+                                                      : _navy.withValues(
+                                                          alpha: 0.92,
+                                                        ),
+                                                ),
+                                              ),
+                                              if (unread > 0)
+                                                Positioned(
+                                                  right: -8,
+                                                  top: -8,
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: _orange,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      unread > 99
+                                                          ? '99+'
+                                                          : '$unread',
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        peerName,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w900,
+                                                          color: _navy,
+                                                          fontSize: 15,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                    Text(
+                                                      updatedAt <= 0
+                                                          ? ''
+                                                          : _fmt(updatedAt),
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: _navy.withValues(
+                                                          alpha: 0.55,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 6),
+                                                if (subject.trim().isNotEmpty)
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 6,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: isHomework
+                                                          ? _hwAccent
+                                                                .withValues(
+                                                                  alpha: 0.12,
+                                                                )
+                                                          : _orange.withValues(
+                                                              alpha: 0.14,
+                                                            ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: isHomework
+                                                            ? _hwAccent
+                                                                  .withValues(
+                                                                    alpha: 0.28,
+                                                                  )
+                                                            : _orange
+                                                                  .withValues(
+                                                                    alpha: 0.24,
+                                                                  ),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      _short(subject, 60),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: isHomework
+                                                            ? _hwAccent
+                                                                  .withValues(
+                                                                    alpha: 0.92,
+                                                                  )
+                                                            : _navyDark,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  lastMessage.trim().isEmpty
+                                                      ? '—'
+                                                      : _short(lastMessage, 90),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    color: _navy.withValues(
+                                                      alpha: 0.62,
+                                                    ),
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Icon(
+                                            Icons.chevron_right_rounded,
+                                            color: isHomework
+                                                ? _hwAccent.withValues(
+                                                    alpha: 0.78,
+                                                  )
+                                                : _orange.withValues(
+                                                    alpha: 0.85,
+                                                  ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -520,6 +667,8 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     );
   }
 }
+
+enum _MailListFilter { all, homework, other }
 
 enum _LearnerComposeMode { single, classGroup }
 
@@ -1137,6 +1286,7 @@ class _TopicRow {
     required this.threadId,
     required this.peerUid,
     required this.peerName,
+    required this.type,
     required this.subject,
     required this.lastMessage,
     required this.updatedAtMs,
@@ -1147,6 +1297,7 @@ class _TopicRow {
   final String threadId;
   final String peerUid;
   final String peerName;
+  final String type;
   final String subject;
   final String lastMessage;
   final int updatedAtMs;
@@ -1170,6 +1321,7 @@ class _TopicRow {
       threadId: threadId,
       peerUid: (m['peerUid'] ?? '').toString(),
       peerName: (m['peerName'] ?? '').toString(),
+      type: (m['type'] ?? '').toString(),
       subject: (m['subject'] ?? '').toString(),
       lastMessage: (m['lastMessage'] ?? '').toString(),
       updatedAtMs: toInt(m['updatedAt']),
