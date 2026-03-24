@@ -46,7 +46,7 @@ class _LearnerReminderDetailsScreenState
       hints: const [
         LearnerTourHint(
           title: 'تفاصيل التذكير',
-          line: 'اقرأ تفاصيل التذكير بالكامل وتابع الحالة من هنا.',
+          line: 'اقرأ تفاصيل التذكير كاملةً وتابع حالته من هذه الصفحة.',
         ),
       ],
     );

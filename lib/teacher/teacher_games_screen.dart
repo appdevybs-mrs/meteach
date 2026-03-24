@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/teacher_tour_guide.dart';
 
 class TeacherGamesScreen extends StatefulWidget {
   const TeacherGamesScreen({super.key});
@@ -1943,6 +1944,21 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_games',
+      hints: const [
+        TeacherTourHint(
+          title: 'Games manager',
+          line: 'Manage learning games, categories, and publishing status here.',
+        ),
+        TeacherTourHint(
+          title: 'Add game',
+          line: 'Use the Add Game button to create a new playable activity.',
+        ),
+      ],
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Games')),

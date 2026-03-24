@@ -12,6 +12,7 @@ import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
 import '../services/push_client.dart';
 import 'admin_learner_mail_topics_screen.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key});
@@ -235,6 +236,13 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_learners',
+      title: 'قائمة المتعلمين',
+      line: 'من هنا تبحث عن المتعلمين وتفتح تفاصيلهم او تضيف متعلم جديد.',
+    );
+
     return Scaffold(
       backgroundColor: AdminLearnersScreen.appBg,
       appBar: AppBar(
@@ -1883,6 +1891,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_learner_editor',
+      title: 'محرر بيانات المتعلم',
+      line: 'استخدم هذه الشاشة لتعديل بيانات المتعلم والحفظ بعد المراجعة.',
+    );
 
     return Scaffold(
       backgroundColor: AdminLearnersScreen.appBg,

@@ -342,7 +342,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
     try {
       final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
-      if (picked == null || picked.files.isEmpty) return;
+      if (picked == null || picked.files.isEmpty) {
+        _snack('Upload was cancelled.');
+        return;
+      }
 
       final f = picked.files.first;
       final name = (f.name.isNotEmpty)
@@ -355,14 +358,18 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (kIsWeb) {
         final bytes = f.bytes;
         if (bytes == null || bytes.isEmpty) {
-          _snack('Upload failed: file bytes are empty (web).');
+          _snack(
+            'This file appears to be unreadable or corrupted. Please choose the file again.',
+          );
           return;
         }
         url = await client.uploadBytes(bytes: bytes, filename: name);
       } else {
         final path = f.path;
         if (path == null || path.trim().isEmpty) {
-          _snack('Upload failed: no file path.');
+          _snack(
+            'The app does not have permission to access this file or action.',
+          );
           return;
         }
         url = await client.uploadPath(path: path, filename: name);
@@ -371,7 +378,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (!mounted) return;
       setState(() => _attachments.add({'name': name, 'url': url}));
     } catch (e) {
-      _snack('Upload failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
     }
   }
 
@@ -383,7 +396,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         source: ImageSource.camera,
         imageQuality: 85,
       );
-      if (x == null) return;
+      if (x == null) {
+        _snack('Upload was cancelled.');
+        return;
+      }
 
       final client = MailUploadClient.defaultClient();
       final name = x.name.isNotEmpty
@@ -394,7 +410,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (kIsWeb) {
         final bytes = await x.readAsBytes();
         if (bytes.isEmpty) {
-          _snack('Camera upload failed: empty image bytes.');
+          _snack(
+            'The selected image appears to be unreadable. Please choose another image.',
+          );
           return;
         }
         url = await client.uploadBytes(bytes: bytes, filename: name);
@@ -405,7 +423,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       if (!mounted) return;
       setState(() => _attachments.add({'name': name, 'url': url}));
     } catch (e) {
-      _snack('Camera upload failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
     }
   }
 
@@ -426,7 +450,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
     }
   }
 
@@ -530,7 +554,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           ..clear()
           ..addAll(attachmentsBackup);
       });
-      _snack('Send failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Your message could not be sent right now. Please check your internet and try again.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -621,7 +651,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         return;
       }
     } catch (e) {
-      _snack('Record failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'The audio recording could not start. Please try again.',
+        ),
+      );
       _resetRecUi();
     }
   }
@@ -761,7 +797,13 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
       await _send();
     } catch (e) {
-      _snack('Audio send failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'The audio message could not be sent. Please try again.',
+        ),
+      );
       await _recCancel();
     } finally {
       if (mounted) {
@@ -894,7 +936,12 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       _playingUrl = url;
       await _audio.play(UrlSource(url));
     } catch (e) {
-      _snack('Audio failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Audio playback is not available right now. Please try again.',
+        ),
+      );
     }
   }
 
@@ -918,7 +965,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         await path.set(true);
       }
     } catch (e) {
-      _snack('Reaction failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not update your reaction. Please try again.'));
     }
   }
 
@@ -1498,7 +1545,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             const SizedBox(height: 8),
           ],
           if (m.body.trim().isNotEmpty)
-            Text(
+            SelectableText(
               m.body,
               style: TextStyle(
                 color: textColor,
@@ -1689,11 +1736,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       hints: const [
         LearnerTourHint(
           title: 'المحادثة',
-          line: 'هنا تتابع الرسائل بالكامل داخل نفس الموضوع.',
+          line: 'يمكنك هنا متابعة الرسائل كاملة داخل الموضوع ذاته.',
         ),
         LearnerTourHint(
-          title: 'الارسال',
-          line: 'اكتب رسالتك ثم اضغط ارسال. يمكنك ايضا ارسال صوت او ملف.',
+          title: 'الإرسال',
+          line: 'اكتب رسالتك ثم اضغط إرسال، ويمكنك أيضًا إرسال ملف صوتي أو مرفق.',
         ),
       ],
     );
@@ -2144,8 +2191,12 @@ class MailUploadClient {
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );
 
-    final streamed = await _http.send(req);
-    final body = await streamed.stream.bytesToString();
+    final streamed = await _http
+        .send(req)
+        .timeout(const Duration(seconds: 90));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(seconds: 90));
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -2184,8 +2235,12 @@ class MailUploadClient {
         await http.MultipartFile.fromPath('file', path, filename: filename),
       );
 
-    final streamed = await _http.send(req);
-    final body = await streamed.stream.bytesToString();
+    final streamed = await _http
+        .send(req)
+        .timeout(const Duration(seconds: 90));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(seconds: 90));
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');

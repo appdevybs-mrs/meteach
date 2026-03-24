@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/teacher_tour_guide.dart';
 
 class TeacherOnlineBookingScreen extends StatefulWidget {
   const TeacherOnlineBookingScreen({super.key});
@@ -928,6 +929,21 @@ class _TeacherOnlineBookingScreenState
   Widget build(BuildContext context) {
     final weeklySlots = _totalWeeklySlots();
     final selectedCount = _selectedCoursesCount();
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_online_booking',
+      hints: const [
+        TeacherTourHint(
+          title: 'Online availability',
+          line: 'Turn booking on, choose courses, and define your weekly slots.',
+        ),
+        TeacherTourHint(
+          title: 'Save setup',
+          line: 'Save your availability after changing days, hours, or meeting link.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,

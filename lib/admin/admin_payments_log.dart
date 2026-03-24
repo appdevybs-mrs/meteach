@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminPaymentsLogScreen extends StatefulWidget {
   const AdminPaymentsLogScreen({super.key});
@@ -19,6 +20,13 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_payments_log',
+      title: 'سجل المدفوعات',
+      line: 'يعرض هذا القسم سجل العمليات المالية للمتابعة والمراجعة.',
+    );
+
     return Scaffold(
       backgroundColor: AdminPaymentsLogScreen.appBg,
       appBar: AppBar(

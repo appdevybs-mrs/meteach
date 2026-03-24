@@ -33,6 +33,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import '../shared/human_error.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
@@ -2478,6 +2479,13 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_classes',
+      title: 'ادارة الصفوف',
+      line: 'هذه الشاشة تعرض كل الصفوف وتسمح باضافة صف جديد او تعديل صف موجود.',
+    );
+
     return ScaffoldMessenger(
       key: _messengerKey,
       child: Scaffold(

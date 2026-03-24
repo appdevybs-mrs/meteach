@@ -20,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/teacher_tour_guide.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
   const TeacherMailThreadScreen({
@@ -574,7 +575,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     try {
       final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
-      if (picked == null || picked.files.isEmpty) return;
+      if (picked == null || picked.files.isEmpty) {
+        _snack('Upload was cancelled.');
+        return;
+      }
 
       final f = picked.files.first;
       final name = (f.name.isNotEmpty)
@@ -591,7 +595,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         final bytes = f.bytes;
         if (bytes == null || bytes.isEmpty) {
           _finishUploadPlaceholder(uploadId);
-          _snack('Upload failed: file bytes are empty (web).');
+          _snack(
+            'This file appears to be unreadable or corrupted. Please choose the file again.',
+          );
           return;
         }
         url = await client.uploadBytes(bytes: bytes, filename: name);
@@ -599,7 +605,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         final path = f.path;
         if (path == null || path.trim().isEmpty) {
           _finishUploadPlaceholder(uploadId);
-          _snack('Upload failed: no file path.');
+          _snack(
+            'The app does not have permission to access this file or action.',
+          );
           return;
         }
         url = await client.uploadPath(path: path, filename: name);
@@ -612,7 +620,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _attachments.add({'name': name, 'url': url});
       });
     } catch (e) {
-      _snack('Upload failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
       if (mounted) {
         setState(() {
           _uploadingItems.clear();
@@ -629,7 +643,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         source: ImageSource.camera,
         imageQuality: 85,
       );
-      if (x == null) return;
+      if (x == null) {
+        _snack('Upload was cancelled.');
+        return;
+      }
 
       final client = MailUploadClient.defaultClient();
       final name = x.name.isNotEmpty
@@ -644,7 +661,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         final bytes = await x.readAsBytes();
         if (bytes.isEmpty) {
           _finishUploadPlaceholder(uploadId);
-          _snack('Camera upload failed: empty image bytes.');
+          _snack(
+            'The selected image appears to be unreadable. Please choose another image.',
+          );
           return;
         }
         url = await client.uploadBytes(bytes: bytes, filename: name);
@@ -658,7 +677,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         _attachments.add({'name': name, 'url': url});
       });
     } catch (e) {
-      _snack('Camera upload failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
       if (mounted) {
         setState(() {
           _uploadingItems.clear();
@@ -712,7 +737,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           ..clear()
           ..addAll(attachmentsBackup);
       });
-      _snack('Send failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Your message could not be sent right now. Please check your internet and try again.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -822,7 +853,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
     }
   }
 
@@ -840,7 +871,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         await path.set(true);
       }
     } catch (e) {
-      _snack('Reaction failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not update your reaction. Please try again.'));
     }
   }
 
@@ -1155,7 +1186,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         return;
       }
     } catch (e) {
-      _snack('Record failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'The audio recording could not start. Please try again.',
+        ),
+      );
       _resetRecUi();
     }
   }
@@ -1301,7 +1338,13 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
       await _send();
     } catch (e) {
-      _snack('Audio send failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'The audio message could not be sent. Please try again.',
+        ),
+      );
       await _recCancel();
     } finally {
       if (mounted) {
@@ -1434,7 +1477,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _playingUrl = url;
       await _audio.play(UrlSource(url));
     } catch (e) {
-      _snack('Audio failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Audio playback is not available right now. Please try again.',
+        ),
+      );
     }
   }
 
@@ -1874,7 +1922,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             const SizedBox(height: 8),
           ],
           if (m.body.trim().isNotEmpty)
-            Text(
+            SelectableText(
               m.body,
               style: TextStyle(
                 color: textColor,
@@ -1993,6 +2041,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
       int liveScore = score.clamp(0, 100);
       String liveGrade = _gradeFromScore(liveScore);
+
+      if (!mounted) return;
 
       final ok = await showDialog<bool>(
         context: context,
@@ -2943,6 +2993,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
     bool sending = false;
 
+    if (!mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -3068,8 +3120,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             if (commentText.isNotEmpty) '\nTeacher comment: $commentText',
           ];
 
-          return WillPopScope(
-            onWillPop: () async => !sending,
+          return PopScope(
+            canPop: !sending,
             child: AlertDialog(
               title: const Text('Report Card'),
               content: SingleChildScrollView(
@@ -3272,7 +3324,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       key: diagramKey,
                       child: _ReportWatermarkBackground(
                         child: _ReportCardDiagramV2(
-                          schoolTitle: 'REPORT CARD',
+                          schoolTitle: 'Your Bridge School Academy',
                           learnerName: _peerNameShown,
                           courseKey: courseKey!,
                           createdAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -3343,7 +3395,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                 .push()
                                 .key;
                             if (reportId == null) {
-                              _snack('Failed to create report id.');
+                              _snack(
+                                'The report could not be prepared correctly. Please try again.',
+                              );
                               setLocal(() => sending = false);
                               return;
                             }
@@ -3453,14 +3507,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                               messageType: 'report',
                             );
 
-                            if (mounted) Navigator.pop(ctx, true);
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx, true);
+                            if (!mounted) return;
                             _snack('Report sent ✅');
                           } catch (e, _) {
                             _snack(
                               toHumanError(
                                 e,
                                 fallback:
-                                    'Could not send the report. Try again.',
+                                    'The report could not be sent right now. Please check your internet and try again.',
                               ),
                             );
                             setLocal(() => sending = false);
@@ -3639,6 +3695,21 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
     final subjectTrim = widget.subject.trim();
     final canReport = _peerIsLearner;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_mail_thread',
+      hints: const [
+        TeacherTourHint(
+          title: 'Conversation thread',
+          line: 'Read messages, search the thread, and open shared files here.',
+        ),
+        TeacherTourHint(
+          title: 'Send message',
+          line: 'Use the composer area at the bottom to send text, audio, or attachments.',
+        ),
+      ],
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -4027,7 +4098,7 @@ class _ReportWatermarkBackground extends StatelessWidget {
         Positioned.fill(
           child: IgnorePointer(
             child: Opacity(
-              opacity: 0.05,
+              opacity: 0.035,
               child: Center(
                 child: FractionallySizedBox(
                   widthFactor: 0.75,
@@ -4182,7 +4253,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const maxPerSection = 6;
-    final courseLabel = courseKey; // default (or pass title into courseKey)
+    final courseLabel = courseKey;
     final bShown = _capItems(behaviorItems, maxPerSection);
     final pShown = _capItems(progressItems, maxPerSection);
 
@@ -4191,16 +4262,16 @@ class _ReportCardDiagramV2 extends StatelessWidget {
 
     return Container(
       width: 360,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFFCFDFE),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -4209,11 +4280,51 @@ class _ReportCardDiagramV2 extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              schoolTitle.toUpperCase(),
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Image.asset(
+                    'assets/images/ybs_logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(Icons.school_rounded),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        schoolTitle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Learner Progress Report',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 12),
             Text(
               'Learner: $learnerName',
               style: const TextStyle(fontWeight: FontWeight.w900),
@@ -4223,21 +4334,21 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             Text(
               'Course: $courseLabel',
               style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.70),
+                color: const Color(0xFF475569),
                 fontWeight: FontWeight.w800,
               ),
             ),
             Text(
               'Date: ${_fmtDate(createdAtMs)}',
               style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.70),
+                color: const Color(0xFF475569),
                 fontWeight: FontWeight.w800,
               ),
             ),
             Text(
               'Teacher: $teacherName',
               style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.70),
+                color: const Color(0xFF475569),
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -4255,7 +4366,8 @@ class _ReportCardDiagramV2 extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            const Divider(),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -4263,7 +4375,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _sectionTitle('Behavior details'),
+                      _sectionTitle('Behavior Indicators'),
                       const SizedBox(height: 8),
                       for (final it in bShown)
                         Padding(
@@ -4290,7 +4402,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _sectionTitle('Progress details'),
+                      _sectionTitle('Progress Indicators'),
                       const SizedBox(height: 8),
                       for (final it in pShown)
                         Padding(
@@ -4315,8 +4427,9 @@ class _ReportCardDiagramV2 extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            const Divider(),
-            _sectionTitle('Summary'),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+            _sectionTitle('Auto Summary'),
             const SizedBox(height: 6),
             Text(
               autoSummary,
@@ -4328,7 +4441,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            _sectionTitle('Comment'),
+            _sectionTitle('Teacher Notes'),
             const SizedBox(height: 6),
             Container(
               width: double.infinity,
@@ -4354,7 +4467,7 @@ class _ReportCardDiagramV2 extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'Report ID: $reportId',
+                'Reference: $reportId',
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
@@ -4495,8 +4608,12 @@ class MailUploadClient {
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );
 
-    final streamed = await _http.send(req);
-    final body = await streamed.stream.bytesToString();
+    final streamed = await _http
+        .send(req)
+        .timeout(const Duration(seconds: 90));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(seconds: 90));
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -4536,8 +4653,12 @@ class MailUploadClient {
         await http.MultipartFile.fromPath('file', path, filename: filename),
       );
 
-    final streamed = await _http.send(req);
-    final body = await streamed.stream.bytesToString();
+    final streamed = await _http
+        .send(req)
+        .timeout(const Duration(seconds: 90));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(seconds: 90));
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');

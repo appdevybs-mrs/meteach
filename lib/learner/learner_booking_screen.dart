@@ -3197,11 +3197,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
       hints: const [
         LearnerTourHint(
           title: 'فلاتر الجدول',
-          line: 'استخدم الفلاتر لاختيار اليوم والمعلم والوقت المناسب لك.',
+          line: 'استخدم المرشحات لتحديد اليوم والمعلم والوقت الملائم.',
         ),
         LearnerTourHint(
           title: 'تأكيد الحجز',
-          line: 'بعد اختيار الموعد اضغط زر الحجز لتأكيد الحصة مباشرة.',
+          line: 'بعد اختيار الموعد، اضغط زر الحجز لتأكيد الحصة مباشرةً.',
         ),
       ],
     );

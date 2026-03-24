@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
   const AdminPaymentsScreen({super.key});
@@ -581,6 +582,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_payments',
+      title: 'ادارة المدفوعات',
+      line: 'من هذه الشاشة تسجل الدفعات وتراجع التفاصيل حسب المتعلم والدورة.',
+    );
+
     return StreamBuilder<DatabaseEvent>(
       stream: _paymentsRef.onValue,
       builder: (context, snap) {

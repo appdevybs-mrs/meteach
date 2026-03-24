@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dream_english_academy/admin/admin_classes.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminTimetableScreen extends StatefulWidget {
   const AdminTimetableScreen({super.key});
@@ -1129,6 +1130,13 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_timetable',
+      title: 'الجدول الاسبوعي',
+      line: 'من هنا تراجع جدول الصفوف الاسبوعي حسب الايام والمعلمين.',
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Weekly Timetable"),

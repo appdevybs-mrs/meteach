@@ -577,11 +577,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       hints: const [
         LearnerTourHint(
           title: 'قائمة الواجبات',
-          line: 'هنا تشوف الواجبات المطلوبة منك حسب الجلسات.',
+          line: 'تتضمن هذه القائمة الواجبات المطلوبة منك بحسب الجلسات.',
         ),
         LearnerTourHint(
           title: 'التحديث',
-          line: 'استخدم زر التحديث لمزامنة اخر حالة للواجبات.',
+          line: 'استخدم زر التحديث لمزامنة أحدث حالة للواجبات.',
         ),
       ],
     );

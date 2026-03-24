@@ -22,7 +22,9 @@ import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/first_login_agreement.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -34,6 +36,7 @@ class LearnerHome extends StatefulWidget {
 class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuKey = GlobalKey();
+  final GlobalKey _menuIconKey = GlobalKey();
   final GlobalKey _drawerCoursesKey = GlobalKey();
   final GlobalKey _drawerGamesKey = GlobalKey();
   final GlobalKey _drawerCoachKey = GlobalKey();
@@ -53,20 +56,22 @@ class _LearnerHomeState extends State<LearnerHome> {
 
   static const List<LearnerTourHint> _quickStartHints = [
     LearnerTourHint(
-      title: 'اهلا بك',
-      line: 'هذا شرح سريع يساعدك تعرف التطبيق خلال دقيقة.',
+      title: 'مرحبًا بك',
+      line: 'هذه جولة تعريفية موجزة تساعدك على فهم آلية استخدام التطبيق.',
+      highlightShape: AppTourHighlightShape.fullscreen,
     ),
     LearnerTourHint(
-      title: 'صفحة البداية',
-      line: 'من هنا تقدر تتابع الدورات، الحجز، الواجبات، والتذكيرات.',
+      title: 'الشاشة الرئيسية للمتعلم',
+      line: 'تبدأ الجولة من هذه الشاشة لمتابعة الدورات والحجوزات والواجبات والتذكيرات.',
+      highlightShape: AppTourHighlightShape.fullscreen,
     ),
     LearnerTourHint(
       title: 'القائمة الجانبية',
-      line: 'اضغط زر القائمة للتنقل بين كل صفحات المتعلم.',
+      line: 'استخدم زر القائمة للانتقال المنظم بين جميع صفحات المتعلم.',
     ),
     LearnerTourHint(
-      title: 'اعادة الشرح',
-      line: 'تقدر تعيد الجولة لاحقا من القائمة الجانبية في اي وقت.',
+      title: 'إعادة الجولة',
+      line: 'يمكنك إعادة الجولة لاحقًا من القائمة الجانبية في أي وقت.',
     ),
   ];
 
@@ -76,6 +81,10 @@ class _LearnerHomeState extends State<LearnerHome> {
     appThemeController.addListener(_onThemeChanged);
     _displayNameFuture = _myDisplayName();
     _profilePhotoFuture = _myProfilePhoto();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
+    });
   }
 
   @override
@@ -132,7 +141,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (!mounted) return;
     _scaffoldKey.currentState?.openDrawer();
 
-    await Future<void>.delayed(const Duration(milliseconds: 420));
+    await _waitForDrawerReady();
     if (!mounted) return;
 
     await LearnerTourGuide.maybeStart(
@@ -141,56 +150,79 @@ class _LearnerHomeState extends State<LearnerHome> {
       hints: [
         LearnerTourHint(
           title: 'دوراتي',
-          line: 'من هنا تفتح كل دوراتك بسرعة.',
+          line: 'من هذا الخيار يمكنك الوصول إلى جميع دوراتك بسهولة.',
           targetKey: _drawerCoursesKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
-          title: 'الالعاب',
-          line: 'قسم الالعاب للتدريب بطريقة ممتعة.',
+          title: 'الألعاب',
+          line: 'يخصص هذا القسم للتدريب التعليمي بطريقة تفاعلية.',
           targetKey: _drawerGamesKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'مدرب الدراسة',
-          line: 'يساعدك في الاهداف والخطة الاسبوعية.',
+          line: 'يساعدك هذا القسم في تنظيم الأهداف والخطة الأسبوعية.',
           targetKey: _drawerCoachKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'القصص',
-          line: 'هنا القصص للقراءة والاستماع والمشاهدة.',
+          line: 'يحتوي هذا القسم على القصص للقراءة والاستماع والمشاهدة.',
           targetKey: _drawerStoriesKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'الملف الشخصي',
-          line: 'حدث بياناتك وصورتك من هذا القسم.',
+          line: 'من هذا القسم يمكنك مراجعة بياناتك الشخصية وصورتك.',
           targetKey: _drawerProfileKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'البريد',
-          line: 'تابع الرسائل والمحادثات مع المعلمين.',
+          line: 'يتيح لك هذا القسم متابعة الرسائل والمحادثات مع المعلمين.',
           targetKey: _drawerMailKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'اللوائح',
-          line: 'راجع قوانين وسياسات الاكاديمية.',
+          line: 'راجع من هنا لوائح الأكاديمية وسياساتها المعتمدة.',
           targetKey: _drawerRegulationsKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
-          title: 'اعدادات المظهر',
-          line: 'غير شكل التطبيق من هنا.',
+          title: 'إعدادات المظهر',
+          line: 'يمكنك تعديل المظهر العام للتطبيق من هذا القسم.',
           targetKey: _drawerThemeKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
-          title: 'اعادة الجولة',
-          line: 'لو حاب تعيد الشرح، اضغط هذا الخيار.',
+          title: 'إعادة الجولة',
+          line: 'استخدم هذا الخيار لإعادة عرض الإرشادات التعليمية.',
           targetKey: _drawerRestartTourKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'تسجيل الخروج',
-          line: 'هذا الزر للخروج من الحساب.',
+          line: 'استخدم هذا الزر لتسجيل الخروج من الحساب بأمان.',
           targetKey: _drawerLogoutKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
       ],
     );
+  }
+
+  Future<void> _waitForDrawerReady() async {
+    for (var i = 0; i < 20; i++) {
+      if (!mounted) return;
+      final drawerOpen = _scaffoldKey.currentState?.isDrawerOpen ?? false;
+      final hasFirstTarget = _drawerCoursesKey.currentContext != null;
+      if (drawerOpen && hasFirstTarget) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 220));
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -328,10 +360,17 @@ class _LearnerHomeState extends State<LearnerHome> {
       context,
       screenId: 'learner_home',
       hints: [
+        const LearnerTourHint(
+          title: 'الشاشة الرئيسية للمتعلم',
+          line:
+              'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
+          highlightShape: AppTourHighlightShape.fullscreen,
+        ),
         LearnerTourHint(
           title: 'زر القائمة',
-          line: 'هذا الزر يفتح القائمة الجانبية للتنقل بين كل الصفحات.',
-          targetKey: _menuKey,
+          line: 'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
+          targetKey: _menuIconKey,
+          highlightShape: AppTourHighlightShape.circle,
         ),
       ],
     );
@@ -367,46 +406,57 @@ class _LearnerHomeState extends State<LearnerHome> {
         onOpenThemeSettings: _openThemeSheet,
         onRestartTour: () async {
           await LearnerTourGuide.resetAll();
-          if (!mounted) return;
+          if (!mounted || !context.mounted) return;
           await LearnerTourGuide.startNow(
             context,
             screenId: 'learner_quick_start',
             hints: _quickStartHints,
             isQuickStart: true,
           );
-          if (!mounted) return;
+          if (!mounted || !context.mounted) return;
           await LearnerTourGuide.startNow(
             context,
             screenId: 'learner_home',
             hints: [
+              const LearnerTourHint(
+                title: 'الشاشة الرئيسية للمتعلم',
+                line:
+                    'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
+                highlightShape: AppTourHighlightShape.fullscreen,
+              ),
               LearnerTourHint(
                 title: 'زر القائمة',
-                line: 'هذا الزر يفتح القائمة الجانبية للتنقل بين كل الصفحات.',
-                targetKey: _menuKey,
+                line:
+                    'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
+                targetKey: _menuIconKey,
+                highlightShape: AppTourHighlightShape.circle,
               ),
             ],
           );
-          if (!mounted) return;
+          if (!mounted || !context.mounted) return;
           await LearnerTourGuide.startNow(
             context,
             screenId: 'learner_home_dashboard',
-            hints: const [
+            hints: [
               LearnerTourHint(
                 title: 'بطاقة الواجبات',
-                line: 'من هنا تتابع الواجبات المعلقة وتفتح التفاصيل.',
+                line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
+                highlightShape: AppTourHighlightShape.fullscreen,
               ),
               LearnerTourHint(
                 title: 'بطاقة الحجز',
-                line: 'هذه البطاقة تفتح شاشة حجز الحصص القادمة.',
+                line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
+                highlightShape: AppTourHighlightShape.fullscreen,
               ),
               LearnerTourHint(
                 title: 'قائمة الدورات',
-                line: 'هنا تشوف تقدمك في كل دورة وتفتح تفاصيلها.',
+                line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
+                highlightShape: AppTourHighlightShape.fullscreen,
               ),
             ],
           );
           _drawerTourAttempted = false;
-          if (!mounted) return;
+          if (!mounted || !context.mounted) return;
           await _maybeStartDrawerTour();
         },
         onLogout: () => _logout(context),
@@ -419,7 +469,7 @@ class _LearnerHomeState extends State<LearnerHome> {
         surfaceTintColor: p.cardBg,
         leading: IconButton(
           key: _menuKey,
-          icon: Icon(Icons.menu_rounded, color: p.primary),
+          icon: Icon(Icons.menu_rounded, key: _menuIconKey, color: p.primary),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: FutureBuilder<String>(
@@ -461,11 +511,18 @@ class _LearnerHomeState extends State<LearnerHome> {
                 context,
                 screenId: 'learner_home',
                 hints: [
+                  const LearnerTourHint(
+                    title: 'الشاشة الرئيسية للمتعلم',
+                    line:
+                        'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
+                    highlightShape: AppTourHighlightShape.fullscreen,
+                  ),
                   LearnerTourHint(
                     title: 'زر القائمة',
                     line:
-                        'هذا الزر يفتح القائمة الجانبية للتنقل بين كل الصفحات.',
-                    targetKey: _menuKey,
+                        'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
+                    targetKey: _menuIconKey,
+                    highlightShape: AppTourHighlightShape.circle,
                   ),
                 ],
               );
@@ -1218,18 +1275,21 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       hints: [
         LearnerTourHint(
           title: 'بطاقة الواجبات',
-          line: 'من هنا تتابع الواجبات المعلقة وتفتح التفاصيل.',
+          line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
           targetKey: _homeworkCardKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'بطاقة الحجز',
-          line: 'هذه البطاقة تفتح شاشة حجز الحصص القادمة.',
+          line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
           targetKey: _bookingCardKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
         LearnerTourHint(
           title: 'قائمة الدورات',
-          line: 'هنا تشوف تقدمك في كل دورة وتفتح تفاصيلها.',
+          line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
           targetKey: _coursesListKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
         ),
       ],
     );
@@ -3003,6 +3063,7 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
       );
     }
   } catch (e) {
+    if (!context.mounted) return;
     AppToast.fromSnackBar(
       context,
       SnackBar(
@@ -3191,6 +3252,7 @@ Future<void> _openHomeworkCoursePicker(
       );
     }
   } catch (e) {
+    if (!context.mounted) return;
     AppToast.fromSnackBar(
       context,
       SnackBar(
@@ -4041,8 +4103,8 @@ class _LearnerDrawer extends StatelessWidget {
                     key: restartTourTileKey,
                     palette: palette,
                     icon: Icons.tour_rounded,
-                    title: 'اعادة الجولة',
-                    subtitle: 'اعرض تعليمات التطبيق من جديد',
+                    title: 'إعادة الجولة',
+                    subtitle: 'إعادة عرض إرشادات التطبيق',
                     onTap: () {
                       Navigator.of(context).pop();
                       onRestartTour();

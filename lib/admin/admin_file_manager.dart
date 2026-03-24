@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminFileManager extends StatefulWidget {
   const AdminFileManager({super.key});
@@ -37,6 +38,13 @@ class _AdminFileManagerState extends State<AdminFileManager>
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_file_manager',
+      title: 'مدير الملفات',
+      line: 'هذه الصفحة لادارة ملفات الدورات والالعاب ورفع الملفات الجديدة.',
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('File Manager'),
@@ -115,11 +123,17 @@ class _FileBrowserState extends State<_FileBrowser>
     final authFields = await BackendApi.authFormFields();
     final postUri = await BackendApi.withAuthQuery(Uri.parse(url));
     final headers = await BackendApi.authHeaders();
-    final r = await http.post(
+    final r = await http
+        .post(
       postUri,
       body: {...body, ...authFields},
       headers: headers,
-    );
+    )
+        .timeout(const Duration(seconds: 60));
+
+    if (r.statusCode < 200 || r.statusCode >= 300) {
+      throw Exception('HTTP ${r.statusCode}');
+    }
 
     final raw = r.body.trim();
     if (!raw.startsWith('{')) {
@@ -390,6 +404,7 @@ class _FileBrowserState extends State<_FileBrowser>
       );
 
       if (result == null || result.files.isEmpty) {
+        _showSnack('Upload was cancelled.');
         return;
       }
 
@@ -421,8 +436,10 @@ class _FileBrowserState extends State<_FileBrowser>
         );
       }
 
-      final streamed = await req.send();
-      final response = await http.Response.fromStream(streamed);
+      final streamed = await req.send().timeout(const Duration(seconds: 120));
+      final response = await http.Response.fromStream(streamed).timeout(
+        const Duration(seconds: 120),
+      );
 
       final raw = response.body.trim();
       if (!raw.startsWith('{')) {
@@ -618,6 +635,13 @@ class _FileBrowserState extends State<_FileBrowser>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_file_browser',
+      title: 'متصفح الملفات',
+      line: 'من هذا القسم تتصفح المجلدات والملفات وتنفذ عمليات الادارة.',
+    );
 
     return Scaffold(
       body: Column(
@@ -2230,6 +2254,13 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_games_manager',
+      title: 'ادارة الالعاب',
+      line: 'هنا تدير مكتبة الالعاب وتضيف او تعدل محتوى كل لعبة.',
+    );
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(

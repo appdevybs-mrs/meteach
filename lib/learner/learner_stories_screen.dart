@@ -1090,11 +1090,11 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       hints: const [
         LearnerTourHint(
           title: 'البحث في القصص',
-          line: 'اضغط البحث لايجاد القصة المناسبة بسرعة.',
+          line: 'استخدم البحث للوصول إلى القصة المناسبة بسرعة.',
         ),
         LearnerTourHint(
           title: 'فتح القصة',
-          line: 'من كل بطاقة يمكنك القراءة او الاستماع او مشاهدة المحتوى.',
+          line: 'تتيح لك كل بطاقة القراءة أو الاستماع أو مشاهدة المحتوى.',
         ),
       ],
     );

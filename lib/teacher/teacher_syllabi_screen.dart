@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/teacher_tour_guide.dart';
 import '../shared/watermark_background.dart';
 import 'teacher_syllabus_details_screen.dart';
 
@@ -221,6 +222,17 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
 
   @override
   Widget build(BuildContext context) {
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_syllabi',
+      hints: const [
+        TeacherTourHint(
+          title: 'Syllabi list',
+          line: 'Browse available course syllabi and open details for each course.',
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(

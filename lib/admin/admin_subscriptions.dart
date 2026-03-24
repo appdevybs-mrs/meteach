@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
+import '../shared/admin_tour_guide.dart';
 
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 import '../shared/app_feedback.dart';
@@ -33,6 +34,13 @@ class AdminSubscriptionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_subscriptions',
+      title: 'طلبات التسجيل',
+      line: 'تعرض هذه الشاشة طلبات الاشتراك الجديدة مع امكانية فتح التفاصيل.',
+    );
+
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -249,6 +257,13 @@ class SubscriptionDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final split = splitFullName(sub.fullName);
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_subscription_details',
+      title: 'تفاصيل الاشتراك',
+      line: 'راجع بيانات الطلب ثم انشئ متعلم او احذف الطلب عند الحاجة.',
+    );
 
     return Scaffold(
       backgroundColor: appBg,
@@ -602,6 +617,13 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_subscription_create',
+      title: 'اضافة اشتراك',
+      line: 'استخدم هذه الشاشة لادخال طلب اشتراك جديد وحفظه في النظام.',
+    );
+
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(

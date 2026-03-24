@@ -1135,42 +1135,42 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _StatusMiniPill(
-                label: requiresVideo
-                    ? (progress.videoCompleted ? '✓ Video' : 'Video')
-                    : 'No video',
-                fg: progress.videoCompleted
-                    ? const Color(0xFF15803D)
-                    : const Color(0xFF475569),
-                bg: progress.videoCompleted
-                    ? const Color(0xFFF0FDF4)
-                    : const Color(0xFFFFFFFF),
-                border: progress.videoCompleted
-                    ? const Color(0xFFBBF7D0)
-                    : const Color(0xFFE2E8F0),
-              ),
-              _StatusMiniPill(
-                label: requiresMaterials
-                    ? (progress.materialsCompleted ? '✓ Read' : 'Read')
-                    : 'No read',
-                fg: progress.materialsCompleted
-                    ? const Color(0xFF15803D)
-                    : const Color(0xFF475569),
-                bg: progress.materialsCompleted
-                    ? const Color(0xFFF0FDF4)
-                    : const Color(0xFFFFFFFF),
-                border: progress.materialsCompleted
-                    ? const Color(0xFFBBF7D0)
-                    : const Color(0xFFE2E8F0),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
+          if (requiresVideo || requiresMaterials) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (requiresVideo)
+                  _StatusMiniPill(
+                    label: progress.videoCompleted ? '✓ Video' : 'Video',
+                    fg: progress.videoCompleted
+                        ? const Color(0xFF15803D)
+                        : const Color(0xFF475569),
+                    bg: progress.videoCompleted
+                        ? const Color(0xFFF0FDF4)
+                        : const Color(0xFFFFFFFF),
+                    border: progress.videoCompleted
+                        ? const Color(0xFFBBF7D0)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                if (requiresMaterials)
+                  _StatusMiniPill(
+                    label: progress.materialsCompleted ? '✓ Read' : 'Read',
+                    fg: progress.materialsCompleted
+                        ? const Color(0xFF15803D)
+                        : const Color(0xFF475569),
+                    bg: progress.materialsCompleted
+                        ? const Color(0xFFF0FDF4)
+                        : const Color(0xFFFFFFFF),
+                    border: progress.materialsCompleted
+                        ? const Color(0xFFBBF7D0)
+                        : const Color(0xFFE2E8F0),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
           if (!isUnlocked)
             Container(
               width: double.infinity,
@@ -1503,11 +1503,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       hints: const [
         LearnerTourHint(
           title: 'الدروس المسجلة',
-          line: 'اختَر الوحدة ثم افتح الفيديو او مواد القراءة لكل جلسة.',
+          line: 'اختر الوحدة، ثم افتح الفيديو أو مواد القراءة لكل جلسة.',
         ),
         LearnerTourHint(
           title: 'شهادة الدورة',
-          line: 'بعد اكمال المتطلبات يمكنك تنزيل او طباعة الشهادة.',
+          line: 'بعد استكمال المتطلبات يمكنك تنزيل الشهادة أو طباعتها.',
         ),
       ],
     );

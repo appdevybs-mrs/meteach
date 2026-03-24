@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminTeacherAvailabilityOverviewScreen extends StatefulWidget {
   const AdminTeacherAvailabilityOverviewScreen({super.key});
@@ -1563,6 +1564,13 @@ class _AdminTeacherAvailabilityOverviewScreenState
   @override
   Widget build(BuildContext context) {
     final filteredTeachers = _filteredTeachers();
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_teacher_availability_overview',
+      title: 'توفر المعلمين',
+      line: 'تعرض هذه الشاشة تغطية توفر المعلمين للحجز اونلاين حسب الدورات.',
+    );
 
     return Scaffold(
       backgroundColor: appBg,

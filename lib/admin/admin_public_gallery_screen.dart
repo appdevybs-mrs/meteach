@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
+import '../shared/admin_tour_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
@@ -952,6 +953,13 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_public_gallery',
+      title: 'المعرض العام',
+      line: 'من هنا تستعرض وسائط المعرض العام ومعرض المتعلمين.',
+    );
+
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -1510,6 +1518,13 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_learner_gallery',
+      title: 'معرض المتعلم',
+      line: 'تعرض هذه الشاشة ملفات المتعلم ويمكنك حذف او فتح اي عنصر.',
+    );
+
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(
@@ -2257,6 +2272,13 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
         ? 'Admin'
         : uploaderName.trim();
 
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_public_gallery_viewer',
+      title: 'عارض الوسائط',
+      line: 'هنا تفتح الصورة او الفيديو بالحجم الكامل مع معلومات الرفع.',
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -2406,6 +2428,13 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
     final displayUploader = uploaderName.trim().isEmpty
         ? 'Admin'
         : uploaderName.trim();
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_learner_gallery_viewer',
+      title: 'عارض معرض المتعلم',
+      line: 'تستطيع من هذه الشاشة معاينة الوسائط الخاصة بالمتعلم بالتفصيل.',
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,

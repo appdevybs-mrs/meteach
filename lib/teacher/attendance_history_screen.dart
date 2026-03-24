@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/teacher_tour_guide.dart';
 import 'take_attendance_screen.dart';
 import '../shared/app_feedback.dart';
 
@@ -838,6 +839,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   Widget build(BuildContext context) {
     final p = palette;
     final totalSessions = _sessions.length;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_attendance_history',
+      hints: const [
+        TeacherTourHint(
+          title: 'Attendance history',
+          line: 'Review saved attendance sessions and open any session to edit details.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,

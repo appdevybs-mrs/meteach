@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/push_client.dart';
 import '../shared/app_theme.dart';
 import '../shared/app_feedback.dart';
+import '../shared/teacher_tour_guide.dart';
 
 /// Teacher side reminders:
 /// - Reads from: /reminders/{teacherUid}
@@ -658,6 +659,17 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_reminders',
+      hints: const [
+        TeacherTourHint(
+          title: 'Reminders',
+          line: 'Open reminders, mark them as done, and follow linked resources.',
+        ),
+      ],
+    );
+
     if (_uid == null) {
       return Scaffold(
         backgroundColor: p.appBg,

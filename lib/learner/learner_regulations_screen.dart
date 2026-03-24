@@ -213,8 +213,8 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
       screenId: 'learner_regulations',
       hints: const [
         LearnerTourHint(
-          title: 'لوائح الاكاديمية',
-          line: 'هنا تجد القوانين والسياسات المهمة الخاصة بالدراسة.',
+          title: 'لوائح الأكاديمية',
+          line: 'تجد هنا القوانين والسياسات الأساسية المنظمة للدراسة.',
         ),
       ],
     );

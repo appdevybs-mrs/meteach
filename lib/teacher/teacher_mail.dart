@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import '../shared/human_error.dart';
+import '../shared/teacher_tour_guide.dart';
 
 import 'teacher_mail_thread_screen.dart';
 import '../shared/app_feedback.dart';
@@ -962,6 +963,21 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_mail',
+      hints: const [
+        TeacherTourHint(
+          title: 'Mailbox',
+          line: 'Browse conversations by Learners, Teachers, and Admin tabs.',
+        ),
+        TeacherTourHint(
+          title: 'New topic',
+          line: 'Use the New topic button to start a new conversation.',
+        ),
+      ],
+    );
 
     return DefaultTabController(
       length: 3,

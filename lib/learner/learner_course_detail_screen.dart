@@ -889,11 +889,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       hints: const [
         LearnerTourHint(
           title: 'تبويبات الدورة',
-          line: 'بدل بين تبويبات الدفع والحضور والتقدم لمتابعة كل شيء.',
+          line: 'انتقل بين تبويبات الدفع والحضور والتقدم لمتابعة جميع التفاصيل.',
         ),
         LearnerTourHint(
           title: 'الواجبات',
-          line: 'زر الواجبات في الاعلى ينقلك مباشرة الى واجبات هذه الدورة.',
+          line: 'ينقلك زر الواجبات في الأعلى مباشرةً إلى واجبات هذه الدورة.',
         ),
       ],
     );

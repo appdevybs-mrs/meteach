@@ -18,7 +18,7 @@ class LearnerRemindersListScreen extends StatelessWidget {
       hints: const [
         LearnerTourHint(
           title: 'قائمة التذكيرات',
-          line: 'كل اشعاراتك المهمة تظهر هنا. اضغط اي تذكير لقراءة التفاصيل.',
+          line: 'تظهر في هذه القائمة جميع تنبيهاتك المهمة. اضغط أي تذكير لقراءة التفاصيل.',
         ),
       ],
     );

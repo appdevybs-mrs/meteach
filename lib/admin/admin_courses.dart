@@ -11,6 +11,7 @@ import 'package:dream_english_academy/course_syllabus_screen.dart';
 import 'package:dream_english_academy/shared/human_error.dart';
 import 'package:dream_english_academy/services/backend_api.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminCoursesScreen extends StatefulWidget {
   const AdminCoursesScreen({super.key});
@@ -61,6 +62,13 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_courses',
+      title: 'ادارة الدورات',
+      line: 'من هذه الصفحة تتابع كل الدورات وتفتح شاشة اضافة او تعديل الدورة.',
+    );
+
     return Scaffold(
       backgroundColor: AdminCoursesScreen.appBg,
       appBar: AppBar(
@@ -1976,6 +1984,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.mode == EditorMode.edit;
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_course_editor',
+      title: 'محرر الدورة',
+      line: 'استخدم هذه الشاشة لتعبئة بيانات الدورة وحفظها بشكل صحيح.',
+    );
 
     return Scaffold(
       backgroundColor: AdminCoursesScreen.appBg,

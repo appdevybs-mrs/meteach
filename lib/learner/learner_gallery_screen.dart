@@ -74,11 +74,11 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
       hints: const [
         LearnerTourHint(
           title: 'المعرض',
-          line: 'في هذه الصفحة ستجد الصور والفيديوهات المرسلة لك من المعلمين.',
+          line: 'تتضمن هذه الصفحة الصور ومقاطع الفيديو المرسلة إليك من المعلمين.',
         ),
         LearnerTourHint(
           title: 'فتح الوسائط',
-          line: 'اضغط اي عنصر لعرضه بالحجم الكامل.',
+          line: 'اضغط أي عنصر لعرضه بالحجم الكامل.',
         ),
       ],
     );
@@ -635,6 +635,21 @@ class _LearnerGalleryViewerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = type.trim().toLowerCase() == 'video';
+
+    LearnerTourGuide.schedule(
+      context,
+      screenId: 'learner_gallery_viewer',
+      hints: const [
+        LearnerTourHint(
+          title: 'عرض العنصر',
+          line: 'تعرض هذه الصفحة الصورة أو الفيديو بالحجم الكامل.',
+        ),
+        LearnerTourHint(
+          title: 'معلومات العنصر',
+          line: 'أسفل الشاشة ستجد اسم المعلم واسم الصف وتاريخ الإضافة.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,

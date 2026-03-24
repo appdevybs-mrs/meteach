@@ -15,12 +15,15 @@ import 'admin_classes.dart';
 import 'admin_public_gallery_screen.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
+import 'admin_shared_files_screen.dart';
 import '../shared/session_manager.dart';
 import 'admin_booking.dart';
 import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
+import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -55,6 +58,12 @@ class _AdminHomeState extends State<AdminHome> {
   static const _prefsRoleKey = 'admin_home_role_mode_is_admin';
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey _menuButtonKey = GlobalKey();
+  final GlobalKey _headerCardKey = GlobalKey();
+  final GlobalKey _cardsGridKey = GlobalKey();
+  final GlobalKey _paymentsCardKey = GlobalKey();
+  final GlobalKey _learnersCardKey = GlobalKey();
+  final GlobalKey _sharedCardKey = GlobalKey();
 
   bool _isAdminMode = true;
   bool _loadingRole = true;
@@ -134,6 +143,56 @@ class _AdminHomeState extends State<AdminHome> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.schedule(
+      context,
+      screenId: 'admin_home',
+      hints: [
+        const AdminTourHint(
+          title: 'لوحة الإدارة',
+          line:
+              'تمثل هذه الشاشة مركز التحكم الرئيسي لإدارة الأقسام التشغيلية والأكاديمية في المنصة.',
+          highlightShape: AppTourHighlightShape.fullscreen,
+        ),
+        AdminTourHint(
+          title: 'زر القائمة',
+          line:
+              'استخدم هذا الزر لفتح القائمة الجانبية وتبديل وضع العرض بين الإدارة والاستقبال.',
+          targetKey: _menuButtonKey,
+          highlightShape: AppTourHighlightShape.circle,
+        ),
+        AdminTourHint(
+          title: 'ملخص الدور الحالي',
+          line:
+              'توضح هذه البطاقة هوية الحساب والدور النشط ووصف الصلاحيات المتاحة ضمن هذا الوضع.',
+          targetKey: _headerCardKey,
+        ),
+        AdminTourHint(
+          title: 'شبكة أدوات الإدارة',
+          line:
+              'تضم هذه الشبكة البطاقات الرئيسية للوصول السريع إلى الدورات والصفوف والمدفوعات وبقية الأقسام.',
+          targetKey: _cardsGridKey,
+        ),
+        AdminTourHint(
+          title: 'بطاقة المدفوعات',
+          line:
+              'توفر هذه البطاقة نقطة دخول مباشرة لإدارة السجلات المالية ومتابعة عمليات الدفع.',
+          targetKey: _paymentsCardKey,
+        ),
+        AdminTourHint(
+          title: 'بطاقة المتعلمين',
+          line:
+              'تتيح هذه البطاقة متابعة بيانات المتعلمين وحالة الالتزام المالي ومستوى التتبع الدراسي.',
+          targetKey: _learnersCardKey,
+        ),
+        AdminTourHint(
+          title: 'بطاقة الملفات المشتركة',
+          line:
+              'من هذه البطاقة يمكنك مراجعة الملفات المشتركة بين المعلمين وإدارتها على مستوى النظام.',
+          targetKey: _sharedCardKey,
+        ),
+      ],
+    );
+
     final user = FirebaseAuth.instance.currentUser;
 
     final width = MediaQuery.of(context).size.width;
@@ -198,22 +257,32 @@ class _AdminHomeState extends State<AdminHome> {
           context,
         ).push(MaterialPageRoute(builder: (_) => const AdminTimetableScreen())),
       ),
-      _DashCard(
-        title: 'Payments',
-        subtitle: 'All payments',
-        icon: Icons.payments_rounded,
-        color: AdminHome.accentBlue,
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminPaymentsScreen())),
+      KeyedSubtree(
+        key: _paymentsCardKey,
+        child: _DashCard(
+          title: 'Payments',
+          subtitle: 'All payments',
+          icon: Icons.payments_rounded,
+          color: AdminHome.accentBlue,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+          ),
+        ),
       ),
       _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
-      _LearnersDashCard(
-        isReceptionistStyle: !_isAdminMode,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminLearnersScreen())),
+      KeyedSubtree(
+        key: _sharedCardKey,
+        child: _AdminSharedFilesDashCard(isReceptionistStyle: !_isAdminMode),
+      ),
+      KeyedSubtree(
+        key: _learnersCardKey,
+        child: _LearnersDashCard(
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+          ),
+        ),
       ),
       _DashCard(
         title: 'Reminders',
@@ -311,22 +380,32 @@ class _AdminHomeState extends State<AdminHome> {
           context,
         ).push(MaterialPageRoute(builder: (_) => const AdminTimetableScreen())),
       ),
-      _DashCard(
-        title: 'Payments',
-        subtitle: 'All payments',
-        icon: Icons.payments_rounded,
-        color: AdminHome.accentBlue,
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminPaymentsScreen())),
+      KeyedSubtree(
+        key: _paymentsCardKey,
+        child: _DashCard(
+          title: 'Payments',
+          subtitle: 'All payments',
+          icon: Icons.payments_rounded,
+          color: AdminHome.accentBlue,
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+          ),
+        ),
       ),
       _SubscriptionsDashCard(isReceptionistStyle: true),
-      _LearnersDashCard(
-        isReceptionistStyle: true,
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AdminLearnersScreen())),
+      KeyedSubtree(
+        key: _sharedCardKey,
+        child: _AdminSharedFilesDashCard(isReceptionistStyle: true),
+      ),
+      KeyedSubtree(
+        key: _learnersCardKey,
+        child: _LearnersDashCard(
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+          ),
+        ),
       ),
       _DashCard(
         title: 'Public Gallery',
@@ -388,6 +467,7 @@ class _AdminHomeState extends State<AdminHome> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 10, top: 8, bottom: 8),
           child: Material(
+            key: _menuButtonKey,
             color: _isAdminMode
                 ? const Color(0xFFF1F5F9)
                 : const Color(0xFFFFF5EB),
@@ -463,6 +543,7 @@ class _AdminHomeState extends State<AdminHome> {
                 children: [
                   // Compact header card
                   Container(
+                    key: _headerCardKey,
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -589,12 +670,15 @@ class _AdminHomeState extends State<AdminHome> {
 
                   // Grid
                   Expanded(
-                    child: GridView.count(
-                      crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: cardRatio,
-                      children: visibleCards,
+                    child: KeyedSubtree(
+                      key: _cardsGridKey,
+                      child: GridView.count(
+                        crossAxisCount: crossAxisCount,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: cardRatio,
+                        children: visibleCards,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -991,6 +1075,42 @@ class _SubscriptionsDashCard extends StatelessWidget {
   }
 }
 
+class _AdminSharedFilesDashCard extends StatelessWidget {
+  final bool isReceptionistStyle;
+
+  const _AdminSharedFilesDashCard({this.isReceptionistStyle = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('shared_files');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int count = 0;
+        final v = snap.data?.snapshot.value;
+        if (v is Map) count = v.length;
+
+        final subtitle = count == 0
+            ? 'No shared files'
+            : '$count shared file${count == 1 ? '' : 's'}';
+
+        return _DashCard(
+          title: 'Shared Files',
+          subtitle: subtitle,
+          icon: Icons.folder_shared_rounded,
+          color: AdminHome.accentTeal,
+          badgeCount: count,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminSharedFilesScreen()),
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ===================== PAY FLAG =====================
 
 enum _PayFlag { ok, yellow, red, black, noCourse }
@@ -1027,6 +1147,40 @@ class _LearnersDashCard extends StatelessWidget {
     return dates.length;
   }
 
+  static String _normalizeVariantKey(String raw) {
+    final v = raw.trim().toLowerCase();
+    switch (v) {
+      case 'inclass':
+      case 'in-class':
+      case 'class':
+        return 'inclass';
+      case 'private':
+      case 'live':
+        return 'private';
+      case 'flexible':
+      case 'online':
+        return 'flexible';
+      case 'recorded':
+      case 'record':
+        return 'recorded';
+      default:
+        return v.isEmpty ? 'inclass' : v;
+    }
+  }
+
+  static bool _isExpiredMs(int expiresAt) {
+    if (expiresAt <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= expiresAt;
+  }
+
+  static bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
+    if (expiresAt <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = expiresAt - now;
+    if (diff < 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
+  }
+
   static int _rank(_PayFlag f) {
     switch (f) {
       case _PayFlag.black:
@@ -1059,10 +1213,64 @@ class _LearnersDashCard extends StatelessWidget {
 
     final warnAt = dueAt - 1;
 
-    if (currentSession == dueAt) return _PayFlag.red;
+    if (currentSession >= dueAt) return _PayFlag.red;
     if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
 
     return _PayFlag.ok;
+  }
+
+  static _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
+    final variantKey = _normalizeVariantKey(
+      (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
+    );
+
+    final paymentSummary = courseMap['payment_summary'];
+    final summaryMap = paymentSummary is Map
+        ? paymentSummary.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    final attendance = courseMap['attendance'];
+    final sessionsDone = _countUniqueAttendanceDates(attendance);
+    final sessionsPaidTotal = _asInt(summaryMap['sessionsPaidTotal']);
+    final remindBeforeSession = _asInt(summaryMap['remindBeforeSession']);
+
+    if (variantKey == 'recorded') {
+      final access = courseMap['recorded_access'];
+      final accessMap = access is Map
+          ? access.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final expiresAt = _asInt(accessMap['expiresAt']);
+      if (expiresAt <= 0) return _PayFlag.black;
+      if (_isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (_isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      return _PayFlag.ok;
+    }
+
+    if (variantKey == 'flexible') {
+      final access = courseMap['flexible_access'];
+      final accessMap = access is Map
+          ? access.map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final expiresAt = _asInt(accessMap['expiresAt']);
+
+      if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
+      if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal) {
+        return _PayFlag.red;
+      }
+      if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      if (sessionsPaidTotal > 0) {
+        final left = sessionsPaidTotal - sessionsDone;
+        if (left <= 1) return _PayFlag.yellow;
+      }
+      return _PayFlag.ok;
+    }
+
+    return _paymentFlag(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsDone: sessionsDone,
+      remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
+    );
   }
 
   static String _classIdOf(Map<String, dynamic> courseMap) {
@@ -1120,12 +1328,31 @@ class _LearnersDashCard extends StatelessWidget {
                 .toString()
                 .toLowerCase()
                 .trim();
-            if (role != 'learner') return;
+            if (role != 'learner' && role != 'learners' && role != 'learner(s)') {
+              return;
+            }
 
             totalLearners++;
 
             final courses = userMap['courses'];
             if (courses is! Map || courses.isEmpty) {
+              blueCount++;
+              return;
+            }
+
+            bool hasTrackedClass = false;
+            courses.forEach((_, courseVal) {
+              if (courseVal is! Map) return;
+              final courseMap = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
+              final cls = courseMap['class'];
+              if (cls is! Map) return;
+              final classMap = cls.map((k, vv) => MapEntry(k.toString(), vv));
+              final classId = (classMap['class_id'] ?? '').toString().trim();
+              if (classId.isNotEmpty) {
+                hasTrackedClass = true;
+              }
+            });
+            if (!hasTrackedClass) {
               blueCount++;
               return;
             }
@@ -1140,23 +1367,7 @@ class _LearnersDashCard extends StatelessWidget {
                 (k, vv) => MapEntry(k.toString(), vv),
               );
 
-              final sum = courseMap['payment_summary'];
-              final sumMap = sum is Map
-                  ? sum.map((k, vv) => MapEntry(k.toString(), vv))
-                  : <String, dynamic>{};
-
-              final sessionsPaidTotal = _asInt(sumMap['sessionsPaidTotal']);
-              final remind = _asInt(sumMap['remindBeforeSession']);
-              final remindBefore = remind > 0 ? remind : 1;
-
-              final attendance = courseMap['attendance'];
-              final sessionsDone = _countUniqueAttendanceDates(attendance);
-
-              final flag = _paymentFlag(
-                sessionsPaidTotal: sessionsPaidTotal,
-                sessionsDone: sessionsDone,
-                remindBeforeSession: remindBefore,
-              );
+              final flag = _variantPaymentFlag(courseMap);
 
               if (_rank(flag) > _rank(worst)) worst = flag;
               if (worst == _PayFlag.black) return;
@@ -2032,6 +2243,13 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_force_update_all',
+      title: 'اعدادات التطبيق',
+      line: 'هنا تضبط رقم النسخة الاجبارية ورسائل التحديث للتطبيق.',
+    );
+
     return Scaffold(
       backgroundColor: appBg,
       appBar: AppBar(

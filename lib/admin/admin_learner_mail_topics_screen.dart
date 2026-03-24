@@ -5,6 +5,7 @@ import '../shared/human_error.dart';
 
 import 'mail_topic_thread_screen.dart'; // the topic thread screen you already have
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminLearnerMailTopicsScreen extends StatefulWidget {
   const AdminLearnerMailTopicsScreen({
@@ -174,6 +175,13 @@ class _AdminLearnerMailTopicsScreenState
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_learner_mail_topics',
+      title: 'مواضيع بريد المتعلم',
+      line: 'تعرض هذه الشاشة مواضيع البريد الخاصة بالمتعلم ويمكنك اضافة موضوع جديد.',
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(

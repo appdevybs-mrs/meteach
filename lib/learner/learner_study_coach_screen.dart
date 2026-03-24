@@ -351,11 +351,11 @@ class _LearnerStudyCoachScreenState extends State<LearnerStudyCoachScreen> {
       hints: const [
         LearnerTourHint(
           title: 'مدرب الدراسة',
-          line: 'هذه الصفحة تساعدك تبني خطة اسبوعية وتتابع الانجاز اليومي.',
+          line: 'تساعدك هذه الصفحة على إعداد خطة أسبوعية ومتابعة الإنجاز اليومي.',
         ),
         LearnerTourHint(
           title: 'المهام اليومية',
-          line: 'ضع علامة صح عند اتمام كل مهمة حتى يظهر تقدمك.',
+          line: 'ضع علامة إكمال عند إنجاز كل مهمة ليظهر تقدمك بدقة.',
         ),
       ],
     );

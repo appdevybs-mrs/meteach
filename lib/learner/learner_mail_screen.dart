@@ -280,11 +280,11 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
       hints: const [
         LearnerTourHint(
           title: 'صندوق الرسائل',
-          line: 'هذه الصفحة تعرض كل المحادثات بينك وبين المعلم او الصف.',
+          line: 'تعرض هذه الصفحة جميع المحادثات بينك وبين المعلم أو الصف.',
         ),
         LearnerTourHint(
           title: 'رسالة جديدة',
-          line: 'زر الرسالة الجديدة يفتح لك ارسال رسالة مباشرة.',
+          line: 'يتيح لك زر الرسالة الجديدة إرسال رسالة مباشرة.',
         ),
       ],
     );

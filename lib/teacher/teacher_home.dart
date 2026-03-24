@@ -7,7 +7,10 @@ import 'package:intl/intl.dart';
 import 'teacher_public_gallery_screen.dart';
 import 'teacher_online_circle_screen.dart';
 import '../shared/app_theme.dart';
+import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
+import '../shared/first_login_agreement.dart';
 import '../shared/session_manager.dart';
+import '../shared/teacher_tour_guide.dart';
 import 'TeacherStoriesScreen.dart';
 import 'teacher_classes.dart';
 import 'teacher_games_screen.dart';
@@ -17,6 +20,7 @@ import 'teacher_profile.dart';
 import 'teacher_regulations_screen.dart';
 import 'teacher_reminder.dart';
 import 'teacher_schedule.dart';
+import 'teacher_shared_files_screen.dart';
 import 'teacher_syllabi_screen.dart';
 import 'teacher_wages_screen.dart';
 
@@ -33,6 +37,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey _menuButtonKey = GlobalKey();
+  final GlobalKey _guideButtonKey = GlobalKey();
+  final GlobalKey _heroCardKey = GlobalKey();
+  final GlobalKey _inboxCardKey = GlobalKey();
+  final GlobalKey _remindersCardKey = GlobalKey();
+  final GlobalKey _overviewPanelKey = GlobalKey();
+  final GlobalKey _classesCardKey = GlobalKey();
+  final GlobalKey _nextClassCardKey = GlobalKey();
 
   Stream<DatabaseEvent>? _remindersStream;
   Stream<DatabaseEvent>? _mailIndexStream;
@@ -46,6 +58,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      FirstLoginAgreement.ensureAccepted(context, roleKey: 'teacher');
+    });
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -564,6 +580,66 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Widget build(BuildContext context) {
     final p = palette;
 
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_home',
+      hints: [
+        const TeacherTourHint(
+          title: 'Teacher dashboard',
+          line:
+              'This screen is your operational center for classes, mail, reminders, and daily actions.',
+          highlightShape: AppTourHighlightShape.fullscreen,
+        ),
+        TeacherTourHint(
+          title: 'Open menu',
+          line: 'Use this button to open all teacher tools and navigation links.',
+          targetKey: _menuButtonKey,
+          highlightShape: AppTourHighlightShape.circle,
+        ),
+        TeacherTourHint(
+          title: 'Guide',
+          line: 'Tap here anytime to restart the guided tour for this screen.',
+          targetKey: _guideButtonKey,
+          highlightShape: AppTourHighlightShape.circle,
+        ),
+        TeacherTourHint(
+          title: 'Teacher summary',
+          line:
+              'This card shows your profile shortcut and quick access to your teaching schedule.',
+          targetKey: _heroCardKey,
+        ),
+        TeacherTourHint(
+          title: 'Inbox status',
+          line:
+              'This indicator shows unread mail and opens the teacher mailbox directly.',
+          targetKey: _inboxCardKey,
+        ),
+        TeacherTourHint(
+          title: 'Reminders status',
+          line:
+              'This card shows pending reminders and opens your reminders management screen.',
+          targetKey: _remindersCardKey,
+        ),
+        TeacherTourHint(
+          title: 'Overview panel',
+          line:
+              'This section summarizes classes, learners, and upcoming online sessions.',
+          targetKey: _overviewPanelKey,
+        ),
+        TeacherTourHint(
+          title: 'Classes shortcut',
+          line: 'Use this card to open your classes list quickly.',
+          targetKey: _classesCardKey,
+        ),
+        TeacherTourHint(
+          title: 'Next class',
+          line:
+              'This card highlights your next scheduled class and opens the schedule details.',
+          targetKey: _nextClassCardKey,
+        ),
+      ],
+    );
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: p.appBg,
@@ -584,8 +660,28 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         onOpenWages: () => _pushScreen(const TeacherWagesScreen()),
         onOpenRegulations: () => _pushScreen(const TeacherRegulationsScreen()),
         onOpenSyllabi: () => _pushScreen(TeacherSyllabiScreen()),
+        onOpenShared: () => _pushScreen(const TeacherSharedFilesScreen()),
 
         onOpenThemeSettings: _openThemeSheet,
+        onRestartTour: () async {
+          await TeacherTourGuide.resetAll();
+          if (!context.mounted) return;
+          await TeacherTourGuide.startNow(
+            context,
+            screenId: 'teacher_home',
+            hints: const [
+              TeacherTourHint(
+                title: 'Teacher dashboard',
+                line:
+                    'This is your main hub for classes, reminders, and quick actions.',
+              ),
+              TeacherTourHint(
+                title: 'Open menu',
+                line: 'Use the menu button to open all teacher tools and screens.',
+              ),
+            ],
+          );
+        },
         onLogout: () => _logout(context),
       ),
       appBar: AppBar(
@@ -594,6 +690,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         centerTitle: false,
         surfaceTintColor: Colors.white,
         leading: IconButton(
+          key: _menuButtonKey,
           icon: Icon(Icons.menu_rounded, color: p.primary),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
@@ -629,6 +726,74 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         ),
         actions: [
           IconButton(
+            key: _guideButtonKey,
+            tooltip: 'Guide',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () {
+              TeacherTourGuide.startNow(
+                context,
+                screenId: 'teacher_home',
+                hints: [
+                  const TeacherTourHint(
+                    title: 'Teacher dashboard',
+                    line:
+                        'This screen is your operational center for classes, mail, reminders, and daily actions.',
+                    highlightShape: AppTourHighlightShape.fullscreen,
+                  ),
+                  TeacherTourHint(
+                    title: 'Open menu',
+                    line:
+                        'Use this button to open all teacher tools and navigation links.',
+                    targetKey: _menuButtonKey,
+                    highlightShape: AppTourHighlightShape.circle,
+                  ),
+                  TeacherTourHint(
+                    title: 'Guide',
+                    line:
+                        'Tap here anytime to restart the guided tour for this screen.',
+                    targetKey: _guideButtonKey,
+                    highlightShape: AppTourHighlightShape.circle,
+                  ),
+                  TeacherTourHint(
+                    title: 'Teacher summary',
+                    line:
+                        'This card shows your profile shortcut and quick access to your teaching schedule.',
+                    targetKey: _heroCardKey,
+                  ),
+                  TeacherTourHint(
+                    title: 'Inbox status',
+                    line:
+                        'This indicator shows unread mail and opens the teacher mailbox directly.',
+                    targetKey: _inboxCardKey,
+                  ),
+                  TeacherTourHint(
+                    title: 'Reminders status',
+                    line:
+                        'This card shows pending reminders and opens your reminders management screen.',
+                    targetKey: _remindersCardKey,
+                  ),
+                  TeacherTourHint(
+                    title: 'Overview panel',
+                    line:
+                        'This section summarizes classes, learners, and upcoming online sessions.',
+                    targetKey: _overviewPanelKey,
+                  ),
+                  TeacherTourHint(
+                    title: 'Classes shortcut',
+                    line: 'Use this card to open your classes list quickly.',
+                    targetKey: _classesCardKey,
+                  ),
+                  TeacherTourHint(
+                    title: 'Next class',
+                    line:
+                        'This card highlights your next scheduled class and opens the schedule details.',
+                    targetKey: _nextClassCardKey,
+                  ),
+                ],
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Theme',
             icon: Icon(Icons.palette_rounded, color: p.accent),
             onPressed: _openThemeSheet,
@@ -661,13 +826,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   future: _displayNameFuture,
                   builder: (context, snap) {
                     final name = (snap.data ?? 'Teacher').trim();
-                    return _HeroSummaryCard(
-                      palette: p,
-                      teacherName: name.isEmpty ? 'Teacher' : name,
-                      onOpenProfile: () =>
-                          _pushScreen(const TeacherProfileScreen()),
-                      onOpenSchedule: () =>
-                          _pushScreen(const TeacherSchedule()),
+                    return KeyedSubtree(
+                      key: _heroCardKey,
+                      child: _HeroSummaryCard(
+                        palette: p,
+                        teacherName: name.isEmpty ? 'Teacher' : name,
+                        onOpenProfile: () =>
+                            _pushScreen(const TeacherProfileScreen()),
+                        onOpenSchedule: () =>
+                            _pushScreen(const TeacherSchedule()),
+                      ),
                     );
                   },
                 ),
@@ -681,14 +849,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           final unread = _countUnreadMail(
                             snap.data?.snapshot.value,
                           );
-                          return _MiniStatCard(
-                            palette: p,
-                            label: 'Inbox',
-                            value: unread == 0 ? 'Clear' : '$unread unread',
-                            icon: Icons.email_rounded,
-                            badgeCount: unread,
-                            badgeColor: Colors.red,
-                            onTap: () => _pushScreen(const TeacherMailScreen()),
+                          return KeyedSubtree(
+                            key: _inboxCardKey,
+                            child: _MiniStatCard(
+                              palette: p,
+                              label: 'Inbox',
+                              value: unread == 0 ? 'Clear' : '$unread unread',
+                              icon: Icons.email_rounded,
+                              badgeCount: unread,
+                              badgeColor: Colors.red,
+                              onTap: () => _pushScreen(const TeacherMailScreen()),
+                            ),
                           );
                         },
                       ),
@@ -701,15 +872,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           final pending = _countNotDoneReminders(
                             snap.data?.snapshot.value,
                           );
-                          return _MiniStatCard(
-                            palette: p,
-                            label: 'Reminders',
-                            value: pending == 0 ? 'None' : '$pending pending',
-                            icon: Icons.alarm_rounded,
-                            badgeCount: pending,
-                            badgeColor: p.accent,
-                            onTap: () =>
-                                _pushScreen(const TeacherReminderScreen()),
+                          return KeyedSubtree(
+                            key: _remindersCardKey,
+                            child: _MiniStatCard(
+                              palette: p,
+                              label: 'Reminders',
+                              value: pending == 0 ? 'None' : '$pending pending',
+                              icon: Icons.alarm_rounded,
+                              badgeCount: pending,
+                              badgeColor: p.accent,
+                              onTap: () =>
+                                  _pushScreen(const TeacherReminderScreen()),
+                            ),
                           );
                         },
                       ),
@@ -732,32 +906,41 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       builder: (context, onlineSnap) {
                         final upcoming = onlineSnap.data ?? 0;
 
-                        return _OverviewPanel(
-                          palette: p,
-                          classesCount: s.classesCount,
-                          learnersCount: s.learnersCount,
-                          upcomingOnlineCount: upcoming,
+                        return KeyedSubtree(
+                          key: _overviewPanelKey,
+                          child: _OverviewPanel(
+                            palette: p,
+                            classesCount: s.classesCount,
+                            learnersCount: s.learnersCount,
+                            upcomingOnlineCount: upcoming,
+                          ),
                         );
                       },
                     );
                   },
                 ),
                 const SizedBox(height: 14),
-                _SingleDashboardActionCard(
-                  palette: p,
-                  icon: Icons.school_rounded,
-                  title: 'My Classes',
-                  subtitle: 'Open your classes',
-                  onTap: () => _pushScreen(const TeacherClassesScreen()),
+                KeyedSubtree(
+                  key: _classesCardKey,
+                  child: _SingleDashboardActionCard(
+                    palette: p,
+                    icon: Icons.school_rounded,
+                    title: 'My Classes',
+                    subtitle: 'Open your classes',
+                    onTap: () => _pushScreen(const TeacherClassesScreen()),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 FutureBuilder<_HomeUpcomingClass?>(
                   future: _nextUpcomingClassFuture,
                   builder: (context, snap) {
-                    return _NextComingClassCard(
-                      palette: p,
-                      upcomingClass: snap.data,
-                      onTap: () => _pushScreen(const TeacherSchedule()),
+                    return KeyedSubtree(
+                      key: _nextClassCardKey,
+                      child: _NextComingClassCard(
+                        palette: p,
+                        upcomingClass: snap.data,
+                        onTap: () => _pushScreen(const TeacherSchedule()),
+                      ),
                     );
                   },
                 ),
@@ -843,6 +1026,8 @@ class _TeacherDrawer extends StatelessWidget {
     required this.onOpenRegulations,
     required this.onOpenSyllabi,
     required this.onOpenThemeSettings,
+    required this.onRestartTour,
+    required this.onOpenShared,
     required this.onLogout,
     required this.onOpenGames,
     required this.onOpenStories,
@@ -861,6 +1046,8 @@ class _TeacherDrawer extends StatelessWidget {
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenSyllabi;
   final VoidCallback onOpenThemeSettings;
+  final VoidCallback onRestartTour;
+  final VoidCallback onOpenShared;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStories;
   final VoidCallback onLogout;
@@ -1033,6 +1220,26 @@ class _TeacherDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenSyllabi();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.folder_shared_rounded,
+                    title: 'Shared',
+                    subtitle: 'Shared files between teachers',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenShared();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: Icons.tour_rounded,
+                    title: 'Restart Guide',
+                    subtitle: 'Show onboarding steps again',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onRestartTour();
                     },
                   ),
                   _DrawerTile(

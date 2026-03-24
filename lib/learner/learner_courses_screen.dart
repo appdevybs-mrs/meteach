@@ -570,11 +570,11 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       hints: const [
         LearnerTourHint(
           title: 'الدورات المسندة',
-          line: 'هذه الصفحة تعرض كل دوراتك الحالية مع حالة كل دورة.',
+          line: 'تعرض هذه الصفحة جميع دوراتك الحالية مع حالة كل دورة.',
         ),
         LearnerTourHint(
           title: 'فتح الدورة',
-          line: 'اضغط زر فتح الدورة للدخول الى التفاصيل او المحتوى المسجل.',
+          line: 'اضغط زر فتح الدورة للدخول إلى التفاصيل أو المحتوى المسجل.',
         ),
       ],
     );

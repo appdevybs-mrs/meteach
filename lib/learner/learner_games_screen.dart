@@ -769,12 +769,12 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
       screenId: 'learner_games',
       hints: const [
         LearnerTourHint(
-          title: 'بحث الالعاب',
-          line: 'اكتب اسم اللعبة او التصنيف للوصول للعبة اسرع.',
+          title: 'البحث في الألعاب',
+          line: 'أدخل اسم اللعبة أو التصنيف للوصول إلى اللعبة بسرعة.',
         ),
         LearnerTourHint(
           title: 'تفاصيل اللعبة',
-          line: 'اضغط بطاقة اللعبة لعرض الوصف والقواعد قبل اللعب.',
+          line: 'اضغط بطاقة اللعبة لعرض الوصف والقواعد قبل البدء باللعب.',
         ),
       ],
     );

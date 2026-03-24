@@ -1077,7 +1077,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       hints: const [
         LearnerTourHint(
           title: 'تشغيل الفيديو',
-          line: 'استخدم ازرار التشغيل والتقديم لمتابعة الدرس كما تريد.',
+          line: 'استخدم أزرار التشغيل والتقديم والتحكم لمتابعة الدرس كما يلائمك.',
         ),
         LearnerTourHint(
           title: 'الملاحظات',

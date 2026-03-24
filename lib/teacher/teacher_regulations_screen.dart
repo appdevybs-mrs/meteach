@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/teacher_tour_guide.dart';
 import '../shared/watermark_background.dart';
 
 class TeacherRegulationsScreen extends StatefulWidget {
@@ -281,6 +282,17 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_regulations',
+      hints: const [
+        TeacherTourHint(
+          title: 'Regulations',
+          line: 'Read academy rules and updated policy sections here.',
+        ),
+      ],
+    );
+
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Scaffold(

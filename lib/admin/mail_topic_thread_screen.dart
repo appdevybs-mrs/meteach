@@ -14,6 +14,7 @@ import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class MailUploadClient {
   MailUploadClient({
@@ -51,8 +52,12 @@ class MailUploadClient {
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
+    final streamed = await _http
+        .send(req)
+        .timeout(const Duration(seconds: 90));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(seconds: 90));
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -193,16 +198,28 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   Future<void> _pickAndUploadAttachment() async {
     try {
       final picked = await FilePicker.platform.pickFiles(withData: false);
-      if (picked == null || picked.files.isEmpty) return;
+      if (picked == null || picked.files.isEmpty) {
+        _snack('Upload was cancelled.');
+        return;
+      }
       final f = picked.files.first;
-      if (f.path == null) return;
+      if (f.path == null) {
+        _snack('The app does not have permission to access this file or action.');
+        return;
+      }
 
       final file = File(f.path!);
       final url = await MailUploadClient.defaultClient().uploadFile(file: file);
 
       setState(() => _attachments.add({'name': f.name, 'url': url}));
     } catch (e) {
-      _snack('Upload failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
     }
   }
 
@@ -250,7 +267,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       await _stateRef.child(_meUid).child(widget.threadId).remove();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete this topic. Please try again.'));
     }
   }
 
@@ -259,7 +276,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
     }
   }
 
@@ -369,7 +386,13 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           ..clear()
           ..addAll(attachmentsBackup);
       });
-      _snack('Send failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Your message could not be sent right now. Please check your internet and try again.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -378,6 +401,13 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final title = _subject.trim().isEmpty ? 'Topic' : _subject.trim();
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_mail_topic_thread',
+      title: 'محادثة الموضوع',
+      line: 'استخدم هذه الشاشة لمتابعة الرسائل داخل موضوع بريد محدد.',
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -396,8 +426,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
+       body: SelectionArea(
+         child: Column(
+         children: [
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
               stream: _msgStream,
@@ -468,7 +499,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                 ),
                                 if (m.body.trim().isNotEmpty) ...[
                                   const SizedBox(height: 6),
-                                  Text(m.body),
+                                  SelectableText(m.body),
                                 ],
                                 if (m.attachments.isNotEmpty) ...[
                                   const SizedBox(height: 8),
@@ -555,6 +586,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           ),
         ],
       ),
+       ),
     );
   }
 

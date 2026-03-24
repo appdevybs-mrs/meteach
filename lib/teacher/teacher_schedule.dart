@@ -20,6 +20,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../services/notification_service.dart';
 import '../shared/app_theme.dart';
+import '../shared/teacher_tour_guide.dart';
 import 'attendance_history_screen.dart';
 import 'take_attendance_screen.dart';
 
@@ -278,6 +279,21 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_schedule',
+      hints: const [
+        TeacherTourHint(
+          title: 'Schedule overview',
+          line: 'Track upcoming classes and open attendance from this page.',
+        ),
+        TeacherTourHint(
+          title: 'Calendar and settings',
+          line: 'Use calendar tabs and settings to manage reminders and visibility.',
+        ),
+      ],
+    );
 
     return DefaultTabController(
       length: 2,

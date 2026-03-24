@@ -705,6 +705,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 class _SyllabusServerStorage {
   static const String uploadUrl =
       'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
+  static const String listUrl =
+      'https://www.yourbridgeschool.com/app/secure/list_items_secure.php';
   static const String deleteUrl =
       'https://www.yourbridgeschool.com/app/secure/delete_item_secure.php';
 
@@ -762,7 +764,6 @@ class _SyllabusServerStorage {
     void Function(double progress)? onProgress,
   }) async {
     final token = await BackendApi.authToken();
-    final authFields = await BackendApi.authFormFields();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     _debug(
@@ -773,8 +774,7 @@ class _SyllabusServerStorage {
     final uploadUri = await BackendApi.withAuthQuery(Uri.parse(uploadUrl));
 
     final req = http.MultipartRequest('POST', uploadUri);
-    req.headers.addAll(await BackendApi.authHeaders());
-    req.fields.addAll(authFields);
+    await BackendApi.applyAuthToMultipart(req);
     req.fields['root'] = root;
     req.fields['path'] = path;
     req.fields['custom_name'] = customName;
@@ -798,29 +798,11 @@ class _SyllabusServerStorage {
       );
     }
 
-    final byteStream = req.finalize();
-    final totalBytes = req.contentLength;
-    int sent = 0;
-    final trackedStream = byteStream.transform(
-      StreamTransformer.fromHandlers(
-        handleData: (chunk, sink) {
-          sent += chunk.length;
-          if (onProgress != null && totalBytes > 0) {
-            final p = (sent / totalBytes).clamp(0.0, 1.0);
-            onProgress(p);
-          }
-          sink.add(chunk);
-        },
-      ),
-    );
-
-    final streamedReq = http.StreamedRequest(req.method, req.url)
-      ..headers.addAll(req.headers)
-      ..contentLength = totalBytes;
-
-    await trackedStream.pipe(streamedReq.sink);
-    final streamed = await streamedReq.send();
-    final response = await http.Response.fromStream(streamed);
+    onProgress?.call(0.05);
+    final streamed = await req.send().timeout(const Duration(minutes: 5));
+    final response = await http.Response.fromStream(
+      streamed,
+    ).timeout(const Duration(minutes: 5));
     final raw = response.body.trim();
 
     _debug(
@@ -892,6 +874,48 @@ class _SyllabusServerStorage {
 
     _debug('delete failed message=${data['message']}');
     throw Exception((data['message'] ?? 'Delete failed').toString());
+  }
+
+  static Future<List<Map<String, dynamic>>> listItems({
+    required String root,
+    required String path,
+  }) async {
+    final authFields = await BackendApi.authFormFields();
+    final headers = await BackendApi.authHeaders();
+    final listUri = await BackendApi.withAuthQuery(Uri.parse(listUrl));
+
+    final r = await http
+        .post(
+          listUri,
+          headers: headers,
+          body: {'root': root, 'path': path, ...authFields},
+        )
+        .timeout(const Duration(seconds: 60));
+
+    final raw = r.body.trim();
+    if (!raw.startsWith('{')) {
+      throw Exception('Server did not return JSON.\n$raw');
+    }
+
+    final data = json.decode(raw);
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid list response');
+    }
+
+    if (data['success'] != true) {
+      throw Exception((data['message'] ?? 'List failed').toString());
+    }
+
+    final out = <Map<String, dynamic>>[];
+    final rawItems = data['items'];
+    if (rawItems is List) {
+      for (final item in rawItems) {
+        if (item is Map) {
+          out.add(Map<String, dynamic>.from(item));
+        }
+      }
+    }
+    return out;
   }
 
   static String extractFolderPathFromUrl(String url) {
@@ -1441,10 +1465,16 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
   double _videoUploadProgress = 0;
   double _materialsUploadProgress = 0;
   bool _recordedAssetFlowBusy = false;
+  bool _verifyingServerState = false;
+  bool _videoExistsOnServer = false;
+  bool _materialsExistOnServer = false;
   late String _serverFolderPath;
 
   bool get _recordedAssetsBusy =>
-      _recordedAssetFlowBusy || _uploadingVideo || _uploadingMaterials;
+      _recordedAssetFlowBusy ||
+      _uploadingVideo ||
+      _uploadingMaterials ||
+      _verifyingServerState;
 
   bool get _hasInitialRecordedAssets =>
       widget.initial.serverFolderPath.trim().isNotEmpty ||
@@ -1466,6 +1496,10 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     materialsUrlC = TextEditingController(text: widget.initial.materialsUrl);
     _serverFolderPath = widget.initial.serverFolderPath.trim();
     _skill = widget.initial.skillType;
+
+    if (widget.isRecorded) {
+      unawaited(_syncRecordedAssetStateWithServer());
+    }
   }
 
   @override
@@ -1607,6 +1641,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() {
         videoUrlC.clear();
         videoThumbC.clear();
+        _videoExistsOnServer = false;
         _inlineError = null;
       });
       _debug('clearVideo completed (server + local)');
@@ -1674,6 +1709,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       if (!mounted) return;
       setState(() {
         materialsUrlC.clear();
+        _materialsExistOnServer = false;
         _inlineError = null;
       });
       _debug('clearHtml completed (server + local)');
@@ -1704,6 +1740,99 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
     );
 
     return true;
+  }
+
+  Future<bool> _assetUrlExistsOnServer(
+    String url,
+    Map<String, List<Map<String, dynamic>>> listCache,
+  ) async {
+    final rel = _SyllabusServerStorage.extractRelativePathFromUrl(url);
+    if (rel.isEmpty) return false;
+
+    final segments = rel
+        .split('/')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (segments.length < 2) return false;
+
+    final fileName = segments.last;
+    final folderPath = segments.sublist(0, segments.length - 1).join('/');
+
+    if (!listCache.containsKey(folderPath)) {
+      listCache[folderPath] = await _SyllabusServerStorage.listItems(
+        root: 'courses',
+        path: folderPath,
+      );
+    }
+
+    final items = listCache[folderPath] ?? const <Map<String, dynamic>>[];
+    for (final item in items) {
+      final type = (item['type'] ?? '').toString().trim().toLowerCase();
+      final name = (item['name'] ?? '').toString().trim();
+      if (type != 'folder' && name == fileName) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _syncRecordedAssetStateWithServer() async {
+    final videoUrl = videoUrlC.text.trim();
+    final materialsUrl = materialsUrlC.text.trim();
+
+    if (videoUrl.isEmpty && materialsUrl.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _videoExistsOnServer = false;
+        _materialsExistOnServer = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _verifyingServerState = true);
+
+    try {
+      final listCache = <String, List<Map<String, dynamic>>>{};
+      final videoExists = videoUrl.isNotEmpty
+          ? await _assetUrlExistsOnServer(videoUrl, listCache)
+          : false;
+      final htmlExists = materialsUrl.isNotEmpty
+          ? await _assetUrlExistsOnServer(materialsUrl, listCache)
+          : false;
+
+      if (!mounted) return;
+      setState(() {
+        _videoExistsOnServer = videoExists;
+        _materialsExistOnServer = htmlExists;
+
+        if (videoUrl.isNotEmpty && !videoExists) {
+          videoUrlC.clear();
+          videoThumbC.clear();
+        }
+        if (materialsUrl.isNotEmpty && !htmlExists) {
+          materialsUrlC.clear();
+        }
+
+        if ((videoUrl.isNotEmpty && !videoExists) ||
+            (materialsUrl.isNotEmpty && !htmlExists)) {
+          _inlineError =
+              'Some stored asset URLs were stale and have been auto-cleared because files are missing on server.';
+        }
+      });
+    } catch (e) {
+      _debug('asset server sync error=$e');
+      if (!mounted) return;
+      setState(() {
+        _inlineError =
+            'Could not verify existing assets on server. You can still upload new files.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _verifyingServerState = false);
+      }
+    }
   }
 
   Future<void> _pickAndUploadVideo() async {
@@ -1740,7 +1869,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: true,
+        withData: false,
         type: FileType.video,
       );
 
@@ -1773,6 +1902,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() {
         videoUrlC.text = url;
         videoThumbC.clear();
+        _videoExistsOnServer = true;
         _inlineError = null;
       });
       _debug('video upload success url=$url');
@@ -1860,7 +1990,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: true,
+        withData: false,
         type: FileType.custom,
         allowedExtensions: const ['html', 'htm'],
       );
@@ -1893,6 +2023,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       if (!mounted) return;
       setState(() {
         materialsUrlC.text = url;
+        _materialsExistOnServer = true;
         _inlineError = null;
       });
       _debug('html upload success url=$url');
@@ -2080,7 +2211,15 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 8),
-                        if (videoUrlC.text.trim().isNotEmpty)
+                        if (_verifyingServerState)
+                          Text(
+                            'Checking server state…',
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else if (_videoExistsOnServer)
                           Text(
                             _fileNameFromUrl(videoUrlC.text.trim()),
                             style: TextStyle(
@@ -2110,7 +2249,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           label: Text(
                             _uploadingVideo
                                 ? 'Uploading ${(_videoUploadProgress * 100).round()}%'
-                                : (videoUrlC.text.trim().isEmpty
+                                : (!_videoExistsOnServer
                                       ? 'Upload Video'
                                       : 'Replace Video'),
                           ),
@@ -2127,7 +2266,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                             ),
                           ),
                         ],
-                        if (videoUrlC.text.trim().isNotEmpty) ...[
+                        if (_videoExistsOnServer) ...[
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
                             onPressed: _recordedAssetsBusy
@@ -2147,7 +2286,15 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 8),
-                        if (materialsUrlC.text.trim().isNotEmpty)
+                        if (_verifyingServerState)
+                          Text(
+                            'Checking server state…',
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else if (_materialsExistOnServer)
                           Text(
                             _fileNameFromUrl(materialsUrlC.text.trim()),
                             style: TextStyle(
@@ -2177,7 +2324,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                           label: Text(
                             _uploadingMaterials
                                 ? 'Uploading ${(_materialsUploadProgress * 100).round()}%'
-                                : (materialsUrlC.text.trim().isEmpty
+                                : (!_materialsExistOnServer
                                       ? 'Upload HTML'
                                       : 'Replace HTML'),
                           ),
@@ -2194,7 +2341,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
                             ),
                           ),
                         ],
-                        if (materialsUrlC.text.trim().isNotEmpty) ...[
+                        if (_materialsExistOnServer) ...[
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
                             onPressed: _recordedAssetsBusy

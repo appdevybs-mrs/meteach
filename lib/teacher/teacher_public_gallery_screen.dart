@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/teacher_tour_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
@@ -1122,6 +1123,17 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
   Widget build(BuildContext context) {
     final p = palette;
 
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_public_gallery',
+      hints: const [
+        TeacherTourHint(
+          title: 'Public gallery',
+          line: 'Browse your gallery and check media shared by other teachers.',
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -1649,6 +1661,17 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = type.trim().toLowerCase() == 'video';
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_public_gallery_viewer',
+      hints: const [
+        TeacherTourHint(
+          title: 'Viewer',
+          line: 'Inspect media details and use actions in the top bar when needed.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,

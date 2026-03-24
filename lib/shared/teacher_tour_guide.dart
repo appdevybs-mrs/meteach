@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'app_tour_guide.dart';
 
-class LearnerTourHint extends AppTourHint {
-  const LearnerTourHint({
+class TeacherTourHint extends AppTourHint {
+  const TeacherTourHint({
     required super.title,
     required super.line,
     super.targetKey,
@@ -20,14 +20,14 @@ class LearnerTourHint extends AppTourHint {
   }
 }
 
-class LearnerTourGuide {
-  static const String _scopeKey = 'learner';
-  static const AppTourTexts _texts = AppTourTexts.arabic();
+class TeacherTourGuide {
+  static const String _scopeKey = 'teacher';
+  static const AppTourTexts _texts = AppTourTexts.english();
 
   static void schedule(
     BuildContext context, {
     required String screenId,
-    required List<LearnerTourHint> hints,
+    required List<TeacherTourHint> hints,
     bool isQuickStart = false,
   }) {
     AppTourGuide.schedule(
@@ -37,7 +37,6 @@ class LearnerTourGuide {
       hints: _toBaseHints(hints),
       texts: _texts,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
     );
   }
 
@@ -53,14 +52,13 @@ class LearnerTourGuide {
       _scopeKey,
       screenId,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
     );
   }
 
   static Future<void> startNow(
     BuildContext context, {
     required String screenId,
-    required List<LearnerTourHint> hints,
+    required List<TeacherTourHint> hints,
     bool isQuickStart = false,
   }) {
     return AppTourGuide.startNow(
@@ -70,14 +68,13 @@ class LearnerTourGuide {
       hints: _toBaseHints(hints),
       texts: _texts,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
     );
   }
 
   static Future<void> maybeStart(
     BuildContext context, {
     required String screenId,
-    required List<LearnerTourHint> hints,
+    required List<TeacherTourHint> hints,
     bool isQuickStart = false,
     bool force = false,
   }) {
@@ -88,12 +85,11 @@ class LearnerTourGuide {
       hints: _toBaseHints(hints),
       texts: _texts,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
       force: force,
     );
   }
 
-  static List<AppTourHint> _toBaseHints(List<LearnerTourHint> hints) {
+  static List<AppTourHint> _toBaseHints(List<TeacherTourHint> hints) {
     return hints.map((h) => h.toBase()).toList(growable: false);
   }
 }

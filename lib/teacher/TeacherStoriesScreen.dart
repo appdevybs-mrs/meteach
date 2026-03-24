@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/teacher_tour_guide.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
   const TeacherStoriesScreen({super.key});
@@ -2862,6 +2863,21 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_stories',
+      hints: const [
+        TeacherTourHint(
+          title: 'Stories manager',
+          line: 'Create, search, and organize story content for your learners.',
+        ),
+        TeacherTourHint(
+          title: 'Add story',
+          line: 'Use the Add Story button to publish a new story item.',
+        ),
+      ],
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Stories')),

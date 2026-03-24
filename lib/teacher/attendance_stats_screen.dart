@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/teacher_tour_guide.dart';
 
 class AttendanceStatsScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -385,6 +386,17 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_attendance_stats',
+      hints: const [
+        TeacherTourHint(
+          title: 'Attendance statistics',
+          line: 'Use this page to track attendance performance and risk levels per learner.',
+        ),
+      ],
+    );
 
     final rows =
         _stats.entries.map((e) {

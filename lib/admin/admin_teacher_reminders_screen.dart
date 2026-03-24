@@ -12,6 +12,7 @@ import '../shared/human_error.dart';
 
 import '../services/push_client.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
   const AdminTeacherRemindersScreen({super.key, this.teacherUid, this.teacher});
@@ -886,6 +887,13 @@ class _AdminTeacherRemindersScreenState
   @override
   Widget build(BuildContext context) {
     final teacherName = (widget.teacher?.fullName ?? '').toString().trim();
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_teacher_reminders',
+      title: 'تذكيرات المعلمين',
+      line: 'من هذه الشاشة ترسل التذكيرات للمعلمين وتتابع حالتها.',
+    );
 
     return Scaffold(
       appBar: AppBar(

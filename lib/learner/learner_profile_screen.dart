@@ -1401,6 +1401,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     String? hintText,
     int maxLines = 1,
     int? maxLength,
+    bool enabled = true,
     String? Function(String?)? validator,
   }) {
     final p = palette;
@@ -1418,6 +1419,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         const SizedBox(height: 6),
         TextFormField(
           controller: c,
+          enabled: enabled,
           keyboardType: keyboard,
           maxLines: maxLines,
           maxLength: maxLength,
@@ -2058,6 +2060,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               _field(
                 'First name',
                 _fn,
+                enabled: false,
                 validator: (v) =>
                     (v ?? '').trim().isEmpty ? 'First name is required' : null,
               ),
@@ -2065,6 +2068,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
               _field(
                 'Last name',
                 _ln,
+                enabled: false,
                 validator: (v) =>
                     (v ?? '').trim().isEmpty ? 'Last name is required' : null,
               ),
@@ -2111,11 +2115,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       hints: const [
         LearnerTourHint(
           title: 'تعديل الملف الشخصي',
-          line: 'حدث بياناتك وصورتك ومعلوماتك من هذه الصفحة.',
+          line: 'يمكنك من هذه الصفحة تحديث بياناتك العامة وصورتك ومعلوماتك الشخصية.',
         ),
         LearnerTourHint(
           title: 'حفظ التغييرات',
-          line: 'بعد اي تعديل اضغط زر الحفظ في الاعلى.',
+          line: 'بعد أي تعديل، اضغط زر الحفظ في أعلى الشاشة.',
         ),
       ],
     );

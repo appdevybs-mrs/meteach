@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'app_tour_guide.dart';
 
-class LearnerTourHint extends AppTourHint {
-  const LearnerTourHint({
+class AdminTourHint extends AppTourHint {
+  const AdminTourHint({
     required super.title,
     required super.line,
     super.targetKey,
@@ -20,14 +20,14 @@ class LearnerTourHint extends AppTourHint {
   }
 }
 
-class LearnerTourGuide {
-  static const String _scopeKey = 'learner';
+class AdminTourGuide {
+  static const String _scopeKey = 'admin';
   static const AppTourTexts _texts = AppTourTexts.arabic();
 
   static void schedule(
     BuildContext context, {
     required String screenId,
-    required List<LearnerTourHint> hints,
+    required List<AdminTourHint> hints,
     bool isQuickStart = false,
   }) {
     AppTourGuide.schedule(
@@ -37,7 +37,19 @@ class LearnerTourGuide {
       hints: _toBaseHints(hints),
       texts: _texts,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
+    );
+  }
+
+  static void scheduleSimple(
+    BuildContext context, {
+    required String screenId,
+    required String title,
+    required String line,
+  }) {
+    schedule(
+      context,
+      screenId: screenId,
+      hints: [AdminTourHint(title: title, line: line)],
     );
   }
 
@@ -53,14 +65,13 @@ class LearnerTourGuide {
       _scopeKey,
       screenId,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
     );
   }
 
   static Future<void> startNow(
     BuildContext context, {
     required String screenId,
-    required List<LearnerTourHint> hints,
+    required List<AdminTourHint> hints,
     bool isQuickStart = false,
   }) {
     return AppTourGuide.startNow(
@@ -70,14 +81,13 @@ class LearnerTourGuide {
       hints: _toBaseHints(hints),
       texts: _texts,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
     );
   }
 
   static Future<void> maybeStart(
     BuildContext context, {
     required String screenId,
-    required List<LearnerTourHint> hints,
+    required List<AdminTourHint> hints,
     bool isQuickStart = false,
     bool force = false,
   }) {
@@ -88,12 +98,11 @@ class LearnerTourGuide {
       hints: _toBaseHints(hints),
       texts: _texts,
       isQuickStart: isQuickStart,
-      requiresQuickStart: true,
       force: force,
     );
   }
 
-  static List<AppTourHint> _toBaseHints(List<LearnerTourHint> hints) {
+  static List<AppTourHint> _toBaseHints(List<AdminTourHint> hints) {
     return hints.map((h) => h.toBase()).toList(growable: false);
   }
 }

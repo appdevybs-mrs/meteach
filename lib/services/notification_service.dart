@@ -127,7 +127,6 @@ class NotificationService {
         channelDescription: _sessionChannelDesc,
         importance: Importance.max,
         priority: Priority.high,
-        fullScreenIntent: true,
       ),
     );
   }
@@ -170,7 +169,6 @@ class NotificationService {
         channelDescription: _sessionChannelDesc,
         importance: Importance.max,
         priority: Priority.high,
-        fullScreenIntent: true,
         actions: actions,
       ),
     );

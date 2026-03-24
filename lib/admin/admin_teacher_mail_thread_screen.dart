@@ -14,6 +14,7 @@ import '../services/push_client.dart';
 import '../services/route_state.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -54,8 +55,12 @@ class MailUploadClient {
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
+    final streamed = await _http
+        .send(req)
+        .timeout(const Duration(seconds: 90));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(seconds: 90));
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -220,7 +225,12 @@ class _AdminTeacherMailThreadScreenState
         'participants': {_meUid: true, widget.teacherUid: true},
       });
     } catch (e) {
-      _snack('Mail init failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not open this mail thread right now. Please try again.',
+        ),
+      );
     }
   }
 
@@ -275,9 +285,15 @@ class _AdminTeacherMailThreadScreenState
   Future<void> _pickAndUploadAttachment() async {
     try {
       final picked = await FilePicker.platform.pickFiles(withData: false);
-      if (picked == null || picked.files.isEmpty) return;
+      if (picked == null || picked.files.isEmpty) {
+        _snack('Upload was cancelled.');
+        return;
+      }
       final f = picked.files.first;
-      if (f.path == null) return;
+      if (f.path == null) {
+        _snack('The app does not have permission to access this file or action.');
+        return;
+      }
 
       final file = File(f.path!);
       final url = await MailUploadClient.defaultClient().uploadFile(file: file);
@@ -286,7 +302,13 @@ class _AdminTeacherMailThreadScreenState
         _attachments.add({'name': f.name, 'url': url});
       });
     } catch (e) {
-      _snack('Upload failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
     }
   }
 
@@ -331,7 +353,7 @@ class _AdminTeacherMailThreadScreenState
         'subject': s.trim(),
       });
     } catch (e) {
-      _snack('Failed to set subject: $e');
+      _snack(toHumanError(e, fallback: 'Could not update the thread subject. Please try again.'));
     }
   }
 
@@ -442,7 +464,13 @@ class _AdminTeacherMailThreadScreenState
           ..clear()
           ..addAll(attachmentsBackup);
       });
-      _snack('Send failed: $e');
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Your message could not be sent right now. Please check your internet and try again.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -483,7 +511,7 @@ class _AdminTeacherMailThreadScreenState
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete this thread. Please try again.'));
     }
   }
 
@@ -492,7 +520,7 @@ class _AdminTeacherMailThreadScreenState
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
     }
   }
 
@@ -509,6 +537,13 @@ class _AdminTeacherMailThreadScreenState
   @override
   Widget build(BuildContext context) {
     final teacherName = _teacherDisplayName();
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_teacher_mail_thread',
+      title: 'محادثة البريد',
+      line: 'هنا تقرأ الرسائل مع المعلم وترسل ردودا او مرفقات.',
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -534,7 +569,8 @@ class _AdminTeacherMailThreadScreenState
           ),
         ],
       ),
-      body: Column(
+      body: SelectionArea(
+        child: Column(
         children: [
           if (_subject.trim().isNotEmpty)
             Container(
@@ -627,7 +663,7 @@ class _AdminTeacherMailThreadScreenState
                                 ),
                                 if (m.body.trim().isNotEmpty) ...[
                                   const SizedBox(height: 6),
-                                  Text(m.body),
+                                  SelectableText(m.body),
                                 ],
                                 if (m.attachments.isNotEmpty) ...[
                                   const SizedBox(height: 8),
@@ -715,6 +751,7 @@ class _AdminTeacherMailThreadScreenState
             ),
           ),
         ],
+      ),
       ),
     );
   }

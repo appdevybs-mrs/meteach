@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminContractScreen extends StatefulWidget {
   const AdminContractScreen({super.key});
@@ -520,6 +521,13 @@ class _AdminContractScreenState extends State<AdminContractScreen>
   @override
   Widget build(BuildContext context) {
     final activeLabel = _activeLabel();
+
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_contract',
+      title: 'العقود واللوائح',
+      line: 'من هذه الشاشة تدير نصوص العقود واللوائح الخاصة بالاكاديمية.',
+    );
 
     return Scaffold(
       backgroundColor: appBg,

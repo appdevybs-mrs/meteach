@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'admin_teacher_mail_thread_screen.dart'; // reuse your existing thread screen
 import '../shared/app_feedback.dart';
+import '../shared/admin_tour_guide.dart';
 
 class AdminMailInboxScreen extends StatefulWidget {
   const AdminMailInboxScreen({super.key});
@@ -59,6 +60,13 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AdminTourGuide.scheduleSimple(
+      context,
+      screenId: 'admin_mail_inbox',
+      title: 'صندوق البريد',
+      line: 'يعرض هذا القسم كل المحادثات البريدية الحديثة للادارة.',
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mail'),

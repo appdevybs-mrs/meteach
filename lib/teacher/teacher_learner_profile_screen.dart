@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/teacher_tour_guide.dart';
 
 class TeacherLearnerProfileScreen extends StatefulWidget {
   const TeacherLearnerProfileScreen({
@@ -915,6 +916,17 @@ class _TeacherLearnerProfileScreenState
     final title = widget.learnerName.isEmpty
         ? 'Learner Profile'
         : widget.learnerName;
+
+    TeacherTourGuide.schedule(
+      context,
+      screenId: 'teacher_learner_profile',
+      hints: const [
+        TeacherTourHint(
+          title: 'Learner profile',
+          line: 'Review learner details, class info, and contact data on this page.',
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: p.appBg,
