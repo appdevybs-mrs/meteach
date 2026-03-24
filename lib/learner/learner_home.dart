@@ -35,7 +35,6 @@ class LearnerHome extends StatefulWidget {
 
 class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final GlobalKey _menuKey = GlobalKey();
   final GlobalKey _menuIconKey = GlobalKey();
   final GlobalKey _drawerCoursesKey = GlobalKey();
   final GlobalKey _drawerGamesKey = GlobalKey();
@@ -47,6 +46,9 @@ class _LearnerHomeState extends State<LearnerHome> {
   final GlobalKey _drawerThemeKey = GlobalKey();
   final GlobalKey _drawerRestartTourKey = GlobalKey();
   final GlobalKey _drawerLogoutKey = GlobalKey();
+  final GlobalKey _dashboardHomeworkCardKey = GlobalKey();
+  final GlobalKey _dashboardBookingCardKey = GlobalKey();
+  final GlobalKey _dashboardCoursesListKey = GlobalKey();
 
   bool _drawerTourAttempted = false;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -113,6 +115,167 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
+  bool _hasTarget(GlobalKey key) => key.currentContext != null;
+
+  List<LearnerTourHint> _homeScreenHints({bool onlyVisibleTargets = false}) {
+    final hints = <LearnerTourHint>[
+      const LearnerTourHint(
+        title: 'الشاشة الرئيسية للمتعلم',
+        line:
+            'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
+        highlightShape: AppTourHighlightShape.fullscreen,
+      ),
+    ];
+
+    if (!onlyVisibleTargets || _hasTarget(_menuIconKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'زر القائمة',
+          line: 'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
+          targetKey: _menuIconKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+          showFinger: false,
+        ),
+      );
+    }
+
+    return hints;
+  }
+
+  List<LearnerTourHint> _homeDashboardHints({bool onlyVisibleTargets = false}) {
+    final hints = <LearnerTourHint>[];
+
+    if (!onlyVisibleTargets || _hasTarget(_dashboardHomeworkCardKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'بطاقة الواجبات',
+          line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
+          targetKey: _dashboardHomeworkCardKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+        ),
+      );
+    }
+
+    if (!onlyVisibleTargets || _hasTarget(_dashboardBookingCardKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'بطاقة الحجز',
+          line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
+          targetKey: _dashboardBookingCardKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+        ),
+      );
+    }
+
+    if (!onlyVisibleTargets || _hasTarget(_dashboardCoursesListKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'قائمة الدورات',
+          line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
+          targetKey: _dashboardCoursesListKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+        ),
+      );
+    }
+
+    return hints;
+  }
+
+  List<LearnerTourHint> _drawerMenuHints({bool onlyVisibleTargets = false}) {
+    final hints = <LearnerTourHint>[];
+
+    void addIfVisible(LearnerTourHint hint) {
+      if (!onlyVisibleTargets ||
+          hint.targetKey == null ||
+          (hint.targetKey?.currentContext != null)) {
+        hints.add(hint);
+      }
+    }
+
+    addIfVisible(
+      LearnerTourHint(
+        title: 'دوراتي',
+        line: 'من هذا الخيار يمكنك الوصول إلى جميع دوراتك بسهولة.',
+        targetKey: _drawerCoursesKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'الألعاب',
+        line: 'يخصص هذا القسم للتدريب التعليمي بطريقة تفاعلية.',
+        targetKey: _drawerGamesKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'مدرب الدراسة',
+        line: 'يساعدك هذا القسم في تنظيم الأهداف والخطة الأسبوعية.',
+        targetKey: _drawerCoachKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'القصص',
+        line: 'يحتوي هذا القسم على القصص للقراءة والاستماع والمشاهدة.',
+        targetKey: _drawerStoriesKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'الملف الشخصي',
+        line: 'من هذا القسم يمكنك مراجعة بياناتك الشخصية وصورتك.',
+        targetKey: _drawerProfileKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'البريد',
+        line: 'يتيح لك هذا القسم متابعة الرسائل والمحادثات مع المعلمين.',
+        targetKey: _drawerMailKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'اللوائح',
+        line: 'راجع من هنا لوائح الأكاديمية وسياساتها المعتمدة.',
+        targetKey: _drawerRegulationsKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'إعدادات المظهر',
+        line: 'يمكنك تعديل المظهر العام للتطبيق من هذا القسم.',
+        targetKey: _drawerThemeKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'إعادة الجولة',
+        line: 'استخدم هذا الخيار لإعادة عرض الإرشادات التعليمية.',
+        targetKey: _drawerRestartTourKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+    addIfVisible(
+      LearnerTourHint(
+        title: 'تسجيل الخروج',
+        line: 'استخدم هذا الزر لتسجيل الخروج من الحساب بأمان.',
+        targetKey: _drawerLogoutKey,
+        highlightShape: AppTourHighlightShape.roundedRectangle,
+      ),
+    );
+
+    return hints;
+  }
+
   void _pushScreen(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
@@ -144,72 +307,17 @@ class _LearnerHomeState extends State<LearnerHome> {
 
     await _waitForDrawerReady();
     if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
+
+    final hints = _drawerMenuHints(onlyVisibleTargets: true);
+    if (hints.isEmpty) return;
 
     await LearnerTourGuide.maybeStart(
       context,
       screenId: 'learner_drawer_menu',
-      hints: [
-        LearnerTourHint(
-          title: 'دوراتي',
-          line: 'من هذا الخيار يمكنك الوصول إلى جميع دوراتك بسهولة.',
-          targetKey: _drawerCoursesKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'الألعاب',
-          line: 'يخصص هذا القسم للتدريب التعليمي بطريقة تفاعلية.',
-          targetKey: _drawerGamesKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'مدرب الدراسة',
-          line: 'يساعدك هذا القسم في تنظيم الأهداف والخطة الأسبوعية.',
-          targetKey: _drawerCoachKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'القصص',
-          line: 'يحتوي هذا القسم على القصص للقراءة والاستماع والمشاهدة.',
-          targetKey: _drawerStoriesKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'الملف الشخصي',
-          line: 'من هذا القسم يمكنك مراجعة بياناتك الشخصية وصورتك.',
-          targetKey: _drawerProfileKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'البريد',
-          line: 'يتيح لك هذا القسم متابعة الرسائل والمحادثات مع المعلمين.',
-          targetKey: _drawerMailKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'اللوائح',
-          line: 'راجع من هنا لوائح الأكاديمية وسياساتها المعتمدة.',
-          targetKey: _drawerRegulationsKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'إعدادات المظهر',
-          line: 'يمكنك تعديل المظهر العام للتطبيق من هذا القسم.',
-          targetKey: _drawerThemeKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'إعادة الجولة',
-          line: 'استخدم هذا الخيار لإعادة عرض الإرشادات التعليمية.',
-          targetKey: _drawerRestartTourKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'تسجيل الخروج',
-          line: 'استخدم هذا الزر لتسجيل الخروج من الحساب بأمان.',
-          targetKey: _drawerLogoutKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      ],
+      hints: hints,
     );
   }
 
@@ -360,20 +468,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     LearnerTourGuide.schedule(
       context,
       screenId: 'learner_home',
-      hints: [
-        const LearnerTourHint(
-          title: 'الشاشة الرئيسية للمتعلم',
-          line:
-              'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
-          highlightShape: AppTourHighlightShape.fullscreen,
-        ),
-        LearnerTourHint(
-          title: 'زر القائمة',
-          line: 'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
-          targetKey: _menuIconKey,
-          highlightShape: AppTourHighlightShape.circle,
-        ),
-      ],
+      hints: _homeScreenHints(onlyVisibleTargets: true),
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -408,6 +503,8 @@ class _LearnerHomeState extends State<LearnerHome> {
         onRestartTour: () async {
           await LearnerTourGuide.resetAll();
           if (!mounted || !context.mounted) return;
+          final homeHints = _homeScreenHints(onlyVisibleTargets: true);
+          final dashboardHints = _homeDashboardHints(onlyVisibleTargets: true);
           await LearnerTourGuide.startNow(
             context,
             screenId: 'learner_quick_start',
@@ -415,47 +512,21 @@ class _LearnerHomeState extends State<LearnerHome> {
             isQuickStart: true,
           );
           if (!mounted || !context.mounted) return;
-          await LearnerTourGuide.startNow(
-            context,
-            screenId: 'learner_home',
-            hints: [
-              const LearnerTourHint(
-                title: 'الشاشة الرئيسية للمتعلم',
-                line:
-                    'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
-                highlightShape: AppTourHighlightShape.fullscreen,
-              ),
-              LearnerTourHint(
-                title: 'زر القائمة',
-                line:
-                    'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
-                targetKey: _menuIconKey,
-                highlightShape: AppTourHighlightShape.circle,
-              ),
-            ],
-          );
+          if (homeHints.isNotEmpty) {
+            await LearnerTourGuide.startNow(
+              context,
+              screenId: 'learner_home',
+              hints: homeHints,
+            );
+          }
           if (!mounted || !context.mounted) return;
-          await LearnerTourGuide.startNow(
-            context,
-            screenId: 'learner_home_dashboard',
-            hints: [
-              LearnerTourHint(
-                title: 'بطاقة الواجبات',
-                line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
-                highlightShape: AppTourHighlightShape.fullscreen,
-              ),
-              LearnerTourHint(
-                title: 'بطاقة الحجز',
-                line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
-                highlightShape: AppTourHighlightShape.fullscreen,
-              ),
-              LearnerTourHint(
-                title: 'قائمة الدورات',
-                line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
-                highlightShape: AppTourHighlightShape.fullscreen,
-              ),
-            ],
-          );
+          if (dashboardHints.isNotEmpty) {
+            await LearnerTourGuide.startNow(
+              context,
+              screenId: 'learner_home_dashboard',
+              hints: dashboardHints,
+            );
+          }
           _drawerTourAttempted = false;
           if (!mounted || !context.mounted) return;
           await _maybeStartDrawerTour();
@@ -469,7 +540,6 @@ class _LearnerHomeState extends State<LearnerHome> {
         centerTitle: false,
         surfaceTintColor: p.cardBg,
         leading: IconButton(
-          key: _menuKey,
           icon: Icon(Icons.menu_rounded, key: _menuIconKey, color: p.primary),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
@@ -508,24 +578,11 @@ class _LearnerHomeState extends State<LearnerHome> {
             icon: Icon(Icons.help_outline_rounded, color: p.primary),
             tooltip: 'Guide',
             onPressed: () async {
+              final homeHints = _homeScreenHints(onlyVisibleTargets: true);
               await LearnerTourGuide.startNow(
                 context,
                 screenId: 'learner_home',
-                hints: [
-                  const LearnerTourHint(
-                    title: 'الشاشة الرئيسية للمتعلم',
-                    line:
-                        'تمثل هذه الشاشة نقطة البداية لمتابعة الواجبات والحجوزات والتقدم الدراسي بصورة منظمة.',
-                    highlightShape: AppTourHighlightShape.fullscreen,
-                  ),
-                  LearnerTourHint(
-                    title: 'زر القائمة',
-                    line:
-                        'يؤدي هذا الزر إلى فتح القائمة الجانبية للتنقل بين الصفحات.',
-                    targetKey: _menuIconKey,
-                    highlightShape: AppTourHighlightShape.circle,
-                  ),
-                ],
+                hints: homeHints,
               );
               if (!mounted) return;
               _drawerTourAttempted = false;
@@ -540,14 +597,28 @@ class _LearnerHomeState extends State<LearnerHome> {
       ),
       body: RefreshIndicator(
         onRefresh: _refreshShell,
-        child: WatermarkBackground(child: _LearnerDashboardLite()),
+        child: WatermarkBackground(
+          child: _LearnerDashboardLite(
+            homeworkCardKey: _dashboardHomeworkCardKey,
+            bookingCardKey: _dashboardBookingCardKey,
+            coursesListKey: _dashboardCoursesListKey,
+          ),
+        ),
       ),
     );
   }
 }
 
 class _LearnerDashboardLite extends StatefulWidget {
-  const _LearnerDashboardLite();
+  const _LearnerDashboardLite({
+    required this.homeworkCardKey,
+    required this.bookingCardKey,
+    required this.coursesListKey,
+  });
+
+  final GlobalKey homeworkCardKey;
+  final GlobalKey bookingCardKey;
+  final GlobalKey coursesListKey;
 
   @override
   State<_LearnerDashboardLite> createState() => _LearnerDashboardLiteState();
@@ -555,9 +626,47 @@ class _LearnerDashboardLite extends StatefulWidget {
 
 class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  final GlobalKey _homeworkCardKey = GlobalKey();
-  final GlobalKey _bookingCardKey = GlobalKey();
-  final GlobalKey _coursesListKey = GlobalKey();
+
+  bool _hasTarget(GlobalKey key) => key.currentContext != null;
+
+  List<LearnerTourHint> _dashboardHints({bool onlyVisibleTargets = false}) {
+    final hints = <LearnerTourHint>[];
+
+    if (!onlyVisibleTargets || _hasTarget(widget.homeworkCardKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'بطاقة الواجبات',
+          line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
+          targetKey: widget.homeworkCardKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+        ),
+      );
+    }
+
+    if (!onlyVisibleTargets || _hasTarget(widget.bookingCardKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'بطاقة الحجز',
+          line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
+          targetKey: widget.bookingCardKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+        ),
+      );
+    }
+
+    if (!onlyVisibleTargets || _hasTarget(widget.coursesListKey)) {
+      hints.add(
+        LearnerTourHint(
+          title: 'قائمة الدورات',
+          line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
+          targetKey: widget.coursesListKey,
+          highlightShape: AppTourHighlightShape.roundedRectangle,
+        ),
+      );
+    }
+
+    return hints;
+  }
 
   _HomePalette get palette => _toHomePalette(appThemeController.palette);
 
@@ -1273,26 +1382,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     LearnerTourGuide.schedule(
       context,
       screenId: 'learner_home_dashboard',
-      hints: [
-        LearnerTourHint(
-          title: 'بطاقة الواجبات',
-          line: 'تُعرض في هذه البطاقة الواجبات غير المنجزة مع تفاصيلها.',
-          targetKey: _homeworkCardKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'بطاقة الحجز',
-          line: 'تفتح هذه البطاقة شاشة حجز الحصص المقبلة.',
-          targetKey: _bookingCardKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-        LearnerTourHint(
-          title: 'قائمة الدورات',
-          line: 'تُظهر هذه القائمة تقدمك في كل دورة وتتيح فتح تفاصيلها.',
-          targetKey: _coursesListKey,
-          highlightShape: AppTourHighlightShape.roundedRectangle,
-        ),
-      ],
+      hints: _dashboardHints(onlyVisibleTargets: true),
     );
 
     if (uid.isEmpty) {
@@ -1321,9 +1411,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           Row(
             children: [
               Expanded(
-                child: KeyedSubtree(
-                  key: _homeworkCardKey,
-                  child: _LearnerHomeworkHomeCard(compact: true),
+                child: _LearnerHomeworkHomeCard(
+                  compact: true,
+                  targetKey: widget.homeworkCardKey,
                 ),
               ),
               const SizedBox(width: 8),
@@ -1349,7 +1439,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                   _SectionTitle(palette: p, title: 'Booking'),
                   const SizedBox(height: 10),
                   KeyedSubtree(
-                    key: _bookingCardKey,
+                    key: widget.bookingCardKey,
                     child: const _BookingTopCard(),
                   ),
                   const SizedBox(height: 16),
@@ -1360,7 +1450,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
           const SizedBox(height: 10),
           KeyedSubtree(
-            key: _coursesListKey,
+            key: widget.coursesListKey,
             child: FutureBuilder<List<_CourseProgressItem>>(
               future: _loadProgressItems(),
               builder: (context, snap) {
@@ -3430,9 +3520,10 @@ Future<void> _openHomeworkCoursePicker(
 }
 
 class _LearnerHomeworkHomeCard extends StatelessWidget {
-  const _LearnerHomeworkHomeCard({this.compact = false});
+  const _LearnerHomeworkHomeCard({this.compact = false, this.targetKey});
 
   final bool compact;
+  final GlobalKey? targetKey;
 
   @override
   Widget build(BuildContext context) {
@@ -3497,92 +3588,95 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             ? 'All done ✅'
             : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending';
 
-        return InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () async {
-            await _openHomeworkCoursePicker(
-              context,
-              courseKeysWithUndone: courseKeysWithUndone,
-            );
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.all(compact ? 12 : 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: compact ? 40 : 46,
-                      height: compact ? 40 : 46,
-                      decoration: BoxDecoration(
-                        color: p.soft,
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: p.border.withValues(alpha: 0.85),
+        return KeyedSubtree(
+          key: targetKey,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () async {
+              await _openHomeworkCoursePicker(
+                context,
+                courseKeysWithUndone: courseKeysWithUndone,
+              );
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: p.cardBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
+              ),
+              padding: EdgeInsets.all(compact ? 12 : 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: compact ? 40 : 46,
+                        height: compact ? 40 : 46,
+                        decoration: BoxDecoration(
+                          color: p.soft,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.85),
+                          ),
                         ),
+                        child: Icon(Icons.assignment_rounded, color: p.primary),
                       ),
-                      child: Icon(Icons.assignment_rounded, color: p.primary),
-                    ),
-                    if (undoneTotal > 0)
-                      Positioned(
-                        right: -8,
-                        top: -8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: Text(
-                            undoneTotal > 99 ? '99+' : '$undoneTotal',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
+                      if (undoneTotal > 0)
+                        Positioned(
+                          right: -8,
+                          top: -8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: Text(
+                              undoneTotal > 99 ? '99+' : '$undoneTotal',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Homework',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                    ],
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: p.text.withValues(alpha: 0.62),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                  const SizedBox(height: 18),
+                  Text(
+                    'Homework',
+                    style: TextStyle(
+                      color: p.primary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.62),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -4146,7 +4240,7 @@ class _LearnerDrawer extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 children: [
                   _DrawerTile(
-                    key: coursesTileKey,
+                    targetKey: coursesTileKey,
                     palette: palette,
                     icon: Icons.menu_book_rounded,
                     title: 'My Courses',
@@ -4156,7 +4250,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    key: gamesTileKey,
+                    targetKey: gamesTileKey,
                     palette: palette,
                     icon: Icons.sports_esports_rounded,
                     title: 'Games',
@@ -4166,7 +4260,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    key: coachTileKey,
+                    targetKey: coachTileKey,
                     palette: palette,
                     icon: Icons.psychology_alt_rounded,
                     title: 'Study Coach',
@@ -4178,7 +4272,7 @@ class _LearnerDrawer extends StatelessWidget {
                   ),
 
                   _DrawerTile(
-                    key: storiesTileKey,
+                    targetKey: storiesTileKey,
                     palette: palette,
                     icon: Icons.auto_stories_rounded,
                     title: 'Stories',
@@ -4190,7 +4284,7 @@ class _LearnerDrawer extends StatelessWidget {
                   ),
 
                   _DrawerTile(
-                    key: profileTileKey,
+                    targetKey: profileTileKey,
                     palette: palette,
                     icon: Icons.person_rounded,
                     title: 'Profile',
@@ -4200,7 +4294,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    key: mailTileKey,
+                    targetKey: mailTileKey,
                     palette: palette,
                     icon: Icons.mail_rounded,
                     title: 'Mail',
@@ -4210,7 +4304,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    key: regulationsTileKey,
+                    targetKey: regulationsTileKey,
                     palette: palette,
                     icon: Icons.policy_rounded,
                     title: 'Regulations',
@@ -4220,7 +4314,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    key: themeTileKey,
+                    targetKey: themeTileKey,
                     palette: palette,
                     icon: Icons.palette_rounded,
                     title: 'Theme Settings',
@@ -4231,7 +4325,7 @@ class _LearnerDrawer extends StatelessWidget {
                     },
                   ),
                   _DrawerTile(
-                    key: restartTourTileKey,
+                    targetKey: restartTourTileKey,
                     palette: palette,
                     icon: Icons.tour_rounded,
                     title: 'إعادة الجولة',
@@ -4277,12 +4371,12 @@ class _LearnerDrawer extends StatelessWidget {
 
 class _DrawerTile extends StatelessWidget {
   const _DrawerTile({
-    super.key,
     required this.palette,
     required this.icon,
     required this.title,
     required this.onTap,
     this.subtitle = '',
+    this.targetKey,
   });
 
   final _HomePalette palette;
@@ -4290,65 +4384,71 @@ class _DrawerTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final GlobalKey? targetKey;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
+      child: KeyedSubtree(
+        key: targetKey,
+        child: Material(
+          color: palette.cardBg,
           borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: palette.soft,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: palette.primary),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: palette.border.withValues(alpha: 0.85),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: palette.primary,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      if (subtitle.trim().isNotEmpty) ...[
-                        const SizedBox(height: 3),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: palette.soft,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(icon, color: palette.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          subtitle,
+                          title,
                           style: TextStyle(
-                            color: palette.text.withValues(alpha: 0.55),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                            color: palette.primary,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
+                        if (subtitle.trim().isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              color: palette.text.withValues(alpha: 0.55),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: palette.text.withValues(alpha: 0.45),
-                ),
-              ],
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: palette.text.withValues(alpha: 0.45),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

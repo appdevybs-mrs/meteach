@@ -756,35 +756,6 @@ class _SyllabusServerStorage {
     return 'session_${padded}_$suffix';
   }
 
-  static Future<http.Response> _sendMultipartWithProgress({
-    required http.MultipartRequest request,
-    void Function(double progress)? onProgress,
-    Duration timeout = const Duration(minutes: 5),
-  }) async {
-    final totalBytes = request.contentLength;
-    final source = request.finalize();
-    int sent = 0;
-
-    final streamedReq = http.StreamedRequest(request.method, request.url)
-      ..headers.addAll(request.headers);
-    if (totalBytes >= 0) {
-      streamedReq.contentLength = totalBytes;
-    }
-
-    await for (final chunk in source) {
-      sent += chunk.length;
-      if (onProgress != null && totalBytes > 0) {
-        final p = (sent / totalBytes).clamp(0.0, 1.0);
-        onProgress((p * 0.9).toDouble());
-      }
-      streamedReq.sink.add(chunk);
-    }
-    await streamedReq.sink.close();
-    final streamed = await streamedReq.send().timeout(timeout);
-    onProgress?.call(0.95);
-    return await http.Response.fromStream(streamed).timeout(timeout);
-  }
-
   static Future<String> uploadPlatformFile({
     required PlatformFile file,
     required String root,
@@ -827,11 +798,27 @@ class _SyllabusServerStorage {
       );
     }
 
-    onProgress?.call(0.0);
-    final response = await _sendMultipartWithProgress(
-      request: req,
-      onProgress: onProgress,
-    );
+    onProgress?.call(0.05);
+    Timer? watchdog;
+    var stage = 0.05;
+    if (onProgress != null) {
+      watchdog = Timer.periodic(const Duration(milliseconds: 450), (_) {
+        stage += 0.05;
+        if (stage > 0.9) stage = 0.9;
+        onProgress(stage);
+      });
+    }
+
+    http.Response response;
+    try {
+      final streamed = await req.send().timeout(const Duration(minutes: 5));
+      onProgress?.call(0.95);
+      response = await http.Response.fromStream(
+        streamed,
+      ).timeout(const Duration(minutes: 5));
+    } finally {
+      watchdog?.cancel();
+    }
     final raw = response.body.trim();
 
     _debug(

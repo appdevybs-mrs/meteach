@@ -8,6 +8,7 @@ class LearnerTourHint extends AppTourHint {
     required super.line,
     super.targetKey,
     super.highlightShape = AppTourHighlightShape.auto,
+    super.showFinger = true,
   });
 
   AppTourHint toBase() {
@@ -16,6 +17,7 @@ class LearnerTourHint extends AppTourHint {
       line: line,
       targetKey: targetKey,
       highlightShape: highlightShape,
+      showFinger: showFinger,
     );
   }
 }
@@ -45,10 +47,7 @@ class LearnerTourGuide {
     return AppTourGuide.resetAll(_scopeKey);
   }
 
-  static Future<bool> shouldShow(
-    String screenId, {
-    bool isQuickStart = false,
-  }) {
+  static Future<bool> shouldShow(String screenId, {bool isQuickStart = false}) {
     return AppTourGuide.shouldShow(
       _scopeKey,
       screenId,

@@ -9,15 +9,23 @@ class AppTourHint {
     required this.line,
     this.targetKey,
     this.highlightShape = AppTourHighlightShape.auto,
+    this.showFinger = true,
   });
 
   final String title;
   final String line;
   final GlobalKey? targetKey;
   final AppTourHighlightShape highlightShape;
+  final bool showFinger;
 }
 
-enum AppTourHighlightShape { auto, circle, rectangle, roundedRectangle, fullscreen }
+enum AppTourHighlightShape {
+  auto,
+  circle,
+  rectangle,
+  roundedRectangle,
+  fullscreen,
+}
 
 class AppTourTexts {
   const AppTourTexts({
@@ -199,6 +207,9 @@ class AppTourGuide {
         final current = hints[index];
         final isLast = index == hints.length - 1;
 
+        await _waitForHintTargetReady(current, context);
+        if (!context.mounted) return;
+
         final action = await showDialog<_TourStepAction>(
           context: context,
           barrierDismissible: false,
@@ -246,6 +257,26 @@ class AppTourGuide {
     }
   }
 
+  static Future<void> _waitForHintTargetReady(
+    AppTourHint hint,
+    BuildContext context,
+  ) async {
+    final key = hint.targetKey;
+    if (key == null) return;
+
+    for (var i = 0; i < 18; i++) {
+      if (!context.mounted) return;
+      final targetCtx = key.currentContext;
+      if (targetCtx != null) {
+        final ro = targetCtx.findRenderObject();
+        if (ro is RenderBox && ro.hasSize && ro.size.longestSide > 0) {
+          return;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+  }
+
   static String _sessionKey(String scopeKey, String screenId) {
     return '$scopeKey|$screenId';
   }
@@ -286,6 +317,7 @@ class _AppTourStepDialog extends StatefulWidget {
 
 class _AppTourStepDialogState extends State<_AppTourStepDialog> {
   late bool _dontShowAgain;
+  Rect? _lastKnownTargetRect;
 
   @override
   void initState() {
@@ -330,7 +362,7 @@ class _AppTourStepDialogState extends State<_AppTourStepDialog> {
                 ),
               ),
             ),
-            if (fingerPos != null)
+            if (widget.hint.showFinger && fingerPos != null)
               Positioned(
                 left: fingerPos.dx,
                 top: fingerPos.dy,
@@ -356,32 +388,45 @@ class _AppTourStepDialogState extends State<_AppTourStepDialog> {
   Future<void> _ensureTargetVisible() async {
     final key = widget.hint.targetKey;
     if (key == null) return;
-    final ctx = key.currentContext;
-    if (ctx == null) return;
-    try {
-      await Scrollable.ensureVisible(
-        ctx,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-      );
-      if (mounted) {
-        setState(() {});
+    for (var i = 0; i < 12; i++) {
+      final ctx = key.currentContext;
+      if (ctx != null) {
+        try {
+          await Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.5,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+          );
+          if (mounted) {
+            setState(() {});
+          }
+          return;
+        } catch (_) {
+          // Ignore if target has no scrollable ancestor.
+        }
       }
-    } catch (_) {
-      // Ignore if target has no scrollable ancestor.
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
     }
   }
 
   Rect? _targetRect(GlobalKey? key) {
     final ctx = key?.currentContext;
-    if (ctx == null) return null;
+    if (ctx == null) return _lastKnownTargetRect;
 
     final ro = ctx.findRenderObject();
-    if (ro is! RenderBox || !ro.hasSize) return null;
+    if (ro is! RenderBox || !ro.hasSize) return _lastKnownTargetRect;
 
-    final origin = ro.localToGlobal(Offset.zero);
-    return origin & ro.size;
+    final overlayCtx = Overlay.of(context, rootOverlay: true).context;
+    final overlayRo = overlayCtx.findRenderObject();
+
+    final origin = (overlayRo is RenderBox)
+        ? ro.localToGlobal(Offset.zero, ancestor: overlayRo)
+        : ro.localToGlobal(Offset.zero);
+    final rect = origin & ro.size;
+    _lastKnownTargetRect = rect;
+    return rect;
   }
 
   AppTourHighlightShape _resolveHighlightShape(Rect? targetRect) {
@@ -389,6 +434,9 @@ class _AppTourStepDialogState extends State<_AppTourStepDialog> {
       return widget.hint.highlightShape;
     }
     if (targetRect == null) {
+      if (widget.hint.targetKey != null) {
+        return AppTourHighlightShape.roundedRectangle;
+      }
       return AppTourHighlightShape.fullscreen;
     }
 
@@ -405,17 +453,31 @@ class _AppTourStepDialogState extends State<_AppTourStepDialog> {
 
   Rect _highlightRect(Size size, Rect? targetRect) {
     final shape = _resolveHighlightShape(targetRect);
-    if (shape == AppTourHighlightShape.fullscreen || targetRect == null) {
+    if (shape == AppTourHighlightShape.fullscreen) {
       return Rect.fromLTWH(8, 8, size.width - 16, size.height - 16);
     }
 
+    if (targetRect == null) {
+      const fallbackWidth = 120.0;
+      const fallbackHeight = 56.0;
+      final x = ((size.width - fallbackWidth) / 2).clamp(8.0, size.width - 8.0);
+      final y = (size.height * 0.18).clamp(8.0, size.height - 8.0);
+      return Rect.fromLTWH(x, y, fallbackWidth, fallbackHeight);
+    }
+
     const dx = 10.0;
-    const dy = 8.0;
+    var dyTop = 10.0;
+    var dyBottom = 6.0;
+    final compactTarget = targetRect.width <= 56 && targetRect.height <= 56;
+    if (shape == AppTourHighlightShape.roundedRectangle && compactTarget) {
+      dyTop = 16.0;
+      dyBottom = 4.0;
+    }
     return Rect.fromLTRB(
       (targetRect.left - dx).clamp(4.0, size.width - 4.0),
-      (targetRect.top - dy).clamp(4.0, size.height - 4.0),
+      (targetRect.top - dyTop).clamp(4.0, size.height - 4.0),
       (targetRect.right + dx).clamp(4.0, size.width - 4.0),
-      (targetRect.bottom + dy).clamp(4.0, size.height - 4.0),
+      (targetRect.bottom + dyBottom).clamp(4.0, size.height - 4.0),
     );
   }
 
@@ -527,7 +589,9 @@ class _AppTourStepDialogState extends State<_AppTourStepDialog> {
                   onPressed: () => Navigator.of(context).pop(
                     widget.isLast ? _TourStepAction.done : _TourStepAction.next,
                   ),
-                  child: Text(widget.isLast ? widget.texts.done : widget.texts.next),
+                  child: Text(
+                    widget.isLast ? widget.texts.done : widget.texts.next,
+                  ),
                 ),
               ],
             ),
@@ -546,7 +610,10 @@ class _TourCardPosition {
 }
 
 class _CoachOverlayPainter extends CustomPainter {
-  const _CoachOverlayPainter({required this.highlightRect, required this.shape});
+  const _CoachOverlayPainter({
+    required this.highlightRect,
+    required this.shape,
+  });
 
   final Rect highlightRect;
   final AppTourHighlightShape shape;
@@ -572,7 +639,8 @@ class _CoachOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CoachOverlayPainter oldDelegate) {
-    return oldDelegate.highlightRect != highlightRect || oldDelegate.shape != shape;
+    return oldDelegate.highlightRect != highlightRect ||
+        oldDelegate.shape != shape;
   }
 
   Path _shapePath() {
@@ -584,10 +652,9 @@ class _CoachOverlayPainter extends CustomPainter {
         return Path()..addRect(highlightRect);
       case AppTourHighlightShape.roundedRectangle:
       case AppTourHighlightShape.auto:
-        return Path()
-          ..addRRect(
-            RRect.fromRectAndRadius(highlightRect, const Radius.circular(14)),
-          );
+        return Path()..addRRect(
+          RRect.fromRectAndRadius(highlightRect, const Radius.circular(14)),
+        );
     }
   }
 }

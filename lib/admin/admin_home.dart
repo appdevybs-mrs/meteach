@@ -197,9 +197,15 @@ class _AdminHomeState extends State<AdminHome> {
 
     final width = MediaQuery.of(context).size.width;
     final crossAxisCount = width >= 1100 ? 4 : (width >= 700 ? 3 : 2);
-    final cardRatio = _isAdminMode
-        ? (width >= 700 ? 1.22 : 1.10)
-        : (width >= 700 ? 1.28 : 1.16);
+    final double cardRatio;
+    if (crossAxisCount >= 4) {
+      cardRatio = _isAdminMode ? 1.18 : 1.22;
+    } else if (crossAxisCount == 3) {
+      cardRatio = _isAdminMode ? 1.02 : 1.06;
+    } else {
+      cardRatio = width >= 420 ? 0.96 : 0.88;
+    }
+    final gridGap = width >= 900 ? 12.0 : 10.0;
 
     final allCards = <Widget>[
       _DashCard(
@@ -259,11 +265,7 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       KeyedSubtree(
         key: _paymentsCardKey,
-        child: _DashCard(
-          title: 'Payments',
-          subtitle: 'All payments',
-          icon: Icons.payments_rounded,
-          color: AdminHome.accentBlue,
+        child: _PaymentsAttentionDashCard(
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
@@ -300,7 +302,7 @@ class _AdminHomeState extends State<AdminHome> {
         title: 'Staff',
         subtitle: 'Teachers & staff',
         icon: Icons.badge_rounded,
-        color: AdminHome.accentSlate,
+        color: AdminHome.accentAmber,
         isReceptionistStyle: !_isAdminMode,
         onTap: () => Navigator.of(
           context,
@@ -320,7 +322,7 @@ class _AdminHomeState extends State<AdminHome> {
         title: 'Settings',
         subtitle: 'Force update config',
         icon: Icons.settings_rounded,
-        color: AdminHome.accentSlate,
+        color: AdminHome.accentIndigo,
         isReceptionistStyle: !_isAdminMode,
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const AdminForceUpdateAllScreen()),
@@ -382,11 +384,7 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       KeyedSubtree(
         key: _paymentsCardKey,
-        child: _DashCard(
-          title: 'Payments',
-          subtitle: 'All payments',
-          icon: Icons.payments_rounded,
-          color: AdminHome.accentBlue,
+        child: _PaymentsAttentionDashCard(
           isReceptionistStyle: true,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
@@ -559,8 +557,8 @@ class _AdminHomeState extends State<AdminHome> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 
-                            _isAdminMode ? 0.04 : 0.03,
+                          color: Colors.black.withValues(
+                            alpha: _isAdminMode ? 0.04 : 0.03,
                           ),
                           blurRadius: _isAdminMode ? 16 : 12,
                           offset: const Offset(0, 6),
@@ -674,8 +672,8 @@ class _AdminHomeState extends State<AdminHome> {
                       key: _cardsGridKey,
                       child: GridView.count(
                         crossAxisCount: crossAxisCount,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
+                        mainAxisSpacing: gridGap,
+                        crossAxisSpacing: gridGap,
                         childAspectRatio: cardRatio,
                         children: visibleCards,
                       ),
@@ -1115,47 +1113,150 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
 
 enum _PayFlag { ok, yellow, red, black, noCourse }
 
-// ===================== LEARNERS CARD =====================
+class _PayLegend {
+  static const String noCourseLabel = 'No course';
+  static const String blackLabel = 'Overdue';
+  static const String redLabel = 'Due now';
+  static const String yellowLabel = 'Warning';
+  static const String okLabel = 'OK';
 
-class _LearnersDashCard extends StatelessWidget {
-  final VoidCallback onTap;
-  final bool isReceptionistStyle;
+  static const Color noCourseColor = Colors.blue;
+  static const Color blackColor = Colors.black;
+  static const Color redColor = Colors.red;
+  static const Color yellowColor = AdminHome.actionOrange;
+  static const Color okColor = AdminHome.primaryBlue;
+}
 
-  const _LearnersDashCard({
-    required this.onTap,
-    this.isReceptionistStyle = false,
+class _PaymentAttentionSummary {
+  const _PaymentAttentionSummary({
+    required this.totalLearners,
+    required this.noCourse,
+    required this.black,
+    required this.red,
+    required this.yellow,
+    required this.ok,
   });
 
-  static int _asInt(dynamic v) {
+  final int totalLearners;
+  final int noCourse;
+  final int black;
+  final int red;
+  final int yellow;
+  final int ok;
+
+  int get attention => black + red;
+  int get tracked => black + red + yellow + ok;
+
+  static _PaymentAttentionSummary fromUsers(dynamic usersVal) {
+    int totalLearners = 0;
+    int noCourse = 0;
+    int black = 0;
+    int red = 0;
+    int yellow = 0;
+    int ok = 0;
+
+    if (usersVal is Map) {
+      usersVal.forEach((uid, userVal) {
+        if (uid == null || userVal == null || userVal is! Map) return;
+        final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
+
+        final role = (userMap['role'] ?? '').toString().trim().toLowerCase();
+        if (role != 'learner' && role != 'learners' && role != 'learner(s)') {
+          return;
+        }
+
+        totalLearners++;
+
+        final courses = userMap['courses'];
+        if (courses is! Map || courses.isEmpty) {
+          noCourse++;
+          return;
+        }
+
+        bool hasAtLeastOneCourse = false;
+        _PayFlag worst = _PayFlag.ok;
+
+        courses.forEach((_, courseVal) {
+          if (courseVal is! Map) return;
+          hasAtLeastOneCourse = true;
+          final courseMap = courseVal.map(
+            (k, vv) => MapEntry(k.toString(), vv),
+          );
+          final flag = _PaymentAttentionLogic.variantPaymentFlag(courseMap);
+          if (_PaymentAttentionLogic.rank(flag) >
+              _PaymentAttentionLogic.rank(worst)) {
+            worst = flag;
+          }
+        });
+
+        if (!hasAtLeastOneCourse) {
+          noCourse++;
+          return;
+        }
+
+        switch (worst) {
+          case _PayFlag.black:
+            black++;
+            break;
+          case _PayFlag.red:
+            red++;
+            break;
+          case _PayFlag.yellow:
+            yellow++;
+            break;
+          case _PayFlag.ok:
+            ok++;
+            break;
+          case _PayFlag.noCourse:
+            noCourse++;
+            break;
+        }
+      });
+    }
+
+    return _PaymentAttentionSummary(
+      totalLearners: totalLearners,
+      noCourse: noCourse,
+      black: black,
+      red: red,
+      yellow: yellow,
+      ok: ok,
+    );
+  }
+}
+
+class _PaymentAttentionLogic {
+  static int asInt(dynamic v) {
     if (v == null) return 0;
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
   }
 
-  static int _countUniqueAttendanceDates(dynamic attendance) {
+  static int countUniqueAttendanceDates(dynamic attendance) {
     if (attendance is! Map) return 0;
-
-    final Set<String> dates = {};
+    final dates = <String>{};
     attendance.forEach((_, v) {
       if (v is! Map) return;
       final m = v.map((k, vv) => MapEntry(k.toString(), vv));
       final d = (m['date'] ?? '').toString().trim();
       if (d.isNotEmpty) dates.add(d);
     });
-
     return dates.length;
   }
 
-  static String _normalizeVariantKey(String raw) {
+  static String normalizeVariantKey(String raw) {
     final v = raw.trim().toLowerCase();
     switch (v) {
       case 'inclass':
       case 'in-class':
+      case 'in class':
+      case 'in_class':
       case 'class':
         return 'inclass';
       case 'private':
       case 'live':
+      case 'vip':
         return 'private';
       case 'flexible':
       case 'online':
@@ -1168,12 +1269,12 @@ class _LearnersDashCard extends StatelessWidget {
     }
   }
 
-  static bool _isExpiredMs(int expiresAt) {
+  static bool isExpiredMs(int expiresAt) {
     if (expiresAt <= 0) return false;
     return DateTime.now().millisecondsSinceEpoch >= expiresAt;
   }
 
-  static bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
+  static bool isNearExpiryMs(int expiresAt, {int days = 7}) {
     if (expiresAt <= 0) return false;
     final now = DateTime.now().millisecondsSinceEpoch;
     final diff = expiresAt - now;
@@ -1181,7 +1282,7 @@ class _LearnersDashCard extends StatelessWidget {
     return diff <= Duration(days: days).inMilliseconds;
   }
 
-  static int _rank(_PayFlag f) {
+  static int rank(_PayFlag f) {
     switch (f) {
       case _PayFlag.black:
         return 4;
@@ -1196,7 +1297,7 @@ class _LearnersDashCard extends StatelessWidget {
     }
   }
 
-  static _PayFlag _paymentFlag({
+  static _PayFlag paymentFlag({
     required int sessionsPaidTotal,
     required int sessionsDone,
     required int remindBeforeSession,
@@ -1212,15 +1313,13 @@ class _LearnersDashCard extends StatelessWidget {
     if (dueAt < 1) dueAt = 1;
 
     final warnAt = dueAt - 1;
-
     if (currentSession >= dueAt) return _PayFlag.red;
     if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
-
     return _PayFlag.ok;
   }
 
-  static _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
-    final variantKey = _normalizeVariantKey(
+  static _PayFlag variantPaymentFlag(Map<String, dynamic> courseMap) {
+    final variantKey = normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
     );
 
@@ -1230,19 +1329,19 @@ class _LearnersDashCard extends StatelessWidget {
         : <String, dynamic>{};
 
     final attendance = courseMap['attendance'];
-    final sessionsDone = _countUniqueAttendanceDates(attendance);
-    final sessionsPaidTotal = _asInt(summaryMap['sessionsPaidTotal']);
-    final remindBeforeSession = _asInt(summaryMap['remindBeforeSession']);
+    final sessionsDone = countUniqueAttendanceDates(attendance);
+    final sessionsPaidTotal = asInt(summaryMap['sessionsPaidTotal']);
+    final remindBeforeSession = asInt(summaryMap['remindBeforeSession']);
 
     if (variantKey == 'recorded') {
       final access = courseMap['recorded_access'];
       final accessMap = access is Map
           ? access.map((k, v) => MapEntry(k.toString(), v))
           : <String, dynamic>{};
-      final expiresAt = _asInt(accessMap['expiresAt']);
+      final expiresAt = asInt(accessMap['expiresAt']);
       if (expiresAt <= 0) return _PayFlag.black;
-      if (_isExpiredMs(expiresAt)) return _PayFlag.red;
-      if (_isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      if (isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
       return _PayFlag.ok;
     }
 
@@ -1251,14 +1350,14 @@ class _LearnersDashCard extends StatelessWidget {
       final accessMap = access is Map
           ? access.map((k, v) => MapEntry(k.toString(), v))
           : <String, dynamic>{};
-      final expiresAt = _asInt(accessMap['expiresAt']);
+      final expiresAt = asInt(accessMap['expiresAt']);
 
       if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
-      if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
+      if (expiresAt > 0 && isExpiredMs(expiresAt)) return _PayFlag.red;
       if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal) {
         return _PayFlag.red;
       }
-      if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
+      if (expiresAt > 0 && isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
       if (sessionsPaidTotal > 0) {
         final left = sessionsPaidTotal - sessionsDone;
         if (left <= 1) return _PayFlag.yellow;
@@ -1266,23 +1365,22 @@ class _LearnersDashCard extends StatelessWidget {
       return _PayFlag.ok;
     }
 
-    return _paymentFlag(
+    return paymentFlag(
       sessionsPaidTotal: sessionsPaidTotal,
       sessionsDone: sessionsDone,
       remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
     );
   }
+}
 
-  static String _classIdOf(Map<String, dynamic> courseMap) {
-    final cls = courseMap['class'];
-    if (cls is Map) {
-      final m = cls.map((k, v) => MapEntry(k.toString(), v));
-      final id = (m['class_id'] ?? '').toString().trim();
-      if (id.isNotEmpty) return id;
-    }
-    final direct = (courseMap['class_id'] ?? '').toString().trim();
-    return direct;
-  }
+class _PaymentsAttentionDashCard extends StatelessWidget {
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  const _PaymentsAttentionDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1291,12 +1389,55 @@ class _LearnersDashCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: usersRef.onValue,
       builder: (context, snap) {
-        int totalLearners = 0;
-        int blackCount = 0;
-        int redCount = 0;
-        int yellowCount = 0;
-        int okCount = 0;
-        int blueCount = 0;
+        final summary = _PaymentAttentionSummary.fromUsers(
+          snap.data?.snapshot.value,
+        );
+
+        final subtitle = summary.attention > 0
+            ? '${_PayLegend.redLabel}: ${summary.red} • ${_PayLegend.blackLabel}: ${summary.black} • ${_PayLegend.yellowLabel}: ${summary.yellow}'
+            : (summary.yellow > 0
+                  ? '${_PayLegend.yellowLabel}: ${summary.yellow} • ${_PayLegend.noCourseLabel}: ${summary.noCourse}'
+                  : '${_PayLegend.okLabel}: ${summary.ok} • ${_PayLegend.noCourseLabel}: ${summary.noCourse}');
+
+        final badgeCount = summary.attention > 0
+            ? summary.attention
+            : (summary.yellow > 0 ? summary.yellow : 0);
+
+        return _DashCard(
+          title: 'Payments',
+          subtitle: subtitle,
+          icon: Icons.payments_rounded,
+          color: AdminHome.accentBlue,
+          badgeCount: badgeCount,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+// ===================== LEARNERS CARD =====================
+
+class _LearnersDashCard extends StatelessWidget {
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  const _LearnersDashCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final usersRef = FirebaseDatabase.instance.ref('users');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: usersRef.onValue,
+      builder: (context, snap) {
+        final summary = _PaymentAttentionSummary.fromUsers(
+          snap.data?.snapshot.value,
+        );
 
         if (!snap.hasData) {
           return InkWell(
@@ -1315,92 +1456,16 @@ class _LearnersDashCard extends StatelessWidget {
           );
         }
 
-        final usersVal = snap.data!.snapshot.value;
-
-        if (usersVal is Map) {
-          usersVal.forEach((uid, userVal) {
-            if (uid == null || userVal == null) return;
-            if (userVal is! Map) return;
-
-            final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
-
-            final role = (userMap['role'] ?? '')
-                .toString()
-                .toLowerCase()
-                .trim();
-            if (role != 'learner' && role != 'learners' && role != 'learner(s)') {
-              return;
-            }
-
-            totalLearners++;
-
-            final courses = userMap['courses'];
-            if (courses is! Map || courses.isEmpty) {
-              blueCount++;
-              return;
-            }
-
-            bool hasTrackedClass = false;
-            courses.forEach((_, courseVal) {
-              if (courseVal is! Map) return;
-              final courseMap = courseVal.map((k, vv) => MapEntry(k.toString(), vv));
-              final cls = courseMap['class'];
-              if (cls is! Map) return;
-              final classMap = cls.map((k, vv) => MapEntry(k.toString(), vv));
-              final classId = (classMap['class_id'] ?? '').toString().trim();
-              if (classId.isNotEmpty) {
-                hasTrackedClass = true;
-              }
-            });
-            if (!hasTrackedClass) {
-              blueCount++;
-              return;
-            }
-
-            _PayFlag worst = _PayFlag.ok;
-
-            courses.forEach((courseKey, courseVal) {
-              if (courseKey == null || courseVal == null) return;
-              if (courseVal is! Map) return;
-
-              final courseMap = courseVal.map(
-                (k, vv) => MapEntry(k.toString(), vv),
-              );
-
-              final flag = _variantPaymentFlag(courseMap);
-
-              if (_rank(flag) > _rank(worst)) worst = flag;
-              if (worst == _PayFlag.black) return;
-            });
-
-            switch (worst) {
-              case _PayFlag.black:
-                blackCount++;
-                break;
-              case _PayFlag.red:
-                redCount++;
-                break;
-              case _PayFlag.yellow:
-                yellowCount++;
-                break;
-              case _PayFlag.ok:
-              default:
-                okCount++;
-                break;
-            }
-          });
-        }
-
         return InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: onTap,
           child: _learnersCardUi(
-            total: totalLearners,
-            black: blackCount,
-            red: redCount,
-            yellow: yellowCount,
-            ok: okCount,
-            blue: blueCount,
+            total: summary.totalLearners,
+            black: summary.black,
+            red: summary.red,
+            yellow: summary.yellow,
+            ok: summary.ok,
+            blue: summary.noCourse,
             loading: false,
             isReceptionistStyle: isReceptionistStyle,
           ),
@@ -1442,7 +1507,7 @@ class _LearnersDashCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             Container(
               width: 42,
@@ -1489,63 +1554,80 @@ class _LearnersDashCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 7),
-            RichText(
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 10,
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _MiniStatChip(
+                      label: 'Learners $total',
+                      color: Colors.blueGrey,
+                      background: const Color(0xFFF2F5F8),
+                    ),
+                    _MiniStatChip(
+                      label: '${_PayLegend.noCourseLabel} $blue',
+                      color: _PayLegend.noCourseColor,
+                      background: const Color(0xFFEFF5FF),
+                    ),
+                    _MiniStatChip(
+                      label: '${_PayLegend.blackLabel} $black',
+                      color: _PayLegend.blackColor,
+                      background: const Color(0xFFF1F3F5),
+                    ),
+                    _MiniStatChip(
+                      label: '${_PayLegend.redLabel} $red',
+                      color: _PayLegend.redColor,
+                      background: const Color(0xFFFFEEEE),
+                    ),
+                    _MiniStatChip(
+                      label: '${_PayLegend.yellowLabel} $yellow',
+                      color: _PayLegend.yellowColor,
+                      background: const Color(0xFFFFF4E4),
+                    ),
+                    _MiniStatChip(
+                      label: '${_PayLegend.okLabel} $ok',
+                      color: _PayLegend.okColor,
+                      background: const Color(0xFFEAF2FF),
+                    ),
+                  ],
                 ),
-                children: [
-                  TextSpan(
-                    text: '👥 $total   ',
-                    style: TextStyle(color: Colors.grey.shade700),
-                  ),
-                  const TextSpan(
-                    text: '🔵 ',
-                    style: TextStyle(color: Colors.blue),
-                  ),
-                  TextSpan(
-                    text: '$blue   ',
-                    style: const TextStyle(color: Colors.blue),
-                  ),
-                  const TextSpan(
-                    text: '🖤 ',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                  TextSpan(
-                    text: '$black   ',
-                    style: const TextStyle(color: Colors.black),
-                  ),
-                  const TextSpan(
-                    text: '🔴 ',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  TextSpan(
-                    text: '$red   ',
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  TextSpan(
-                    text: '🟠 ',
-                    style: TextStyle(color: AdminHome.actionOrange),
-                  ),
-                  TextSpan(
-                    text: '$yellow   ',
-                    style: TextStyle(color: AdminHome.actionOrange),
-                  ),
-                  const TextSpan(
-                    text: '✅ ',
-                    style: TextStyle(color: Colors.green),
-                  ),
-                  TextSpan(
-                    text: '$ok',
-                    style: const TextStyle(color: Colors.green),
-                  ),
-                ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniStatChip extends StatelessWidget {
+  const _MiniStatChip({
+    required this.label,
+    required this.color,
+    required this.background,
+  });
+
+  final String label;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 10,
         ),
       ),
     );
@@ -1601,7 +1683,18 @@ class _DashCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: AdminHome.cardBg,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _softBg(
+                color,
+              ).withValues(alpha: isReceptionistStyle ? 0.22 : 0.26),
+              AdminHome.cardBg,
+              AdminHome.cardBg,
+            ],
+            stops: const [0.0, 0.22, 1.0],
+          ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: borderColor),
           boxShadow: [
@@ -1888,7 +1981,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       _fillCompanyControllers(company);
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not load app configuration.'),
@@ -1928,10 +2022,14 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       });
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Saved all ✅')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Saved all ✅')),
+      );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not save force-update settings.'),
@@ -1950,10 +2048,14 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       await _companyRoot.set(_companyControllersToMap());
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Company info saved ✅')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Company info saved ✅')),
+      );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not save company information.'),
