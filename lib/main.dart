@@ -19,6 +19,7 @@ import 'shared/app_feedback.dart';
 import 'shared/human_error.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
+import 'verify_certificate_screen.dart';
 import 'package:video_player/video_player.dart';
 
 part 'home/home_shell.part.dart';
@@ -624,7 +625,7 @@ class AssistantHome extends StatelessWidget {
     return SoftBackground(
       child: Column(
         children: [
-          const SimpleTopBar(title: 'Your Bridge School'),
+          SimpleTopBar(title: 'Your Bridge School', right: _CvnVerifyButton()),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
@@ -647,6 +648,42 @@ class AssistantHome extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CvnVerifyButton extends StatelessWidget {
+  const _CvnVerifyButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Brand.primaryBlue.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const VerifyCertificateScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.shield_rounded, color: Brand.primaryBlue, size: 20),
+              const SizedBox(width: 6),
+              Text(
+                'CVN',
+                style: TextStyle(
+                  color: Brand.primaryBlue,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -24,6 +24,7 @@ import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
+import 'admin_certificates.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -358,6 +359,7 @@ class _AdminHomeState extends State<AdminHome> {
           MaterialPageRoute(builder: (_) => const AdminPublicGalleryScreen()),
         ),
       ),
+      _CertificatesDashCard(isReceptionistStyle: !_isAdminMode),
     ];
 
     final receptionistCards = <Widget>[
@@ -1102,6 +1104,42 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminSharedFilesScreen()),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CertificatesDashCard extends StatelessWidget {
+  final bool isReceptionistStyle;
+
+  const _CertificatesDashCard({this.isReceptionistStyle = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('certificates');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int count = 0;
+        final v = snap.data?.snapshot.value;
+        if (v is Map) count = v.length;
+
+        final subtitle = count == 0
+            ? 'No certificates yet'
+            : '$count certificate${count == 1 ? '' : 's'}';
+
+        return _DashCard(
+          title: 'Certificates',
+          subtitle: subtitle,
+          icon: Icons.workspace_premium_rounded,
+          color: AdminHome.accentIndigo,
+          badgeCount: count,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminCertificatesScreen()),
           ),
         );
       },
