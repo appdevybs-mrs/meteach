@@ -23,6 +23,8 @@ class TeacherSharedFilesScreen extends StatefulWidget {
 
 class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
   static const String _serverRoot = 'shared_files';
+  static const String _legacyServerRoot = 'shared';
+  static const String _coursesRoot = 'courses';
   static const String _uploadUrl =
       'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
   static const String _deleteUrl =
@@ -71,21 +73,32 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     }
   }
 
-  Future<void> _ensureSharedRoot() async {
+  bool _isInvalidRootError(Object e) {
+    final lower = e.toString().toLowerCase();
+    return lower.contains('invalid root') ||
+        lower.contains('unknown root') ||
+        lower.contains('root not allowed');
+  }
+
+  Future<void> _ensureSharedRoot(String root) async {
     final uri = await BackendApi.withAuthQuery(Uri.parse(_createFolderUrl));
     final headers = await BackendApi.authHeaders();
     final authFields = await BackendApi.authFormFields();
 
-    await http.post(
+    final r = await http.post(
       uri,
       headers: headers,
-      body: {
-        'root': _serverRoot,
-        'parent': '',
-        'folder': 'teachers',
-        ...authFields,
-      },
+      body: {'root': root, 'parent': '', 'folder': 'teachers', ...authFields},
     );
+
+    final raw = r.body.trim();
+    if (!raw.startsWith('{')) return;
+    final data = json.decode(raw);
+    if (data is! Map<String, dynamic>) return;
+    if (data['success'] == true) return;
+    final msg = (data['message'] ?? '').toString().trim().toLowerCase();
+    if (msg.contains('already exists')) return;
+    if (msg.isNotEmpty) throw Exception(msg);
   }
 
   String _safeFolderName(String input) {
@@ -96,15 +109,23 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     return clean.isEmpty ? 'file' : clean;
   }
 
+  String _pathForRoot({required String root, required String folderName}) {
+    if (root == _coursesRoot) {
+      return 'shared_files/teachers/$_uid/$folderName';
+    }
+    return 'teachers/$_uid/$folderName';
+  }
+
   Future<String> _uploadSelectedFile({
     required PlatformFile picked,
     required String folderName,
+    required String root,
   }) async {
     final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
-    req.fields['root'] = _serverRoot;
-    req.fields['path'] = 'teachers/$_uid/$folderName';
+    req.fields['root'] = root;
+    req.fields['path'] = _pathForRoot(root: root, folderName: folderName);
 
     if (picked.path != null && picked.path!.isNotEmpty) {
       req.files.add(
@@ -128,7 +149,8 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     ).timeout(const Duration(seconds: 120));
     final raw = response.body.trim();
     if (!raw.startsWith('{')) {
-      throw Exception('Server did not return JSON.');
+      final snippet = raw.length > 180 ? '${raw.substring(0, 180)}...' : raw;
+      throw Exception('Upload failed (HTTP ${response.statusCode}): $snippet');
     }
 
     final data = json.decode(raw);
@@ -136,7 +158,8 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       throw Exception('Invalid upload response.');
     }
     if (data['success'] != true) {
-      throw Exception((data['message'] ?? 'Upload failed').toString());
+      final message = (data['message'] ?? 'Upload failed').toString();
+      throw Exception('Upload failed: $message');
     }
 
     final url = (data['url'] ?? '').toString().trim();
@@ -207,7 +230,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       setState(() => _uploading = true);
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: true,
+        withData: false,
         type: FileType.custom,
         allowedExtensions: _allowedDocExt.toList()..sort(),
       );
@@ -227,12 +250,53 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
         throw Exception('Only document files are allowed.');
       }
 
-      await _ensureSharedRoot();
       final folderName = _safeFolderName(
         DateTime.now().millisecondsSinceEpoch.toString(),
       );
-      final url = await _uploadSelectedFile(
-        picked: picked,
+      String? url;
+      Object? lastUploadError;
+      String? chosenRoot;
+      final rootsToTry = <String>{
+        _serverRoot,
+        _legacyServerRoot,
+        _coursesRoot,
+      }.toList();
+
+      for (final root in rootsToTry) {
+        try {
+          try {
+            if (root != _coursesRoot) {
+              await _ensureSharedRoot(root);
+            }
+          } catch (e) {
+            if (!_isInvalidRootError(e)) rethrow;
+          }
+
+          url = await _uploadSelectedFile(
+            picked: picked,
+            folderName: folderName,
+            root: root,
+          );
+          chosenRoot = root;
+          break;
+        } catch (e) {
+          lastUploadError = e;
+          if (_isInvalidRootError(e)) {
+            continue;
+          }
+          rethrow;
+        }
+      }
+
+      if (url == null || url.trim().isEmpty) {
+        if (lastUploadError != null) {
+          throw Exception(lastUploadError.toString());
+        }
+        throw Exception('Upload failed: invalid root.');
+      }
+      final selectedRoot = chosenRoot ?? _serverRoot;
+      final selectedPath = _pathForRoot(
+        root: selectedRoot,
         folderName: folderName,
       );
       final ownerName = await _displayName();
@@ -247,6 +311,8 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
         'name': picked.name,
         'ext': ext,
         'url': url,
+        'serverRoot': selectedRoot,
+        'serverPath': selectedPath,
         'ownerUid': _uid,
         'ownerName': ownerName,
         'createdAt': ServerValue.timestamp,
@@ -292,6 +358,38 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     }
   }
 
+  ({String root, String path})? _deleteTargetFromUrl(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final uri = Uri.parse(trimmed);
+      final parts = uri.pathSegments;
+
+      final coursesIdx = parts.indexOf('courses');
+      if (coursesIdx >= 0 && coursesIdx + 2 < parts.length) {
+        if (parts[coursesIdx + 1] == 'shared_files') {
+          final path = parts.sublist(coursesIdx + 1).join('/');
+          return (root: _coursesRoot, path: path);
+        }
+      }
+
+      final sharedFilesIdx = parts.indexOf('shared_files');
+      if (sharedFilesIdx >= 0 && sharedFilesIdx + 1 < parts.length) {
+        final path = parts.sublist(sharedFilesIdx + 1).join('/');
+        return (root: _serverRoot, path: path);
+      }
+
+      final sharedIdx = parts.indexOf('shared');
+      if (sharedIdx >= 0 && sharedIdx + 1 < parts.length) {
+        final path = parts.sublist(sharedIdx + 1).join('/');
+        return (root: _legacyServerRoot, path: path);
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
   Future<void> _deleteOwn(Map<String, dynamic> item) async {
     final ownerUid = (item['ownerUid'] ?? '').toString().trim();
     if (ownerUid != _uid) return;
@@ -319,7 +417,17 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       final relPath = _relativeSharedPathFromUrl(
         (item['url'] ?? '').toString(),
       );
-      if (relPath.isNotEmpty) {
+      final storedRoot = (item['serverRoot'] ?? '').toString().trim();
+      final storedPath = (item['serverPath'] ?? '').toString().trim();
+      final inferred = _deleteTargetFromUrl((item['url'] ?? '').toString());
+      final deleteRoot = storedRoot.isNotEmpty
+          ? storedRoot
+          : (inferred?.root ?? _serverRoot);
+      final deletePath = storedPath.isNotEmpty
+          ? storedPath
+          : (inferred?.path ?? relPath);
+
+      if (deletePath.isNotEmpty) {
         final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
         final headers = await BackendApi.authHeaders();
         final authFields = await BackendApi.authFormFields();
@@ -327,7 +435,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
             .post(
               deleteUri,
               headers: headers,
-              body: {'root': _serverRoot, 'path': relPath, ...authFields},
+              body: {'root': deleteRoot, 'path': deletePath, ...authFields},
             )
             .timeout(const Duration(seconds: 60));
       }

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -110,7 +109,13 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
   }
 
   String _friendlyFileName(String name) {
-    final clean = Uri.decodeComponent(name.trim());
+    final raw = name.trim();
+    String clean;
+    try {
+      clean = Uri.decodeComponent(raw);
+    } catch (_) {
+      clean = raw;
+    }
     if (clean.isEmpty) return 'Uploaded file';
     if (clean.length <= 48) return clean;
     return '${clean.substring(0, 32)}...${clean.substring(clean.length - 12)}';
@@ -138,10 +143,10 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     void Function(PlatformFile picked)? onSelectedFile,
   }) async {
     final FileType pickerType;
-    if (isThumbnail) {
-      pickerType = FileType.image;
-    } else if (allowedExtensions != null && allowedExtensions.isNotEmpty) {
+    if (allowedExtensions != null && allowedExtensions.isNotEmpty) {
       pickerType = FileType.custom;
+    } else if (isThumbnail) {
+      pickerType = FileType.image;
     } else {
       pickerType = FileType.any;
     }
@@ -158,6 +163,24 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     }
 
     final picked = result.files.single;
+
+    if (allowedExtensions != null && allowedExtensions.isNotEmpty) {
+      final allowed = allowedExtensions
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+
+      final ext = (picked.extension ?? '').trim().toLowerCase().replaceFirst(
+        '.',
+        '',
+      );
+      if (ext.isEmpty || !allowed.contains(ext)) {
+        throw Exception(
+          'Selected file format is not supported. Allowed: ${allowed.join(', ')}',
+        );
+      }
+    }
+
     onSelectedName?.call(_friendlyFileName(picked.name));
     onSelectedFile?.call(picked);
     final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
@@ -167,58 +190,25 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     req.fields['root'] = 'stories';
     req.fields['path'] = folderPath;
 
-    if (kIsWeb) {
+    if (picked.path != null && picked.path!.isNotEmpty) {
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          picked.path!,
+          filename: picked.name,
+        ),
+      );
+    } else {
       final bytes = picked.bytes;
       if (bytes == null) {
         throw Exception('Could not read selected file');
       }
-
-      final total = bytes.length;
-      int sent = 0;
-      final stream = Stream<List<int>>.value(bytes).transform(
-        StreamTransformer<List<int>, List<int>>.fromHandlers(
-          handleData: (chunk, sink) {
-            sent += chunk.length;
-            if (onProgress != null && total > 0) {
-              final p = (sent / total).clamp(0.0, 1.0);
-              onProgress((p * 0.9).toDouble());
-            }
-            sink.add(chunk);
-          },
-        ),
-      );
-
       req.files.add(
-        http.MultipartFile('file', stream, total, filename: picked.name),
-      );
-    } else {
-      final path = picked.path;
-      if (path == null || path.isEmpty) {
-        throw Exception('Could not read selected file path');
-      }
-
-      final local = File(path);
-      final total = await local.length();
-      int sent = 0;
-      final stream = local.openRead().transform(
-        StreamTransformer<List<int>, List<int>>.fromHandlers(
-          handleData: (chunk, sink) {
-            sent += chunk.length;
-            if (onProgress != null && total > 0) {
-              final p = (sent / total).clamp(0.0, 1.0);
-              onProgress((p * 0.9).toDouble());
-            }
-            sink.add(chunk);
-          },
-        ),
-      );
-
-      req.files.add(
-        http.MultipartFile('file', stream, total, filename: picked.name),
+        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
       );
     }
 
-    onProgress?.call(0.0);
+    onProgress?.call(0.1);
     final streamed = await req.send().timeout(const Duration(minutes: 5));
     onProgress?.call(0.95);
     final response = await http.Response.fromStream(
@@ -974,7 +964,16 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 final url = await _uploadToServer(
                   folderPath: folderPath,
                   isThumbnail: true,
-                  allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+                  allowedExtensions: const [
+                    'jpg',
+                    'jpeg',
+                    'png',
+                    'webp',
+                    'gif',
+                    'bmp',
+                    'heic',
+                    'heif',
+                  ],
                   onSelectedName: (name) {
                     safeLocalSetState(() {
                       uploadedThumbFileName = name;
