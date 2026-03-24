@@ -1,11 +1,13 @@
+import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
@@ -55,8 +57,18 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
   );
 
   bool _uploading = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  String _teacherFilterUid = 'all';
+  final Set<String> _downloadingIds = <String>{};
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   Future<String> _displayName() async {
     if (_uid.isEmpty) return 'Teacher';
@@ -457,6 +469,114 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  String _fileNameFromUrl(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) return 'downloaded_file';
+    try {
+      final uri = Uri.parse(trimmed);
+      if (uri.pathSegments.isEmpty) return 'downloaded_file';
+      return Uri.decodeComponent(uri.pathSegments.last);
+    } catch (_) {
+      return 'downloaded_file';
+    }
+  }
+
+  String _sanitizeFileName(String input) {
+    final name = input.trim();
+    if (name.isEmpty) return 'downloaded_file';
+    final cleaned = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return cleaned.isEmpty ? 'downloaded_file' : cleaned;
+  }
+
+  int _searchScore({
+    required String query,
+    required String title,
+    required String description,
+  }) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return 1;
+
+    final t = title.toLowerCase();
+    final d = description.toLowerCase();
+    final all = '$t $d';
+
+    if (t.startsWith(q)) return 320;
+    if (t.contains(q)) return 260;
+    if (d.contains(q)) return 190;
+    if (all.startsWith(q)) return 170;
+
+    var score = 0;
+    final words = q.split(RegExp(r'\s+')).where((e) => e.length > 1);
+    for (final w in words) {
+      if (t.contains(w)) {
+        score += 75;
+      } else if (d.contains(w)) {
+        score += 40;
+      }
+    }
+    if (score > 0) return score;
+
+    final compactQ = q.replaceAll(' ', '');
+    final compactAll = all.replaceAll(' ', '');
+    if (compactQ.isNotEmpty && compactAll.contains(compactQ)) return 120;
+
+    return 0;
+  }
+
+  Future<void> _downloadFile(Map<String, dynamic> item) async {
+    final id = (item['id'] ?? '').toString().trim();
+    final url = (item['url'] ?? '').toString().trim();
+    if (id.isEmpty || url.isEmpty) return;
+    if (_downloadingIds.contains(id)) return;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (!mounted) return;
+      AppToast.show(context, 'Invalid file URL.', type: AppToastType.error);
+      return;
+    }
+
+    setState(() => _downloadingIds.add(id));
+    try {
+      if (kIsWeb) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+
+      final r = await http.get(uri).timeout(const Duration(minutes: 2));
+      if (r.statusCode < 200 || r.statusCode >= 300) {
+        throw Exception('HTTP ${r.statusCode}');
+      }
+
+      final docDir = await getApplicationDocumentsDirectory();
+      final targetDir = Directory('${docDir.path}/shared_downloads');
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      final itemName = (item['name'] ?? '').toString().trim();
+      final guessed = itemName.isNotEmpty ? itemName : _fileNameFromUrl(url);
+      final safeName = _sanitizeFileName(guessed);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      final out = File('${targetDir.path}/$fileName');
+      await out.writeAsBytes(r.bodyBytes, flush: true);
+
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Downloaded to app storage: $safeName',
+        type: AppToastType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, toHumanError(e), type: AppToastType.error);
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingIds.remove(id));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     TeacherTourGuide.schedule(
@@ -507,78 +627,231 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
             return bb.compareTo(aa);
           });
 
+          final teacherNamesByUid = <String, String>{};
+          for (final item in items) {
+            final uid = (item['ownerUid'] ?? '').toString().trim();
+            if (uid.isEmpty) continue;
+            final name = (item['ownerName'] ?? '').toString().trim();
+            teacherNamesByUid[uid] = name.isEmpty ? 'Teacher' : name;
+          }
+
+          final teacherFilters =
+              <MapEntry<String, String>>[
+                const MapEntry('all', 'All Teachers'),
+                ...teacherNamesByUid.entries,
+              ]..sort((a, b) {
+                if (a.key == 'all') return -1;
+                if (b.key == 'all') return 1;
+                return a.value.toLowerCase().compareTo(b.value.toLowerCase());
+              });
+
+          final activeTeacherFilter =
+              teacherFilters.any((e) => e.key == _teacherFilterUid)
+              ? _teacherFilterUid
+              : 'all';
+
+          final filtered = <Map<String, dynamic>>[];
+          for (final item in items) {
+            final ownerUid = (item['ownerUid'] ?? '').toString().trim();
+            if (activeTeacherFilter != 'all' &&
+                ownerUid != activeTeacherFilter) {
+              continue;
+            }
+
+            final name = (item['name'] ?? '').toString().trim();
+            final title = (item['title'] ?? '').toString().trim();
+            final description = (item['description'] ?? '').toString().trim();
+            final shownTitle = title.isEmpty ? name : title;
+            final score = _searchScore(
+              query: _searchQuery,
+              title: shownTitle,
+              description: description,
+            );
+            if (_searchQuery.trim().isNotEmpty && score <= 0) {
+              continue;
+            }
+
+            final row = Map<String, dynamic>.from(item);
+            row['_score'] = score;
+            filtered.add(row);
+          }
+
+          filtered.sort((a, b) {
+            final sa = (a['_score'] as num?)?.toInt() ?? 0;
+            final sb = (b['_score'] as num?)?.toInt() ?? 0;
+            if (sa != sb) return sb.compareTo(sa);
+            final aa = (a['createdAt'] as num?)?.toInt() ?? 0;
+            final bb = (b['createdAt'] as num?)?.toInt() ?? 0;
+            return bb.compareTo(aa);
+          });
+
           if (items.isEmpty) {
             return const Center(child: Text('No shared files yet.'));
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, i) {
-              final item = items[i];
-              final name = (item['name'] ?? 'Document').toString();
-              final title = (item['title'] ?? '').toString().trim();
-              final description = (item['description'] ?? '').toString().trim();
-              final ownerUid = (item['ownerUid'] ?? '').toString().trim();
-              final ownerName = (item['ownerName'] ?? '').toString().trim();
-              final url = (item['url'] ?? '').toString().trim();
-
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title.isEmpty ? name : title,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      if (description.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(description),
-                      ],
-                      const SizedBox(height: 6),
-                      Text(
-                        ownerName.isEmpty
-                            ? 'Uploaded by: Teacher'
-                            : 'Uploaded by: $ownerName',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        onChanged: (v) {
+                          setState(() => _searchQuery = v);
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search title or description',
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: _searchQuery.trim().isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: url.isEmpty ? null : () => _openUrl(url),
-                            icon: const Icon(Icons.open_in_new_rounded),
-                            label: const Text('Open'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: url.isEmpty ? null : () => _openUrl(url),
-                            icon: const Icon(Icons.download_rounded),
-                            label: const Text('Download'),
-                          ),
-                          const Spacer(),
-                          if (ownerUid == _uid)
-                            IconButton(
-                              tooltip: 'Delete my file',
-                              onPressed: () => _deleteOwn(item),
-                              icon: const Icon(
-                                Icons.delete_rounded,
-                                color: Colors.red,
+                    ),
+                    const SizedBox(width: 10),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: activeTeacherFilter,
+                        borderRadius: BorderRadius.circular(12),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _teacherFilterUid = v);
+                        },
+                        items: teacherFilters
+                            .map(
+                              (e) => DropdownMenuItem<String>(
+                                value: e.key,
+                                child: Text(e.value),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Text('No files match your search/filter.'),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, i) {
+                          final item = filtered[i];
+                          final name = (item['name'] ?? 'Document').toString();
+                          final title = (item['title'] ?? '').toString().trim();
+                          final description = (item['description'] ?? '')
+                              .toString()
+                              .trim();
+                          final ownerUid = (item['ownerUid'] ?? '')
+                              .toString()
+                              .trim();
+                          final ownerName = (item['ownerName'] ?? '')
+                              .toString()
+                              .trim();
+                          final url = (item['url'] ?? '').toString().trim();
+                          final id = (item['id'] ?? '').toString().trim();
+                          final downloading =
+                              id.isNotEmpty && _downloadingIds.contains(id);
+
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title.isEmpty ? name : title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  if (description.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text(description),
+                                  ],
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    ownerName.isEmpty
+                                        ? 'Uploaded by: Teacher'
+                                        : 'Uploaded by: $ownerName',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: url.isEmpty
+                                            ? null
+                                            : () => _openUrl(url),
+                                        icon: const Icon(
+                                          Icons.open_in_new_rounded,
+                                        ),
+                                        label: const Text('Open'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      OutlinedButton.icon(
+                                        onPressed: (url.isEmpty || downloading)
+                                            ? null
+                                            : () => _downloadFile(item),
+                                        icon: downloading
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(
+                                                Icons.download_rounded,
+                                              ),
+                                        label: Text(
+                                          downloading
+                                              ? 'Downloading...'
+                                              : 'Download',
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      if (ownerUid == _uid)
+                                        IconButton(
+                                          tooltip: 'Delete my file',
+                                          onPressed: () => _deleteOwn(item),
+                                          icon: const Icon(
+                                            Icons.delete_rounded,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-                        ],
+                          );
+                        },
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+              ),
+            ],
           );
         },
       ),
