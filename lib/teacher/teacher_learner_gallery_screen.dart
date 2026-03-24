@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -87,6 +89,8 @@ class _TeacherLearnerGalleryScreenState
 
   bool _uploadingPhoto = false;
   bool _uploadingVideo = false;
+  double _photoUploadProgress = 0;
+  double _videoUploadProgress = 0;
   String? _error;
   String? _ok;
   String _teacherName = 'Teacher';
@@ -137,7 +141,10 @@ class _TeacherLearnerGalleryScreenState
   DatabaseReference _galleryRef() =>
       _db.child('learner_gallery/${widget.learnerUid}');
 
-  Future<String> _uploadPlatformFile(PlatformFile file) async {
+  Future<String> _uploadPlatformFile(
+    PlatformFile file, {
+    void Function(double progress)? onProgress,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
 
@@ -156,8 +163,22 @@ class _TeacherLearnerGalleryScreenState
         throw Exception('Could not read selected file bytes.');
       }
 
+      final total = bytes.length;
+      int sent = 0;
+      final stream = Stream<List<int>>.value(bytes).transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            if (onProgress != null && total > 0) {
+              final p = (sent / total).clamp(0.0, 1.0);
+              onProgress((p * 0.9).toDouble());
+            }
+            sink.add(chunk);
+          },
+        ),
+      );
       request.files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: file.name),
+        http.MultipartFile('file', stream, total, filename: file.name),
       );
     } else {
       final path = file.path;
@@ -165,18 +186,38 @@ class _TeacherLearnerGalleryScreenState
         throw Exception('Could not read selected file path.');
       }
 
+      final local = File(path);
+      final total = await local.length();
+      int sent = 0;
+      final stream = local.openRead().transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            if (onProgress != null && total > 0) {
+              final p = (sent / total).clamp(0.0, 1.0);
+              onProgress((p * 0.9).toDouble());
+            }
+            sink.add(chunk);
+          },
+        ),
+      );
       request.files.add(
-        await http.MultipartFile.fromPath('file', path, filename: file.name),
+        http.MultipartFile('file', stream, total, filename: file.name),
       );
     }
 
-    final streamedResponse = await request.send();
-    final responseBody = await streamedResponse.stream.bytesToString();
+    onProgress?.call(0.0);
+    final streamedResponse = await request.send().timeout(
+      const Duration(minutes: 5),
+    );
+    onProgress?.call(0.95);
+    final response = await http.Response.fromStream(
+      streamedResponse,
+    ).timeout(const Duration(minutes: 5));
+    final responseBody = response.body;
 
-    if (streamedResponse.statusCode != 200) {
-      throw Exception(
-        'Upload failed (${streamedResponse.statusCode}): $responseBody',
-      );
+    if (response.statusCode != 200) {
+      throw Exception('Upload failed (${response.statusCode}): $responseBody');
     }
 
     final decoded = jsonDecode(responseBody);
@@ -193,6 +234,8 @@ class _TeacherLearnerGalleryScreenState
       throw Exception('Upload succeeded but no URL returned.');
     }
 
+    onProgress?.call(0.98);
+
     return url;
   }
 
@@ -207,17 +250,19 @@ class _TeacherLearnerGalleryScreenState
 
     final newRef = _galleryRef().push();
 
-    await newRef.set({
-      'type': type,
-      'url': url,
-      'teacherUid': teacherUid,
-      'teacherName': _teacherName,
-      'learnerUid': widget.learnerUid,
-      'learnerName': widget.learnerName,
-      'classId': widget.classId,
-      'classTitle': widget.classTitle,
-      'createdAt': ServerValue.timestamp,
-    });
+    await newRef
+        .set({
+          'type': type,
+          'url': url,
+          'teacherUid': teacherUid,
+          'teacherName': _teacherName,
+          'learnerUid': widget.learnerUid,
+          'learnerName': widget.learnerName,
+          'classId': widget.classId,
+          'classTitle': widget.classTitle,
+          'createdAt': ServerValue.timestamp,
+        })
+        .timeout(const Duration(seconds: 45));
   }
 
   Future<void> _pickAndUploadPhoto() async {
@@ -225,7 +270,6 @@ class _TeacherLearnerGalleryScreenState
 
     try {
       setState(() {
-        _uploadingPhoto = true;
         _error = null;
         _ok = null;
       });
@@ -239,13 +283,26 @@ class _TeacherLearnerGalleryScreenState
 
       if (result == null || result.files.isEmpty) return;
 
+      if (!mounted) return;
+      setState(() {
+        _uploadingPhoto = true;
+        _photoUploadProgress = 0;
+      });
+
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
+      final url = await _uploadPlatformFile(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _photoUploadProgress = p);
+        },
+      );
 
       await _saveGalleryItem(type: 'photo', url: url);
 
       if (!mounted) return;
       setState(() {
+        _photoUploadProgress = 1.0;
         _ok = 'Photo uploaded ✅';
       });
     } catch (e) {
@@ -254,10 +311,12 @@ class _TeacherLearnerGalleryScreenState
         _error = toHumanError(e);
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _uploadingPhoto = false;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingPhoto = false;
+          _photoUploadProgress = 0;
+        });
+      }
     }
   }
 
@@ -266,7 +325,6 @@ class _TeacherLearnerGalleryScreenState
 
     try {
       setState(() {
-        _uploadingVideo = true;
         _error = null;
         _ok = null;
       });
@@ -280,13 +338,26 @@ class _TeacherLearnerGalleryScreenState
 
       if (result == null || result.files.isEmpty) return;
 
+      if (!mounted) return;
+      setState(() {
+        _uploadingVideo = true;
+        _videoUploadProgress = 0;
+      });
+
       final file = result.files.first;
-      final url = await _uploadPlatformFile(file);
+      final url = await _uploadPlatformFile(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _videoUploadProgress = p);
+        },
+      );
 
       await _saveGalleryItem(type: 'video', url: url);
 
       if (!mounted) return;
       setState(() {
+        _videoUploadProgress = 1.0;
         _ok = 'Video uploaded ✅';
       });
     } catch (e) {
@@ -295,10 +366,12 @@ class _TeacherLearnerGalleryScreenState
         _error = toHumanError(e);
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _uploadingVideo = false;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingVideo = false;
+          _videoUploadProgress = 0;
+        });
+      }
     }
   }
 
@@ -674,7 +747,9 @@ class _TeacherLearnerGalleryScreenState
                               )
                             : const Icon(Icons.add_photo_alternate_rounded),
                         label: Text(
-                          _uploadingPhoto ? 'Uploading...' : 'Upload Photo',
+                          _uploadingPhoto
+                              ? 'Uploading ${(_photoUploadProgress * 100).round()}%'
+                              : 'Upload Photo',
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: p.accent,
@@ -702,11 +777,15 @@ class _TeacherLearnerGalleryScreenState
                               )
                             : const Icon(Icons.video_call_rounded),
                         label: Text(
-                          _uploadingVideo ? 'Uploading...' : 'Upload Video',
+                          _uploadingVideo
+                              ? 'Uploading ${(_videoUploadProgress * 100).round()}%'
+                              : 'Upload Video',
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: p.primary,
-                          side: BorderSide(color: p.border.withValues(alpha: 0.9)),
+                          side: BorderSide(
+                            color: p.border.withValues(alpha: 0.9),
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -720,6 +799,18 @@ class _TeacherLearnerGalleryScreenState
                   ],
                 ),
                 const SizedBox(height: 14),
+                if (_uploadingPhoto) ...[
+                  LinearProgressIndicator(
+                    value: _photoUploadProgress.clamp(0.0, 1.0).toDouble(),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (_uploadingVideo) ...[
+                  LinearProgressIndicator(
+                    value: _videoUploadProgress.clamp(0.0, 1.0).toDouble(),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (_error != null) ...[
                   _messageBox(
                     color: Theme.of(context).colorScheme.error,
@@ -764,7 +855,9 @@ class _TeacherLearnerGalleryScreenState
                     decoration: BoxDecoration(
                       color: p.cardBg,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                      border: Border.all(
+                        color: p.border.withValues(alpha: 0.85),
+                      ),
                     ),
                     child: Column(
                       children: [
@@ -857,8 +950,8 @@ class _TeacherLearnerGalleryScreenState
                                             alignment: Alignment.center,
                                             child: Icon(
                                               Icons.broken_image_outlined,
-                                              color: p.primary.withValues(alpha: 
-                                                0.55,
+                                              color: p.primary.withValues(
+                                                alpha: 0.55,
                                               ),
                                             ),
                                           ),
@@ -872,8 +965,8 @@ class _TeacherLearnerGalleryScreenState
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 
-                                              0.58,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.58,
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               12,

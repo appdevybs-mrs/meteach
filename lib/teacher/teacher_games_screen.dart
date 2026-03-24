@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -87,15 +90,51 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     return 'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
   }
 
+  String _friendlyFileName(String name) {
+    final clean = Uri.decodeComponent(name.trim());
+    if (clean.isEmpty) return 'Uploaded file';
+    if (clean.length <= 48) return clean;
+    return '${clean.substring(0, 32)}...${clean.substring(clean.length - 12)}';
+  }
+
+  String _fileNameFromUrl(String url) {
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return 'Uploaded file';
+    try {
+      final path = Uri.parse(cleanUrl).path;
+      final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+      if (segments.isEmpty) return _friendlyFileName(cleanUrl);
+      return _friendlyFileName(segments.last);
+    } catch (_) {
+      return _friendlyFileName(cleanUrl);
+    }
+  }
+
+  String _cacheBustedUrl(String url, int version) {
+    final clean = url.trim();
+    if (clean.isEmpty) return clean;
+    try {
+      final uri = Uri.parse(clean);
+      final qp = Map<String, String>.from(uri.queryParameters);
+      qp['_v'] = version.toString();
+      return uri.replace(queryParameters: qp).toString();
+    } catch (_) {
+      return clean;
+    }
+  }
+
   Future<String?> _uploadToServer({
     required String teacherUid,
     required String gameUid,
     required String gameName,
     required bool isThumbnail,
+    void Function(double progress)? onProgress,
+    void Function(String fileName)? onSelectedName,
+    void Function(PlatformFile picked)? onSelectedFile,
   }) async {
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
-      withData: true,
+      withData: kIsWeb,
       type: isThumbnail ? FileType.image : FileType.any,
     );
 
@@ -104,6 +143,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     }
 
     final picked = result.files.single;
+    onSelectedName?.call(_friendlyFileName(picked.name));
+    onSelectedFile?.call(picked);
     final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
@@ -112,27 +153,63 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     req.fields['path'] =
         'teachers/$teacherUid/$gameUid-${_safeFolderName(gameName)}';
 
-    if (picked.path != null && picked.path!.isNotEmpty) {
-      req.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          picked.path!,
-          filename: picked.name,
-        ),
-      );
-    } else {
+    if (kIsWeb) {
       final Uint8List? bytes = picked.bytes;
       if (bytes == null) {
         throw Exception('Could not read selected file');
       }
 
+      final total = bytes.length;
+      int sent = 0;
+      final stream = Stream<List<int>>.value(bytes).transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            if (onProgress != null && total > 0) {
+              final p = (sent / total).clamp(0.0, 1.0);
+              onProgress((p * 0.9).toDouble());
+            }
+            sink.add(chunk);
+          },
+        ),
+      );
+
       req.files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
+        http.MultipartFile('file', stream, total, filename: picked.name),
+      );
+    } else {
+      final path = picked.path;
+      if (path == null || path.isEmpty) {
+        throw Exception('Could not read selected file path');
+      }
+
+      final local = File(path);
+      final total = await local.length();
+      int sent = 0;
+      final stream = local.openRead().transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            if (onProgress != null && total > 0) {
+              final p = (sent / total).clamp(0.0, 1.0);
+              onProgress((p * 0.9).toDouble());
+            }
+            sink.add(chunk);
+          },
+        ),
+      );
+
+      req.files.add(
+        http.MultipartFile('file', stream, total, filename: picked.name),
       );
     }
 
-    final streamed = await req.send();
-    final response = await http.Response.fromStream(streamed);
+    onProgress?.call(0.0);
+    final streamed = await req.send().timeout(const Duration(minutes: 5));
+    onProgress?.call(0.95);
+    final response = await http.Response.fromStream(
+      streamed,
+    ).timeout(const Duration(minutes: 5));
 
     final raw = response.body.trim();
     if (!raw.startsWith('{')) {
@@ -149,6 +226,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       if (url.isEmpty) {
         throw Exception('Upload succeeded but no URL was returned');
       }
+      onProgress?.call(1.0);
       return url;
     }
 
@@ -194,8 +272,12 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     }
 
     final message = (data['message'] ?? 'Delete failed').toString();
+    final lower = message.toLowerCase();
 
-    if (message.toLowerCase() == 'item not found') {
+    if (lower == 'item not found' ||
+        lower == 'file not found.' ||
+        lower == 'file not found' ||
+        lower.contains('not found')) {
       return;
     }
 
@@ -284,7 +366,10 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('This game has no link.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('This game has no link.')),
+      );
       return;
     }
 
@@ -341,12 +426,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       await _gamesRef.child(gameId).remove();
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Game deleted successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not delete game. Try again.'),
@@ -366,7 +453,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       final teacher = await _loadMyTeacherData();
       if (teacher == null) {
         if (!mounted) return;
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           const SnackBar(content: Text('Could not load teacher details.')),
         );
         return;
@@ -387,12 +475,14 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       await ref.set(cloned);
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Game duplicated successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
@@ -418,7 +508,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       });
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             nextStatus == 'archived'
@@ -429,7 +520,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update game. Try again.'),
@@ -504,11 +596,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
         bool localSaving = false;
         bool localUploadingGame = false;
         bool localUploadingThumb = false;
+        double localGameUploadProgress = 0;
+        double localThumbUploadProgress = 0;
 
         String uploadedUrl = (existingGame?['link'] ?? '').toString().trim();
         String uploadedThumbnail = (existingGame?['thumbnail'] ?? '')
             .toString()
             .trim();
+        String uploadedGameFileName = _fileNameFromUrl(uploadedUrl);
+        String uploadedThumbFileName = _fileNameFromUrl(uploadedThumbnail);
+        Uint8List? localThumbBytes;
+        String? localThumbPath;
+        int thumbPreviewVersion = DateTime.now().millisecondsSinceEpoch;
         String selectedStatus = (existingGame?['status'] ?? 'ready')
             .toString()
             .trim();
@@ -529,7 +628,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             Future<void> uploadGameFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -537,7 +637,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Enter the game name before uploading.'),
                   ),
@@ -545,25 +646,35 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 return;
               }
 
-              setLocalState(() {
-                localUploadingGame = true;
-              });
-
               try {
                 final url = await _uploadToServer(
                   teacherUid: uid,
                   gameUid: draftGameUid,
                   gameName: gameName,
                   isThumbnail: false,
+                  onSelectedName: (name) {
+                    setLocalState(() {
+                      uploadedGameFileName = name;
+                      localUploadingGame = true;
+                      localGameUploadProgress = 0;
+                    });
+                  },
+                  onProgress: (p) {
+                    setLocalState(() {
+                      localGameUploadProgress = p;
+                    });
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
                   setLocalState(() {
                     uploadedUrl = url.trim();
+                    uploadedGameFileName = _fileNameFromUrl(uploadedUrl);
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Game file uploaded successfully.'),
                     ),
@@ -571,7 +682,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload game file.'),
@@ -581,6 +693,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               } finally {
                 setLocalState(() {
                   localUploadingGame = false;
+                  localGameUploadProgress = 0;
                 });
               }
             }
@@ -588,7 +701,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
             Future<void> uploadThumbnail() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -596,7 +710,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text(
                       'Enter the game name before uploading thumbnail.',
@@ -606,25 +721,48 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 return;
               }
 
-              setLocalState(() {
-                localUploadingThumb = true;
-              });
-
               try {
                 final url = await _uploadToServer(
                   teacherUid: uid,
                   gameUid: draftGameUid,
                   gameName: gameName,
                   isThumbnail: true,
+                  onSelectedName: (name) {
+                    setLocalState(() {
+                      uploadedThumbFileName = name;
+                      localUploadingThumb = true;
+                      localThumbUploadProgress = 0;
+                    });
+                  },
+                  onSelectedFile: (picked) {
+                    setLocalState(() {
+                      if (kIsWeb && picked.bytes != null) {
+                        localThumbBytes = picked.bytes;
+                        localThumbPath = null;
+                      } else if (picked.path != null &&
+                          picked.path!.isNotEmpty) {
+                        localThumbPath = picked.path;
+                        localThumbBytes = null;
+                      }
+                    });
+                  },
+                  onProgress: (p) {
+                    setLocalState(() {
+                      localThumbUploadProgress = p;
+                    });
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
                   setLocalState(() {
                     uploadedThumbnail = url.trim();
+                    uploadedThumbFileName = _fileNameFromUrl(uploadedThumbnail);
+                    thumbPreviewVersion = DateTime.now().millisecondsSinceEpoch;
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Thumbnail uploaded successfully.'),
                     ),
@@ -632,7 +770,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload thumbnail.'),
@@ -642,6 +781,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               } finally {
                 setLocalState(() {
                   localUploadingThumb = false;
+                  localThumbUploadProgress = 0;
                 });
               }
             }
@@ -659,14 +799,16 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   int.tryParse(durationController.text.trim()) ?? 0;
 
               if (name.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Please enter the game name.')),
                 );
                 return;
               }
 
               if (description.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please enter the game description.'),
                   ),
@@ -675,7 +817,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               }
 
               if (link.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please upload the game file first.'),
                   ),
@@ -686,7 +829,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final teacher = await _loadMyTeacherData();
               if (teacher == null) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Could not load teacher details.'),
                   ),
@@ -697,7 +841,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -761,7 +906,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 if (!mounted) return;
                 Navigator.of(ctx).pop();
 
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       isEdit
@@ -772,7 +918,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(
@@ -1043,7 +1190,7 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                           children: [
                             if (uploadedUrl.isNotEmpty) ...[
                               Text(
-                                uploadedUrl,
+                                uploadedGameFileName,
                                 style: TextStyle(
                                   color: Colors.blue.shade700,
                                   fontWeight: FontWeight.w700,
@@ -1060,7 +1207,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1074,10 +1222,22 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ? null
                                         : uploadGameFile,
                                     icon: const Icon(Icons.sync_rounded),
-                                    label: const Text('Replace File'),
+                                    label: Text(
+                                      localUploadingGame
+                                          ? 'Uploading ${(localGameUploadProgress * 100).round()}%'
+                                          : 'Replace File',
+                                    ),
                                   ),
                                 ],
                               ),
+                              if (localUploadingGame) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localGameUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ] else ...[
                               const Text(
                                 'No game file uploaded yet.',
@@ -1099,10 +1259,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                     : const Icon(Icons.upload_file_rounded),
                                 label: Text(
                                   localUploadingGame
-                                      ? 'Uploading...'
+                                      ? 'Uploading ${(localGameUploadProgress * 100).round()}%'
                                       : 'Upload Game File',
                                 ),
                               ),
+                              if (localUploadingGame) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localGameUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ],
                           ],
                         ),
@@ -1127,22 +1295,57 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (uploadedThumbnail.isNotEmpty) ...[
+                              Text(
+                                uploadedThumbFileName,
+                                style: TextStyle(
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.network(
-                                  uploadedThumbnail,
-                                  height: 140,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Container(
-                                    height: 140,
-                                    alignment: Alignment.center,
-                                    color: Colors.grey.shade100,
-                                    child: const Text(
-                                      'Could not load thumbnail',
-                                    ),
-                                  ),
-                                ),
+                                child: localThumbBytes != null
+                                    ? Image.memory(
+                                        localThumbBytes!,
+                                        key: ValueKey(
+                                          'thumb_memory_$thumbPreviewVersion',
+                                        ),
+                                        height: 140,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : (localThumbPath != null &&
+                                          localThumbPath!.isNotEmpty)
+                                    ? Image.file(
+                                        File(localThumbPath!),
+                                        key: ValueKey(
+                                          'thumb_file_$thumbPreviewVersion',
+                                        ),
+                                        height: 140,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.network(
+                                        _cacheBustedUrl(
+                                          uploadedThumbnail,
+                                          thumbPreviewVersion,
+                                        ),
+                                        key: ValueKey(
+                                          'thumb_net_$thumbPreviewVersion',
+                                        ),
+                                        height: 140,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) => Container(
+                                          height: 140,
+                                          alignment: Alignment.center,
+                                          color: Colors.grey.shade100,
+                                          child: const Text(
+                                            'Could not load thumbnail',
+                                          ),
+                                        ),
+                                      ),
                               ),
                               const SizedBox(height: 10),
                               Wrap(
@@ -1155,7 +1358,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text(
                                             'Thumbnail link copied',
@@ -1171,10 +1375,22 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                         ? null
                                         : uploadThumbnail,
                                     icon: const Icon(Icons.image_rounded),
-                                    label: const Text('Replace Thumbnail'),
+                                    label: Text(
+                                      localUploadingThumb
+                                          ? 'Uploading ${(localThumbUploadProgress * 100).round()}%'
+                                          : 'Replace Thumbnail',
+                                    ),
                                   ),
                                 ],
                               ),
+                              if (localUploadingThumb) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localThumbUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ] else ...[
                               const Text(
                                 'No thumbnail uploaded yet.',
@@ -1196,10 +1412,18 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                                     : const Icon(Icons.upload_rounded),
                                 label: Text(
                                   localUploadingThumb
-                                      ? 'Uploading...'
+                                      ? 'Uploading ${(localThumbUploadProgress * 100).round()}%'
                                       : 'Upload Thumbnail',
                                 ),
                               ),
+                              if (localUploadingThumb) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localThumbUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ],
                           ],
                         ),
@@ -1302,7 +1526,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       decoration: BoxDecoration(
         color: backgroundColor ?? cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor ?? cs.primary.withValues(alpha: 0.12)),
+        border: Border.all(
+          color: borderColor ?? cs.primary.withValues(alpha: 0.12),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1410,8 +1636,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
-                        0.70,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(
+                        alpha: 0.70,
                       ),
                     ),
                   ),
@@ -1424,8 +1650,12 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         context: context,
                         icon: Icons.verified_rounded,
                         text: status,
-                        backgroundColor: _statusColor(status).withValues(alpha: 0.12),
-                        borderColor: _statusColor(status).withValues(alpha: 0.35),
+                        backgroundColor: _statusColor(
+                          status,
+                        ).withValues(alpha: 0.12),
+                        borderColor: _statusColor(
+                          status,
+                        ).withValues(alpha: 0.35),
                         iconColor: _statusColor(status),
                         textColor: _statusColor(status),
                       ),
@@ -1448,7 +1678,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                               context: context,
                               icon: Icons.sell_rounded,
                               text: tag,
-                              backgroundColor: cs.secondary.withValues(alpha: 0.08),
+                              backgroundColor: cs.secondary.withValues(
+                                alpha: 0.08,
+                              ),
                               borderColor: cs.secondary.withValues(alpha: 0.14),
                               iconColor: cs.secondary,
                             ),
@@ -1499,7 +1731,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                       if (level.isNotEmpty)
                         Chip(
@@ -1510,7 +1744,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                       if (durationMinutes > 0)
                         Chip(
@@ -1521,7 +1757,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                     ],
                   ),
@@ -1549,7 +1787,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                         .map(
                           (tag) => Chip(
                             label: Text(tag),
-                            backgroundColor: cs.secondary.withValues(alpha: 0.08),
+                            backgroundColor: cs.secondary.withValues(
+                              alpha: 0.08,
+                            ),
                             side: BorderSide(
                               color: cs.secondary.withValues(alpha: 0.14),
                             ),
@@ -1625,8 +1865,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   child: Text(
                     teacherNotes,
                     style: TextStyle(
-                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
-                        0.78,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(
+                        alpha: 0.78,
                       ),
                       fontWeight: FontWeight.w600,
                       height: 1.45,
@@ -1830,11 +2070,15 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                 fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.35),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.18)),
+                  borderSide: BorderSide(
+                    color: cs.outline.withValues(alpha: 0.18),
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: cs.outline.withValues(alpha: 0.18)),
+                  borderSide: BorderSide(
+                    color: cs.outline.withValues(alpha: 0.18),
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -1951,7 +2195,8 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Games manager',
-          line: 'Manage learning games, categories, and publishing status here.',
+          line:
+              'Manage learning games, categories, and publishing status here.',
         ),
         TeacherTourHint(
           title: 'Add game',
@@ -1992,7 +2237,9 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
                   decoration: BoxDecoration(
                     color: theme.cardColor,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
+                    border: Border.all(
+                      color: cs.outline.withValues(alpha: 0.22),
+                    ),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

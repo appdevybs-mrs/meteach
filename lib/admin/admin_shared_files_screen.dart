@@ -18,6 +18,7 @@ class AdminSharedFilesScreen extends StatefulWidget {
 }
 
 class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
+  static const String _serverRoot = 'shared_files';
   static const String _deleteUrl =
       'https://www.yourbridgeschool.com/app/secure/delete_file_secure.php';
 
@@ -31,9 +32,13 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
     try {
       final uri = Uri.parse(trimmed);
       final parts = uri.pathSegments;
-      final idx = parts.indexOf('shared');
-      if (idx < 0 || idx + 1 >= parts.length) return '';
-      return parts.sublist(idx + 1).join('/');
+      final idx = parts.indexOf('shared_files');
+      if (idx >= 0 && idx + 1 < parts.length) {
+        return parts.sublist(idx + 1).join('/');
+      }
+      final legacyIdx = parts.indexOf('shared');
+      if (legacyIdx < 0 || legacyIdx + 1 >= parts.length) return '';
+      return parts.sublist(legacyIdx + 1).join('/');
     } catch (_) {
       return '';
     }
@@ -66,17 +71,19 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
     if (ok != true) return;
 
     try {
-      final relPath = _relativeSharedPathFromUrl((item['url'] ?? '').toString());
+      final relPath = _relativeSharedPathFromUrl(
+        (item['url'] ?? '').toString(),
+      );
       if (relPath.isNotEmpty) {
         final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
         final headers = await BackendApi.authHeaders();
         final authFields = await BackendApi.authFormFields();
         final resp = await http
             .post(
-          deleteUri,
-          headers: headers,
-          body: {'root': 'shared', 'path': relPath, ...authFields},
-        )
+              deleteUri,
+              headers: headers,
+              body: {'root': _serverRoot, 'path': relPath, ...authFields},
+            )
             .timeout(const Duration(seconds: 60));
         final raw = resp.body.trim();
         if (raw.startsWith('{')) {
@@ -112,7 +119,8 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
       context,
       screenId: 'admin_shared_files',
       title: 'الملفات المشتركة',
-      line: 'تعرض هذه الشاشة جميع الملفات المشتركة بين المعلمين مع صلاحية الحذف الإداري.',
+      line:
+          'تعرض هذه الشاشة جميع الملفات المشتركة بين المعلمين مع صلاحية الحذف الإداري.',
     );
 
     return Scaffold(
@@ -171,7 +179,10 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
                       const SizedBox(height: 6),
                       Text(
                         owner.isEmpty ? 'Owner: -' : 'Owner: $owner',
-                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -191,7 +202,10 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
                           IconButton(
                             tooltip: 'Delete file',
                             onPressed: () => _deleteAny(item),
-                            icon: const Icon(Icons.delete_rounded, color: Colors.red),
+                            icon: const Icon(
+                              Icons.delete_rounded,
+                              color: Colors.red,
+                            ),
                           ),
                         ],
                       ),

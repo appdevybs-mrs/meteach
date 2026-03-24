@@ -22,6 +22,7 @@ class TeacherSharedFilesScreen extends StatefulWidget {
 }
 
 class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
+  static const String _serverRoot = 'shared_files';
   static const String _uploadUrl =
       'https://www.yourbridgeschool.com/app/secure/upload_file_secure.php';
   static const String _deleteUrl =
@@ -78,7 +79,12 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     await http.post(
       uri,
       headers: headers,
-      body: {'root': 'shared', 'parent': '', 'folder': 'teachers', ...authFields},
+      body: {
+        'root': _serverRoot,
+        'parent': '',
+        'folder': 'teachers',
+        ...authFields,
+      },
     );
   }
 
@@ -97,30 +103,38 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
-    req.fields['root'] = 'shared';
+    req.fields['root'] = _serverRoot;
     req.fields['path'] = 'teachers/$_uid/$folderName';
 
     if (picked.path != null && picked.path!.isNotEmpty) {
       req.files.add(
-        await http.MultipartFile.fromPath('file', picked.path!, filename: picked.name),
+        await http.MultipartFile.fromPath(
+          'file',
+          picked.path!,
+          filename: picked.name,
+        ),
       );
     } else {
       final Uint8List? bytes = picked.bytes;
       if (bytes == null) throw Exception('Could not read selected file.');
-      req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: picked.name));
+      req.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
+      );
     }
 
     final streamed = await req.send().timeout(const Duration(seconds: 120));
-    final response = await http.Response.fromStream(streamed).timeout(
-      const Duration(seconds: 120),
-    );
+    final response = await http.Response.fromStream(
+      streamed,
+    ).timeout(const Duration(seconds: 120));
     final raw = response.body.trim();
     if (!raw.startsWith('{')) {
       throw Exception('Server did not return JSON.');
     }
 
     final data = json.decode(raw);
-    if (data is! Map<String, dynamic>) throw Exception('Invalid upload response.');
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Invalid upload response.');
+    }
     if (data['success'] != true) {
       throw Exception((data['message'] ?? 'Upload failed').toString());
     }
@@ -152,7 +166,9 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
             children: [
               TextField(
                 controller: titleCtrl,
-                decoration: const InputDecoration(labelText: 'Title (optional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Title (optional)',
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -198,7 +214,11 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
 
       if (result == null || result.files.isEmpty) {
         if (!mounted) return;
-        AppToast.show(context, 'Upload was cancelled.', type: AppToastType.info);
+        AppToast.show(
+          context,
+          'Upload was cancelled.',
+          type: AppToastType.info,
+        );
         return;
       }
       final picked = result.files.single;
@@ -208,10 +228,17 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       }
 
       await _ensureSharedRoot();
-      final folderName = _safeFolderName(DateTime.now().millisecondsSinceEpoch.toString());
-      final url = await _uploadSelectedFile(picked: picked, folderName: folderName);
+      final folderName = _safeFolderName(
+        DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+      final url = await _uploadSelectedFile(
+        picked: picked,
+        folderName: folderName,
+      );
       final ownerName = await _displayName();
-      final id = _sharedRef.push().key ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final id =
+          _sharedRef.push().key ??
+          DateTime.now().millisecondsSinceEpoch.toString();
 
       await _sharedRef.child(id).set({
         'id': id,
@@ -226,7 +253,11 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       });
 
       if (!mounted) return;
-      AppToast.show(context, 'File uploaded successfully.', type: AppToastType.success);
+      AppToast.show(
+        context,
+        'File uploaded successfully.',
+        type: AppToastType.success,
+      );
     } catch (e) {
       if (!mounted) return;
       AppToast.show(
@@ -249,9 +280,13 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
     try {
       final uri = Uri.parse(trimmed);
       final parts = uri.pathSegments;
-      final idx = parts.indexOf('shared');
-      if (idx < 0 || idx + 1 >= parts.length) return '';
-      return parts.sublist(idx + 1).join('/');
+      final idx = parts.indexOf('shared_files');
+      if (idx >= 0 && idx + 1 < parts.length) {
+        return parts.sublist(idx + 1).join('/');
+      }
+      final legacyIdx = parts.indexOf('shared');
+      if (legacyIdx < 0 || legacyIdx + 1 >= parts.length) return '';
+      return parts.sublist(legacyIdx + 1).join('/');
     } catch (_) {
       return '';
     }
@@ -267,25 +302,33 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
         title: const Text('Delete file?'),
         content: const Text('This action will remove your shared file.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
     if (ok != true) return;
 
     try {
-      final relPath = _relativeSharedPathFromUrl((item['url'] ?? '').toString());
+      final relPath = _relativeSharedPathFromUrl(
+        (item['url'] ?? '').toString(),
+      );
       if (relPath.isNotEmpty) {
         final deleteUri = await BackendApi.withAuthQuery(Uri.parse(_deleteUrl));
         final headers = await BackendApi.authHeaders();
         final authFields = await BackendApi.authFormFields();
         await http
             .post(
-          deleteUri,
-          headers: headers,
-          body: {'root': 'shared', 'path': relPath, ...authFields},
-        )
+              deleteUri,
+              headers: headers,
+              body: {'root': _serverRoot, 'path': relPath, ...authFields},
+            )
             .timeout(const Duration(seconds: 60));
       }
       final id = (item['id'] ?? '').toString().trim();
@@ -389,8 +432,13 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
                       ],
                       const SizedBox(height: 6),
                       Text(
-                        ownerName.isEmpty ? 'Uploaded by: Teacher' : 'Uploaded by: $ownerName',
-                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        ownerName.isEmpty
+                            ? 'Uploaded by: Teacher'
+                            : 'Uploaded by: $ownerName',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -411,7 +459,10 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
                             IconButton(
                               tooltip: 'Delete my file',
                               onPressed: () => _deleteOwn(item),
-                              icon: const Icon(Icons.delete_rounded, color: Colors.red),
+                              icon: const Icon(
+                                Icons.delete_rounded,
+                                color: Colors.red,
+                              ),
                             ),
                         ],
                       ),

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -106,10 +109,33 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     return 'teachers/$teacherUid/$storyUid-${_safeFolderName(storyName)}';
   }
 
+  String _friendlyFileName(String name) {
+    final clean = Uri.decodeComponent(name.trim());
+    if (clean.isEmpty) return 'Uploaded file';
+    if (clean.length <= 48) return clean;
+    return '${clean.substring(0, 32)}...${clean.substring(clean.length - 12)}';
+  }
+
+  String _fileNameFromUrl(String url) {
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return 'Uploaded file';
+    try {
+      final path = Uri.parse(cleanUrl).path;
+      final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+      if (segments.isEmpty) return _friendlyFileName(cleanUrl);
+      return _friendlyFileName(segments.last);
+    } catch (_) {
+      return _friendlyFileName(cleanUrl);
+    }
+  }
+
   Future<String?> _uploadToServer({
     required String folderPath,
     required bool isThumbnail,
     List<String>? allowedExtensions,
+    void Function(double progress)? onProgress,
+    void Function(String fileName)? onSelectedName,
+    void Function(PlatformFile picked)? onSelectedFile,
   }) async {
     final FileType pickerType;
     if (isThumbnail) {
@@ -122,7 +148,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
-      withData: true,
+      withData: kIsWeb,
       type: pickerType,
       allowedExtensions: allowedExtensions,
     );
@@ -132,6 +158,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     }
 
     final picked = result.files.single;
+    onSelectedName?.call(_friendlyFileName(picked.name));
+    onSelectedFile?.call(picked);
     final uploadUri = await BackendApi.withAuthQuery(Uri.parse(_uploadUrl));
     final req = http.MultipartRequest('POST', uploadUri);
     await BackendApi.applyAuthToMultipart(req);
@@ -139,27 +167,63 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     req.fields['root'] = 'stories';
     req.fields['path'] = folderPath;
 
-    if (picked.path != null && picked.path!.isNotEmpty) {
-      req.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          picked.path!,
-          filename: picked.name,
-        ),
-      );
-    } else {
-      final Uint8List? bytes = picked.bytes;
+    if (kIsWeb) {
+      final bytes = picked.bytes;
       if (bytes == null) {
         throw Exception('Could not read selected file');
       }
 
+      final total = bytes.length;
+      int sent = 0;
+      final stream = Stream<List<int>>.value(bytes).transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            if (onProgress != null && total > 0) {
+              final p = (sent / total).clamp(0.0, 1.0);
+              onProgress((p * 0.9).toDouble());
+            }
+            sink.add(chunk);
+          },
+        ),
+      );
+
       req.files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: picked.name),
+        http.MultipartFile('file', stream, total, filename: picked.name),
+      );
+    } else {
+      final path = picked.path;
+      if (path == null || path.isEmpty) {
+        throw Exception('Could not read selected file path');
+      }
+
+      final local = File(path);
+      final total = await local.length();
+      int sent = 0;
+      final stream = local.openRead().transform(
+        StreamTransformer<List<int>, List<int>>.fromHandlers(
+          handleData: (chunk, sink) {
+            sent += chunk.length;
+            if (onProgress != null && total > 0) {
+              final p = (sent / total).clamp(0.0, 1.0);
+              onProgress((p * 0.9).toDouble());
+            }
+            sink.add(chunk);
+          },
+        ),
+      );
+
+      req.files.add(
+        http.MultipartFile('file', stream, total, filename: picked.name),
       );
     }
 
-    final streamed = await req.send();
-    final response = await http.Response.fromStream(streamed);
+    onProgress?.call(0.0);
+    final streamed = await req.send().timeout(const Duration(minutes: 5));
+    onProgress?.call(0.95);
+    final response = await http.Response.fromStream(
+      streamed,
+    ).timeout(const Duration(minutes: 5));
 
     final raw = response.body.trim();
 
@@ -179,6 +243,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       if (url.isEmpty) {
         throw Exception('Upload succeeded but no URL was returned');
       }
+      onProgress?.call(1.0);
       return url;
     }
 
@@ -316,7 +381,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     if (cleanUrl.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  SnackBar(content: Text(emptyMessage)));
+      AppToast.fromSnackBar(context, SnackBar(content: Text(emptyMessage)));
       return;
     }
 
@@ -411,12 +476,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       await _storiesRef.child(storyId).remove();
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Story deleted successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not delete story. Try again.'),
@@ -436,7 +503,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       final teacher = await _loadMyTeacherData();
       if (teacher == null) {
         if (!mounted) return;
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           const SnackBar(content: Text('Could not load teacher details.')),
         );
         return;
@@ -458,12 +526,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       await ref.set(cloned);
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Story duplicated successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not duplicate story. Try again.'),
@@ -489,7 +559,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       });
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             nextStatus == 'archived'
@@ -500,7 +571,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update story. Try again.'),
@@ -570,51 +642,62 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
         ...selectedTags.where((e) => e.trim().isNotEmpty).map((e) => e.trim()),
     };
 
+    bool localSaving = false;
+    bool localUploadingStory = false;
+    bool localUploadingAudio = false;
+    bool localUploadingPdf = false;
+    bool localUploadingThumb = false;
+    double localStoryUploadProgress = 0;
+    double localAudioUploadProgress = 0;
+    double localPdfUploadProgress = 0;
+    double localThumbUploadProgress = 0;
+
+    String uploadedUrl = (existingStory?['link'] ?? '').toString().trim();
+    String uploadedAudioUrl = (existingStory?['audioUrl'] ?? '')
+        .toString()
+        .trim();
+    String uploadedPdfUrl = (existingStory?['pdfUrl'] ?? '').toString().trim();
+    String uploadedThumbnail = (existingStory?['thumbnail'] ?? '')
+        .toString()
+        .trim();
+    String uploadedStoryFileName = _fileNameFromUrl(uploadedUrl);
+    String uploadedAudioFileName = _fileNameFromUrl(uploadedAudioUrl);
+    String uploadedPdfFileName = _fileNameFromUrl(uploadedPdfUrl);
+    String uploadedThumbFileName = _fileNameFromUrl(uploadedThumbnail);
+    String selectedStatus = (existingStory?['status'] ?? 'ready')
+        .toString()
+        .trim();
+
+    String serverFolderPath = (existingStory?['serverFolderPath'] ?? '')
+        .toString()
+        .trim();
+
+    String ensureFolderPath(String teacherUid) {
+      if (serverFolderPath.isNotEmpty) {
+        return serverFolderPath;
+      }
+
+      final storyName = nameController.text.trim();
+      serverFolderPath = _buildServerFolderPath(
+        teacherUid: teacherUid,
+        storyUid: draftStoryUid,
+        storyName: storyName,
+      );
+      return serverFolderPath;
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) {
-        bool localSaving = false;
-        bool localUploadingStory = false;
-        bool localUploadingAudio = false;
-        bool localUploadingPdf = false;
-        bool localUploadingThumb = false;
-
-        String uploadedUrl = (existingStory?['link'] ?? '').toString().trim();
-        String uploadedAudioUrl = (existingStory?['audioUrl'] ?? '')
-            .toString()
-            .trim();
-        String uploadedPdfUrl = (existingStory?['pdfUrl'] ?? '')
-            .toString()
-            .trim();
-        String uploadedThumbnail = (existingStory?['thumbnail'] ?? '')
-            .toString()
-            .trim();
-        String selectedStatus = (existingStory?['status'] ?? 'ready')
-            .toString()
-            .trim();
-
-        String serverFolderPath = (existingStory?['serverFolderPath'] ?? '')
-            .toString()
-            .trim();
-
-        String ensureFolderPath(String teacherUid) {
-          if (serverFolderPath.isNotEmpty) {
-            return serverFolderPath;
-          }
-
-          final storyName = nameController.text.trim();
-          serverFolderPath = _buildServerFolderPath(
-            teacherUid: teacherUid,
-            storyUid: draftStoryUid,
-            storyName: storyName,
-          );
-          return serverFolderPath;
-        }
-
         return StatefulBuilder(
           builder: (context, setLocalState) {
+            void safeLocalSetState(VoidCallback fn) {
+              if (!context.mounted) return;
+              setLocalState(fn);
+            }
+
             void addTag(String raw) {
               final tag = raw.trim();
               if (tag.isEmpty) return;
@@ -629,7 +712,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadStoryFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -637,7 +721,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Enter the story title before uploading.'),
                   ),
@@ -645,25 +730,40 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 return;
               }
 
-              setLocalState(() {
-                localUploadingStory = true;
-              });
-
               try {
                 final folderPath = ensureFolderPath(uid);
 
                 final url = await _uploadToServer(
                   folderPath: folderPath,
                   isThumbnail: false,
+                  allowedExtensions: const ['html', 'htm'],
+                  onSelectedName: (name) {
+                    safeLocalSetState(() {
+                      uploadedStoryFileName = name;
+                    });
+                  },
+                  onSelectedFile: (_) {
+                    safeLocalSetState(() {
+                      localUploadingStory = true;
+                      localStoryUploadProgress = 0;
+                    });
+                  },
+                  onProgress: (p) {
+                    safeLocalSetState(() {
+                      localStoryUploadProgress = p;
+                    });
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
-                  setLocalState(() {
+                  safeLocalSetState(() {
                     uploadedUrl = url.trim();
+                    uploadedStoryFileName = _fileNameFromUrl(uploadedUrl);
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Story file uploaded successfully.'),
                     ),
@@ -671,7 +771,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload story file.'),
@@ -679,8 +780,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   ),
                 );
               } finally {
-                setLocalState(() {
+                safeLocalSetState(() {
                   localUploadingStory = false;
+                  localStoryUploadProgress = 0;
                 });
               }
             }
@@ -688,7 +790,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadAudioFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -696,7 +799,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text(
                       'Enter the story title before uploading audio.',
@@ -706,10 +810,6 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 return;
               }
 
-              setLocalState(() {
-                localUploadingAudio = true;
-              });
-
               try {
                 final folderPath = ensureFolderPath(uid);
 
@@ -717,15 +817,33 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   folderPath: folderPath,
                   isThumbnail: false,
                   allowedExtensions: const ['mp3', 'wav', 'm4a', 'aac', 'ogg'],
+                  onSelectedName: (name) {
+                    safeLocalSetState(() {
+                      uploadedAudioFileName = name;
+                    });
+                  },
+                  onSelectedFile: (_) {
+                    safeLocalSetState(() {
+                      localUploadingAudio = true;
+                      localAudioUploadProgress = 0;
+                    });
+                  },
+                  onProgress: (p) {
+                    safeLocalSetState(() {
+                      localAudioUploadProgress = p;
+                    });
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
-                  setLocalState(() {
+                  safeLocalSetState(() {
                     uploadedAudioUrl = url.trim();
+                    uploadedAudioFileName = _fileNameFromUrl(uploadedAudioUrl);
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Audio uploaded successfully.'),
                     ),
@@ -733,7 +851,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload audio file.'),
@@ -741,8 +860,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   ),
                 );
               } finally {
-                setLocalState(() {
+                safeLocalSetState(() {
                   localUploadingAudio = false;
+                  localAudioUploadProgress = 0;
                 });
               }
             }
@@ -750,7 +870,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadPdfFile() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -758,7 +879,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text(
                       'Enter the story title before uploading PDF.',
@@ -768,10 +890,6 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 return;
               }
 
-              setLocalState(() {
-                localUploadingPdf = true;
-              });
-
               try {
                 final folderPath = ensureFolderPath(uid);
 
@@ -779,21 +897,40 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   folderPath: folderPath,
                   isThumbnail: false,
                   allowedExtensions: const ['pdf'],
+                  onSelectedName: (name) {
+                    safeLocalSetState(() {
+                      uploadedPdfFileName = name;
+                    });
+                  },
+                  onSelectedFile: (_) {
+                    safeLocalSetState(() {
+                      localUploadingPdf = true;
+                      localPdfUploadProgress = 0;
+                    });
+                  },
+                  onProgress: (p) {
+                    safeLocalSetState(() {
+                      localPdfUploadProgress = p;
+                    });
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
-                  setLocalState(() {
+                  safeLocalSetState(() {
                     uploadedPdfUrl = url.trim();
+                    uploadedPdfFileName = _fileNameFromUrl(uploadedPdfUrl);
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(content: Text('PDF uploaded successfully.')),
                   );
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload PDF file.'),
@@ -801,8 +938,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   ),
                 );
               } finally {
-                setLocalState(() {
+                safeLocalSetState(() {
                   localUploadingPdf = false;
+                  localPdfUploadProgress = 0;
                 });
               }
             }
@@ -810,7 +948,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
             Future<void> uploadThumbnail() async {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -818,7 +957,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
               final storyName = nameController.text.trim();
               if (storyName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text(
                       'Enter the story title before uploading thumbnail.',
@@ -828,25 +968,40 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 return;
               }
 
-              setLocalState(() {
-                localUploadingThumb = true;
-              });
-
               try {
                 final folderPath = ensureFolderPath(uid);
 
                 final url = await _uploadToServer(
                   folderPath: folderPath,
                   isThumbnail: true,
+                  allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+                  onSelectedName: (name) {
+                    safeLocalSetState(() {
+                      uploadedThumbFileName = name;
+                    });
+                  },
+                  onSelectedFile: (_) {
+                    safeLocalSetState(() {
+                      localUploadingThumb = true;
+                      localThumbUploadProgress = 0;
+                    });
+                  },
+                  onProgress: (p) {
+                    safeLocalSetState(() {
+                      localThumbUploadProgress = p;
+                    });
+                  },
                 );
 
                 if (url != null && url.trim().isNotEmpty) {
-                  setLocalState(() {
+                  safeLocalSetState(() {
                     uploadedThumbnail = url.trim();
+                    uploadedThumbFileName = _fileNameFromUrl(uploadedThumbnail);
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Thumbnail uploaded successfully.'),
                     ),
@@ -854,7 +1009,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload thumbnail.'),
@@ -862,8 +1018,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   ),
                 );
               } finally {
-                setLocalState(() {
+                safeLocalSetState(() {
                   localUploadingThumb = false;
+                  localThumbUploadProgress = 0;
                 });
               }
             }
@@ -883,7 +1040,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final thumbnail = uploadedThumbnail.trim();
 
               if (name.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please enter the story title.'),
                   ),
@@ -892,7 +1050,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (description.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please enter the story description.'),
                   ),
@@ -901,14 +1060,16 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (genre.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Please select the genre.')),
                 );
                 return;
               }
 
               if (lengthApprox.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please select the approximate length.'),
                   ),
@@ -917,7 +1078,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (scriptType.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please select the script type.'),
                   ),
@@ -926,34 +1088,30 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               }
 
               if (level.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Please select the level.')),
                 );
                 return;
               }
 
-              if (link.isEmpty) {
-                AppToast.fromSnackBar(context, 
+              if (link.isEmpty && audioUrl.isEmpty && pdfUrl.isEmpty) {
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
-                    content: Text('Please upload the story file first.'),
+                    content: Text(
+                      'Upload at least one story asset: HTML/Story file, Audio, or PDF.',
+                    ),
                   ),
                 );
                 return;
               }
 
-              if (audioUrl.isEmpty) {
-                AppToast.fromSnackBar(context, 
+              if (thumbnail.isEmpty) {
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
-                    content: Text('Please upload the audio file first.'),
-                  ),
-                );
-                return;
-              }
-
-              if (pdfUrl.isEmpty) {
-                AppToast.fromSnackBar(context, 
-                  const SnackBar(
-                    content: Text('Please upload the PDF file first.'),
+                    content: Text('Please upload a thumbnail image.'),
                   ),
                 );
                 return;
@@ -962,7 +1120,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final teacher = await _loadMyTeacherData();
               if (teacher == null) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Could not load teacher details.'),
                   ),
@@ -973,7 +1132,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
               final uid = _myUid;
               if (uid == null || uid.isEmpty) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('No logged-in teacher found.')),
                 );
                 return;
@@ -1049,7 +1209,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 if (!mounted) return;
                 Navigator.of(ctx).pop();
 
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       isEdit
@@ -1060,7 +1221,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                 );
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(
@@ -1371,7 +1533,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           children: [
                             if (uploadedUrl.isNotEmpty) ...[
                               Text(
-                                uploadedUrl,
+                                uploadedStoryFileName,
                                 style: TextStyle(
                                   color: Colors.blue.shade700,
                                   fontWeight: FontWeight.w700,
@@ -1388,7 +1550,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1402,10 +1565,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ? null
                                         : uploadStoryFile,
                                     icon: const Icon(Icons.sync_rounded),
-                                    label: const Text('Replace File'),
+                                    label: Text(
+                                      localUploadingStory
+                                          ? 'Uploading ${(localStoryUploadProgress * 100).round()}%'
+                                          : 'Replace File',
+                                    ),
                                   ),
                                 ],
                               ),
+                              if (localUploadingStory) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localStoryUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ] else ...[
                               const Text(
                                 'No story file uploaded yet.',
@@ -1427,10 +1602,18 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     : const Icon(Icons.upload_file_rounded),
                                 label: Text(
                                   localUploadingStory
-                                      ? 'Uploading...'
+                                      ? 'Uploading ${(localStoryUploadProgress * 100).round()}%'
                                       : 'Upload Story File',
                                 ),
                               ),
+                              if (localUploadingStory) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localStoryUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ],
                           ],
                         ),
@@ -1456,7 +1639,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           children: [
                             if (uploadedAudioUrl.isNotEmpty) ...[
                               Text(
-                                uploadedAudioUrl,
+                                uploadedAudioFileName,
                                 style: TextStyle(
                                   color: Colors.blue.shade700,
                                   fontWeight: FontWeight.w700,
@@ -1473,7 +1656,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedAudioUrl),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text('Audio link copied'),
                                         ),
@@ -1487,10 +1671,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ? null
                                         : uploadAudioFile,
                                     icon: const Icon(Icons.headphones_rounded),
-                                    label: const Text('Replace Audio'),
+                                    label: Text(
+                                      localUploadingAudio
+                                          ? 'Uploading ${(localAudioUploadProgress * 100).round()}%'
+                                          : 'Replace Audio',
+                                    ),
                                   ),
                                 ],
                               ),
+                              if (localUploadingAudio) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localAudioUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ] else ...[
                               const Text(
                                 'No audio file uploaded yet.',
@@ -1512,10 +1708,18 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     : const Icon(Icons.audio_file_rounded),
                                 label: Text(
                                   localUploadingAudio
-                                      ? 'Uploading...'
+                                      ? 'Uploading ${(localAudioUploadProgress * 100).round()}%'
                                       : 'Upload Audio File',
                                 ),
                               ),
+                              if (localUploadingAudio) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localAudioUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ],
                           ],
                         ),
@@ -1541,7 +1745,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           children: [
                             if (uploadedPdfUrl.isNotEmpty) ...[
                               Text(
-                                uploadedPdfUrl,
+                                uploadedPdfFileName,
                                 style: TextStyle(
                                   color: Colors.blue.shade700,
                                   fontWeight: FontWeight.w700,
@@ -1558,7 +1762,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedPdfUrl),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text('PDF link copied'),
                                         ),
@@ -1574,10 +1779,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     icon: const Icon(
                                       Icons.picture_as_pdf_rounded,
                                     ),
-                                    label: const Text('Replace PDF'),
+                                    label: Text(
+                                      localUploadingPdf
+                                          ? 'Uploading ${(localPdfUploadProgress * 100).round()}%'
+                                          : 'Replace PDF',
+                                    ),
                                   ),
                                 ],
                               ),
+                              if (localUploadingPdf) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localPdfUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ] else ...[
                               const Text(
                                 'No PDF uploaded yet.',
@@ -1599,10 +1816,18 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     : const Icon(Icons.picture_as_pdf_rounded),
                                 label: Text(
                                   localUploadingPdf
-                                      ? 'Uploading...'
+                                      ? 'Uploading ${(localPdfUploadProgress * 100).round()}%'
                                       : 'Upload PDF File',
                                 ),
                               ),
+                              if (localUploadingPdf) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localPdfUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ],
                           ],
                         ),
@@ -1627,6 +1852,14 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (uploadedThumbnail.isNotEmpty) ...[
+                              Text(
+                                uploadedThumbFileName,
+                                style: TextStyle(
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: Image.network(
@@ -1655,7 +1888,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text(
                                             'Thumbnail link copied',
@@ -1671,10 +1905,22 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                         ? null
                                         : uploadThumbnail,
                                     icon: const Icon(Icons.image_rounded),
-                                    label: const Text('Replace Thumbnail'),
+                                    label: Text(
+                                      localUploadingThumb
+                                          ? 'Uploading ${(localThumbUploadProgress * 100).round()}%'
+                                          : 'Replace Thumbnail',
+                                    ),
                                   ),
                                 ],
                               ),
+                              if (localUploadingThumb) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localThumbUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ] else ...[
                               const Text(
                                 'No thumbnail uploaded yet.',
@@ -1696,10 +1942,18 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                                     : const Icon(Icons.upload_rounded),
                                 label: Text(
                                   localUploadingThumb
-                                      ? 'Uploading...'
+                                      ? 'Uploading ${(localThumbUploadProgress * 100).round()}%'
                                       : 'Upload Thumbnail',
                                 ),
                               ),
+                              if (localUploadingThumb) ...[
+                                const SizedBox(height: 10),
+                                LinearProgressIndicator(
+                                  value: localThumbUploadProgress
+                                      .clamp(0.0, 1.0)
+                                      .toDouble(),
+                                ),
+                              ],
                             ],
                           ],
                         ),
@@ -2012,7 +2266,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
       decoration: BoxDecoration(
         color: backgroundColor ?? cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor ?? cs.primary.withValues(alpha: 0.12)),
+        border: Border.all(
+          color: borderColor ?? cs.primary.withValues(alpha: 0.12),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2085,7 +2341,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               icon: const Icon(Icons.clear_rounded),
                             ),
                       filled: true,
-                      fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+                      fillColor: cs.surfaceContainerHighest.withValues(
+                        alpha: 0.35,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide(
@@ -2361,8 +2619,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
-                        0.70,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(
+                        alpha: 0.70,
                       ),
                     ),
                   ),
@@ -2375,8 +2633,12 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         context: context,
                         icon: Icons.verified_rounded,
                         text: status,
-                        backgroundColor: _statusColor(status).withValues(alpha: 0.12),
-                        borderColor: _statusColor(status).withValues(alpha: 0.35),
+                        backgroundColor: _statusColor(
+                          status,
+                        ).withValues(alpha: 0.12),
+                        borderColor: _statusColor(
+                          status,
+                        ).withValues(alpha: 0.35),
                         iconColor: _statusColor(status),
                         textColor: _statusColor(status),
                       ),
@@ -2405,7 +2667,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                               context: context,
                               icon: Icons.sell_rounded,
                               text: tag,
-                              backgroundColor: cs.secondary.withValues(alpha: 0.08),
+                              backgroundColor: cs.secondary.withValues(
+                                alpha: 0.08,
+                              ),
                               borderColor: cs.secondary.withValues(alpha: 0.14),
                               iconColor: cs.secondary,
                             ),
@@ -2457,7 +2721,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                       if (lengthApprox.isNotEmpty)
                         Chip(
@@ -2468,7 +2734,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                       if (scriptType.isNotEmpty)
                         Chip(
@@ -2479,7 +2747,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                       if (level.isNotEmpty)
                         Chip(
@@ -2490,7 +2760,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                             color: cs.primary,
                           ),
                           backgroundColor: cs.primary.withValues(alpha: 0.08),
-                          side: BorderSide(color: cs.primary.withValues(alpha: 0.12)),
+                          side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.12),
+                          ),
                         ),
                     ],
                   ),
@@ -2542,7 +2814,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         .map(
                           (tag) => Chip(
                             label: Text(tag),
-                            backgroundColor: cs.secondary.withValues(alpha: 0.08),
+                            backgroundColor: cs.secondary.withValues(
+                              alpha: 0.08,
+                            ),
                             side: BorderSide(
                               color: cs.secondary.withValues(alpha: 0.14),
                             ),
@@ -2594,8 +2868,8 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   child: Text(
                     teacherNotes,
                     style: TextStyle(
-                      color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 
-                        0.78,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(
+                        alpha: 0.78,
                       ),
                       fontWeight: FontWeight.w600,
                       height: 1.45,
@@ -2761,7 +3035,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.55,
+                          ),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Icon(Icons.more_horiz_rounded),
@@ -2911,7 +3187,9 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
                   decoration: BoxDecoration(
                     color: theme.cardColor,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.outline.withValues(alpha: 0.22)),
+                    border: Border.all(
+                      color: cs.outline.withValues(alpha: 0.22),
+                    ),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
