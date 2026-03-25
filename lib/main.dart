@@ -68,12 +68,7 @@ class Brand {
 }
 
 class YourBridgeSchoolApp extends StatelessWidget {
-  const YourBridgeSchoolApp({
-    super.key,
-    this.signedOutHome = const HomeShell(),
-  });
-
-  final Widget signedOutHome;
+  const YourBridgeSchoolApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +95,7 @@ class YourBridgeSchoolApp extends StatelessWidget {
           ),
           home: AppStartupGate(
             child: ForceUpdateGate(
-              child: AuthGate(signedOutHome: signedOutHome),
+              child: const AuthGate(signedOutHome: HomeShell()),
             ),
           ),
         );

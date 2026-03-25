@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -28,7 +27,6 @@ import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
-import '../shared/web_redirect.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 
@@ -126,11 +124,6 @@ class _AdminHomeState extends State<AdminHome> {
     } catch (_) {}
 
     await FirebaseAuth.instance.signOut();
-
-    if (kIsWeb) {
-      await redirectToPublicSite();
-      return;
-    }
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);

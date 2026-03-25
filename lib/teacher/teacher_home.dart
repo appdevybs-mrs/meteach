@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'teacher_public_gallery_screen.dart';
@@ -12,7 +11,6 @@ import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/first_login_agreement.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_tour_guide.dart';
-import '../shared/web_redirect.dart';
 import 'TeacherStoriesScreen.dart';
 import 'teacher_classes.dart';
 import 'teacher_games_screen.dart';
@@ -116,11 +114,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     } catch (_) {}
 
     await FirebaseAuth.instance.signOut();
-
-    if (kIsWeb) {
-      await redirectToPublicSite();
-      return;
-    }
 
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
