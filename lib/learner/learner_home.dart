@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -25,6 +26,7 @@ import '../shared/app_feedback.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
+import '../shared/web_redirect.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -356,6 +358,12 @@ class _LearnerHomeState extends State<LearnerHome> {
     }
 
     await FirebaseAuth.instance.signOut();
+
+    if (kIsWeb) {
+      await redirectToPublicSite();
+      return;
+    }
+
     if (!context.mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
