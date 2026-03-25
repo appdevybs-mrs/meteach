@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -15,6 +17,7 @@ import 'admin_classes.dart';
 import 'admin_public_gallery_screen.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
+import 'admin_job_applications_screen.dart';
 import 'admin_shared_files_screen.dart';
 import '../shared/session_manager.dart';
 import 'admin_booking.dart';
@@ -24,6 +27,7 @@ import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
+import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 
 class AdminHome extends StatefulWidget {
@@ -73,6 +77,7 @@ class _AdminHomeState extends State<AdminHome> {
   void initState() {
     super.initState();
     _loadSavedRoleMode();
+    unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
   }
 
   Future<void> _loadSavedRoleMode() async {
@@ -274,6 +279,7 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
+      _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
       KeyedSubtree(
         key: _sharedCardKey,
         child: _AdminSharedFilesDashCard(isReceptionistStyle: !_isAdminMode),
@@ -394,6 +400,7 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       _SubscriptionsDashCard(isReceptionistStyle: true),
+      _JobApplicationsDashCard(isReceptionistStyle: true),
       KeyedSubtree(
         key: _sharedCardKey,
         child: _AdminSharedFilesDashCard(isReceptionistStyle: true),
@@ -1068,6 +1075,56 @@ class _SubscriptionsDashCard extends StatelessWidget {
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminSubscriptionsScreen()),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _JobApplicationsDashCard extends StatelessWidget {
+  final bool isReceptionistStyle;
+
+  const _JobApplicationsDashCard({this.isReceptionistStyle = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = FirebaseDatabase.instance.ref('job_applications');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: ref.onValue,
+      builder: (context, snap) {
+        int total = 0;
+        int newCount = 0;
+
+        final v = snap.data?.snapshot.value;
+        if (v is Map) {
+          total = v.length;
+          v.forEach((_, raw) {
+            if (raw is! Map) return;
+            final m = raw.map((k, val) => MapEntry(k.toString(), val));
+            final status = (m['status'] ?? '').toString().trim().toLowerCase();
+            if (status.isEmpty || status == 'new') {
+              newCount += 1;
+            }
+          });
+        }
+
+        final subtitle = total == 0
+            ? 'No applications yet'
+            : '$newCount new • $total total';
+
+        return _DashCard(
+          title: 'Job Applications',
+          subtitle: subtitle,
+          icon: Icons.work_history_rounded,
+          color: AdminHome.accentSlate,
+          badgeCount: newCount,
+          isReceptionistStyle: isReceptionistStyle,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const AdminJobApplicationsScreen(),
+            ),
           ),
         );
       },

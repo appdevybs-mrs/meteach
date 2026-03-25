@@ -244,6 +244,29 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     return url;
   }
 
+  Future<void> _mirrorWebsiteUploadUrl({
+    required String url,
+    required String mediaType,
+  }) async {
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return;
+
+    final uid = _uid.trim().isNotEmpty
+        ? _uid.trim()
+        : (_auth.currentUser?.uid ?? '').trim();
+    if (uid.isEmpty) return;
+
+    try {
+      await _db.child('website/learners/$uid/uploads').push().set({
+        'url': cleanUrl,
+        'type': mediaType,
+        'createdAt': ServerValue.timestamp,
+      });
+    } catch (e) {
+      debugPrint('Learner website URL mirror failed: $e');
+    }
+  }
+
   Future<void> _pickAndUploadMainPhoto() async {
     if (_busy || _uploadingMainPhoto || _uploadingExtraPhotos) return;
 
@@ -264,6 +287,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
+      await _mirrorWebsiteUploadUrl(url: url, mediaType: 'photo');
 
       if (!mounted) return;
       setState(() {
@@ -309,6 +333,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       for (final file in selected) {
         final url = await _uploadPlatformFile(file);
+        await _mirrorWebsiteUploadUrl(url: url, mediaType: 'photo');
         _photoUrls.add(url);
       }
 
@@ -2115,7 +2140,8 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       hints: const [
         LearnerTourHint(
           title: 'تعديل الملف الشخصي',
-          line: 'يمكنك من هذه الصفحة تحديث بياناتك العامة وصورتك ومعلوماتك الشخصية.',
+          line:
+              'يمكنك من هذه الصفحة تحديث بياناتك العامة وصورتك ومعلوماتك الشخصية.',
         ),
         LearnerTourHint(
           title: 'حفظ التغييرات',

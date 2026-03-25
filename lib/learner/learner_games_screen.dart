@@ -780,7 +780,6 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Games')),
       body: StreamBuilder<DatabaseEvent>(
         stream: _gamesRef.onValue,
         builder: (context, snap) {

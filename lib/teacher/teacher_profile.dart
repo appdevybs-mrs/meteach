@@ -37,6 +37,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final _phone1Ctrl = TextEditingController();
   final _phone2Ctrl = TextEditingController();
   final _dobCtrl = TextEditingController();
+  final _aboutMeCtrl = TextEditingController();
   final _googleMeetUrlCtrl = TextEditingController();
 
   bool _busy = false;
@@ -62,6 +63,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   String _initialPhone1 = '';
   String _initialPhone2 = '';
   String _initialDob = '';
+  String _initialAboutMe = '';
   String _initialGoogleMeetUrl = '';
   List<String> _initialPhotoUrls = const [];
   String _initialIntroVideoUrl = '';
@@ -90,6 +92,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _phone1Ctrl.dispose();
     _phone2Ctrl.dispose();
     _dobCtrl.dispose();
+    _aboutMeCtrl.dispose();
     _disposeVideoController();
     _googleMeetUrlCtrl.dispose();
     super.dispose();
@@ -138,6 +141,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       _phone1Ctrl.text = (data['phone1'] ?? '').toString();
       _phone2Ctrl.text = (data['phone2'] ?? '').toString();
       _dobCtrl.text = (data['dob'] ?? '').toString();
+      _aboutMeCtrl.text = (data['about_me'] ?? '').toString();
       _googleMeetUrlCtrl.text = (data['google_meet_url'] ?? '').toString();
 
       _emailReadOnly = (data['email'] ?? user.email ?? '').toString();
@@ -271,17 +275,29 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       final user = _auth.currentUser;
       if (user == null) throw Exception('Not logged in.');
 
-      final ref = FirebaseDatabase.instance.ref('users/${user.uid}');
-      await ref.update({
-        'first_name': _firstNameCtrl.text.trim(),
-        'last_name': _lastNameCtrl.text.trim(),
-        'phone1': _phone1Ctrl.text.trim(),
-        'phone2': _phone2Ctrl.text.trim(),
-        'dob': _dobCtrl.text.trim(),
-        'profile_photos': _photoUrls,
-        'intro_video_url': _introVideoUrl ?? '',
-        'google_meet_url': _googleMeetUrlCtrl.text.trim(),
-        'updatedAt': ServerValue.timestamp,
+      final rootRef = FirebaseDatabase.instance.ref();
+      final aboutMe = _aboutMeCtrl.text.trim();
+      final cleanPhotos = _photoUrls
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      await rootRef.update({
+        'users/${user.uid}/first_name': _firstNameCtrl.text.trim(),
+        'users/${user.uid}/last_name': _lastNameCtrl.text.trim(),
+        'users/${user.uid}/phone1': _phone1Ctrl.text.trim(),
+        'users/${user.uid}/phone2': _phone2Ctrl.text.trim(),
+        'users/${user.uid}/dob': _dobCtrl.text.trim(),
+        'users/${user.uid}/about_me': aboutMe,
+        'users/${user.uid}/profile_photos': cleanPhotos,
+        'users/${user.uid}/intro_video_url': _introVideoUrl ?? '',
+        'users/${user.uid}/google_meet_url': _googleMeetUrlCtrl.text.trim(),
+        'users/${user.uid}/updatedAt': ServerValue.timestamp,
+        'website/teachers/${user.uid}/profile/about_me': aboutMe,
+        'website/teachers/${user.uid}/profile/intro_video_url':
+            _introVideoUrl ?? '',
+        'website/teachers/${user.uid}/profile/profile_photos': cleanPhotos,
+        'website/teachers/${user.uid}/profile/profile_photo':
+            cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
       });
 
       if (mounted) {
@@ -309,6 +325,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _initialPhone1 = _phone1Ctrl.text.trim();
     _initialPhone2 = _phone2Ctrl.text.trim();
     _initialDob = _dobCtrl.text.trim();
+    _initialAboutMe = _aboutMeCtrl.text.trim();
     _initialGoogleMeetUrl = _googleMeetUrlCtrl.text.trim();
     _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
     _initialIntroVideoUrl = (_introVideoUrl ?? '').trim();
@@ -320,6 +337,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (_phone1Ctrl.text.trim() != _initialPhone1) return true;
     if (_phone2Ctrl.text.trim() != _initialPhone2) return true;
     if (_dobCtrl.text.trim() != _initialDob) return true;
+    if (_aboutMeCtrl.text.trim() != _initialAboutMe) return true;
     if (_googleMeetUrlCtrl.text.trim() != _initialGoogleMeetUrl) return true;
     if (!listEquals(
       _photoUrls.map((e) => e.trim()).toList(),
@@ -463,12 +481,72 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     return url;
   }
 
+  Future<void> _mirrorWebsiteUploadUrl({
+    required String url,
+    required String mediaType,
+  }) async {
+    final cleanUrl = url.trim();
+    if (cleanUrl.isEmpty) return;
+
+    final uid = (_auth.currentUser?.uid ?? '').trim();
+    if (uid.isEmpty) return;
+
+    try {
+      await FirebaseDatabase.instance
+          .ref('website/teachers/$uid/uploads')
+          .push()
+          .set({
+            'url': cleanUrl,
+            'type': mediaType,
+            'createdAt': ServerValue.timestamp,
+          });
+    } catch (e) {
+      debugPrint('Teacher website URL mirror failed: $e');
+    }
+  }
+
+  Future<void> _mirrorWebsiteIntroVideoUrl(String url) async {
+    final cleanUrl = url.trim();
+    final uid = (_auth.currentUser?.uid ?? '').trim();
+    if (uid.isEmpty) return;
+
+    try {
+      await FirebaseDatabase.instance
+          .ref('website/teachers/$uid/profile/intro_video_url')
+          .set(cleanUrl);
+    } catch (e) {
+      debugPrint('Teacher website intro video mirror failed: $e');
+    }
+  }
+
+  Future<void> _mirrorWebsiteProfilePhotos() async {
+    final uid = (_auth.currentUser?.uid ?? '').trim();
+    if (uid.isEmpty) return;
+
+    final cleanPhotos = _photoUrls
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    try {
+      await FirebaseDatabase.instance
+          .ref('website/teachers/$uid/profile')
+          .update({
+            'profile_photos': cleanPhotos,
+            'profile_photo': cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
+          });
+    } catch (e) {
+      debugPrint('Teacher website profile photos mirror failed: $e');
+    }
+  }
+
   Future<void> _pickAndUploadPhotos() async {
     if (_uploadingPhotos || _busy) return;
 
     final remaining = _maxPhotos - _photoUrls.length;
     if (remaining <= 0) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('You already reached the 6 photo limit.')),
       );
       return;
@@ -494,8 +572,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
       for (final file in selected) {
         final url = await _uploadPlatformFile(file);
+        await _mirrorWebsiteUploadUrl(url: url, mediaType: 'photo');
         _photoUrls.add(url);
       }
+
+      await _mirrorWebsiteProfilePhotos();
 
       if (mounted) {
         setState(() {
@@ -534,6 +615,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
       final file = result.files.first;
       final url = await _uploadPlatformFile(file);
+      await _mirrorWebsiteUploadUrl(url: url, mediaType: 'video');
+      await _mirrorWebsiteIntroVideoUrl(url);
 
       _introVideoUrl = url;
       await _initVideoPreview(url);
@@ -570,6 +653,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       _ok = 'Photo removed';
       _error = null;
     });
+
+    await _mirrorWebsiteProfilePhotos();
   }
 
   Future<void> _removeVideo() async {
@@ -650,7 +735,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   Future<void> _showChangePasswordSheet() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('You must be logged in.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('You must be logged in.')),
+      );
       return;
     }
 
@@ -709,7 +797,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 if (!mounted) return;
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Password updated ✅')),
                 );
               } on FirebaseAuthException catch (e) {
@@ -722,11 +811,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  AppToast.fromSnackBar(context,  SnackBar(content: Text(msg)));
+                  AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
                 }
               } catch (e) {
                 if (mounted) {
-                  AppToast.fromSnackBar(context,  SnackBar(content: Text(toHumanError(e))));
+                  AppToast.fromSnackBar(
+                    context,
+                    SnackBar(content: Text(toHumanError(e))),
+                  );
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
@@ -1415,6 +1507,20 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
+                  controller: _aboutMeCtrl,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  minLines: 2,
+                  maxLines: 3,
+                  maxLength: 220,
+                  decoration: _dec(
+                    'About me',
+                    hintText: 'Short introduction about your teaching style',
+                  ),
+                  onChanged: (_) => _formKey.currentState?.validate(),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
                   controller: _googleMeetUrlCtrl,
                   keyboardType: TextInputType.url,
                   decoration: _dec(
@@ -1678,7 +1784,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       hints: const [
         TeacherTourHint(
           title: 'Profile settings',
-          line: 'Edit your personal details, teaching info, and media from this screen.',
+          line:
+              'Edit your personal details, teaching info, and media from this screen.',
         ),
         TeacherTourHint(
           title: 'Save changes',

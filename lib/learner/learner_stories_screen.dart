@@ -1125,10 +1125,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 ),
                 style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
               )
-            : Text(
-                'Stories',
-                style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
-              ),
+            : const SizedBox.shrink(),
         actions: [
           IconButton(
             tooltip: _showSearch ? 'Close search' : 'Search',
@@ -1225,7 +1222,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
             builder: (context, constraints) {
               final availableWidth = constraints.maxWidth;
               final pagePadding = _pagePaddingForWidth(availableWidth);
-              final narrowHeader = availableWidth < 500;
 
               return RefreshIndicator(
                 onRefresh: () async {
@@ -1235,76 +1231,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: pagePadding,
                   children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: narrowHeader ? 14 : 16,
-                        vertical: narrowHeader ? 14 : 16,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            p.primary.withValues(alpha: 0.96),
-                            p.accent.withValues(alpha: 0.92),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: p.primary.withValues(alpha: 0.16),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.24),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.auto_stories_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Story Library',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 20,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${visibleItems.length} stories ready to explore',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.84),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     if (_showFilters) ...[
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 6),
                       _buildCompactFilters(
                         genres: allGenres,
                         levels: allLevels,

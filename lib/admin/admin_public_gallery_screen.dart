@@ -210,6 +210,7 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     }
 
     final newRef = _galleryRef().push();
+    final itemId = newRef.key;
 
     await newRef.set({
       'type': type,
@@ -218,6 +219,38 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
       'uploadedByName': _adminName,
       'createdAt': ServerValue.timestamp,
     });
+
+    await _mirrorWebsitePublicGalleryItem(
+      adminUid: adminUid,
+      itemId: itemId,
+      type: type,
+      url: url,
+    );
+  }
+
+  Future<void> _mirrorWebsitePublicGalleryItem({
+    required String adminUid,
+    required String? itemId,
+    required String type,
+    required String url,
+  }) async {
+    final cleanItemId = (itemId ?? '').trim();
+    final cleanUrl = url.trim();
+    if (cleanItemId.isEmpty || cleanUrl.isEmpty) return;
+
+    try {
+      await _db
+          .child('website/admin/$adminUid/public_gallery/$cleanItemId')
+          .set({
+            'type': type,
+            'url': cleanUrl,
+            'uploadedByUid': adminUid,
+            'uploadedByName': _adminName,
+            'createdAt': ServerValue.timestamp,
+          });
+    } catch (e) {
+      debugPrint('Admin website public gallery mirror failed: $e');
+    }
   }
 
   Future<void> _pickAndUploadPhoto() async {
@@ -577,7 +610,9 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                        border: Border.all(
+                          color: uiBorder.withValues(alpha: 0.85),
+                        ),
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(18),
@@ -869,7 +904,9 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: uiBorder.withValues(alpha: 0.9)),
+                      borderSide: BorderSide(
+                        color: uiBorder.withValues(alpha: 0.9),
+                      ),
                     ),
                     focusedBorder: const OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(14)),
@@ -912,7 +949,9 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                      border: Border.all(
+                        color: uiBorder.withValues(alpha: 0.85),
+                      ),
                     ),
                     child: const Text(
                       'No learners found.',
@@ -1646,7 +1685,9 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryBlue,
-                          side: BorderSide(color: uiBorder.withValues(alpha: 0.9)),
+                          side: BorderSide(
+                            color: uiBorder.withValues(alpha: 0.9),
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -1695,7 +1736,9 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                      border: Border.all(
+                        color: uiBorder.withValues(alpha: 0.85),
+                      ),
                     ),
                     child: const Text(
                       'No learner gallery items yet.',
@@ -1771,8 +1814,8 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 
-                                              0.58,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.58,
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               12,
@@ -1879,7 +1922,9 @@ class _AdminCountPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: _AdminLearnerGalleryScreenState.primaryBlue.withValues(alpha: 0.08),
+        color: _AdminLearnerGalleryScreenState.primaryBlue.withValues(
+          alpha: 0.08,
+        ),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(

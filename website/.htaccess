@@ -1,0 +1,10 @@
+RewriteEngine On
+RewriteBase /
+
+# Serve static files directly
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# If file not found, serve index
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ /website/index.html [L]
