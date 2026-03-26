@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/workbook_models.dart';
 import '../services/excel_service.dart';
 import '../services/validation_service.dart';
+import '../theme/theme_palettes.dart';
 
 class MeTeachState extends ChangeNotifier {
   MeTeachState({
@@ -46,7 +48,14 @@ class MeTeachState extends ChangeNotifier {
   String _lastOperationFeedback = '';
   static const String _recentStorageKey = 'meteach_recent_workbooks_v1';
   static const String _showGuideStorageKey = 'meteach_show_guide_v1';
+  static const String _themeStorageKey = 'meteach_theme_v1';
   bool _showGuide = true;
+  int _themeIndex = 0;
+  bool _versionPopupShown = false;
+  String? _processingKey;
+  bool _suspendSnapshots = false;
+  bool _justOpenedWorkbook = false;
+  final List<LogEntry> _logs = <LogEntry>[];
   DateTime? _lastSavedAt;
 
   Locale get locale => _locale;
@@ -65,6 +74,11 @@ class MeTeachState extends ChangeNotifier {
   bool get busy => _busy;
   String get lastOperationFeedback => _lastOperationFeedback;
   bool get showGuide => _showGuide;
+  int get themeIndex => _themeIndex;
+  bool get versionPopupShown => _versionPopupShown;
+  String? get processingKey => _processingKey;
+  bool get justOpenedWorkbook => _justOpenedWorkbook;
+  List<LogEntry> get logs => List.unmodifiable(_logs);
   DateTime? get lastSavedAt => _lastSavedAt;
 
   bool get hasWorkbook => _workbook != null;
@@ -190,20 +204,28 @@ class MeTeachState extends ChangeNotifier {
   }
 
   Future<bool> importWorkbookFromPicker() async {
+    _startProcessing('processingImport');
     _busy = true;
     notifyListeners();
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: <String>['xlsx'],
-        withData: true,
+        withData: false,
       );
       if (result == null || result.files.isEmpty) {
         return false;
       }
       final picked = result.files.first;
-      final bytes = picked.bytes;
+      Uint8List? bytes = picked.bytes;
       if (bytes == null || bytes.isEmpty) {
+        final path = picked.path;
+        if (path == null || path.isEmpty) {
+          return false;
+        }
+        bytes = await File(path).readAsBytes();
+      }
+      if (bytes.isEmpty) {
         return false;
       }
       final parsed = _excelService.parseWorkbook(
@@ -239,15 +261,20 @@ class MeTeachState extends ChangeNotifier {
       }
       _persistRecentWorkbooks();
       _createSnapshot('Original import');
+      _addLog('logImport');
+      _justOpenedWorkbook = true;
       return true;
     } finally {
       _busy = false;
+      _stopProcessing();
       notifyListeners();
     }
   }
 
   bool reopenRecentWorkbook(int index) {
+    _startProcessing('processingReopen');
     if (index < 0 || index >= _recentWorkbooks.length) {
+      _stopProcessing();
       return false;
     }
     final recent = _recentWorkbooks
@@ -271,8 +298,11 @@ class MeTeachState extends ChangeNotifier {
       _locale.languageCode,
     );
     _createSnapshot('Reopened ${recent.displayName}');
+    _addLog('logReopen');
+    _justOpenedWorkbook = true;
     _persistRecentWorkbooks();
     notifyListeners();
+    _stopProcessing();
     return true;
   }
 
@@ -340,6 +370,7 @@ class MeTeachState extends ChangeNotifier {
   }
 
   void runValidation() {
+    _startProcessing('processingValidate');
     final wb = _workbook;
     if (wb == null) {
       _issues = <RowIssue>[];
@@ -350,6 +381,7 @@ class MeTeachState extends ChangeNotifier {
         _locale.languageCode,
       );
     }
+    _stopProcessing();
     notifyListeners();
   }
 
@@ -429,45 +461,56 @@ class MeTeachState extends ChangeNotifier {
     required bool onlyFiltered,
     ApplyScope scope = ApplyScope.currentSheet,
   }) {
+    _startProcessing('processingApply');
     final wb = _workbook;
     if (wb == null || remark.trim().isEmpty) {
+      _stopProcessing();
       return;
     }
     final rows = onlyFiltered ? filteredRows : _rowsForScope(scope);
-    for (final row in rows) {
-      updateRemark(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        remark: remark,
-      );
-    }
+    _withSnapshotSuspended(() {
+      for (final row in rows) {
+        updateRemark(
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          remark: remark,
+        );
+      }
+    });
     _lastOperationFeedback = 'Applied remark to ${rows.length} learners';
     _createSnapshot('Bulk remark');
+    _addLog('logBulkRemark');
+    _stopProcessing();
   }
 
   int applyRemarkRules({
     required ApplyScope scope,
     required ScoreSource scoreSource,
   }) {
+    _startProcessing('processingApply');
     final rows = _rowsForScope(scope);
     var applied = 0;
-    for (final row in rows) {
-      final score = _scoreForSource(row, scoreSource);
-      if (score == null) {
-        continue;
+    _withSnapshotSuspended(() {
+      for (final row in rows) {
+        final score = _scoreForSource(row, scoreSource);
+        if (score == null) {
+          continue;
+        }
+        final suggestion = _excelService.suggestRemark(score, _remarkRules);
+        if (suggestion.isNotEmpty) {
+          updateRemark(
+            sheetName: row.sheetName,
+            rowIndex: row.rowIndex,
+            remark: suggestion,
+          );
+          applied++;
+        }
       }
-      final suggestion = _excelService.suggestRemark(score, _remarkRules);
-      if (suggestion.isNotEmpty) {
-        updateRemark(
-          sheetName: row.sheetName,
-          rowIndex: row.rowIndex,
-          remark: suggestion,
-        );
-        applied++;
-      }
-    }
+    });
     _lastOperationFeedback = 'Applied rule-based remarks to $applied learners';
     _createSnapshot('Apply remark rules');
+    _addLog('logApplyRules');
+    _stopProcessing();
     return applied;
   }
 
@@ -491,25 +534,57 @@ class MeTeachState extends ChangeNotifier {
   }
 
   void fillEmptyScores(double value) {
+    _startProcessing('processingApply');
     final rows = currentSheet?.learners ?? <LearnerRow>[];
-    for (final row in rows) {
-      if (row.continuous == null) {
+    _withSnapshotSuspended(() {
+      for (final row in rows) {
+        if (row.continuous == null) {
+          updateScore(
+            sheetName: row.sheetName,
+            rowIndex: row.rowIndex,
+            column: ScoreColumn.continuous,
+            value: value.toStringAsFixed(1),
+          );
+        }
+        if (row.test == null) {
+          updateScore(
+            sheetName: row.sheetName,
+            rowIndex: row.rowIndex,
+            column: ScoreColumn.test,
+            value: value.toStringAsFixed(1),
+          );
+        }
+        if (row.exam == null) {
+          updateScore(
+            sheetName: row.sheetName,
+            rowIndex: row.rowIndex,
+            column: ScoreColumn.exam,
+            value: value.toStringAsFixed(1),
+          );
+        }
+      }
+    });
+    _createSnapshot('Fill empty scores');
+    _addLog('logFillEmpty');
+    _stopProcessing();
+  }
+
+  void setScoreValueForFiltered(double value) {
+    _startProcessing('processingApply');
+    _withSnapshotSuspended(() {
+      for (final row in filteredRows) {
         updateScore(
           sheetName: row.sheetName,
           rowIndex: row.rowIndex,
           column: ScoreColumn.continuous,
           value: value.toStringAsFixed(1),
         );
-      }
-      if (row.test == null) {
         updateScore(
           sheetName: row.sheetName,
           rowIndex: row.rowIndex,
           column: ScoreColumn.test,
           value: value.toStringAsFixed(1),
         );
-      }
-      if (row.exam == null) {
         updateScore(
           sheetName: row.sheetName,
           rowIndex: row.rowIndex,
@@ -517,60 +592,43 @@ class MeTeachState extends ChangeNotifier {
           value: value.toStringAsFixed(1),
         );
       }
-    }
-    _createSnapshot('Fill empty scores');
-  }
-
-  void setScoreValueForFiltered(double value) {
-    for (final row in filteredRows) {
-      updateScore(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        column: ScoreColumn.continuous,
-        value: value.toStringAsFixed(1),
-      );
-      updateScore(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        column: ScoreColumn.test,
-        value: value.toStringAsFixed(1),
-      );
-      updateScore(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        column: ScoreColumn.exam,
-        value: value.toStringAsFixed(1),
-      );
-    }
+    });
     _createSnapshot('Set score value');
+    _addLog('logSetScore');
+    _stopProcessing();
   }
 
   void randomizeScoresForFiltered(double min, double max) {
+    _startProcessing('processingApply');
     final random = Random();
-    for (final row in filteredRows) {
-      final a = min + random.nextDouble() * (max - min);
-      final b = min + random.nextDouble() * (max - min);
-      final c = min + random.nextDouble() * (max - min);
-      updateScore(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        column: ScoreColumn.continuous,
-        value: a.toStringAsFixed(1),
-      );
-      updateScore(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        column: ScoreColumn.test,
-        value: b.toStringAsFixed(1),
-      );
-      updateScore(
-        sheetName: row.sheetName,
-        rowIndex: row.rowIndex,
-        column: ScoreColumn.exam,
-        value: c.toStringAsFixed(1),
-      );
-    }
+    _withSnapshotSuspended(() {
+      for (final row in filteredRows) {
+        final a = min + random.nextDouble() * (max - min);
+        final b = min + random.nextDouble() * (max - min);
+        final c = min + random.nextDouble() * (max - min);
+        updateScore(
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          column: ScoreColumn.continuous,
+          value: a.toStringAsFixed(1),
+        );
+        updateScore(
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          column: ScoreColumn.test,
+          value: b.toStringAsFixed(1),
+        );
+        updateScore(
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          column: ScoreColumn.exam,
+          value: c.toStringAsFixed(1),
+        );
+      }
+    });
     _createSnapshot('Randomize scores');
+    _addLog('logRandomize');
+    _stopProcessing();
   }
 
   void clearEditableCellsForCurrentSheet() {
@@ -626,8 +684,10 @@ class MeTeachState extends ChangeNotifier {
   }
 
   void resetRow(String sheetName, int rowIndex) {
+    _startProcessing('processingReset');
     final wb = _workbook;
     if (wb == null) {
+      _stopProcessing();
       return;
     }
     final original = _excelService.parseWorkbook(
@@ -648,22 +708,32 @@ class MeTeachState extends ChangeNotifier {
       _changedCells.remove('$sheetName|$rowIndex|7');
       runValidation();
     }
+    _addLog('logResetRow');
+    _stopProcessing();
   }
 
   void resetCurrentSheet() {
+    _startProcessing('processingReset');
     final sheet = currentSheet;
     if (sheet == null) {
+      _stopProcessing();
       return;
     }
-    for (final row in List<LearnerRow>.from(sheet.learners)) {
-      resetRow(sheet.name, row.rowIndex);
-    }
+    _withSnapshotSuspended(() {
+      for (final row in List<LearnerRow>.from(sheet.learners)) {
+        resetRow(sheet.name, row.rowIndex);
+      }
+    });
     _createSnapshot('Reset sheet');
+    _addLog('logResetSheet');
+    _stopProcessing();
   }
 
   void restoreWorkbook() {
+    _startProcessing('processingRestore');
     final wb = _workbook;
     if (wb == null) {
+      _stopProcessing();
       return;
     }
     _workbook = _excelService.parseWorkbook(
@@ -674,6 +744,8 @@ class MeTeachState extends ChangeNotifier {
     _changeHistory.clear();
     runValidation();
     _createSnapshot('Restore workbook');
+    _addLog('logRestore');
+    _stopProcessing();
   }
 
   void undoLast() {
@@ -726,6 +798,7 @@ class MeTeachState extends ChangeNotifier {
       sheet.learners[idx] = row;
     }
     runValidation();
+    _addLog('logUndo');
   }
 
   void addFavoriteRemark(String remark) {
@@ -765,9 +838,12 @@ class MeTeachState extends ChangeNotifier {
   }
 
   void saveProgressCheckpoint([String label = 'Manual save']) {
+    _startProcessing('processingSave');
     _lastOperationFeedback = 'Progress saved';
     _createSnapshot(label);
     createEditableBackupCopy();
+    _addLog('logSave');
+    _stopProcessing();
   }
 
   void createEditableBackupCopy() {
@@ -799,8 +875,10 @@ class MeTeachState extends ChangeNotifier {
   }
 
   Future<ExportReport?> exportWorkbook() async {
+    _startProcessing('processingExport');
     final wb = _workbook;
     if (wb == null) {
+      _stopProcessing();
       return null;
     }
     final report = _excelService.exportWorkbook(
@@ -817,6 +895,8 @@ class MeTeachState extends ChangeNotifier {
     );
     _createSnapshot('Exported $exportName');
     createEditableBackupCopy();
+    _addLog('logExport');
+    _stopProcessing();
     return ExportReport(
       encodedBytes: report.encodedBytes,
       sheetCountMatches: report.sheetCountMatches,
@@ -903,6 +983,8 @@ class MeTeachState extends ChangeNotifier {
   Future<void> _loadUiPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     _showGuide = prefs.getBool(_showGuideStorageKey) ?? true;
+    final storedTheme = prefs.getInt(_themeStorageKey) ?? 0;
+    _themeIndex = storedTheme.clamp(0, themePalettes.length - 1);
     notifyListeners();
   }
 
@@ -911,6 +993,25 @@ class MeTeachState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_showGuideStorageKey, value);
+  }
+
+  Future<void> setThemeIndex(int index) async {
+    final safeIndex = index.clamp(0, themePalettes.length - 1);
+    if (safeIndex == _themeIndex) {
+      return;
+    }
+    _themeIndex = safeIndex;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_themeStorageKey, _themeIndex);
+  }
+
+  void markVersionPopupShown() {
+    _versionPopupShown = true;
+  }
+
+  void consumeJustOpened() {
+    _justOpenedWorkbook = false;
   }
 
   List<RemarkRule> _defaultRemarkRulesForLocale(Locale locale) {
@@ -1052,7 +1153,18 @@ class MeTeachState extends ChangeNotifier {
     final previous = _changedCells[key] ?? '';
     _changeHistory.add(<String, String>{key: previous});
     _changedCells[key] = value;
+    if (!_suspendSnapshots) {
+      _createSnapshot('Edit $sheetName #${rowIndex + 1}');
+      _addLog('logEditCell', {'sheet': sheetName, 'row': '${rowIndex + 1}'});
+    }
     notifyListeners();
+  }
+
+  void _withSnapshotSuspended(VoidCallback action) {
+    final previous = _suspendSnapshots;
+    _suspendSnapshots = true;
+    action();
+    _suspendSnapshots = previous;
   }
 
   void _createSnapshot(String label) {
@@ -1066,4 +1178,103 @@ class MeTeachState extends ChangeNotifier {
     );
     notifyListeners();
   }
+
+  void restoreSnapshot(int index) {
+    if (index < 0 || index >= _snapshots.length) {
+      return;
+    }
+    final wb = _workbook;
+    if (wb == null) {
+      return;
+    }
+    _startProcessing('processingRestore');
+    final snapshot = _snapshots[index];
+    final restored = _excelService.parseWorkbook(
+      bytes: wb.originalBytes,
+      fileName: wb.fileName,
+    );
+    _workbook = restored;
+    _changedCells
+      ..clear()
+      ..addAll(snapshot.changedCells);
+    _applyChangedCells(snapshot.changedCells);
+    runValidation();
+    _createSnapshot('Restore to ${snapshot.label}');
+    _addLog('logRestoreSnapshot', {'label': snapshot.label});
+    _stopProcessing();
+    notifyListeners();
+  }
+
+  void _applyChangedCells(Map<String, String> changes) {
+    final wb = _workbook;
+    if (wb == null) {
+      return;
+    }
+    for (final entry in changes.entries) {
+      final parts = entry.key.split('|');
+      if (parts.length != 3) {
+        continue;
+      }
+      final sheetName = parts[0];
+      final rowIndex = int.tryParse(parts[1]);
+      final colIndex = int.tryParse(parts[2]);
+      if (rowIndex == null || colIndex == null) {
+        continue;
+      }
+      final sheet = wb.sheets.firstWhere((s) => s.name == sheetName);
+      final pos = sheet.learners.indexWhere((r) => r.rowIndex == rowIndex);
+      if (pos == -1) {
+        continue;
+      }
+      final row = sheet.learners[pos];
+      final value = entry.value;
+      if (colIndex == 4) {
+        sheet.learners[pos] = value.trim().isEmpty
+            ? row.copyWith(clearContinuous: true)
+            : row.copyWith(continuous: double.tryParse(value));
+      } else if (colIndex == 5) {
+        sheet.learners[pos] = value.trim().isEmpty
+            ? row.copyWith(clearTest: true)
+            : row.copyWith(test: double.tryParse(value));
+      } else if (colIndex == 6) {
+        sheet.learners[pos] = value.trim().isEmpty
+            ? row.copyWith(clearExam: true)
+            : row.copyWith(exam: double.tryParse(value));
+      } else if (colIndex == 7) {
+        sheet.learners[pos] = row.copyWith(remark: value);
+      }
+    }
+  }
+
+  void _startProcessing(String key) {
+    if (_processingKey != null) {
+      return;
+    }
+    _processingKey = key;
+    notifyListeners();
+  }
+
+  void _stopProcessing() {
+    _processingKey = null;
+    notifyListeners();
+  }
+
+  void _addLog(String key, [Map<String, String> values = const {}]) {
+    _logs.insert(
+      0,
+      LogEntry(key: key, timestamp: DateTime.now(), values: values),
+    );
+  }
+}
+
+class LogEntry {
+  LogEntry({
+    required this.key,
+    required this.timestamp,
+    this.values = const {},
+  });
+
+  final String key;
+  final DateTime timestamp;
+  final Map<String, String> values;
 }

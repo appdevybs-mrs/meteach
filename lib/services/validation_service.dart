@@ -13,15 +13,23 @@ class ValidationService {
     final issues = <RowIssue>[];
     for (final sheet in workbook.sheets) {
       for (final row in sheet.learners) {
-        final scores = [row.continuous, row.test, row.exam];
-        for (final score in scores) {
+        final scoreChecks = [
+          (row.continuous, l10n.t('continuous')),
+          (row.test, l10n.t('test')),
+          (row.exam, l10n.t('exam')),
+        ];
+        for (final entry in scoreChecks) {
+          final score = entry.$1;
+          final columnLabel = entry.$2;
           if (score == null) {
             issues.add(
               RowIssue(
                 sheetName: sheet.name,
                 rowIndex: row.rowIndex,
                 type: RowIssueType.emptyScore,
-                message: l10n.t('issueEmptyScore'),
+                message: l10n.format('issueEmptyScoreColumn', {
+                  'column': columnLabel,
+                }),
               ),
             );
             continue;
@@ -32,7 +40,9 @@ class ValidationService {
                 sheetName: sheet.name,
                 rowIndex: row.rowIndex,
                 type: RowIssueType.zeroScore,
-                message: l10n.t('issueZeroScoreNotAllowed'),
+                message: l10n.format('issueZeroScoreNotAllowedColumn', {
+                  'column': columnLabel,
+                }),
               ),
             );
           }
@@ -42,10 +52,11 @@ class ValidationService {
                 sheetName: sheet.name,
                 rowIndex: row.rowIndex,
                 type: RowIssueType.outOfRange,
-                message: l10n.format('issueOutOfRange', {
+                message: l10n.format('issueOutOfRangeColumn', {
                   'score': score.toString(),
                   'minScore': settings.minScore.toString(),
                   'maxScore': settings.maxScore.toString(),
+                  'column': columnLabel,
                 }),
               ),
             );

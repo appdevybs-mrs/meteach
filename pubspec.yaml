@@ -1,5 +1,5 @@
 name: meteach
-description: "Teacher Companion"
+description: "Marka - Teacher Companion"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -40,6 +40,9 @@ dependencies:
   shared_preferences: ^2.5.3
   open_filex: ^4.7.0
   share_plus: ^11.1.0
+  firebase_core: ^3.13.0
+  firebase_database: ^11.3.10
+  package_info_plus: ^8.2.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

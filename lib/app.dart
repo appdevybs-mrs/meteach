@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
@@ -6,15 +7,17 @@ import 'package:share_plus/share_plus.dart';
 
 import 'l10n/app_localizations.dart';
 import 'models/workbook_models.dart';
+import 'services/version_check_service.dart';
 import 'state/app_state.dart';
+import 'theme/theme_palettes.dart';
 import 'widgets/meteach_logo.dart';
 
-Widget _logoWatermark({double opacity = 0.06}) {
+Widget _logoWatermark(BuildContext context, {double opacity = 0.06}) {
   return IgnorePointer(
     child: Center(
       child: Opacity(
         opacity: opacity,
-        child: Image.asset('assets/logo.png', width: 380, fit: BoxFit.contain),
+        child: const MarkaGlyph(size: 260, showShadow: false),
       ),
     ),
   );
@@ -62,12 +65,7 @@ Future<void> showProcessDoneLogoAnimation(BuildContext context) async {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.asset(
-                  'assets/logo.png',
-                  width: 82,
-                  height: 82,
-                  fit: BoxFit.contain,
-                ),
+                const MarkaGlyph(size: 82),
                 const SizedBox(height: 10),
                 Text(
                   l10n.t('done'),
@@ -82,6 +80,443 @@ Future<void> showProcessDoneLogoAnimation(BuildContext context) async {
       );
     },
   );
+}
+
+Future<bool> showConfirmDialog(
+  BuildContext context,
+  String title,
+  String message,
+  AppLocalizations l10n,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(l10n.t('no')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(l10n.t('yes')),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+void _goToWorkspace(BuildContext context) {
+  Navigator.of(
+    context,
+    rootNavigator: true,
+  ).push(MaterialPageRoute<void>(builder: (_) => const WorkspaceScreen()));
+}
+
+Widget _processingOverlay(BuildContext context, String message) {
+  return ColoredBox(
+    color: Colors.black.withValues(alpha: 0.4),
+    child: Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 900),
+              tween: Tween<double>(begin: 0.9, end: 1.0),
+              curve: Curves.easeInOut,
+              builder: (context, value, child) {
+                return Transform.scale(scale: value, child: child);
+              },
+              child: const MarkaGlyph(size: 64),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> showGuidePopup(BuildContext context, MeTeachState state) async {
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          final l10n = AppLocalizations.of(context);
+          final scheme = Theme.of(context).colorScheme;
+          final brand = Theme.of(context).extension<BrandColors>()!;
+
+          Widget guideCard(Color color, IconData icon, String text) {
+            return Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                Expanded(child: Text(l10n.t('guideTitle'))),
+                PopupMenuButton<Locale>(
+                  tooltip: l10n.t('language'),
+                  icon: Icon(Icons.language_rounded, color: scheme.secondary),
+                  onSelected: (locale) {
+                    state.setLocale(locale);
+                    setState(() {});
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: Locale('en'),
+                      child: Text('English'),
+                    ),
+                    const PopupMenuItem(
+                      value: Locale('fr'),
+                      child: Text('Français'),
+                    ),
+                    const PopupMenuItem(
+                      value: Locale('ar'),
+                      child: Text('العربية'),
+                    ),
+                    const PopupMenuItem(
+                      value: Locale('de'),
+                      child: Text('Deutsch'),
+                    ),
+                    const PopupMenuItem(
+                      value: Locale('es'),
+                      child: Text('Español'),
+                    ),
+                    const PopupMenuItem(
+                      value: Locale('it'),
+                      child: Text('Italiano'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                guideCard(
+                  scheme.primary,
+                  Icons.upload_file_rounded,
+                  l10n.t('guideStep1'),
+                ),
+                guideCard(
+                  scheme.tertiary,
+                  Icons.rule_folder_rounded,
+                  l10n.t('guideStep2'),
+                ),
+                guideCard(
+                  brand.gold,
+                  Icons.verified_rounded,
+                  l10n.t('guideStep3'),
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    l10n.t('guideHint'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(l10n.t('close')),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+Future<void> showThemePicker(BuildContext context, MeTeachState state) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      final l10n = AppLocalizations.of(sheetContext);
+      final scheme = Theme.of(sheetContext).colorScheme;
+      final height = MediaQuery.of(sheetContext).size.height * 0.75;
+      return SafeArea(
+        child: SizedBox(
+          height: height,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.t('themeTitle'),
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  l10n.t('chooseTheme'),
+                  style: Theme.of(sheetContext).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: List.generate(themePalettes.length, (index) {
+                    final palette = themePalettes[index];
+                    final selected = index == state.themeIndex;
+                    return InkWell(
+                      onTap: () {
+                        state.setThemeIndex(index);
+                        Navigator.pop(sheetContext);
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: 140,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: palette.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected
+                                ? scheme.secondary
+                                : scheme.primary.withValues(alpha: 0.12),
+                            width: selected ? 2 : 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                _ThemeSwatch(color: palette.primary),
+                                const SizedBox(width: 6),
+                                _ThemeSwatch(color: palette.secondary),
+                                const SizedBox(width: 6),
+                                _ThemeSwatch(color: palette.tertiary),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              palette.name,
+                              style: Theme.of(sheetContext).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Future<void> showVersionPopup(BuildContext context) async {
+  final service = VersionCheckService();
+  final info = await service.fetch();
+  if (!context.mounted) return;
+  final l10n = AppLocalizations.of(context);
+  final scheme = Theme.of(context).colorScheme;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      final minVersion = info.minVersion ?? l10n.t('versionUnavailable');
+      return AlertDialog(
+        title: Text(l10n.t('versionCheckTitle')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _VersionChip(
+                    label: l10n.t('currentVersion'),
+                    value: info.appVersion,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _VersionChip(
+                    label: l10n.t('minVersion'),
+                    value: minVersion,
+                    color: scheme.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(l10n.t('close')),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> showValidationPopup(
+  BuildContext context,
+  AppLocalizations l10n,
+  Map<String, int> summary,
+  VoidCallback onViewDetails,
+) async {
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(l10n.t('validationComplete')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.format('validationSummary', {
+                'errors': '${summary['errors'] ?? 0}',
+                'warnings': '${summary['warnings'] ?? 0}',
+              }),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(l10n.t('close')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              onViewDetails();
+            },
+            child: Text(l10n.t('viewValidation')),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _ThemeSwatch extends StatelessWidget {
+  const _ThemeSwatch({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _VersionChip extends StatelessWidget {
+  const _VersionChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class MeTeachApp extends StatelessWidget {
@@ -112,28 +547,7 @@ class MeTeachApp extends StatelessWidget {
                 child: child ?? const SizedBox.shrink(),
               );
             },
-            theme: ThemeData(
-              useMaterial3: true,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: const Color(0xFF0D6E6E),
-                brightness: Brightness.light,
-              ),
-              scaffoldBackgroundColor: const Color(0xFFEFF4FF),
-              iconTheme: const IconThemeData(color: Color(0xFF0D6E6E)),
-              appBarTheme: const AppBarTheme(
-                backgroundColor: Color(0xFFDDEBFF),
-                foregroundColor: Color(0xFF114B5F),
-              ),
-              cardTheme: const CardThemeData(
-                color: Colors.white,
-                elevation: 0.8,
-              ),
-              inputDecorationTheme: const InputDecorationTheme(
-                filled: true,
-                fillColor: Color(0xFFFAFCFF),
-                border: OutlineInputBorder(),
-              ),
-            ),
+            theme: buildMarkaTheme(themePalettes[state.themeIndex]),
             home: const SplashScreen(),
           );
         },
@@ -172,19 +586,15 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF114B5F), Color(0xFF1A936F), Color(0xFFF3E9D2)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        color: scheme.surface.withValues(alpha: 0.9),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _logoWatermark(opacity: 0.11),
+            _logoWatermark(context, opacity: 0.11),
             Center(
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 520),
@@ -202,14 +612,16 @@ class _SplashScreenState extends State<SplashScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.15),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
                         ),
                         alignment: Alignment.center,
-                        child: Image.asset(
-                          'assets/logo.png',
-                          width: 72,
-                          height: 72,
-                          fit: BoxFit.contain,
-                        ),
+                        child: const MarkaGlyph(size: 72, showShadow: false),
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -239,217 +651,211 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  Widget _guideStep(
-    BuildContext context,
-    Color color,
-    IconData icon,
-    String text,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 16, color: color),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text)),
-        ],
-      ),
-    );
-  }
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  DateTime? _lastBackPress;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final state = context.watch<MeTeachState>();
-    return Scaffold(
-      appBar: AppBar(
-        title: const MeTeachLogo(size: 36, showLabel: true),
-        actions: [
-          IconButton(
-            tooltip: l10n.t('showGuide'),
-            onPressed: () => state.setShowGuide(!state.showGuide),
-            icon: Icon(
-              state.showGuide
-                  ? Icons.visibility_off_rounded
-                  : Icons.help_rounded,
-              color: const Color(0xFF1976D2),
+    final scheme = Theme.of(context).colorScheme;
+    if (!state.versionPopupShown) {
+      state.markVersionPopupShown();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showVersionPopup(context);
+      });
+    }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPress == null ||
+            now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+          _lastBackPress = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.t('pressBackAgain')),
+              duration: const Duration(seconds: 2),
             ),
-          ),
-          PopupMenuButton<Locale>(
-            icon: const Icon(Icons.language_rounded),
-            onSelected: state.setLocale,
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: const Locale('en'),
-                child: const Text('English'),
-              ),
-              PopupMenuItem(
-                value: const Locale('fr'),
-                child: const Text('Français'),
-              ),
-              PopupMenuItem(
-                value: const Locale('ar'),
-                child: const Text('العربية'),
-              ),
-              PopupMenuItem(
-                value: const Locale('de'),
-                child: const Text('Deutsch'),
-              ),
-              PopupMenuItem(
-                value: const Locale('es'),
-                child: const Text('Español'),
-              ),
-              PopupMenuItem(
-                value: const Locale('it'),
-                child: const Text('Italiano'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFDCEBFF), Color(0xFFF3FBFF), Color(0xFFE2F8F0)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          );
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const MeTeachLogo(size: 36, showLabel: true),
+          actions: [
+            IconButton(
+              tooltip: l10n.t('guideTitle'),
+              onPressed: () => showGuidePopup(context, state),
+              icon: Icon(Icons.help_outline_rounded, color: scheme.secondary),
+            ),
+            IconButton(
+              tooltip: l10n.t('themeTitle'),
+              onPressed: () => showThemePicker(context, state),
+              icon: Icon(Icons.palette_rounded, color: scheme.secondary),
+            ),
+            PopupMenuButton<Locale>(
+              icon: const Icon(Icons.language_rounded),
+              onSelected: state.setLocale,
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: const Locale('en'),
+                  child: const Text('English'),
+                ),
+                PopupMenuItem(
+                  value: const Locale('fr'),
+                  child: const Text('Français'),
+                ),
+                PopupMenuItem(
+                  value: const Locale('ar'),
+                  child: const Text('العربية'),
+                ),
+                PopupMenuItem(
+                  value: const Locale('de'),
+                  child: const Text('Deutsch'),
+                ),
+                PopupMenuItem(
+                  value: const Locale('es'),
+                  child: const Text('Español'),
+                ),
+                PopupMenuItem(
+                  value: const Locale('it'),
+                  child: const Text('Italiano'),
+                ),
+              ],
+            ),
+          ],
         ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 920),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _logoWatermark(opacity: 0.055),
-                ListView(
-                  padding: const EdgeInsets.all(22),
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF114B5F), Color(0xFF1A936F)],
+        body: Container(
+          color: scheme.surface.withValues(alpha: 0.92),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 920),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _logoWatermark(context, opacity: 0.055),
+                  ListView(
+                    padding: const EdgeInsets.all(22),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          borderRadius: BorderRadius.circular(18),
                         ),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Row(
-                        children: [
-                          const MeTeachLogo(size: 60),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  l10n.t('welcome'),
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: [
-                                    FilledButton.icon(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: Colors.white,
-                                        foregroundColor: const Color(
-                                          0xFF114B5F,
+                        child: Row(
+                          children: [
+                            const MeTeachLogo(size: 60),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l10n.t('welcome'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
                                         ),
-                                      ),
-                                      onPressed: state.busy
-                                          ? null
-                                          : () async {
-                                              final ok = await state
-                                                  .importWorkbookFromPicker();
-                                              if (!context.mounted) {
-                                                return;
-                                              }
-                                              if (ok) {
-                                                await showProcessDoneLogoAnimation(
-                                                  context,
-                                                );
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: [
+                                      FilledButton.icon(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: Colors.white,
+                                          foregroundColor: scheme.primary,
+                                        ),
+                                        onPressed: state.busy
+                                            ? null
+                                            : () async {
+                                                final ok = await state
+                                                    .importWorkbookFromPicker();
                                                 if (!context.mounted) {
                                                   return;
                                                 }
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute<void>(
-                                                    builder: (_) =>
-                                                        const WorkspaceScreen(),
-                                                  ),
-                                                );
-                                              }
-                                            },
-                                      icon: state.busy
-                                          ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
+                                                if (ok) {
+                                                  final createCopy =
+                                                      await showConfirmDialog(
+                                                        context,
+                                                        l10n.t('copyTitle'),
+                                                        l10n.t('copyMessage'),
+                                                        l10n,
+                                                      );
+                                                  if (createCopy) {
+                                                    state
+                                                        .createEditableBackupCopy();
+                                                  }
+                                                  if (!context.mounted) {
+                                                    return;
+                                                  }
+                                                  _goToWorkspace(context);
+                                                }
+                                              },
+                                        icon: state.busy
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(
+                                                Icons.upload_file_rounded,
                                               ),
-                                            )
-                                          : const Icon(
-                                              Icons.upload_file_rounded,
-                                            ),
-                                      label: Text(l10n.t('uploadWorkbook')),
-                                    ),
-                                    if (state.recentWorkbooks.isNotEmpty)
-                                      OutlinedButton.icon(
-                                        style: OutlinedButton.styleFrom(
-                                          side: const BorderSide(
-                                            color: Colors.white,
-                                          ),
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        onPressed: () async {
-                                          final ok = state.reopenRecentWorkbook(
-                                            0,
-                                          );
-                                          if (ok) {
-                                            await showProcessDoneLogoAnimation(
-                                              context,
-                                            );
-                                            if (!context.mounted) {
-                                              return;
-                                            }
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute<void>(
-                                                builder: (_) =>
-                                                    const WorkspaceScreen(),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                        icon: const Icon(Icons.history_rounded),
-                                        label: Text(l10n.t('reopen')),
+                                        label: Text(l10n.t('uploadWorkbook')),
                                       ),
-                                  ],
-                                ),
-                              ],
+                                      if (state.recentWorkbooks.isNotEmpty)
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(
+                                              color: Colors.white,
+                                            ),
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          onPressed: () async {
+                                            final ok = state
+                                                .reopenRecentWorkbook(0);
+                                            if (ok) {
+                                              if (!context.mounted) {
+                                                return;
+                                              }
+                                              _goToWorkspace(context);
+                                            }
+                                          },
+                                          icon: const Icon(
+                                            Icons.history_rounded,
+                                          ),
+                                          label: Text(l10n.t('reopen')),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    if (state.showGuide)
+                      const SizedBox(height: 14),
                       Card(
-                        color: const Color(0xFFF0F7FF),
                         child: Padding(
                           padding: const EdgeInsets.all(12),
                           child: Column(
@@ -458,219 +864,174 @@ class HomeScreen extends StatelessWidget {
                               Row(
                                 children: [
                                   const Icon(
-                                    Icons.tips_and_updates_rounded,
-                                    color: Color(0xFF1976D2),
+                                    Icons.folder_copy_rounded,
+                                    color: Colors.white,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    l10n.t('guideTitle'),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                    l10n.t('recentFiles'),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
                                   ),
                                   const Spacer(),
-                                  TextButton(
-                                    onPressed: () => state.setShowGuide(false),
-                                    child: Text(l10n.t('skipGuide')),
-                                  ),
+                                  Text('${state.recentWorkbooks.length}'),
                                 ],
                               ),
-                              const SizedBox(height: 6),
-                              _guideStep(
-                                context,
-                                const Color(0xFF1E88E5),
-                                Icons.upload_file_rounded,
-                                l10n.t('guideStep1'),
-                              ),
-                              _guideStep(
-                                context,
-                                const Color(0xFF43A047),
-                                Icons.rule_folder_rounded,
-                                l10n.t('guideStep2'),
-                              ),
-                              _guideStep(
-                                context,
-                                const Color(0xFFF57C00),
-                                Icons.verified_rounded,
-                                l10n.t('guideStep3'),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                l10n.t('guideHint'),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
+                              const SizedBox(height: 8),
+                              if (state.recentWorkbooks.isEmpty)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(18),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: scheme.primary.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.auto_stories_rounded,
+                                        size: 30,
+                                        color: scheme.tertiary,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(l10n.t('noWorkbook')),
+                                    ],
+                                  ),
+                                )
+                              else
+                                ...state.recentWorkbooks.asMap().entries.map((
+                                  entry,
+                                ) {
+                                  final item = entry.value;
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: scheme.primary.withValues(
+                                          alpha: 0.08,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.description_outlined,
+                                          color: scheme.primary,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(item.displayName),
+                                              Text(
+                                                '${l10n.t('openedAt')}: ${item.openedAt.toLocal().toString().replaceFirst('.000', '')}',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        OutlinedButton(
+                                          onPressed: () async {
+                                            final ok = state
+                                                .reopenRecentWorkbook(
+                                                  entry.key,
+                                                );
+                                            if (ok) {
+                                              if (!context.mounted) {
+                                                return;
+                                              }
+                                              _goToWorkspace(context);
+                                            }
+                                          },
+                                          child: Text(l10n.t('reopen')),
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            Icons.drive_file_rename_outline,
+                                            color: scheme.secondary,
+                                          ),
+                                          onPressed: () {
+                                            final controller =
+                                                TextEditingController(
+                                                  text: item.displayName,
+                                                );
+                                            showDialog<void>(
+                                              context: context,
+                                              builder: (context) => AlertDialog(
+                                                title: Text(l10n.t('rename')),
+                                                content: TextField(
+                                                  controller: controller,
+                                                  autofocus: true,
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(context),
+                                                    child: Text(
+                                                      l10n.t('cancel'),
+                                                    ),
+                                                  ),
+                                                  FilledButton(
+                                                    onPressed: () {
+                                                      state
+                                                          .renameRecentWorkbook(
+                                                            entry.key,
+                                                            controller.text,
+                                                          );
+                                                      Navigator.pop(context);
+                                                    },
+                                                    child: Text(
+                                                      l10n.t('saveSettings'),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            Icons.delete_outline_rounded,
+                                            color: scheme.secondary,
+                                          ),
+                                          onPressed: () => state
+                                              .deleteRecentWorkbook(entry.key),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
                             ],
                           ),
                         ),
                       ),
-                    if (state.showGuide) const SizedBox(height: 14),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.folder_copy_rounded,
-                                  color: Color(0xFF1976D2),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  l10n.t('recentFiles'),
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const Spacer(),
-                                Text('${state.recentWorkbooks.length}'),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            if (state.recentWorkbooks.isEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF7FAFF),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(0xFFD8E6FF),
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    const Icon(
-                                      Icons.auto_stories_rounded,
-                                      size: 30,
-                                      color: Color(0xFF42A5F5),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(l10n.t('noWorkbook')),
-                                  ],
-                                ),
-                              )
-                            else
-                              ...state.recentWorkbooks.asMap().entries.map((
-                                entry,
-                              ) {
-                                final item = entry.value;
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FBFF),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.description_outlined,
-                                        color: Color(0xFF1976D2),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(item.displayName),
-                                            Text(
-                                              '${l10n.t('openedAt')}: ${item.openedAt.toLocal().toString().replaceFirst('.000', '')}',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      OutlinedButton(
-                                        onPressed: () async {
-                                          final ok = state.reopenRecentWorkbook(
-                                            entry.key,
-                                          );
-                                          if (ok) {
-                                            await showProcessDoneLogoAnimation(
-                                              context,
-                                            );
-                                            if (!context.mounted) {
-                                              return;
-                                            }
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute<void>(
-                                                builder: (_) =>
-                                                    const WorkspaceScreen(),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                        child: Text(l10n.t('reopen')),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.drive_file_rename_outline,
-                                          color: Color(0xFF8E24AA),
-                                        ),
-                                        onPressed: () {
-                                          final controller =
-                                              TextEditingController(
-                                                text: item.displayName,
-                                              );
-                                          showDialog<void>(
-                                            context: context,
-                                            builder: (context) => AlertDialog(
-                                              title: Text(l10n.t('rename')),
-                                              content: TextField(
-                                                controller: controller,
-                                                autofocus: true,
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(context),
-                                                  child: Text(l10n.t('cancel')),
-                                                ),
-                                                FilledButton(
-                                                  onPressed: () {
-                                                    state.renameRecentWorkbook(
-                                                      entry.key,
-                                                      controller.text,
-                                                    );
-                                                    Navigator.pop(context);
-                                                  },
-                                                  child: Text(
-                                                    l10n.t('saveSettings'),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                          color: Color(0xFFE53935),
-                                        ),
-                                        onPressed: () => state
-                                            .deleteRecentWorkbook(entry.key),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                          ],
-                        ),
+                    ],
+                  ),
+                  if (state.processingKey != null)
+                    Positioned.fill(
+                      child: _processingOverlay(
+                        context,
+                        l10n.t(state.processingKey!),
                       ),
                     ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -687,13 +1048,29 @@ class WorkspaceScreen extends StatefulWidget {
 }
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
+  late final TextEditingController _searchController;
+  final TextEditingController _bulkRemarkController = TextEditingController();
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: _sheetSearch);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final state = context.read<MeTeachState>();
+      if (state.justOpenedWorkbook) {
+        state.consumeJustOpened();
+        await showProcessDoneLogoAnimation(context);
+      }
+    });
+  }
+
   int _navIndex = 0;
+  bool _isGlobalSearch = false;
+  String _sheetSearch = '';
   String _globalSearch = '';
-  static const List<int> _primaryPageIndexes = <int>[0, 1, 2, 3, 7];
+  static const List<int> _primaryPageIndexes = <int>[0, 1, 2, 6];
   final TextEditingController _ruleMinController = TextEditingController();
   final TextEditingController _ruleMaxController = TextEditingController();
   final TextEditingController _ruleRemarkController = TextEditingController();
-  ApplyScope _selectedScope = ApplyScope.allSheets;
   ScoreSource _selectedScoreSource = ScoreSource.exam;
   int? _editingRuleIndex;
   bool _bulkProcessing = false;
@@ -702,6 +1079,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
+    _bulkRemarkController.dispose();
     _ruleMinController.dispose();
     _ruleMaxController.dispose();
     _ruleRemarkController.dispose();
@@ -714,30 +1093,136 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     String message,
     AppLocalizations l10n,
   ) async {
-    final result = await showDialog<bool>(
+    return showConfirmDialog(context, title, message, l10n);
+  }
+
+  Future<void> _confirmExit(
+    BuildContext context,
+    MeTeachState state,
+    AppLocalizations l10n,
+  ) async {
+    if (state.editedRowsCount == 0) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
+      return;
+    }
+    final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
+        title: Text(l10n.t('unsavedTitle')),
+        content: Text(l10n.t('unsavedMessage')),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.t('no')),
+            onPressed: () => Navigator.pop(context, 'cancel'),
+            child: Text(l10n.t('cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: Text(l10n.t('discard')),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(l10n.t('yes')),
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: Text(l10n.t('saveAndExit')),
           ),
         ],
       ),
     );
-    return result ?? false;
+    if (!context.mounted) {
+      return;
+    }
+    if (result == 'save') {
+      state.saveProgressCheckpoint('Exit save');
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
+    } else if (result == 'discard') {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
+    }
+  }
+
+  Widget _historyPage(
+    BuildContext context,
+    MeTeachState state,
+    AppLocalizations l10n,
+  ) {
+    return ListView(
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.t('historyTitle'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(l10n.t('historyHint')),
+                const SizedBox(height: 12),
+                if (state.snapshots.isEmpty)
+                  Text(l10n.t('noHistory'))
+                else
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: state.snapshots.length,
+                    itemBuilder: (context, index) {
+                      final item = state.snapshots[index];
+                      return ListTile(
+                        title: Text(item.label),
+                        subtitle: Text(
+                          item.createdAt.toLocal().toString().replaceFirst(
+                            '.000',
+                            '',
+                          ),
+                        ),
+                        trailing: OutlinedButton(
+                          onPressed: () => state.restoreSnapshot(index),
+                          child: Text(l10n.t('restoreSnapshot')),
+                        ),
+                      );
+                    },
+                  ),
+                if (state.logs.isNotEmpty) const Divider(height: 24),
+                if (state.logs.isNotEmpty)
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: state.logs.length,
+                    itemBuilder: (context, index) {
+                      final log = state.logs[index];
+                      return ListTile(
+                        leading: const Icon(Icons.history_rounded),
+                        title: Text(l10n.format(log.key, log.values)),
+                        subtitle: Text(
+                          log.timestamp.toLocal().toString().replaceFirst(
+                            '.000',
+                            '',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<MeTeachState>();
     final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     if (!state.hasWorkbook) {
       return const HomeScreen();
     }
@@ -745,8 +1230,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final pages = [
       _overviewPage(context, state, l10n),
       _sheetEditorPage(context, state, l10n),
-      _globalSearchPage(context, state, l10n),
-      _bulkPage(context, state, l10n),
+      _historyPage(context, state, l10n),
       _validationPage(context, state, l10n),
       _rulesPage(context, state, l10n),
       _settingsPage(context, state, l10n),
@@ -756,192 +1240,203 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final labels = [
       l10n.t('overview'),
       l10n.t('sheetEditor'),
-      l10n.t('globalSearch'),
-      l10n.t('bulkActions'),
+      l10n.t('historyTitle'),
       l10n.t('validation'),
       l10n.t('rulesPresets'),
       l10n.t('settings'),
       l10n.t('export'),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > 980;
-        final selectedPrimary = _primaryPageIndexes.indexOf(_navIndex);
-        return Scaffold(
-          appBar: AppBar(
-            title: Text('${l10n.t('appTitle')} - ${labels[_navIndex]}'),
-            actions: [
-              IconButton(
-                onPressed: state.undoLast,
-                icon: const Icon(Icons.undo_rounded),
-                tooltip: l10n.t('undoLast'),
-              ),
-            ],
-          ),
-          body: Stack(
-            children: [
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFFEAF3FF),
-                      Color(0xFFF6FBFF),
-                      Color(0xFFE5F7F2),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_navIndex != 1) {
+          setState(() => _navIndex = 1);
+          return;
+        }
+        _confirmExit(context, state, l10n);
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth > 980;
+          final selectedPrimary = _primaryPageIndexes.indexOf(_navIndex);
+          return Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              title: Text(labels[_navIndex]),
+              actions: [
+                if (_navIndex == 0) ...[
+                  IconButton(
+                    tooltip: l10n.t('guideTitle'),
+                    onPressed: () => showGuidePopup(context, state),
+                    icon: Icon(
+                      Icons.help_outline_rounded,
+                      color: scheme.secondary,
+                    ),
                   ),
-                ),
-              ),
-              _logoWatermark(opacity: 0.05),
-              Row(
-                children: [
-                  if (wide)
-                    NavigationRail(
-                      selectedIndex: selectedPrimary < 0 ? 0 : selectedPrimary,
-                      onDestinationSelected: (value) => setState(
-                        () => _navIndex = _primaryPageIndexes[value],
-                      ),
-                      labelType: NavigationRailLabelType.all,
-                      destinations: [
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.dashboard_outlined),
-                          selectedIcon: const Icon(Icons.dashboard_rounded),
-                          label: Text(l10n.t('overview')),
-                        ),
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.table_chart_outlined),
-                          selectedIcon: const Icon(Icons.table_chart),
-                          label: Text(l10n.t('sheetEditor')),
-                        ),
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.search_outlined),
-                          selectedIcon: const Icon(Icons.search),
-                          label: Text(l10n.t('globalSearch')),
-                        ),
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.bolt_outlined),
-                          selectedIcon: const Icon(Icons.bolt),
-                          label: Text(l10n.t('bulkActions')),
-                        ),
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.upload_outlined),
-                          selectedIcon: const Icon(Icons.upload),
-                          label: Text(l10n.t('export')),
-                        ),
-                      ],
-                    ),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.88),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFD4E4FF)),
-                          ),
-                          child: Wrap(
-                            spacing: 16,
-                            runSpacing: 6,
-                            children: [
-                              Text(
-                                '${l10n.t('lastSaved')}: '
-                                '${state.lastSavedAt?.toLocal().toString().replaceFirst('.000', '') ?? '-'}',
-                              ),
-                              Text(
-                                '${l10n.t('rowsEdited')}: ${state.editedRowsCount}',
-                              ),
-                              Text(
-                                '${l10n.t('exportSafety')}: '
-                                '${state.workbookSummary['errors'] == 0 ? l10n.t('safe') : l10n.t('risky')}',
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 220),
-                            child: Padding(
-                              key: ValueKey<int>(_navIndex),
-                              padding: const EdgeInsets.all(12),
-                              child: pages[_navIndex],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  IconButton(
+                    tooltip: l10n.t('themeTitle'),
+                    onPressed: () => showThemePicker(context, state),
+                    icon: Icon(Icons.palette_rounded, color: scheme.secondary),
                   ),
                 ],
-              ),
-              if (_pageLoading)
-                Positioned.fill(
-                  child: ColoredBox(
-                    color: const Color(0x88000000),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(l10n.t('processing')),
-                          ],
-                        ),
-                      ),
+                PopupMenuButton<Locale>(
+                  icon: const Icon(Icons.language_rounded),
+                  onSelected: state.setLocale,
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: const Locale('en'),
+                      child: const Text('English'),
                     ),
-                  ),
-                ),
-            ],
-          ),
-          bottomNavigationBar: wide
-              ? null
-              : NavigationBar(
-                  selectedIndex: selectedPrimary < 0 ? 0 : selectedPrimary,
-                  onDestinationSelected: (value) =>
-                      setState(() => _navIndex = _primaryPageIndexes[value]),
-                  destinations: [
-                    NavigationDestination(
-                      icon: const Icon(Icons.dashboard_outlined),
-                      label: l10n.t('overview'),
+                    PopupMenuItem(
+                      value: const Locale('fr'),
+                      child: const Text('Français'),
                     ),
-                    NavigationDestination(
-                      icon: const Icon(Icons.table_chart_outlined),
-                      label: l10n.t('sheetEditor'),
+                    PopupMenuItem(
+                      value: const Locale('ar'),
+                      child: const Text('العربية'),
                     ),
-                    NavigationDestination(
-                      icon: const Icon(Icons.search_outlined),
-                      label: l10n.t('globalSearch'),
+                    PopupMenuItem(
+                      value: const Locale('de'),
+                      child: const Text('Deutsch'),
                     ),
-                    NavigationDestination(
-                      icon: const Icon(Icons.bolt_outlined),
-                      label: l10n.t('bulkActions'),
+                    PopupMenuItem(
+                      value: const Locale('es'),
+                      child: const Text('Español'),
                     ),
-                    NavigationDestination(
-                      icon: const Icon(Icons.upload_outlined),
-                      label: l10n.t('export'),
+                    PopupMenuItem(
+                      value: const Locale('it'),
+                      child: const Text('Italiano'),
                     ),
                   ],
                 ),
-        );
-      },
+                IconButton(
+                  onPressed: state.undoLast,
+                  icon: const Icon(Icons.undo_rounded),
+                  tooltip: l10n.t('undoLast'),
+                ),
+              ],
+            ),
+            body: Stack(
+              children: [
+                Container(color: scheme.surface.withValues(alpha: 0.92)),
+                _logoWatermark(context, opacity: 0.05),
+                Row(
+                  children: [
+                    if (wide)
+                      NavigationRail(
+                        selectedIndex: selectedPrimary < 0
+                            ? 0
+                            : selectedPrimary,
+                        onDestinationSelected: (value) => setState(
+                          () => _navIndex = _primaryPageIndexes[value],
+                        ),
+                        labelType: NavigationRailLabelType.all,
+                        destinations: [
+                          NavigationRailDestination(
+                            icon: const Icon(Icons.dashboard_outlined),
+                            selectedIcon: const Icon(Icons.dashboard_rounded),
+                            label: Text(l10n.t('overview')),
+                          ),
+                          NavigationRailDestination(
+                            icon: const Icon(Icons.table_chart_outlined),
+                            selectedIcon: const Icon(Icons.table_chart),
+                            label: Text(l10n.t('sheetEditor')),
+                          ),
+                          NavigationRailDestination(
+                            icon: const Icon(Icons.history_outlined),
+                            selectedIcon: const Icon(Icons.history_rounded),
+                            label: Text(l10n.t('historyTitle')),
+                          ),
+                          NavigationRailDestination(
+                            icon: const Icon(Icons.upload_outlined),
+                            selectedIcon: const Icon(Icons.upload),
+                            label: Text(l10n.t('export')),
+                          ),
+                        ],
+                      ),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        child: Padding(
+                          key: ValueKey<int>(_navIndex),
+                          padding: const EdgeInsets.all(12),
+                          child: pages[_navIndex],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_pageLoading)
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: const Color(0x88000000),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(l10n.t('processing')),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (state.processingKey != null)
+                  Positioned.fill(
+                    child: _processingOverlay(
+                      context,
+                      l10n.t(state.processingKey!),
+                    ),
+                  ),
+              ],
+            ),
+            bottomNavigationBar: wide
+                ? null
+                : NavigationBar(
+                    selectedIndex: selectedPrimary < 0 ? 0 : selectedPrimary,
+                    onDestinationSelected: (value) =>
+                        setState(() => _navIndex = _primaryPageIndexes[value]),
+                    destinations: [
+                      NavigationDestination(
+                        icon: const Icon(Icons.dashboard_outlined),
+                        label: l10n.t('overview'),
+                      ),
+                      NavigationDestination(
+                        icon: const Icon(Icons.table_chart_outlined),
+                        label: l10n.t('sheetEditor'),
+                      ),
+                      NavigationDestination(
+                        icon: const Icon(Icons.history_outlined),
+                        label: l10n.t('historyTitle'),
+                      ),
+                      NavigationDestination(
+                        icon: const Icon(Icons.upload_outlined),
+                        label: l10n.t('export'),
+                      ),
+                    ],
+                  ),
+          );
+        },
+      ),
     );
   }
 
@@ -950,48 +1445,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     MeTeachState state,
     AppLocalizations l10n,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+    final brand = Theme.of(context).extension<BrandColors>()!;
     final summary = state.workbookSummary;
     final workbook = state.workbook;
     final current = state.currentSheet;
     return ListView(
       children: [
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _statCard(
-              context,
-              l10n.t('totalSheets'),
-              '${summary['sheets']}',
-              const Color(0xFFE3F2FD),
-            ),
-            _statCard(
-              context,
-              l10n.t('totalLearners'),
-              '${summary['learners']}',
-              const Color(0xFFE8F5E9),
-            ),
-            _statCard(
-              context,
-              l10n.t('errors'),
-              '${summary['errors']}',
-              const Color(0xFFFFEBEE),
-            ),
-            _statCard(
-              context,
-              l10n.t('warnings'),
-              '${summary['warnings']}',
-              const Color(0xFFFFF8E1),
-            ),
-            _statCard(
-              context,
-              l10n.t('exportReady'),
-              summary['errors'] == 0 ? l10n.t('safe') : l10n.t('risky'),
-              summary['errors'] == 0
-                  ? const Color(0xFFE8F5E9)
-                  : const Color(0xFFFFEBEE),
-            ),
-          ],
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _statCard(
+                context,
+                l10n.t('totalSheets'),
+                '${summary['sheets']}',
+                scheme.primary.withValues(alpha: 0.08),
+              ),
+              _statCard(
+                context,
+                l10n.t('totalLearners'),
+                '${summary['learners']}',
+                scheme.tertiary.withValues(alpha: 0.15),
+              ),
+              _statCard(
+                context,
+                l10n.t('errors'),
+                '${summary['errors']}',
+                scheme.secondary.withValues(alpha: 0.14),
+              ),
+              _statCard(
+                context,
+                l10n.t('warnings'),
+                '${summary['warnings']}',
+                brand.gold.withValues(alpha: 0.18),
+              ),
+              _statCard(
+                context,
+                l10n.t('exportReady'),
+                summary['errors'] == 0 ? l10n.t('safe') : l10n.t('risky'),
+                summary['errors'] == 0
+                    ? scheme.tertiary.withValues(alpha: 0.15)
+                    : scheme.secondary.withValues(alpha: 0.14),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         Card(
@@ -999,7 +1497,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             title: Text(workbook?.fileName ?? ''),
             subtitle: Text('${l10n.t('editedCells')}: ${state.totalEdits}'),
             trailing: FilledButton.icon(
-              onPressed: state.runValidation,
+              onPressed: () {
+                state.runValidation();
+                showValidationPopup(
+                  context,
+                  l10n,
+                  state.workbookSummary,
+                  () => setState(() => _navIndex = 3),
+                );
+              },
               icon: const Icon(Icons.rule_rounded),
               label: Text(l10n.t('runValidation')),
             ),
@@ -1036,29 +1542,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(
-                  avatar: const Icon(Icons.table_chart_rounded, size: 16),
-                  label: Text(l10n.t('sheetEditor')),
-                ),
-                Chip(
-                  avatar: const Icon(Icons.search_rounded, size: 16),
-                  label: Text(l10n.t('globalSearch')),
-                ),
-                Chip(
-                  avatar: const Icon(Icons.tune_rounded, size: 16),
-                  label: Text(l10n.t('advancedToolsHint')),
-                ),
-              ],
-            ),
-          ),
-        ),
+        const SizedBox(height: 4),
       ],
     );
   }
@@ -1068,6 +1552,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     MeTeachState state,
     AppLocalizations l10n,
   ) {
+    final scheme = Theme.of(context).colorScheme;
+    final brand = Theme.of(context).extension<BrandColors>()!;
     final workbook = state.workbook;
     final sheet = state.currentSheet;
     if (workbook == null || sheet == null) {
@@ -1076,12 +1562,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     return Column(
       children: [
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            DropdownButton<int>(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth > 760;
+            final sheetDropdown = DropdownButton<int>(
               value: state.selectedSheet,
               onChanged: (v) {
                 if (v != null) {
@@ -1095,19 +1579,49 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   child: Text(workbook.sheets[index].name),
                 ),
               ),
-            ),
-            SizedBox(
-              width: 260,
-              child: TextField(
-                onChanged: state.setQuery,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  labelText: l10n.t('search'),
-                  border: const OutlineInputBorder(),
-                ),
+            );
+            final searchField = TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                if (_isGlobalSearch) {
+                  setState(() => _globalSearch = value);
+                } else {
+                  _sheetSearch = value;
+                  state.setQuery(value);
+                }
+              },
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded),
+                labelText: l10n.t('search'),
+                border: const OutlineInputBorder(),
+                isDense: true,
               ),
-            ),
-            DropdownButton<LearnerFilter>(
+            );
+            final scopeToggle = SegmentedButton<bool>(
+              segments: [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text(l10n.t('sheetSearch')),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text(l10n.t('globalSearch')),
+                ),
+              ],
+              selected: {_isGlobalSearch},
+              onSelectionChanged: (values) {
+                setState(() {
+                  _isGlobalSearch = values.first;
+                  _searchController.text = _isGlobalSearch
+                      ? _globalSearch
+                      : _sheetSearch;
+                  if (!_isGlobalSearch) {
+                    state.setQuery(_sheetSearch);
+                  }
+                });
+              },
+            );
+            final filterDropdown = DropdownButton<LearnerFilter>(
               value: state.activeFilter,
               onChanged: (v) {
                 if (v != null) {
@@ -1126,15 +1640,78 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 _filterItem(LearnerFilter.editedOnly, l10n.t('editedOnly')),
                 _filterItem(LearnerFilter.problemsOnly, l10n.t('problemsOnly')),
               ],
-            ),
-          ],
+            );
+
+            if (isWide) {
+              return Row(
+                children: [
+                  sheetDropdown,
+                  const SizedBox(width: 12),
+                  Expanded(child: searchField),
+                  const SizedBox(width: 12),
+                  scopeToggle,
+                  const SizedBox(width: 12),
+                  filterDropdown,
+                  const SizedBox(width: 12),
+                  IconButton(
+                    tooltip: l10n.t('bulkActions'),
+                    onPressed: () => showBulkActionsPopup(context, state, l10n),
+                    icon: Icon(Icons.bolt_rounded, color: scheme.secondary),
+                  ),
+                ],
+              );
+            }
+
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                sheetDropdown,
+                SizedBox(width: constraints.maxWidth, child: searchField),
+                scopeToggle,
+                filterDropdown,
+                IconButton(
+                  tooltip: l10n.t('bulkActions'),
+                  onPressed: () => showBulkActionsPopup(context, state, l10n),
+                  icon: Icon(Icons.bolt_rounded, color: scheme.secondary),
+                ),
+              ],
+            );
+          },
         ),
+        if (_isGlobalSearch && _globalSearch.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Text(
+                  l10n.format('searchResults', {
+                    'count': '${state.globalSearch(_globalSearch).length}',
+                  }),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      _showSearchResultsSheet(context, state, l10n),
+                  icon: const Icon(Icons.open_in_full_rounded),
+                  label: Text(l10n.t('viewResults')),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 8),
         Row(
           children: [
-            _legendDot(const Color(0xFFFFF6E5), l10n.t('needsAttention')),
+            _legendDot(
+              brand.gold.withValues(alpha: 0.22),
+              l10n.t('needsAttention'),
+            ),
             const SizedBox(width: 10),
-            _legendDot(const Color(0xFFE8F5E9), l10n.t('ready')),
+            _legendDot(
+              scheme.tertiary.withValues(alpha: 0.15),
+              l10n.t('ready'),
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -1154,8 +1731,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   );
                   return Card(
                     color: hasIssue
-                        ? const Color(0xFFFFF6E5)
-                        : const Color(0xFFE8F5E9),
+                        ? brand.gold.withValues(alpha: 0.22)
+                        : scheme.tertiary.withValues(alpha: 0.15),
                     child: Padding(
                       padding: const EdgeInsets.all(8),
                       child: Row(
@@ -1242,9 +1819,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           IconButton(
                             onPressed: () =>
                                 state.resetRow(row.sheetName, row.rowIndex),
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.refresh_rounded,
-                              color: Color(0xFFF57C00),
+                              color: scheme.secondary,
                             ),
                             tooltip: l10n.t('resetRow'),
                           ),
@@ -1257,63 +1834,376 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
       ],
     );
   }
 
-  Widget _globalSearchPage(
+  Future<void> _showSearchResultsSheet(
     BuildContext context,
     MeTeachState state,
     AppLocalizations l10n,
-  ) {
+  ) async {
     final results = state.globalSearch(_globalSearch);
-    return Column(
-      children: [
-        TextField(
-          onChanged: (v) => setState(() => _globalSearch = v),
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.search_rounded),
-            border: const OutlineInputBorder(),
-            labelText: l10n.t('search'),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: results.isEmpty
-              ? Center(child: Text(l10n.t('noResults')))
-              : ListView.builder(
-                  itemCount: results.length,
-                  itemBuilder: (context, index) {
-                    final result = results[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(
-                          '${result.learner.surname} ${result.learner.name}',
-                        ),
-                        subtitle: Text(
-                          '${result.sheetName} | ${l10n.t('row')} ${result.rowIndex + 1}',
-                        ),
-                        trailing: FilledButton(
-                          onPressed: () {
-                            state.setSelectedSheet(result.sheetIndex);
-                            setState(() {
-                              _navIndex = 1;
-                              state.setQuery(
-                                result.learner.matricule.isNotEmpty
-                                    ? result.learner.matricule
-                                    : result.learner.name,
-                              );
-                            });
-                          },
-                          child: Text(l10n.t('jump')),
-                        ),
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final scheme = Theme.of(sheetContext).colorScheme;
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * 0.75,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search_rounded, color: scheme.secondary),
+                      const SizedBox(width: 8),
+                      Text(
+                        l10n.t('globalSearch'),
+                        style: Theme.of(sheetContext).textTheme.titleLarge,
                       ),
-                    );
-                  },
+                      const Spacer(),
+                      Text(
+                        l10n.format('searchResults', {
+                          'count': '${results.length}',
+                        }),
+                      ),
+                    ],
+                  ),
                 ),
-        ),
-      ],
+                Expanded(
+                  child: results.isEmpty
+                      ? Center(child: Text(l10n.t('noResults')))
+                      : ListView.builder(
+                          itemCount: results.length,
+                          itemBuilder: (context, index) {
+                            final result = results[index];
+                            return ListTile(
+                              title: Text(
+                                '${result.learner.surname} ${result.learner.name}',
+                              ),
+                              subtitle: Text(
+                                '${result.sheetName} | ${l10n.t('row')} ${result.rowIndex + 1}',
+                              ),
+                              trailing: FilledButton(
+                                onPressed: () {
+                                  state.setSelectedSheet(result.sheetIndex);
+                                  setState(() {
+                                    _navIndex = 1;
+                                    state.setQuery(
+                                      result.learner.matricule.isNotEmpty
+                                          ? result.learner.matricule
+                                          : result.learner.name,
+                                    );
+                                  });
+                                  Navigator.pop(sheetContext);
+                                },
+                                child: Text(l10n.t('jump')),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  Future<void> showBulkActionsPopup(
+    BuildContext context,
+    MeTeachState state,
+    AppLocalizations l10n,
+  ) async {
+    final fillController = TextEditingController(text: '10');
+    bool localBusy = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.t('bulkActions'),
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(l10n.t('bulkHowStep1')),
+                      Text(l10n.t('bulkHowStep2')),
+                      Text(l10n.t('bulkHowStep3')),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButton<ScoreSource>(
+                              value: _selectedScoreSource,
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setModalState(
+                                    () => _selectedScoreSource = value,
+                                  );
+                                }
+                              },
+                              items: [
+                                DropdownMenuItem(
+                                  value: ScoreSource.exam,
+                                  child: Text(l10n.t('useExamScore')),
+                                ),
+                                DropdownMenuItem(
+                                  value: ScoreSource.test,
+                                  child: Text(l10n.t('useTestScore')),
+                                ),
+                                DropdownMenuItem(
+                                  value: ScoreSource.continuous,
+                                  child: Text(l10n.t('useContinuousScore')),
+                                ),
+                                DropdownMenuItem(
+                                  value: ScoreSource.average,
+                                  child: Text(l10n.t('useAverageScore')),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: localBusy
+                                ? null
+                                : () async {
+                                    final preview = state
+                                        .previewRemarkRulesAffected(
+                                          scope: ApplyScope.currentSheet,
+                                          scoreSource: _selectedScoreSource,
+                                        );
+                                    final confirm = await _confirmDialog(
+                                      context,
+                                      l10n.t('confirmAction'),
+                                      '${l10n.t('confirmApplyRules')}\n${l10n.t('affectedLearners')}: $preview',
+                                      l10n,
+                                    );
+                                    if (!confirm) return;
+                                    setModalState(() => localBusy = true);
+                                    final affected = state.applyRemarkRules(
+                                      scope: ApplyScope.currentSheet,
+                                      scoreSource: _selectedScoreSource,
+                                    );
+                                    if (context.mounted) {
+                                      setModalState(() => localBusy = false);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '${l10n.t('done')}: ${l10n.t('affectedLearners')} $affected',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            label: Text(l10n.t('applyRulesNow')),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _bulkRemarkController,
+                              decoration: InputDecoration(
+                                labelText: l10n.t('bulkRemarkLabel'),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: () {
+                              final remark = _bulkRemarkController.text.trim();
+                              if (remark.isEmpty) return;
+                              state.applyBulkRemark(
+                                remark: remark,
+                                onlyFiltered: false,
+                                scope: ApplyScope.currentSheet,
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(l10n.t('bulkRemarkDone')),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.edit_note_rounded),
+                            label: Text(l10n.t('applyRemark')),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(l10n.t('quickFillOptional')),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 120,
+                            child: TextField(
+                              controller: fillController,
+                              decoration: InputDecoration(
+                                labelText: l10n.t('emptyScore'),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed: () => state.fillEmptyScores(
+                              double.tryParse(fillController.text.trim()) ?? 0,
+                            ),
+                            child: Text(l10n.t('fillEmptyScores')),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: Text(l10n.t('advancedScoreTools')),
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton(
+                                onPressed: () async {
+                                  var clearContinuous = false;
+                                  var clearTest = false;
+                                  var clearExam = false;
+                                  var clearRemark = false;
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => StatefulBuilder(
+                                      builder: (context, setDialogState) {
+                                        return AlertDialog(
+                                          title: Text(
+                                            l10n.t('confirmClearCells'),
+                                          ),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              CheckboxListTile(
+                                                value: clearContinuous,
+                                                title: Text(
+                                                  l10n.t('clearContinuous'),
+                                                ),
+                                                onChanged: (v) =>
+                                                    setDialogState(
+                                                      () => clearContinuous =
+                                                          v ?? false,
+                                                    ),
+                                              ),
+                                              CheckboxListTile(
+                                                value: clearTest,
+                                                title: Text(
+                                                  l10n.t('clearTest'),
+                                                ),
+                                                onChanged: (v) =>
+                                                    setDialogState(
+                                                      () => clearTest =
+                                                          v ?? false,
+                                                    ),
+                                              ),
+                                              CheckboxListTile(
+                                                value: clearExam,
+                                                title: Text(
+                                                  l10n.t('clearExam'),
+                                                ),
+                                                onChanged: (v) =>
+                                                    setDialogState(
+                                                      () => clearExam =
+                                                          v ?? false,
+                                                    ),
+                                              ),
+                                              CheckboxListTile(
+                                                value: clearRemark,
+                                                title: Text(
+                                                  l10n.t('clearRemark'),
+                                                ),
+                                                onChanged: (v) =>
+                                                    setDialogState(
+                                                      () => clearRemark =
+                                                          v ?? false,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: Text(l10n.t('cancel')),
+                                            ),
+                                            FilledButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: Text(l10n.t('confirm')),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  );
+                                  if (confirmed != true) return;
+                                  if (!clearContinuous &&
+                                      !clearTest &&
+                                      !clearExam &&
+                                      !clearRemark) {
+                                    return;
+                                  }
+                                  state
+                                      .clearSelectedEditableCellsForCurrentSheet(
+                                        clearContinuous: clearContinuous,
+                                        clearTest: clearTest,
+                                        clearExam: clearExam,
+                                        clearRemark: clearRemark,
+                                      );
+                                },
+                                child: Text(l10n.t('clearEditableCells')),
+                              ),
+                              OutlinedButton(
+                                onPressed: () =>
+                                    state.setScoreValueForFiltered(10),
+                                child: Text(l10n.t('setFilteredTo10')),
+                              ),
+                              OutlinedButton(
+                                onPressed: () =>
+                                    state.randomizeScoresForFiltered(8, 15),
+                                child: Text(l10n.t('randomize8to15')),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    fillController.dispose();
   }
 
   Widget _bulkPage(
@@ -1321,9 +2211,28 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     MeTeachState state,
     AppLocalizations l10n,
   ) {
+    final scheme = Theme.of(context).colorScheme;
     final fillController = TextEditingController(text: '10');
     return ListView(
       children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.t('bulkHowTitle'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(l10n.t('bulkHowStep1')),
+                Text(l10n.t('bulkHowStep2')),
+                Text(l10n.t('bulkHowStep3')),
+              ],
+            ),
+          ),
+        ),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -1473,6 +2382,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   l10n.t('chooseScopeApply'),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
+                const SizedBox(height: 4),
+                Text(l10n.t('chooseScopeHelp')),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -1505,34 +2416,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         ),
                       ],
                     ),
-                    DropdownButton<ApplyScope>(
-                      value: _selectedScope,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedScope = value);
-                        }
-                      },
-                      items: [
-                        DropdownMenuItem(
-                          value: ApplyScope.allSheets,
-                          child: Text(l10n.t('applyAllSheets')),
-                        ),
-                        DropdownMenuItem(
-                          value: ApplyScope.currentSheet,
-                          child: Text(l10n.t('applyCurrentSheet')),
-                        ),
-                        DropdownMenuItem(
-                          value: ApplyScope.filteredRows,
-                          child: Text(l10n.t('applyFilteredRows')),
-                        ),
-                      ],
-                    ),
                     FilledButton.icon(
                       onPressed: _bulkProcessing
                           ? null
                           : () async {
                               final preview = state.previewRemarkRulesAffected(
-                                scope: _selectedScope,
+                                scope: ApplyScope.currentSheet,
                                 scoreSource: _selectedScoreSource,
                               );
                               final confirm = await _confirmDialog(
@@ -1550,7 +2439,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                 const Duration(milliseconds: 250),
                               );
                               final affected = state.applyRemarkRules(
-                                scope: _selectedScope,
+                                scope: ApplyScope.currentSheet,
                                 scoreSource: _selectedScoreSource,
                               );
                               if (!context.mounted) {
@@ -1586,15 +2475,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 260,
+                      child: TextField(
+                        controller: _bulkRemarkController,
+                        decoration: InputDecoration(
+                          labelText: l10n.t('bulkRemarkLabel'),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () {
+                        final remark = _bulkRemarkController.text.trim();
+                        if (remark.isEmpty) return;
+                        state.applyBulkRemark(
+                          remark: remark,
+                          onlyFiltered: false,
+                          scope: ApplyScope.currentSheet,
+                        );
+                        setState(
+                          () => _bulkFeedback = l10n.t('bulkRemarkDone'),
+                        );
+                      },
+                      icon: const Icon(Icons.edit_note_rounded),
+                      label: Text(l10n.t('applyRemark')),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 if (_bulkFeedback.isNotEmpty)
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
+                      color: scheme.tertiary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFA5D6A7)),
+                      border: Border.all(
+                        color: scheme.tertiary.withValues(alpha: 0.4),
+                      ),
                     ),
                     child: Text(_bulkFeedback),
                   ),
@@ -1752,7 +2677,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         Row(
           children: [
             FilledButton.icon(
-              onPressed: state.runValidation,
+              onPressed: () {
+                state.runValidation();
+                showValidationPopup(
+                  context,
+                  l10n,
+                  state.workbookSummary,
+                  () => setState(() => _navIndex = 3),
+                );
+              },
               icon: const Icon(Icons.play_arrow_rounded),
               label: Text(l10n.t('runValidation')),
             ),
@@ -2138,18 +3071,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     String value,
     Color background,
   ) {
-    return SizedBox(
-      width: 160,
+    return Container(
+      margin: const EdgeInsets.only(right: 10),
       child: Card(
         color: background,
         child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label),
-              const SizedBox(height: 8),
-              Text(value, style: Theme.of(context).textTheme.headlineSmall),
+              Text(
+                value,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(width: 8),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),
