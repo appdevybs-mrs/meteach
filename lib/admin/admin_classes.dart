@@ -34,6 +34,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/study_variant.dart';
 
 class AdminClassesScreen extends StatefulWidget {
   final String? openClassId;
@@ -187,73 +188,19 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }
 
   String _normalizeVariantKey(String value) {
-    final v = value.trim().toLowerCase();
-
-    switch (v) {
-      case 'inclass':
-      case 'in-class':
-      case 'in class':
-      case 'in_class':
-        return 'inclass';
-
-      case 'online':
-      case 'flexible':
-        return 'flexible';
-
-      case 'live':
-      case 'private':
-        return 'private';
-
-      case 'recorded':
-        return 'recorded';
-
-      default:
-        return v;
-    }
+    return normalizeVariantKey(value);
   }
 
   String _normalizeStudyMode(String value) {
-    final v = value.trim().toLowerCase();
-
-    switch (v) {
-      case 'inclass':
-      case 'in-class':
-      case 'in class':
-      case 'in_class':
-        return 'inclass';
-
-      case 'online':
-        return 'online';
-
-      default:
-        return v;
-    }
+    return normalizeStudyMode(value);
   }
 
   String _variantLabel(String variantKey) {
-    switch (_normalizeVariantKey(variantKey)) {
-      case 'inclass':
-        return 'In-Class';
-      case 'flexible':
-        return 'Flexible';
-      case 'private':
-        return 'Private';
-      case 'recorded':
-        return 'Recorded';
-      default:
-        return variantKey;
-    }
+    return variantLabel(_normalizeVariantKey(variantKey));
   }
 
   String _studyModeLabel(String studyMode) {
-    switch (_normalizeStudyMode(studyMode)) {
-      case 'online':
-        return 'Online';
-      case 'inclass':
-        return 'In-Class';
-      default:
-        return studyMode;
-    }
+    return studyModeLabel(_normalizeStudyMode(studyMode));
   }
 
   String _classTypeLabel({
@@ -1060,7 +1007,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     border: Border.all(
                                       color: isEnrolled
                                           ? Colors.blue.withValues(alpha: 0.35)
-                                          : Colors.orange.withValues(alpha: 0.35),
+                                          : Colors.orange.withValues(
+                                              alpha: 0.35,
+                                            ),
                                     ),
                                   ),
                                   child: Text(
@@ -2001,12 +1950,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
 
     final courseId = (cls["course_id"] ?? "").toString().trim();
+    final rawVariant = (cls["variantKey"] ?? cls["variant"] ?? "").toString();
+    final syllabusVariant = syllabusVariantForScheduledAttendance(rawVariant);
 
     // 1) total sessions from syllabi/<course_id> (same as Teacher screen)
     int totalSessions = 0;
 
     if (courseId.isNotEmpty) {
-      final sSnap = await _syllabiRef.child(courseId).get();
+      var sSnap = await _syllabiRef
+          .child(courseId)
+          .child(syllabusVariant)
+          .get();
+      if ((!sSnap.exists || sSnap.value is! Map) &&
+          syllabusVariant == 'private') {
+        sSnap = await _syllabiRef.child(courseId).child('inclass').get();
+      }
       if (sSnap.exists && sSnap.value is Map) {
         final s = Map<String, dynamic>.from(sSnap.value as Map);
         final units = s["units"];
@@ -2043,11 +2001,28 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         if (rec is! Map) continue;
         final r = Map<String, dynamic>.from(rec);
 
-        final taught = r["taught"];
-        if (taught is Map) {
-          final tm = Map<String, dynamic>.from(taught);
-          final sid = (tm["sessionId"] ?? "").toString().trim();
-          if (sid.isNotEmpty) covered.add(sid);
+        final taughtItems = r["taughtItems"];
+        bool countedFromNewFormat = false;
+
+        if (taughtItems is List) {
+          countedFromNewFormat = true;
+          for (final it in taughtItems) {
+            if (it is! Map) continue;
+            final item = Map<String, dynamic>.from(it);
+            final type = (item["type"] ?? "").toString().trim().toLowerCase();
+            if (type != "syllabus") continue;
+            final sid = (item["sessionId"] ?? "").toString().trim();
+            if (sid.isNotEmpty) covered.add(sid);
+          }
+        }
+
+        if (!countedFromNewFormat) {
+          final taught = r["taught"];
+          if (taught is Map) {
+            final tm = Map<String, dynamic>.from(taught);
+            final sid = (tm["sessionId"] ?? "").toString().trim();
+            if (sid.isNotEmpty) covered.add(sid);
+          }
         }
       }
     }

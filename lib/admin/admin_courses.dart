@@ -791,8 +791,8 @@ class _BulkPricingDialogState extends State<_BulkPricingDialog> {
     'inclass',
   ];
   static const Map<String, String> _labels = {
-    'online': 'Online',
-    'live': 'Live',
+    'online': 'Flexible',
+    'live': 'Private',
     'recorded': 'Recorded',
     'inclass': 'In-Class',
   };

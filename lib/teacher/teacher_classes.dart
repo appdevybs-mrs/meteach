@@ -24,6 +24,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/study_variant.dart';
 import '../shared/teacher_tour_guide.dart';
 import 'teacher_learner_profile_screen.dart';
 import 'take_attendance_screen.dart';
@@ -466,10 +467,22 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     if (_classProgCache.containsKey(classId)) return _classProgCache[classId]!;
 
     final courseId = _safeStr(classData['course_id']);
+    final rawVariant = _safeStr(classData['variantKey']).isNotEmpty
+        ? classData['variantKey']
+        : classData['variant'];
+    final classVariant = normalizeVariantKey(_safeStr(rawVariant));
+    final syllabusVariant = syllabusVariantForScheduledAttendance(classVariant);
     int totalLessons = 0;
 
     if (courseId.isNotEmpty) {
-      final sSnap = await _syllabiRef.child(courseId).child('inclass').get();
+      var sSnap = await _syllabiRef
+          .child(courseId)
+          .child(syllabusVariant)
+          .get();
+      if ((!sSnap.exists || sSnap.value is! Map) &&
+          syllabusVariant == 'private') {
+        sSnap = await _syllabiRef.child(courseId).child('inclass').get();
+      }
       if (sSnap.exists && sSnap.value is Map) {
         final s = Map<String, dynamic>.from(sSnap.value as Map);
         final units = s['units'];
@@ -1156,11 +1169,13 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
       hints: const [
         TeacherTourHint(
           title: 'Teaching workspace',
-          line: 'Switch between in-class and online sessions from the top tabs.',
+          line:
+              'Switch between in-class and online sessions from the top tabs.',
         ),
         TeacherTourHint(
           title: 'Class actions',
-          line: 'Open attendance, learner profile, progress, and gallery tools from each card.',
+          line:
+              'Open attendance, learner profile, progress, and gallery tools from each card.',
         ),
       ],
     );
@@ -1499,7 +1514,9 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                       decoration: BoxDecoration(
                         color: p.cardBg,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: p.border.withValues(alpha: 0.8)),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.8),
+                        ),
                       ),
                       child: Column(
                         children: [
@@ -2667,11 +2684,13 @@ class _OnlineTakeAttendanceScreenState
       hints: const [
         TeacherTourHint(
           title: 'Online attendance',
-          line: 'Mark each learner as present or absent for this online session.',
+          line:
+              'Mark each learner as present or absent for this online session.',
         ),
         TeacherTourHint(
           title: 'Save records',
-          line: 'Use the save button in the app bar to store attendance updates.',
+          line:
+              'Use the save button in the app bar to store attendance updates.',
         ),
       ],
     );
@@ -2774,7 +2793,9 @@ class _OnlineTakeAttendanceScreenState
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
                         color: p.soft.withValues(alpha: 0.18),
                       ),
                       child: Row(
@@ -2890,7 +2911,8 @@ class _OnlineAttendanceHistoryScreenState
       hints: const [
         TeacherTourHint(
           title: 'Attendance history',
-          line: 'Review previously saved present and absent marks for this session.',
+          line:
+              'Review previously saved present and absent marks for this session.',
         ),
       ],
     );
@@ -3186,7 +3208,8 @@ class _OnlineAttendanceStatsScreenState
       hints: const [
         TeacherTourHint(
           title: 'Online stats',
-          line: 'This page summarizes online attendance totals for the selected course.',
+          line:
+              'This page summarizes online attendance totals for the selected course.',
         ),
       ],
     );

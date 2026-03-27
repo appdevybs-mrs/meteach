@@ -168,7 +168,7 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       case 'flexible':
         return 'Flexible';
       case 'private':
-        return 'VIP';
+        return 'Private';
       case 'recorded':
         return 'Recorded';
       default:
@@ -203,8 +203,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
 
     if (variantKey == 'private') {
       final modeLabel = _studyModeLabelFromKey(studyMode);
-      if (modeLabel.isNotEmpty) return 'VIP • $modeLabel';
-      return 'VIP';
+      if (modeLabel.isNotEmpty) return 'Private • $modeLabel';
+      return 'Private';
     }
 
     return _variantLabelFromKey(variantKey);
@@ -215,9 +215,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
     final studyMode = _studyModeOf(cls);
 
     if (variantKey == 'private') {
-      if (studyMode == 'online') return 'vip_online';
-      if (studyMode == 'inclass') return 'vip_inclass';
-      return 'vip';
+      if (studyMode == 'online') return 'private_online';
+      if (studyMode == 'inclass') return 'private_inclass';
+      return 'private';
     }
 
     if (variantKey == 'inclass') return 'inclass';
@@ -233,12 +233,12 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
         return 'In-Class';
       case 'flexible':
         return 'Flexible';
-      case 'vip_online':
-        return 'VIP Online';
-      case 'vip_inclass':
-        return 'VIP In-Class';
-      case 'vip':
-        return 'VIP';
+      case 'private_online':
+        return 'Private Online';
+      case 'private_inclass':
+        return 'Private In-Class';
+      case 'private':
+        return 'Private';
       case 'recorded':
         return 'Recorded';
       case 'other':
@@ -536,8 +536,8 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                       ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        color: (isOpen ? Colors.green : Colors.red).withValues(alpha: 
-                          0.12,
+                        color: (isOpen ? Colors.green : Colors.red).withValues(
+                          alpha: 0.12,
                         ),
                         border: Border.all(
                           color: (isOpen ? Colors.green : Colors.red)
@@ -592,7 +592,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.grey.withValues(alpha: 0.25)),
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.25),
+                    ),
                     color: Colors.black.withValues(alpha: 0.03),
                   ),
                   child: Row(
@@ -947,7 +949,9 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
                   color: Colors.blue.withValues(alpha: 0.10),
-                  border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
+                  border: Border.all(
+                    color: Colors.blue.withValues(alpha: 0.25),
+                  ),
                 ),
                 child: Text(
                   "$activeFiltersCount filter${activeFiltersCount == 1 ? '' : 's'}",

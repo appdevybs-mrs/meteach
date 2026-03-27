@@ -2337,7 +2337,7 @@ class _CourseLite {
           out.add(
             EnrollDeliveryOption(
               key: 'live',
-              label: 'Live',
+              label: 'Private',
               shortLabelEn: 'One-to-one fixed schedule',
               shortLabelAr: 'حصص فردية بجدول ثابت',
               fee: cfg.fee,
@@ -2365,7 +2365,7 @@ class _CourseLite {
           out.add(
             EnrollDeliveryOption(
               key: 'online',
-              label: 'Online',
+              label: 'Flexible',
               shortLabelEn: 'Group live classes, flexible booking',
               shortLabelAr: 'حصص جماعية مباشرة بمرونة في الحجز',
               fee: cfg.fee,

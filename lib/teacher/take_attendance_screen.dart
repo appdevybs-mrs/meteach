@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/study_variant.dart';
 
 class TakeAttendanceScreen extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -75,6 +76,10 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   String get _courseCode => (widget.classData['course_code'] ?? '').toString();
   String get _courseTitle =>
       (widget.classData['course_title'] ?? '').toString();
+  String get _variantKey => normalizeVariantKey(
+    (widget.classData['variantKey'] ?? widget.classData['variant'] ?? '')
+        .toString(),
+  );
 
   @override
   void initState() {
@@ -262,11 +267,22 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       // load syllabus sessions for picker (+ include sessionNumber + snapshot fields)
       if (_courseId.isNotEmpty) {
-        final sSnap = await _db
+        final syllabusVariant = syllabusVariantForScheduledAttendance(
+          _variantKey,
+        );
+        var sSnap = await _db
             .child('syllabi')
             .child(_courseId)
-            .child('inclass')
+            .child(syllabusVariant)
             .get();
+        if ((!sSnap.exists || sSnap.value is! Map) &&
+            syllabusVariant == 'private') {
+          sSnap = await _db
+              .child('syllabi')
+              .child(_courseId)
+              .child('inclass')
+              .get();
+        }
         if (sSnap.exists && sSnap.value is Map) {
           final s = _safeMap(sSnap.value);
           final units = s['units'] as List?;
@@ -463,7 +479,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Future<void> _openSyllabusLessonPickerToAdd() async {
     if (_syllabiSessions.isEmpty) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text('No syllabus sessions found for this course'),
         ),
@@ -734,11 +751,15 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
   Future<void> _saveAttendance() async {
     if (_classId.isEmpty) {
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Missing class id')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Missing class id')),
+      );
       return;
     }
     if (_taughtItems.isEmpty) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Please add at least 1 taught lesson')),
       );
       return;
@@ -924,7 +945,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       await _db.update(updates);
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(content: Text(_isEdit ? 'Updated ✅' : 'Saved ✅')),
       );
       Navigator.pop(context);
@@ -1061,7 +1083,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                         children: [
                           CircleAvatar(
                             radius: 16,
-                            backgroundColor: actionOrange.withValues(alpha: 0.12),
+                            backgroundColor: actionOrange.withValues(
+                              alpha: 0.12,
+                            ),
                             child: const Icon(
                               Icons.edit_note,
                               color: actionOrange,
@@ -1085,7 +1109,9 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                                   Text(
                                     notes,
                                     style: TextStyle(
-                                      color: Colors.black.withValues(alpha: 0.65),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.65,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1410,7 +1436,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Take attendance',
-          line: 'Mark learners as present or absent, then save this attendance session.',
+          line:
+              'Mark learners as present or absent, then save this attendance session.',
         ),
       ],
     );

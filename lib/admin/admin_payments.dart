@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/study_variant.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
   const AdminPaymentsScreen({super.key});
@@ -31,7 +32,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(
         content: Text(humanizeUiMessage(msg)),
         duration: const Duration(milliseconds: 900),
@@ -112,9 +114,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final m = _normalizeStudyMode(studyMode);
 
     if (v == 'private') {
-      if (m == 'online') return 'VIP Online';
-      if (m == 'inclass') return 'VIP In-Class';
-      return 'VIP';
+      if (m == 'online') return 'Private Online';
+      if (m == 'inclass') return 'Private In-Class';
+      return 'Private';
     }
     if (v == 'inclass') return 'In-Class';
     if (v == 'flexible') return 'Flexible';
@@ -306,6 +308,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     final pricePerMonth = _asInt(course['price_per_month']);
     final pricePerLevel = _asInt(course['price_per_level']);
     final v = _normalizeVariantKey(variantKey);
+    final cfgFee = _variantFeeFromDeliveryConfigs(
+      deliveryConfigs: course['delivery_configs'],
+      cfgKey: deliveryConfigKeyForVariant(v),
+    );
+
+    if (cfgFee > 0) {
+      if (v == 'recorded')
+        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
+      if (v == 'flexible')
+        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
+      if (sessionsPaid > 0) return cfgFee * sessionsPaid;
+    }
 
     if (v == 'recorded') {
       if (pricePerMonth > 0 && durationMonths > 0) {
@@ -324,6 +338,24 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       return ((pricePerLevel * sessionsPaid) / totalSessions).round();
     }
     return 0;
+  }
+
+  static int _variantFeeFromDeliveryConfigs({
+    required dynamic deliveryConfigs,
+    required String cfgKey,
+  }) {
+    if (deliveryConfigs is! Map) return 0;
+    final root = deliveryConfigs.map((k, v) => MapEntry(k.toString(), v));
+    final cfg = root[cfgKey];
+    if (cfg is! Map) return 0;
+
+    final m = cfg.map((k, v) => MapEntry(k.toString(), v));
+    if (m['enabled'] != true) return 0;
+
+    final fee = m['fee'];
+    if (fee is num) return fee.round();
+    if (fee == null) return 0;
+    return double.tryParse(fee.toString().trim())?.round() ?? 0;
   }
 
   Future<void> _rebuildLearnerSummaryFromPayments({
@@ -827,8 +859,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           icon: Icons.check_circle_rounded,
                           text:
                               'Selected ($selectedCount): ${_fmtMoneyDa(selectedTotal)}',
-                          color: AdminPaymentsScreen.actionOrange.withValues(alpha: 
-                            0.18,
+                          color: AdminPaymentsScreen.actionOrange.withValues(
+                            alpha: 0.18,
                           ),
                           borderColor: AdminPaymentsScreen.actionOrange
                               .withValues(alpha: 0.35),
@@ -944,8 +976,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
                                   final baseRowBg = (i % 2 == 0)
                                       ? Colors.white
-                                      : AdminPaymentsScreen.appBg.withValues(alpha: 
-                                          0.7,
+                                      : AdminPaymentsScreen.appBg.withValues(
+                                          alpha: 0.7,
                                         );
                                   final rowBg = isSelected
                                       ? AdminPaymentsScreen.actionOrange
@@ -1008,8 +1040,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                                         color:
                                                             AdminPaymentsScreen
                                                                 .primaryBlue
-                                                                .withValues(alpha: 
-                                                                  0.25,
+                                                                .withValues(
+                                                                  alpha: 0.25,
                                                                 ),
                                                       ),
                                               ),
@@ -1120,8 +1152,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontWeight: isStrong ? FontWeight.w900 : FontWeight.w700,
-            color: AdminPaymentsScreen.primaryBlue.withValues(alpha: 
-              isStrong ? 1 : 0.85,
+            color: AdminPaymentsScreen.primaryBlue.withValues(
+              alpha: isStrong ? 1 : 0.85,
             ),
             fontSize: 12.5,
           ),
@@ -2532,8 +2564,10 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
-              separatorBuilder: (_, _) =>
-                  Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
+              separatorBuilder: (_, _) => Divider(
+                height: 1,
+                color: Colors.black.withValues(alpha: 0.06),
+              ),
               itemBuilder: (context, i) {
                 final r = _results[i];
                 final name =
@@ -2548,7 +2582,9 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
                   ),
                   subtitle: Text(
                     serial,
-                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.6),
+                    ),
                   ),
                   onTap: () async {
                     _c.text = name;

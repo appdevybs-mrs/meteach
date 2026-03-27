@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/study_variant.dart';
 
 class PaymentDialogShared {
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
@@ -83,7 +84,8 @@ class PaymentDialogShared {
   // ---------- Small helpers ----------
 
   static void _snack(BuildContext context, String msg) {
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(
         content: Text(humanizeUiMessage(msg)),
         duration: const Duration(milliseconds: 900),
@@ -114,8 +116,22 @@ class PaymentDialogShared {
     required int sessionsPaid,
     required int totalSessions,
     required int durationMonths,
+    required dynamic deliveryConfigs,
   }) {
     final v = _normalizeDeliveryKey(variantKey);
+    final cfgKey = deliveryConfigKeyForVariant(v);
+    final cfgFee = _variantFeeFromDeliveryConfigs(
+      deliveryConfigs: deliveryConfigs,
+      cfgKey: cfgKey,
+    );
+
+    if (cfgFee > 0) {
+      if (v == 'recorded')
+        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
+      if (v == 'flexible')
+        return cfgFee * (durationMonths > 0 ? durationMonths : 1);
+      if (sessionsPaid > 0) return cfgFee * sessionsPaid;
+    }
 
     if (v == 'recorded') {
       if (pricePerMonth > 0 && durationMonths > 0) {
@@ -134,6 +150,25 @@ class PaymentDialogShared {
       return ((pricePerLevel * sessionsPaid) / totalSessions).round();
     }
     return 0;
+  }
+
+  static int _variantFeeFromDeliveryConfigs({
+    required dynamic deliveryConfigs,
+    required String cfgKey,
+  }) {
+    if (deliveryConfigs is! Map) return 0;
+
+    final root = deliveryConfigs.map((k, v) => MapEntry(k.toString(), v));
+    final cfg = root[cfgKey];
+    if (cfg is! Map) return 0;
+
+    final m = cfg.map((k, v) => MapEntry(k.toString(), v));
+    if (m['enabled'] != true) return 0;
+
+    final fee = m['fee'];
+    if (fee is num) return fee.round();
+    if (fee == null) return 0;
+    return double.tryParse(fee.toString().trim())?.round() ?? 0;
   }
 
   static bool _isTeacherRole(dynamic role) {
@@ -194,48 +229,11 @@ class PaymentDialogShared {
   }
 
   static String _normalizeDeliveryKey(String raw) {
-    final v = raw.trim().toLowerCase();
-
-    switch (v) {
-      case 'inclass':
-      case 'in_class':
-      case 'in-class':
-      case 'in class':
-        return 'inclass';
-
-      case 'flexible':
-      case 'online':
-        return 'flexible';
-
-      case 'private':
-      case 'vip':
-      case 'live':
-        return 'private';
-
-      case 'recorded':
-        return 'recorded';
-
-      default:
-        return v;
-    }
+    return normalizeVariantKey(raw, fallback: '');
   }
 
   static String _normalizeStudyMode(String raw) {
-    final v = raw.trim().toLowerCase();
-
-    switch (v) {
-      case 'inclass':
-      case 'in_class':
-      case 'in-class':
-      case 'in class':
-        return 'inclass';
-
-      case 'online':
-        return 'online';
-
-      default:
-        return v;
-    }
+    return normalizeStudyMode(raw);
   }
 
   static String _deliveryLabelFromKey(String key) {
@@ -245,7 +243,7 @@ class PaymentDialogShared {
       case 'flexible':
         return 'Flexible';
       case 'private':
-        return 'VIP';
+        return 'Private';
       case 'recorded':
         return 'Recorded';
       default:
@@ -272,9 +270,9 @@ class PaymentDialogShared {
     final sm = _normalizeStudyMode(studyMode);
 
     if (dk == 'private') {
-      if (sm == 'online') return 'VIP Online';
-      if (sm == 'inclass') return 'VIP In-Class';
-      return 'VIP';
+      if (sm == 'online') return 'Private Online';
+      if (sm == 'inclass') return 'Private In-Class';
+      return 'Private';
     }
 
     if (dk == 'inclass') return 'In-Class';
@@ -1235,6 +1233,7 @@ class PaymentDialogShared {
         sessionsPaid: sessionsPaid,
         totalSessions: totalSessions,
         durationMonths: durationMonths,
+        deliveryConfigs: pickedCourse['delivery_configs'],
       ).toString();
 
       if (!_variantUsesTeacher(variantKey)) {
@@ -1603,6 +1602,7 @@ class PaymentDialogShared {
                             sessionsPaid: sessionsPaid,
                             totalSessions: totalSessions,
                             durationMonths: durationMonths,
+                            deliveryConfigs: pickedCourse['delivery_configs'],
                           ).toString();
 
                           if (usesReminder) {
@@ -1673,6 +1673,7 @@ class PaymentDialogShared {
                             sessionsPaid: sessionsPaid,
                             totalSessions: totalSessions,
                             durationMonths: durationMonths,
+                            deliveryConfigs: pickedCourse['delivery_configs'],
                           ).toString();
 
                           setD(() {});
@@ -2194,8 +2195,10 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _results.length,
-              separatorBuilder: (_, _) =>
-                  Divider(height: 1, color: Colors.black.withValues(alpha: 0.06)),
+              separatorBuilder: (_, _) => Divider(
+                height: 1,
+                color: Colors.black.withValues(alpha: 0.06),
+              ),
               itemBuilder: (context, i) {
                 final r = _results[i];
                 final name =
@@ -2211,7 +2214,9 @@ class _LearnerAutocompleteState extends State<_LearnerAutocomplete> {
                   ),
                   subtitle: Text(
                     serial,
-                    style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.6),
+                    ),
                   ),
                   onTap: () async {
                     _c.text = name;

@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/study_variant.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherClassProgressScreen extends StatefulWidget {
@@ -84,6 +85,10 @@ class _TeacherClassProgressScreenState
   String get _courseCode => (widget.classData['course_code'] ?? '').toString();
 
   String get _courseId => (widget.classData['course_id'] ?? '').toString();
+  String get _variantKey => normalizeVariantKey(
+    (widget.classData['variantKey'] ?? widget.classData['variant'] ?? '')
+        .toString(),
+  );
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
@@ -169,7 +174,12 @@ class _TeacherClassProgressScreenState
     final cid = _courseId.trim();
     if (cid.isEmpty) return;
 
-    final sSnap = await _syllabiRef.child(cid).child('inclass').get();
+    final syllabusVariant = syllabusVariantForScheduledAttendance(_variantKey);
+    var sSnap = await _syllabiRef.child(cid).child(syllabusVariant).get();
+    if ((!sSnap.exists || sSnap.value == null || sSnap.value is! Map) &&
+        syllabusVariant == 'private') {
+      sSnap = await _syllabiRef.child(cid).child('inclass').get();
+    }
     if (!sSnap.exists || sSnap.value == null || sSnap.value is! Map) return;
 
     final s = Map<String, dynamic>.from(sSnap.value as Map);
@@ -393,7 +403,8 @@ class _TeacherClassProgressScreenState
       hints: const [
         TeacherTourHint(
           title: 'Class progress',
-          line: 'Check learner progress, completion percentage, and pacing health here.',
+          line:
+              'Check learner progress, completion percentage, and pacing health here.',
         ),
       ],
     );
