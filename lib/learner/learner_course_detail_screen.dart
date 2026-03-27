@@ -889,7 +889,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       hints: const [
         LearnerTourHint(
           title: 'تبويبات الدورة',
-          line: 'انتقل بين تبويبات الدفع والحضور والتقدم لمتابعة جميع التفاصيل.',
+          line:
+              'انتقل بين تبويبات الدفع والحضور والتقدم لمتابعة جميع التفاصيل.',
         ),
         LearnerTourHint(
           title: 'الواجبات',
@@ -1365,16 +1366,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final date = (a['date'] ?? '').toString();
     final status = (a['status'] ?? '').toString().toLowerCase();
     final rate = (a['successRate'] ?? '').toString();
-
     final taughtSummary = (a['taughtSummary'] ?? '').toString().trim();
 
-    // old taught details still supported
     final taughtOld = (a['taught'] is Map)
         ? Map<String, dynamic>.from(a['taught'] as Map)
         : <String, dynamic>{};
     final unitTitle = (taughtOld['unitTitle'] ?? '').toString();
 
-    // Homework (in-class only)
     final hw = (a['homework'] is Map)
         ? Map<String, dynamic>.from(a['homework'] as Map)
         : <String, dynamic>{};
@@ -1382,6 +1380,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final hwDue = (hw['dueDate'] ?? '').toString().trim();
 
     final isPresent = status == 'present';
+    final presentBorder = UiK.primaryBlue.withValues(alpha: 0.28);
+    final absentBorder = Colors.red.withValues(alpha: 0.22);
 
     final tagBg = isOnline
         ? UiK.actionOrange.withValues(alpha: 0.10)
@@ -1398,139 +1398,162 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red)
-                  .withValues(alpha: 0.08),
-              child: Icon(
-                isPresent ? Icons.check_rounded : Icons.close_rounded,
-                color: isPresent ? UiK.primaryBlue : Colors.red,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // title row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          date.isEmpty ? 'Meeting' : date,
-                          style: UiK.titleText(size: 15),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(999),
-                          color: tagBg,
-                          border: Border.all(
-                            color: UiK.uiBorder.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isOnline
-                                  ? Icons.wifi_tethering_rounded
-                                  : Icons.groups_rounded,
-                              size: 14,
-                              color: tagFg,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              tagText,
-                              style: TextStyle(
-                                color: UiK.mainText,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: isPresent ? presentBorder : absentBorder),
+            gradient: isPresent
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      UiK.primaryBlue.withValues(alpha: 0.11),
+                      UiK.primaryBlue.withValues(alpha: 0.04),
                     ],
-                  ),
-
-                  const SizedBox(height: 6),
-                  Text(
-                    'Status: ${isPresent ? 'Present' : 'Absent'}'
-                    '${rate.isEmpty ? '' : ' • Success: $rate%'}'
-                    '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
-                    style: UiK.subtleText(),
-                  ),
-
-                  if (taughtSummary.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text('Taught: $taughtSummary', style: UiK.subtleText()),
-                  ],
-
-                  if (!isOnline && unitTitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Unit: $unitTitle',
-                      style: TextStyle(
-                        color: UiK.mainText.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w700,
-                      ),
+                  )
+                : null,
+            boxShadow: isPresent
+                ? [
+                    BoxShadow(
+                      color: UiK.primaryBlue.withValues(alpha: 0.08),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
                     ),
-                  ],
-
-                  // homework shown only for in-class
-                  if (!isOnline && (hwText.isNotEmpty || hwDue.isNotEmpty)) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: UiK.uiBorder.withValues(alpha: 0.85),
-                        ),
-                        color: UiK.primaryBlue.withValues(alpha: 0.04),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  ]
+                : const [],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  backgroundColor: (isPresent ? UiK.primaryBlue : Colors.red)
+                      .withValues(alpha: 0.10),
+                  child: Icon(
+                    isPresent ? Icons.check_rounded : Icons.close_rounded,
+                    color: isPresent ? UiK.primaryBlue : Colors.red,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          const Row(
-                            children: [
-                              Icon(
-                                Icons.assignment_rounded,
-                                size: 18,
-                                color: UiK.actionOrange,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Homework',
-                                style: TextStyle(
-                                  color: UiK.mainText,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ],
+                          Expanded(
+                            child: Text(
+                              date.isEmpty ? 'Meeting' : date,
+                              style: UiK.titleText(size: 15),
+                            ),
                           ),
-                          if (hwDue.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text('Due: $hwDue', style: UiK.subtleText()),
-                          ],
-                          if (hwText.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(hwText, style: UiK.subtleText()),
-                          ],
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: tagBg,
+                              border: Border.all(
+                                color: UiK.uiBorder.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isOnline
+                                      ? Icons.wifi_tethering_rounded
+                                      : Icons.groups_rounded,
+                                  size: 14,
+                                  color: tagFg,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  tagText,
+                                  style: const TextStyle(
+                                    color: UiK.mainText,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Status: ${isPresent ? 'Present' : 'Absent'}'
+                        '${rate.isEmpty ? '' : ' • Success: $rate%'}'
+                        '${(isOnline && sessionNo > 0) ? ' • Session: $sessionNo' : ''}',
+                        style: UiK.subtleText(),
+                      ),
+                      if (taughtSummary.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text('Taught: $taughtSummary', style: UiK.subtleText()),
+                      ],
+                      if (!isOnline && unitTitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Unit: $unitTitle',
+                          style: TextStyle(
+                            color: UiK.mainText.withValues(alpha: 0.6),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                      if (!isOnline &&
+                          (hwText.isNotEmpty || hwDue.isNotEmpty)) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: UiK.uiBorder.withValues(alpha: 0.85),
+                            ),
+                            color: UiK.primaryBlue.withValues(alpha: 0.04),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(
+                                    Icons.assignment_rounded,
+                                    size: 18,
+                                    color: UiK.actionOrange,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Homework',
+                                    style: TextStyle(
+                                      color: UiK.mainText,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (hwDue.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text('Due: $hwDue', style: UiK.subtleText()),
+                              ],
+                              if (hwText.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(hwText, style: UiK.subtleText()),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1812,6 +1835,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
     final passed = _coveredSessionIds.contains(sessionId);
     final statusText = passed ? 'Passed' : 'Coming';
+    final passedBorder = UiK.primaryBlue.withValues(alpha: 0.30);
+    final pendingBorder = UiK.uiBorder.withValues(alpha: 0.85);
 
     return InkWell(
       onTap: () => _openSessionDetailsSheet(s),
@@ -1821,8 +1846,27 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
-          color: Colors.white,
+          border: Border.all(color: passed ? passedBorder : pendingBorder),
+          color: passed ? null : Colors.white,
+          gradient: passed
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    UiK.primaryBlue.withValues(alpha: 0.11),
+                    UiK.primaryBlue.withValues(alpha: 0.04),
+                  ],
+                )
+              : null,
+          boxShadow: passed
+              ? [
+                  BoxShadow(
+                    color: UiK.primaryBlue.withValues(alpha: 0.09),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : const [],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1895,7 +1939,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             const SizedBox(width: 10),
             Icon(
               Icons.chevron_right_rounded,
-              color: UiK.primaryBlue.withValues(alpha: 0.65),
+              color: passed
+                  ? UiK.primaryBlue
+                  : UiK.primaryBlue.withValues(alpha: 0.65),
             ),
           ],
         ),
@@ -1966,7 +2012,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         children: [
                           Card(
                             elevation: 0,
-                            color: Colors.white,
+                            color: passed
+                                ? UiK.primaryBlue.withValues(alpha: 0.06)
+                                : Colors.white,
                             shape: UiK.cardShape(),
                             child: Padding(
                               padding: const EdgeInsets.all(14),

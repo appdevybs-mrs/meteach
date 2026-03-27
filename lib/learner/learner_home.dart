@@ -1895,6 +1895,8 @@ class _ProgressCard extends StatelessWidget {
     final variantAccent = _variantAccentColor(item.variantKey);
     final variantIcon = _variantIcon(item.variantKey);
     final variantBadge = _variantBadgeText(item.variantKey);
+    final hasProgress = item.completed > 0;
+    final completedAll = item.total > 0 && item.completed >= item.total;
     final textScale = MediaQuery.textScalerOf(context).scale(1);
 
     return Material(
@@ -1913,14 +1915,22 @@ class _ProgressCard extends StatelessWidget {
             return Container(
               padding: EdgeInsets.all(compact ? 10 : 12),
               decoration: BoxDecoration(
-                color: palette.cardBg,
+                color: completedAll
+                    ? palette.primary.withValues(alpha: 0.08)
+                    : (hasProgress
+                          ? palette.primary.withValues(alpha: 0.04)
+                          : palette.cardBg),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: palette.border.withValues(alpha: 0.85),
+                  color: hasProgress
+                      ? palette.primary.withValues(alpha: 0.28)
+                      : palette.border.withValues(alpha: 0.85),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: hasProgress
+                        ? palette.primary.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.04),
                     blurRadius: 12,
                     offset: const Offset(0, 7),
                   ),

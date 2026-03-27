@@ -60,6 +60,9 @@ class AppTourTexts {
 enum _TourStepAction { next, skip, done }
 
 class AppTourGuide {
+  // Temporary global kill switch for all guided tours.
+  static const bool enabled = false;
+
   static final Set<String> _shownThisSession = <String>{};
   static final Set<String> _runningScopes = <String>{};
   static int _pauseCount = 0;
@@ -85,6 +88,7 @@ class AppTourGuide {
     bool isQuickStart = false,
     bool requiresQuickStart = false,
   }) {
+    if (!enabled) return;
     if (hints.isEmpty) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -122,6 +126,7 @@ class AppTourGuide {
     bool isQuickStart = false,
     bool requiresQuickStart = false,
   }) async {
+    if (!enabled) return false;
     if (_runningScopes.contains(scopeKey)) return false;
 
     final sessionKey = _sessionKey(scopeKey, screenId);
@@ -150,6 +155,7 @@ class AppTourGuide {
     bool isQuickStart = false,
     bool requiresQuickStart = false,
   }) {
+    if (!enabled) return Future<void>.value();
     return maybeStart(
       context,
       scopeKey: scopeKey,
@@ -172,6 +178,7 @@ class AppTourGuide {
     bool requiresQuickStart = false,
     bool force = false,
   }) async {
+    if (!enabled) return;
     if (!context.mounted) return;
     if (hints.isEmpty) return;
     await _waitUntilUnpaused(context);
