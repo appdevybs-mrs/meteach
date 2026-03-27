@@ -1443,6 +1443,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
                           return DropdownButtonFormField<String>(
                             initialValue: pickedCourseKey,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'Course',
                             ),
@@ -1450,10 +1451,28 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 .map(
                                   (k) => DropdownMenuItem(
                                     value: k,
-                                    child: Text(labelByKey[k] ?? k),
+                                    child: Text(
+                                      labelByKey[k] ?? k,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 )
                                 .toList(),
+                            selectedItemBuilder: (context) {
+                              return keys
+                                  .map(
+                                    (k) => Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        labelByKey[k] ?? k,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList();
+                            },
                             onChanged: (v) async {
                               pickedCourseKey = v;
                               pickedCourseId = (v == null) ? null : idByKey[v];

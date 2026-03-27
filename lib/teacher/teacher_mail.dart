@@ -48,7 +48,10 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
   }
 
   String _normalizeRole(dynamic raw) {
@@ -1457,6 +1460,42 @@ class _ComposeSheetState extends State<_ComposeSheet> {
     return 'learner';
   }
 
+  Map<String, dynamic> _safeMap(dynamic value) {
+    if (value is Map) {
+      return value.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return <String, dynamic>{};
+  }
+
+  String _scheduleHint(Map<String, dynamic> classMap) {
+    final schedule = _safeMap(classMap['schedule']);
+    final firstDate = (schedule['first_session_date'] ?? '').toString().trim();
+
+    final sessionsRaw = schedule['sessions'];
+    if (sessionsRaw is List) {
+      for (final s in sessionsRaw) {
+        final m = _safeMap(s);
+        final day = (m['day'] ?? '').toString().trim();
+        final start = (m['start'] ?? '').toString().trim();
+        final end = (m['end'] ?? '').toString().trim();
+        final time = [
+          if (start.isNotEmpty) start,
+          if (end.isNotEmpty) end,
+        ].join('-');
+        final slot = [
+          if (day.isNotEmpty) day,
+          if (time.isNotEmpty) time,
+        ].join(' ');
+        if (slot.isNotEmpty) {
+          if (firstDate.isNotEmpty) return '$slot • $firstDate';
+          return slot;
+        }
+      }
+    }
+
+    return firstDate;
+  }
+
   Future<void> _loadEverything() async {
     try {
       final meSnap = await widget.db.ref('users/${widget.meUid}').get();
@@ -1537,10 +1576,25 @@ class _ComposeSheetState extends State<_ComposeSheet> {
               (c['course_title'] ?? c['courseTitle'] ?? c['name'] ?? classId)
                   .toString()
                   .trim();
+          final classCode = (c['course_code'] ?? c['courseCode'] ?? '')
+              .toString()
+              .trim();
+          final learnersMap = _safeMap(c['learners']);
+          final learnersCount = learnersMap.length;
+          final scheduleHint = _scheduleHint(c);
+
+          final detailParts = <String>[
+            if (classCode.isNotEmpty) classCode,
+            'ID: ${classId.toString()}',
+            if (learnersCount > 0) '$learnersCount learners',
+            if (scheduleHint.isNotEmpty) scheduleHint,
+          ];
+
           myClasses.add(
             _ClassRow(
               classId: classId.toString(),
               title: title.isEmpty ? classId.toString() : title,
+              subtitle: detailParts.join(' • '),
             ),
           );
 
@@ -1803,12 +1857,54 @@ class _ComposeSheetState extends State<_ComposeSheet> {
                 else
                   DropdownButtonFormField<_ClassRow>(
                     initialValue: _pickedClass,
+                    isExpanded: true,
                     items: _classes.map((c) {
                       return DropdownMenuItem<_ClassRow>(
                         value: c,
-                        child: Text('👥 ${c.title} (${c.classId})'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '👥 ${c.title}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              c.subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurface.withValues(alpha: 0.68),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     }).toList(),
+                    selectedItemBuilder: (context) {
+                      return _classes
+                          .map(
+                            (c) => Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                '👥 ${c.title} • ${c.subtitle}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList();
+                    },
                     onChanged: (v) => setState(() => _pickedClass = v),
                     decoration: InputDecoration(
                       labelText: 'Class',
@@ -1879,9 +1975,14 @@ class _RecipientRow {
 }
 
 class _ClassRow {
-  _ClassRow({required this.classId, required this.title});
+  _ClassRow({
+    required this.classId,
+    required this.title,
+    required this.subtitle,
+  });
   final String classId;
   final String title;
+  final String subtitle;
 }
 
 class _ComposeResult {
