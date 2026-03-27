@@ -64,7 +64,6 @@ class _AdminHomeState extends State<AdminHome> {
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuButtonKey = GlobalKey();
-  final GlobalKey _headerCardKey = GlobalKey();
   final GlobalKey _cardsGridKey = GlobalKey();
   final GlobalKey _paymentsCardKey = GlobalKey();
   final GlobalKey _learnersCardKey = GlobalKey();
@@ -130,22 +129,10 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Color get _screenBg =>
-      _isAdminMode ? AdminHome.appBg : const Color(0xFFFBFCFE);
-
-  Color get _headerTint =>
-      _isAdminMode ? const Color(0xFFEAF2FF) : const Color(0xFFFFF7F1);
-
-  Color get _roleAccent =>
-      _isAdminMode ? AdminHome.primaryBlue : AdminHome.actionOrange;
-
-  String get _roleLabel => _isAdminMode ? 'Admin' : 'Receptionist';
+      _isAdminMode ? const Color(0xFFF2F6FF) : const Color(0xFFFFF6EE);
 
   String get _screenTitle =>
       _isAdminMode ? 'Admin Dashboard' : 'Reception Desk';
-
-  String get _roleDescription => _isAdminMode
-      ? 'Full access to all management tools'
-      : 'Daily front desk tools only';
 
   @override
   Widget build(BuildContext context) {
@@ -165,12 +152,6 @@ class _AdminHomeState extends State<AdminHome> {
               'استخدم هذا الزر لفتح القائمة الجانبية وتبديل وضع العرض بين الإدارة والاستقبال.',
           targetKey: _menuButtonKey,
           highlightShape: AppTourHighlightShape.circle,
-        ),
-        AdminTourHint(
-          title: 'ملخص الدور الحالي',
-          line:
-              'توضح هذه البطاقة هوية الحساب والدور النشط ووصف الصلاحيات المتاحة ضمن هذا الوضع.',
-          targetKey: _headerCardKey,
         ),
         AdminTourHint(
           title: 'شبكة أدوات الإدارة',
@@ -388,6 +369,15 @@ class _AdminHomeState extends State<AdminHome> {
           context,
         ).push(MaterialPageRoute(builder: (_) => const AdminClassesScreen())),
       ),
+      KeyedSubtree(
+        key: _paymentsCardKey,
+        child: _PaymentsAttentionDashCard(
+          isReceptionistStyle: true,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+          ),
+        ),
+      ),
       _DashCard(
         title: 'Schedule',
         subtitle: 'Weekly timetable',
@@ -441,6 +431,12 @@ class _AdminHomeState extends State<AdminHome> {
         userEmail: user?.email ?? 'Admin',
         isAdminMode: _isAdminMode,
         loadingRole: _loadingRole,
+        onOpenMain: () {
+          Navigator.of(context).pop();
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminPublicPreview()));
+        },
         onSelectAdmin: () async {
           Navigator.of(context).pop();
           await _setRoleMode(true);
@@ -448,12 +444,6 @@ class _AdminHomeState extends State<AdminHome> {
         onSelectReceptionist: () async {
           Navigator.of(context).pop();
           await _setRoleMode(false);
-        },
-        onOpenPublicPreview: () {
-          Navigator.of(context).pop();
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminPublicPreview()));
         },
         onLogout: () async {
           Navigator.of(context).pop();
@@ -520,6 +510,19 @@ class _AdminHomeState extends State<AdminHome> {
       body: Stack(
         children: [
           Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: _isAdminMode
+                      ? const [Color(0xFFE7F0FF), Color(0xFFF2F6FF)]
+                      : const [Color(0xFFFFE8D7), Color(0xFFFFF6EE)],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
             child: IgnorePointer(
               child: Opacity(
                 opacity: _isAdminMode ? 0.035 : 0.028,
@@ -542,133 +545,6 @@ class _AdminHomeState extends State<AdminHome> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Compact header card
-                  Container(
-                    key: _headerCardKey,
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _isAdminMode
-                            ? AdminHome.uiBorder
-                            : const Color(0xFFFFE7D1),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: _isAdminMode ? 0.04 : 0.03,
-                          ),
-                          blurRadius: _isAdminMode ? 16 : 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const AdminPublicPreview(),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            width: 50,
-                            height: 50,
-                            padding: const EdgeInsets.all(9),
-                            decoration: BoxDecoration(
-                              color: _headerTint,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: _isAdminMode
-                                    ? AdminHome.uiBorder
-                                    : const Color(0xFFFFE7D1),
-                              ),
-                            ),
-                            child: Image.asset(
-                              'assets/images/ybs_logo.png',
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, _, _) => Icon(
-                                Icons.school_rounded,
-                                color: _roleAccent,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _isAdminMode
-                                    ? 'Welcome back'
-                                    : 'Welcome to reception',
-                                style: const TextStyle(
-                                  color: AdminHome.primaryBlue,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                user?.email ?? 'Admin',
-                                style: const TextStyle(
-                                  color: AdminHome.softText,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11.5,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _headerTint,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      _roleLabel,
-                                      style: TextStyle(
-                                        color: _roleAccent,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    _roleDescription,
-                                    style: const TextStyle(
-                                      color: AdminHome.softText,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
                   // Grid
                   Expanded(
                     child: KeyedSubtree(
@@ -709,18 +585,18 @@ class _AdminHomeDrawer extends StatelessWidget {
   final String userEmail;
   final bool isAdminMode;
   final bool loadingRole;
+  final VoidCallback onOpenMain;
   final VoidCallback onSelectAdmin;
   final VoidCallback onSelectReceptionist;
-  final VoidCallback onOpenPublicPreview;
   final VoidCallback onLogout;
 
   const _AdminHomeDrawer({
     required this.userEmail,
     required this.isAdminMode,
     required this.loadingRole,
+    required this.onOpenMain,
     required this.onSelectAdmin,
     required this.onSelectReceptionist,
-    required this.onOpenPublicPreview,
     required this.onLogout,
   });
 
@@ -813,11 +689,13 @@ class _AdminHomeDrawer extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 children: [
                   _DrawerTile(
-                    icon: Icons.public_rounded,
-                    title: 'Public Preview',
-                    subtitle: 'Open public website preview',
-                    color: AdminHome.accentSky,
-                    onTap: onOpenPublicPreview,
+                    icon: Icons.home_rounded,
+                    title: 'Main Screen',
+                    subtitle: 'Open public courses & prices',
+                    color: isAdminMode
+                        ? AdminHome.primaryBlue
+                        : AdminHome.actionOrange,
+                    onTap: onOpenMain,
                   ),
                   _DrawerTile(
                     icon: Icons.logout_rounded,
