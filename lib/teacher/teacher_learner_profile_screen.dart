@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherLearnerProfileScreen extends StatefulWidget {
@@ -923,7 +924,8 @@ class _TeacherLearnerProfileScreenState
       hints: const [
         TeacherTourHint(
           title: 'Learner profile',
-          line: 'Review learner details, class info, and contact data on this page.',
+          line:
+              'Review learner details, class info, and contact data on this page.',
         ),
       ],
     );
@@ -940,6 +942,16 @@ class _TeacherLearnerProfileScreenState
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_learner_profile',
+              screenTitle: title,
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.accent),

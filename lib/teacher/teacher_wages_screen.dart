@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherWagesScreen extends StatefulWidget {
@@ -153,7 +154,10 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final v = snap.value;
       if (v is! Map) {
         if (!context.mounted) return;
-        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Payment not found.')));
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('Payment not found.')),
+        );
         return;
       }
 
@@ -162,7 +166,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final teacherId = (m['teacherId'] ?? '').toString().trim();
       if (teacherId != myUid) {
         if (!context.mounted) return;
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           const SnackBar(
             content: Text('Not allowed: this is not your payment.'),
           ),
@@ -173,7 +178,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final adminPaid = TeacherWagesScreen.asBool(m['teacherPaid']);
       if (!adminPaid) {
         if (!context.mounted) return;
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           const SnackBar(
             content: Text('Admin has not marked this as PAID yet.'),
           ),
@@ -184,7 +190,10 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       final alreadyConfirmed = TeacherWagesScreen.asBool(m['teacherConfirmed']);
       if (alreadyConfirmed) {
         if (!context.mounted) return;
-        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Already confirmed ✅')));
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('Already confirmed ✅')),
+        );
         return;
       }
 
@@ -195,7 +204,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       });
 
       if (!context.mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(
           content: Text('Confirmed ✅'),
           duration: Duration(milliseconds: 900),
@@ -203,7 +213,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       );
     } catch (e) {
       if (!context.mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not confirm this wage item.'),
@@ -223,7 +234,8 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Wages dashboard',
-          line: 'Track paid and pending wage entries, then confirm when required.',
+          line:
+              'Track paid and pending wage entries, then confirm when required.',
         ),
       ],
     );
@@ -257,6 +269,18 @@ class _TeacherWagesScreenState extends State<TeacherWagesScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_wages',
+              screenTitle: 'My Wages',
+            ),
+          ),
+        ],
       ),
       body: StreamBuilder<DatabaseEvent>(
         stream: FirebaseDatabase.instance.ref('payments').onValue,

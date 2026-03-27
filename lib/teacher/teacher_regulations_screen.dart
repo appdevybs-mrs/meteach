@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/watermark_background.dart';
 
@@ -327,6 +328,16 @@ class _TeacherRegulationsScreenState extends State<TeacherRegulationsScreen> {
           ),
           actions: [
             IconButton(
+              tooltip: 'Instructions',
+              icon: Icon(Icons.help_outline_rounded, color: p.primary),
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.teacher,
+                screenId: 'teacher_regulations',
+                screenTitle: 'Regulations',
+              ),
+            ),
+            IconButton(
               tooltip: 'Refresh',
               icon: Icon(Icons.refresh_rounded, color: p.accent),
               onPressed: _loadRegulations,
@@ -519,7 +530,9 @@ class _SectionCardState extends State<_SectionCard> {
                     decoration: BoxDecoration(
                       color: p.accent.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: p.accent.withValues(alpha: 0.22)),
+                      border: Border.all(
+                        color: p.accent.withValues(alpha: 0.22),
+                      ),
                     ),
                     child: Text(
                       widget.updatedAtLabel,

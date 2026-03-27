@@ -24,6 +24,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
 import '../shared/teacher_tour_guide.dart';
 import 'teacher_learner_profile_screen.dart';
@@ -1220,6 +1221,16 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_classes',
+              screenTitle: 'My Teaching',
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.accent),

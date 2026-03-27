@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
@@ -395,7 +396,8 @@ class _TeacherSyllabusDetailsScreenState
       hints: const [
         TeacherTourHint(
           title: 'Syllabus details',
-          line: 'Use tabs to switch variants and inspect units, sessions, and resources.',
+          line:
+              'Use tabs to switch variants and inspect units, sessions, and resources.',
         ),
       ],
     );
@@ -427,6 +429,16 @@ class _TeacherSyllabusDetailsScreenState
             tabs: _variantKeys.map((e) => Tab(text: _variantLabel(e))).toList(),
           ),
           actions: [
+            IconButton(
+              tooltip: 'Instructions',
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.teacher,
+                screenId: 'teacher_syllabus_details',
+                screenTitle: c?.title ?? 'Syllabus',
+              ),
+              icon: const Icon(Icons.help_outline_rounded),
+            ),
             IconButton(
               tooltip: 'Refresh',
               icon: const Icon(Icons.refresh_rounded, color: UiK.primaryBlue),
@@ -592,7 +604,9 @@ class _SearchCard extends StatelessWidget {
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.9)),
+                borderSide: BorderSide(
+                  color: UiK.uiBorder.withValues(alpha: 0.9),
+                ),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -730,8 +744,12 @@ class _SummaryTableCard extends StatelessWidget {
         child: Table(
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           border: TableBorder(
-            horizontalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
-            verticalInside: BorderSide(color: UiK.uiBorder.withValues(alpha: 0.65)),
+            horizontalInside: BorderSide(
+              color: UiK.uiBorder.withValues(alpha: 0.65),
+            ),
+            verticalInside: BorderSide(
+              color: UiK.uiBorder.withValues(alpha: 0.65),
+            ),
           ),
           children: [
             TableRow(
@@ -1005,7 +1023,9 @@ class _CourseTopCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: UiK.primaryBlue.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.85)),
+                  border: Border.all(
+                    color: UiK.uiBorder.withValues(alpha: 0.85),
+                  ),
                 ),
                 child: const Icon(
                   Icons.menu_book_rounded,
@@ -1160,7 +1180,9 @@ class _UnitCardState extends State<_UnitCard> {
                   decoration: BoxDecoration(
                     color: UiK.primaryBlue.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
+                    border: Border.all(
+                      color: UiK.uiBorder.withValues(alpha: 0.70),
+                    ),
                   ),
                   child: Text(
                     'No sessions in this unit.',
@@ -1194,7 +1216,10 @@ class _SessionExpansionState extends State<_SessionExpansion> {
 
     if (cleanUrl.isEmpty || uri == null) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Invalid materials link.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid materials link.')),
+      );
       return;
     }
 
@@ -1329,7 +1354,9 @@ class _SessionExpansionState extends State<_SessionExpansion> {
                 decoration: BoxDecoration(
                   color: UiK.primaryBlue.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: UiK.uiBorder.withValues(alpha: 0.70)),
+                  border: Border.all(
+                    color: UiK.uiBorder.withValues(alpha: 0.70),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

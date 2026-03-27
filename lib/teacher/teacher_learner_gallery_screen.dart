@@ -14,6 +14,7 @@ import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
@@ -630,6 +631,18 @@ class _TeacherLearnerGalleryScreenState
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_learner_gallery',
+              screenTitle: '$displayLearnerName Gallery',
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: StreamBuilder<DatabaseEvent>(
@@ -1510,6 +1523,16 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.accent),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_gallery_viewer',
+              screenTitle: isVideo ? 'Video' : 'Photo',
+            ),
+          ),
           if (onDelete != null && itemId.isNotEmpty)
             IconButton(
               tooltip: 'Delete',

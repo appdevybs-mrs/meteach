@@ -20,6 +20,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../services/notification_service.dart';
 import '../shared/app_theme.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import 'attendance_history_screen.dart';
 import 'take_attendance_screen.dart';
@@ -290,7 +291,8 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
         ),
         TeacherTourHint(
           title: 'Calendar and settings',
-          line: 'Use calendar tabs and settings to manage reminders and visibility.',
+          line:
+              'Use calendar tabs and settings to manage reminders and visibility.',
         ),
       ],
     );
@@ -327,6 +329,16 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
             ],
           ),
           actions: [
+            IconButton(
+              tooltip: 'Instructions',
+              icon: Icon(Icons.help_outline_rounded, color: p.primary),
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.teacher,
+                screenId: 'teacher_schedule',
+                screenTitle: 'Teacher Schedule',
+              ),
+            ),
             IconButton(
               tooltip: 'Settings',
               icon: Icon(Icons.settings_rounded, color: p.primary),
@@ -675,7 +687,9 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
                 shape: BoxShape.circle,
               ),
               markersMaxCount: 3,
-              outsideTextStyle: TextStyle(color: p.text.withValues(alpha: 0.35)),
+              outsideTextStyle: TextStyle(
+                color: p.text.withValues(alpha: 0.35),
+              ),
             ),
             onDaySelected: (s, f) => setState(() {
               _selectedDay = s;

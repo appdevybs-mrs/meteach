@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherOnlineCircleScreen extends StatefulWidget {
@@ -284,7 +285,9 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
     if (_error == null && _ok == null) return const SizedBox.shrink();
 
     final isError = _error != null;
-    final bg = isError ? const Color(0xFFFFEBEE) : p.soft.withValues(alpha: 0.75);
+    final bg = isError
+        ? const Color(0xFFFFEBEE)
+        : p.soft.withValues(alpha: 0.75);
     final border = isError ? const Color(0xFFFFCDD2) : p.border;
     final textColor = isError ? const Color(0xFFC62828) : p.primary;
     final icon = isError
@@ -370,7 +373,8 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Online circle',
-          line: 'Create or update your online circle topic, link, and session details.',
+          line:
+              'Create or update your online circle topic, link, and session details.',
         ),
       ],
     );
@@ -407,6 +411,16 @@ class _TeacherOnlineCircleScreenState extends State<TeacherOnlineCircleScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_online_circle',
+              screenTitle: 'Online Circle',
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.accent),

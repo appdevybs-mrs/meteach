@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/push_client.dart';
 import '../shared/app_theme.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 /// Teacher side reminders:
@@ -650,7 +651,10 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
           const SizedBox(height: 10),
           SelectableText(
             normalizedUrl,
-            style: TextStyle(fontSize: 12, color: p.text.withValues(alpha: 0.55)),
+            style: TextStyle(
+              fontSize: 12,
+              color: p.text.withValues(alpha: 0.55),
+            ),
           ),
         ],
       ),
@@ -665,7 +669,8 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Reminders',
-          line: 'Open reminders, mark them as done, and follow linked resources.',
+          line:
+              'Open reminders, mark them as done, and follow linked resources.',
         ),
       ],
     );
@@ -712,6 +717,18 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_reminders',
+              screenTitle: 'My Reminders',
+            ),
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -892,14 +909,18 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                                         ),
                                                     decoration: BoxDecoration(
                                                       color: statusColor
-                                                          .withValues(alpha: 0.12),
+                                                          .withValues(
+                                                            alpha: 0.12,
+                                                          ),
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                             999,
                                                           ),
                                                       border: Border.all(
                                                         color: statusColor
-                                                            .withValues(alpha: 0.22),
+                                                            .withValues(
+                                                              alpha: 0.22,
+                                                            ),
                                                       ),
                                                     ),
                                                     child: Text(
@@ -952,8 +973,8 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
-                                                    color: p.text.withValues(alpha: 
-                                                      0.72,
+                                                    color: p.text.withValues(
+                                                      alpha: 0.72,
                                                     ),
                                                     fontWeight: FontWeight.w600,
                                                     height: 1.35,
@@ -987,7 +1008,9 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                             color:
                                                 r.description.trim().isNotEmpty
                                                 ? p.text
-                                                : p.text.withValues(alpha: 0.60),
+                                                : p.text.withValues(
+                                                    alpha: 0.60,
+                                                  ),
                                             fontWeight: FontWeight.w600,
                                             height: 1.4,
                                           ),
@@ -1030,7 +1053,9 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                             Text(
                                               'Status: ${r.status.toUpperCase()}',
                                               style: TextStyle(
-                                                color: p.text.withValues(alpha: 0.72),
+                                                color: p.text.withValues(
+                                                  alpha: 0.72,
+                                                ),
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 12,
                                               ),
@@ -1039,7 +1064,9 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                             Text(
                                               'Created: ${_fmtFullDate(r.createdAtMs)}',
                                               style: TextStyle(
-                                                color: p.text.withValues(alpha: 0.72),
+                                                color: p.text.withValues(
+                                                  alpha: 0.72,
+                                                ),
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 12,
                                               ),
@@ -1049,8 +1076,8 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                               Text(
                                                 'Read: ${_fmtFullDate(r.readAtMs)}',
                                                 style: TextStyle(
-                                                  color: p.text.withValues(alpha: 
-                                                    0.72,
+                                                  color: p.text.withValues(
+                                                    alpha: 0.72,
                                                   ),
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 12,
@@ -1062,8 +1089,8 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
                                               Text(
                                                 'Done: ${_fmtFullDate(r.doneAtMs)}',
                                                 style: TextStyle(
-                                                  color: p.text.withValues(alpha: 
-                                                    0.72,
+                                                  color: p.text.withValues(
+                                                    alpha: 0.72,
                                                   ),
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 12,

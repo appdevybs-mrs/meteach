@@ -13,6 +13,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherStoriesScreen extends StatefulWidget {
@@ -3155,7 +3156,21 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Stories')),
+      appBar: AppBar(
+        title: const Text('Stories'),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_stories',
+              screenTitle: 'Stories',
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
             ? null

@@ -14,6 +14,7 @@ import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherGamesScreen extends StatefulWidget {
@@ -2206,7 +2207,21 @@ class _TeacherGamesScreenState extends State<TeacherGamesScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Games')),
+      appBar: AppBar(
+        title: const Text('Games'),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_games',
+              screenTitle: 'Games',
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving
             ? null

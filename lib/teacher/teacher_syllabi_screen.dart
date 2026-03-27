@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/watermark_background.dart';
 import 'teacher_syllabus_details_screen.dart';
@@ -228,7 +229,8 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Syllabi list',
-          line: 'Browse available course syllabi and open details for each course.',
+          line:
+              'Browse available course syllabi and open details for each course.',
         ),
       ],
     );
@@ -264,6 +266,16 @@ class _TeacherSyllabiScreenState extends State<TeacherSyllabiScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_syllabi',
+              screenTitle: 'Syllabi',
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.accent),
@@ -479,7 +491,9 @@ class _SyllabusTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.soft,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: palette.border.withValues(alpha: 0.85)),
+                border: Border.all(
+                  color: palette.border.withValues(alpha: 0.85),
+                ),
               ),
               child: Icon(Icons.menu_book_rounded, color: palette.primary),
             ),

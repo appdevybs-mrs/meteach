@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 import 'teacher_mail_thread_screen.dart';
@@ -1008,6 +1009,18 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               ),
             ],
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Instructions',
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.teacher,
+                screenId: 'teacher_mail',
+                screenTitle: 'Mailbox',
+              ),
+              icon: const Icon(Icons.help_outline_rounded),
+            ),
+          ],
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _composeNewTopic,

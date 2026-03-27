@@ -9,6 +9,7 @@ import 'teacher_online_circle_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/first_login_agreement.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_tour_guide.dart';
 import 'TeacherStoriesScreen.dart';
@@ -727,6 +728,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           },
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.translate_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_home',
+              screenTitle: 'Teacher Dashboard',
+            ),
+          ),
           IconButton(
             key: _guideButtonKey,
             tooltip: 'Guide',

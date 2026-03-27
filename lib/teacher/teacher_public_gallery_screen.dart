@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
@@ -726,8 +727,8 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                             alignment: Alignment.center,
                                             child: Icon(
                                               Icons.broken_image_outlined,
-                                              color: p.primary.withValues(alpha: 
-                                                0.55,
+                                              color: p.primary.withValues(
+                                                alpha: 0.55,
                                               ),
                                             ),
                                           ),
@@ -741,8 +742,8 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.black.withValues(alpha: 
-                                              0.58,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.58,
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               12,
@@ -985,7 +986,9 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                       decoration: BoxDecoration(
                         color: p.cardBg,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.03),
@@ -1015,7 +1018,9 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                         alignment: Alignment.center,
                                         child: Icon(
                                           Icons.broken_image_outlined,
-                                          color: p.primary.withValues(alpha: 0.55),
+                                          color: p.primary.withValues(
+                                            alpha: 0.55,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1028,7 +1033,9 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.58),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.58,
+                                        ),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Row(
@@ -1145,6 +1152,18 @@ class _TeacherPublicGalleryScreenState extends State<TeacherPublicGalleryScreen>
           'Gallery',
           style: TextStyle(color: p.primary, fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_public_gallery',
+              screenTitle: 'Gallery',
+            ),
+          ),
+        ],
         bottom: TabBar(
           controller: _tab,
           labelColor: p.primary,
@@ -1668,7 +1687,8 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
       hints: const [
         TeacherTourHint(
           title: 'Viewer',
-          line: 'Inspect media details and use actions in the top bar when needed.',
+          line:
+              'Inspect media details and use actions in the top bar when needed.',
         ),
       ],
     );
@@ -1688,6 +1708,16 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_gallery_viewer',
+              screenTitle: isVideo ? 'Video' : 'Photo',
+            ),
+          ),
           if (onDelete != null)
             IconButton(
               tooltip: 'Delete',

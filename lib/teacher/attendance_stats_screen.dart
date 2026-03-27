@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class AttendanceStatsScreen extends StatefulWidget {
@@ -125,7 +126,9 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                       decoration: BoxDecoration(
                         color: p.cardBg,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: p.border.withValues(alpha: 0.9)),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.9),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -210,7 +213,9 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                                         width: 42,
                                         height: 42,
                                         decoration: BoxDecoration(
-                                          color: p.primary.withValues(alpha: 0.08),
+                                          color: p.primary.withValues(
+                                            alpha: 0.08,
+                                          ),
                                           borderRadius: BorderRadius.circular(
                                             14,
                                           ),
@@ -238,7 +243,9 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
                                             Text(
                                               key,
                                               style: TextStyle(
-                                                color: p.text.withValues(alpha: 0.6),
+                                                color: p.text.withValues(
+                                                  alpha: 0.6,
+                                                ),
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 12,
                                               ),
@@ -393,7 +400,8 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Attendance statistics',
-          line: 'Use this page to track attendance performance and risk levels per learner.',
+          line:
+              'Use this page to track attendance performance and risk levels per learner.',
         ),
       ],
     );
@@ -463,6 +471,16 @@ class _AttendanceStatsScreenState extends State<AttendanceStatsScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_attendance_stats',
+              screenTitle: 'Attendance Stats',
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.primary),

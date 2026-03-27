@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
@@ -1831,6 +1832,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ],
           ),
           actions: [
+            IconButton(
+              tooltip: 'Instructions',
+              icon: Icon(Icons.help_outline_rounded, color: p.primary),
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.teacher,
+                screenId: 'teacher_profile',
+                screenTitle: 'Teacher Profile',
+              ),
+            ),
             IconButton(
               tooltip: 'Save',
               onPressed: _busy ? null : _save,

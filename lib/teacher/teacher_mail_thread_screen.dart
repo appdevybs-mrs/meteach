@@ -20,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
@@ -62,7 +63,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   static Color _datePillBg(BuildContext context) =>
       Colors.white.withValues(alpha: 0.85);
 
-  static Color _datePillBorder(BuildContext context) => _navy.withValues(alpha: 0.15);
+  static Color _datePillBorder(BuildContext context) =>
+      _navy.withValues(alpha: 0.15);
 
   static const String _uploadOrigin = 'https://www.yourbridgeschool.com';
 
@@ -242,7 +244,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
   }
 
   Future<String> _fetchDisplayName(String uid) async {
@@ -853,7 +858,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not delete this message. Please try again.',
+        ),
+      );
     }
   }
 
@@ -871,7 +881,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         await path.set(true);
       }
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not update your reaction. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not update your reaction. Please try again.',
+        ),
+      );
     }
   }
 
@@ -1189,8 +1204,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack(
         toHumanError(
           e,
-          fallback:
-              'The audio recording could not start. Please try again.',
+          fallback: 'The audio recording could not start. Please try again.',
         ),
       );
       _resetRecUi();
@@ -1341,8 +1355,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack(
         toHumanError(
           e,
-          fallback:
-              'The audio message could not be sent. Please try again.',
+          fallback: 'The audio message could not be sent. Please try again.',
         ),
       );
       await _recCancel();
@@ -1480,7 +1493,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _snack(
         toHumanError(
           e,
-          fallback: 'Audio playback is not available right now. Please try again.',
+          fallback:
+              'Audio playback is not available right now. Please try again.',
         ),
       );
     }
@@ -2186,16 +2200,22 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: status == 'redo'
-                                              ? Colors.red.withValues(alpha: 0.12)
-                                              : Colors.green.withValues(alpha: 0.12),
+                                              ? Colors.red.withValues(
+                                                  alpha: 0.12,
+                                                )
+                                              : Colors.green.withValues(
+                                                  alpha: 0.12,
+                                                ),
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
                                           border: Border.all(
                                             color: status == 'redo'
-                                                ? Colors.red.withValues(alpha: 0.25)
-                                                : Colors.green.withValues(alpha: 
-                                                    0.25,
+                                                ? Colors.red.withValues(
+                                                    alpha: 0.25,
+                                                  )
+                                                : Colors.green.withValues(
+                                                    alpha: 0.25,
                                                   ),
                                           ),
                                         ),
@@ -2257,13 +2277,21 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                       padding: const EdgeInsets.all(14),
                                       decoration: BoxDecoration(
                                         color: status == 'pass'
-                                            ? Colors.green.withValues(alpha: 0.12)
-                                            : Colors.grey.withValues(alpha: 0.06),
+                                            ? Colors.green.withValues(
+                                                alpha: 0.12,
+                                              )
+                                            : Colors.grey.withValues(
+                                                alpha: 0.06,
+                                              ),
                                         borderRadius: BorderRadius.circular(18),
                                         border: Border.all(
                                           color: status == 'pass'
-                                              ? Colors.green.withValues(alpha: 0.45)
-                                              : Colors.black.withValues(alpha: 0.08),
+                                              ? Colors.green.withValues(
+                                                  alpha: 0.45,
+                                                )
+                                              : Colors.black.withValues(
+                                                  alpha: 0.08,
+                                                ),
                                           width: status == 'pass' ? 1.4 : 1,
                                         ),
                                       ),
@@ -2273,8 +2301,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                             Icons.check_circle_rounded,
                                             color: status == 'pass'
                                                 ? Colors.green.shade700
-                                                : Colors.black.withValues(alpha: 
-                                                    0.45,
+                                                : Colors.black.withValues(
+                                                    alpha: 0.45,
                                                   ),
                                           ),
                                           const SizedBox(height: 8),
@@ -2284,8 +2312,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                               fontWeight: FontWeight.w900,
                                               color: status == 'pass'
                                                   ? Colors.green.shade700
-                                                  : Colors.black.withValues(alpha: 
-                                                      0.72,
+                                                  : Colors.black.withValues(
+                                                      alpha: 0.72,
                                                     ),
                                             ),
                                           ),
@@ -2296,8 +2324,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                             style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
-                                              color: Colors.black.withValues(alpha: 
-                                                0.55,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.55,
                                               ),
                                             ),
                                           ),
@@ -2322,12 +2350,18 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                       decoration: BoxDecoration(
                                         color: status == 'redo'
                                             ? Colors.red.withValues(alpha: 0.10)
-                                            : Colors.grey.withValues(alpha: 0.06),
+                                            : Colors.grey.withValues(
+                                                alpha: 0.06,
+                                              ),
                                         borderRadius: BorderRadius.circular(18),
                                         border: Border.all(
                                           color: status == 'redo'
-                                              ? Colors.red.withValues(alpha: 0.40)
-                                              : Colors.black.withValues(alpha: 0.08),
+                                              ? Colors.red.withValues(
+                                                  alpha: 0.40,
+                                                )
+                                              : Colors.black.withValues(
+                                                  alpha: 0.08,
+                                                ),
                                           width: status == 'redo' ? 1.4 : 1,
                                         ),
                                       ),
@@ -2337,8 +2371,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                             Icons.refresh_rounded,
                                             color: status == 'redo'
                                                 ? Colors.red.shade700
-                                                : Colors.black.withValues(alpha: 
-                                                    0.45,
+                                                : Colors.black.withValues(
+                                                    alpha: 0.45,
                                                   ),
                                           ),
                                           const SizedBox(height: 8),
@@ -2348,8 +2382,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                               fontWeight: FontWeight.w900,
                                               color: status == 'redo'
                                                   ? Colors.red.shade700
-                                                  : Colors.black.withValues(alpha: 
-                                                      0.72,
+                                                  : Colors.black.withValues(
+                                                      alpha: 0.72,
                                                     ),
                                             ),
                                           ),
@@ -2360,8 +2394,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                             style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
-                                              color: Colors.black.withValues(alpha: 
-                                                0.55,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.55,
                                               ),
                                             ),
                                           ),
@@ -2417,8 +2451,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                               );
                                           setLocal(() {});
                                         },
-                                        backgroundColor: _navy.withValues(alpha: 
-                                          0.06,
+                                        backgroundColor: _navy.withValues(
+                                          alpha: 0.06,
                                         ),
                                         side: BorderSide(
                                           color: _navy.withValues(alpha: 0.10),
@@ -2520,7 +2554,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                       'Comment: ${noteC.text.trim()}',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.black.withValues(alpha: 0.72),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.72,
+                                        ),
                                         height: 1.3,
                                       ),
                                     ),
@@ -3706,7 +3742,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ),
         TeacherTourHint(
           title: 'Send message',
-          line: 'Use the composer area at the bottom to send text, audio, or attachments.',
+          line:
+              'Use the composer area at the bottom to send text, audio, or attachments.',
         ),
       ],
     );
@@ -3754,6 +3791,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 ),
               ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: const Icon(Icons.help_outline_rounded, color: _navy),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_mail_thread',
+              screenTitle: title,
+            ),
+          ),
           IconButton(
             tooltip: _searching ? 'Close search' : 'Search',
             icon: Icon(
@@ -3804,7 +3851,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       decoration: BoxDecoration(
                         color: _orange.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _orange.withValues(alpha: 0.35)),
+                        border: Border.all(
+                          color: _orange.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -4608,12 +4657,10 @@ class MailUploadClient {
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );
 
-    final streamed = await _http
-        .send(req)
-        .timeout(const Duration(seconds: 90));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(seconds: 90),
+    );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -4653,12 +4700,10 @@ class MailUploadClient {
         await http.MultipartFile.fromPath('file', path, filename: filename),
       );
 
-    final streamed = await _http
-        .send(req)
-        .timeout(const Duration(seconds: 90));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(seconds: 90),
+    );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');

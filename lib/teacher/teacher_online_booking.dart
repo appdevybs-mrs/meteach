@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherOnlineBookingScreen extends StatefulWidget {
@@ -92,7 +93,8 @@ class _TeacherOnlineBookingScreenState
 
   void _toast(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(
         content: Text(humanizeUiMessage(msg)),
         behavior: SnackBarBehavior.floating,
@@ -936,11 +938,13 @@ class _TeacherOnlineBookingScreenState
       hints: const [
         TeacherTourHint(
           title: 'Online availability',
-          line: 'Turn booking on, choose courses, and define your weekly slots.',
+          line:
+              'Turn booking on, choose courses, and define your weekly slots.',
         ),
         TeacherTourHint(
           title: 'Save setup',
-          line: 'Save your availability after changing days, hours, or meeting link.',
+          line:
+              'Save your availability after changing days, hours, or meeting link.',
         ),
       ],
     );
@@ -975,6 +979,16 @@ class _TeacherOnlineBookingScreenState
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_online_booking',
+              screenTitle: 'Teacher Availability',
+            ),
+          ),
           IconButton(
             tooltip: 'How this works',
             onPressed: () => _showHelp(
@@ -1683,7 +1697,9 @@ class _DayChips extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
             decoration: BoxDecoration(
-              color: enabled ? palette.cardBg : palette.soft.withValues(alpha: 0.45),
+              color: enabled
+                  ? palette.cardBg
+                  : palette.soft.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: palette.border.withValues(alpha: 0.85)),
             ),
@@ -1835,8 +1851,8 @@ class _DayCard extends StatelessWidget {
                       : palette.soft.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: (has ? palette.accent : palette.border).withValues(alpha: 
-                      0.35,
+                    color: (has ? palette.accent : palette.border).withValues(
+                      alpha: 0.35,
                     ),
                   ),
                 ),

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import '../shared/study_variant.dart';
 
@@ -1455,6 +1456,18 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_take_attendance',
+              screenTitle: _isEdit ? 'Edit Session' : 'Take Attendance',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
       ),
       body: _busy
           ? const Center(child: CircularProgressIndicator(color: primaryBlue))

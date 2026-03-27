@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 import 'take_attendance_screen.dart';
 import '../shared/app_feedback.dart';
@@ -193,7 +194,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       await _loadHistory();
 
       if (mounted) {
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           const SnackBar(content: Text('Record deleted successfully')),
         );
       }
@@ -329,7 +331,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [p.primary, p.primary.withValues(alpha: 0.88)],
+                          colors: [
+                            p.primary,
+                            p.primary.withValues(alpha: 0.88),
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -532,7 +537,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                             Text(
                                               'Objective',
                                               style: TextStyle(
-                                                color: p.text.withValues(alpha: 0.65),
+                                                color: p.text.withValues(
+                                                  alpha: 0.65,
+                                                ),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.4,
@@ -570,7 +577,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                             Text(
                                               'Notes',
                                               style: TextStyle(
-                                                color: p.text.withValues(alpha: 0.65),
+                                                color: p.text.withValues(
+                                                  alpha: 0.65,
+                                                ),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.4,
@@ -608,7 +617,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                                             Text(
                                               'Lesson Homework',
                                               style: TextStyle(
-                                                color: p.text.withValues(alpha: 0.65),
+                                                color: p.text.withValues(
+                                                  alpha: 0.65,
+                                                ),
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w800,
                                                 letterSpacing: 0.4,
@@ -654,7 +665,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                         decoration: BoxDecoration(
                           color: p.cardBg,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: p.border.withValues(alpha: 0.9)),
+                          border: Border.all(
+                            color: p.border.withValues(alpha: 0.9),
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.03),
@@ -846,7 +859,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       hints: const [
         TeacherTourHint(
           title: 'Attendance history',
-          line: 'Review saved attendance sessions and open any session to edit details.',
+          line:
+              'Review saved attendance sessions and open any session to edit details.',
         ),
       ],
     );
@@ -884,6 +898,16 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            icon: Icon(Icons.help_outline_rounded, color: p.primary),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_attendance_history',
+              screenTitle: 'Attendance History',
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: p.primary),

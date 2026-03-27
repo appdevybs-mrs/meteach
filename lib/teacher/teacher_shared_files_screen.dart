@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
 class TeacherSharedFilesScreen extends StatefulWidget {
@@ -594,6 +595,16 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       appBar: AppBar(
         title: const Text('Shared'),
         actions: [
+          IconButton(
+            tooltip: 'Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.teacher,
+              screenId: 'teacher_shared_files',
+              screenTitle: 'Shared Files',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
           IconButton(
             tooltip: 'Upload document',
             onPressed: _uploading ? null : _pickAndUpload,
