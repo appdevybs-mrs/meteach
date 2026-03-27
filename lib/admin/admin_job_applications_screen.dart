@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminJobApplicationsScreen extends StatefulWidget {
   const AdminJobApplicationsScreen({super.key});
@@ -262,6 +263,18 @@ class _AdminJobApplicationsScreenState
         backgroundColor: Colors.white,
         foregroundColor: _primaryBlue,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_job_applications',
+              screenTitle: 'Job Applications',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [

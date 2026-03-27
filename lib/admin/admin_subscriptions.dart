@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 import '../shared/app_feedback.dart';
@@ -53,6 +54,16 @@ class AdminSubscriptionsScreen extends StatelessWidget {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_subscriptions',
+              screenTitle: 'Subscriptions',
+            ),
+          ),
           IconButton(
             tooltip: 'Add subscription',
             icon: const Icon(Icons.add_circle_rounded, color: actionOrange),
@@ -563,7 +574,10 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
 
   Future<void> _save() async {
     if (selectedCourseId == null || selectedCourseId!.trim().isEmpty) {
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Pick a course first')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Pick a course first')),
+      );
       return;
     }
 
@@ -574,7 +588,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
     final email = emailC.text.trim();
 
     if (fn.isEmpty || ln.isEmpty || ph.isEmpty) {
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Fill first name, last name, phone')),
       );
       return;
@@ -603,7 +618,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not save subscription changes.'),

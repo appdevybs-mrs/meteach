@@ -5,6 +5,7 @@ import 'admin_wages_export_excel.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminWagesScreen extends StatelessWidget {
   const AdminWagesScreen({super.key});
@@ -355,7 +356,8 @@ class AdminWagesScreen extends StatelessWidget {
       }
 
       if (!context.mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(makePaid ? 'Marked PAID ✅' : 'Marked UNPAID ✅'),
           duration: const Duration(milliseconds: 900),
@@ -363,7 +365,8 @@ class AdminWagesScreen extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update this wage entry.'),
@@ -411,10 +414,14 @@ class AdminWagesScreen extends StatelessWidget {
       });
 
       if (!context.mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('Confirmation removed ✅')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Confirmation removed ✅')),
+      );
     } catch (e) {
       if (!context.mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not complete this action.'),
@@ -451,18 +458,30 @@ class AdminWagesScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_wages',
+              screenTitle: 'Wages',
+            ),
+          ),
+          IconButton(
             tooltip: 'Export Excel',
             icon: const Icon(Icons.file_download_outlined),
             onPressed: () async {
               try {
                 await AdminWagesExcelExporter.exportAndShareExcel();
                 if (!context.mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Excel exported ✅')),
                 );
               } catch (e) {
                 if (!context.mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not export wages file.'),
@@ -628,7 +647,9 @@ class AdminWagesScreen extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: uiBorder.withValues(alpha: 0.8)),
+                          border: Border.all(
+                            color: uiBorder.withValues(alpha: 0.8),
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.03),
@@ -1253,7 +1274,9 @@ class _TeacherSection extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: Colors.red.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.45)),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.45),
+                        ),
                       ),
                       child: Text(
                         'List ($notPaidYet)',
@@ -1569,7 +1592,9 @@ class _PaymentRow extends StatelessWidget {
                         label: const Text('Unconfirm'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
-                          side: BorderSide(color: Colors.red.withValues(alpha: 0.5)),
+                          side: BorderSide(
+                            color: Colors.red.withValues(alpha: 0.5),
+                          ),
                         ),
                         onPressed: () => onRemoveTeacherConfirm(paymentId),
                       ),
@@ -1589,7 +1614,9 @@ class _PaymentRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: paidChipBg,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: paidChipBorder.withValues(alpha: 0.7)),
+                border: Border.all(
+                  color: paidChipBorder.withValues(alpha: 0.7),
+                ),
               ),
               child: Text(
                 paidChipText,

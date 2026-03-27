@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminBookingScreen extends StatefulWidget {
   const AdminBookingScreen({super.key});
@@ -60,7 +61,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
@@ -1206,8 +1208,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                           style: OutlinedButton.styleFrom(
                                             foregroundColor: primaryBlue,
                                             side: BorderSide(
-                                              color: primaryBlue.withValues(alpha: 
-                                                0.25,
+                                              color: primaryBlue.withValues(
+                                                alpha: 0.25,
                                               ),
                                             ),
                                             shape: RoundedRectangleBorder(
@@ -1291,7 +1293,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       context,
       screenId: 'admin_booking',
       title: 'ادارة الحجز',
-      line: 'من هذه الشاشة تتابع الحجوزات وتفلترها حسب الدورة والمعلم والتاريخ.',
+      line:
+          'من هذه الشاشة تتابع الحجوزات وتفلترها حسب الدورة والمعلم والتاريخ.',
     );
 
     final course = _selectedCourse();
@@ -1324,6 +1327,16 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_booking',
+              screenTitle: 'Admin Booking',
+            ),
+            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed:
@@ -1606,8 +1619,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                               vertical: 4,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: statusColor.withValues(alpha: 
-                                                0.10,
+                                              color: statusColor.withValues(
+                                                alpha: 0.10,
                                               ),
                                               borderRadius:
                                                   BorderRadius.circular(999),

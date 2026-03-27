@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminTeacherAvailabilityOverviewScreen extends StatefulWidget {
   const AdminTeacherAvailabilityOverviewScreen({super.key});
@@ -87,7 +88,8 @@ class _AdminTeacherAvailabilityOverviewScreenState
 
   void _toast(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context, 
+    AppToast.fromSnackBar(
+      context,
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
@@ -574,8 +576,8 @@ class _AdminTeacherAvailabilityOverviewScreenState
                                             vertical: 5,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: statusColor.withValues(alpha: 
-                                              0.10,
+                                            color: statusColor.withValues(
+                                              alpha: 0.10,
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               999,
@@ -954,8 +956,8 @@ class _AdminTeacherAvailabilityOverviewScreenState
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: (isCovered ? successGreen : Colors.red).withValues(alpha: 
-                      0.10,
+                    color: (isCovered ? successGreen : Colors.red).withValues(
+                      alpha: 0.10,
                     ),
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1261,7 +1263,9 @@ class _AdminTeacherAvailabilityOverviewScreenState
       height: header ? 34 : 32,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: header ? primaryBlue.withValues(alpha: 0.06) : Colors.grey.shade50,
+        color: header
+            ? primaryBlue.withValues(alpha: 0.06)
+            : Colors.grey.shade50,
         border: const Border(top: BorderSide(color: uiBorder)),
       ),
       child: Text(
@@ -1584,6 +1588,16 @@ class _AdminTeacherAvailabilityOverviewScreenState
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_teacher_availability_overview',
+              screenTitle: 'Teacher Availability',
+            ),
+            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: loading ? null : _loadAll,

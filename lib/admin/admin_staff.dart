@@ -10,6 +10,7 @@ import 'admin_teacher_reminders_screen.dart';
 import 'admin_teacher_mail_topics_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key});
@@ -71,7 +72,10 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     // ✅ avoid using a context that is in the middle of dispose/pop
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(content: Text(humanizeUiMessage(msg))),
+      );
     });
   }
 
@@ -319,7 +323,9 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: AdminStaffScreen.primaryBlue,
-          unselectedLabelColor: AdminStaffScreen.primaryBlue.withValues(alpha: 0.55),
+          unselectedLabelColor: AdminStaffScreen.primaryBlue.withValues(
+            alpha: 0.55,
+          ),
           indicatorColor: AdminStaffScreen.primaryBlue,
           tabs: const [
             Tab(text: 'Users'),
@@ -328,6 +334,16 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_staff',
+              screenTitle: 'Staff',
+            ),
+          ),
           AnimatedBuilder(
             animation: _tab,
             builder: (_, _) {
@@ -815,7 +831,9 @@ class _StaffListState extends State<_StaffList>
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.black.withValues(alpha: 0.55),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.55,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 6),
@@ -1212,7 +1230,10 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
   }
 
   String get _teacherFullName =>
@@ -2632,7 +2653,9 @@ class AdminTeacherLearnersScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     color: Colors.black.withValues(alpha: 0.06),
-                    border: Border.all(color: Colors.black.withValues(alpha: 0.12)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.12),
+                    ),
                   ),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,

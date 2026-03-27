@@ -12,6 +12,7 @@ import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminFileManager extends StatefulWidget {
   const AdminFileManager({super.key});
@@ -48,6 +49,18 @@ class _AdminFileManagerState extends State<AdminFileManager>
     return Scaffold(
       appBar: AppBar(
         title: const Text('File Manager'),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_file_manager',
+              screenTitle: 'File Manager',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
@@ -124,11 +137,7 @@ class _FileBrowserState extends State<_FileBrowser>
     final postUri = await BackendApi.withAuthQuery(Uri.parse(url));
     final headers = await BackendApi.authHeaders();
     final r = await http
-        .post(
-      postUri,
-      body: {...body, ...authFields},
-      headers: headers,
-    )
+        .post(postUri, body: {...body, ...authFields}, headers: headers)
         .timeout(const Duration(seconds: 60));
 
     if (r.statusCode < 200 || r.statusCode >= 300) {
@@ -207,7 +216,10 @@ class _FileBrowserState extends State<_FileBrowser>
 
   void _showSnack(String message) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(message))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(message))),
+    );
   }
 
   Future<void> _copyText(String text, String label) async {
@@ -437,9 +449,9 @@ class _FileBrowserState extends State<_FileBrowser>
       }
 
       final streamed = await req.send().timeout(const Duration(seconds: 120));
-      final response = await http.Response.fromStream(streamed).timeout(
-        const Duration(seconds: 120),
-      );
+      final response = await http.Response.fromStream(
+        streamed,
+      ).timeout(const Duration(seconds: 120));
 
       final raw = response.body.trim();
       if (!raw.startsWith('{')) {
@@ -901,7 +913,10 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
     if (link.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context,  const SnackBar(content: Text('This game has no link.')));
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('This game has no link.')),
+      );
       return;
     }
 
@@ -945,12 +960,14 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
     try {
       await _gamesRef.child(gameId).remove();
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Game deleted successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not delete game. Try again.'),
@@ -979,12 +996,14 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       await ref.set(cloned);
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         const SnackBar(content: Text('Game duplicated successfully.')),
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not duplicate game. Try again.'),
@@ -1008,7 +1027,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       });
 
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             nextStatus == 'archived'
@@ -1019,7 +1039,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not update game. Try again.'),
@@ -1121,7 +1142,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (uid == null || uid.isEmpty || user == null) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Could not load admin details.'),
                   ),
@@ -1131,7 +1153,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Enter the game name before uploading.'),
                   ),
@@ -1157,7 +1180,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Game file uploaded successfully.'),
                     ),
@@ -1165,7 +1189,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload game file.'),
@@ -1184,7 +1209,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               final uid = _myUid;
 
               if (uid == null || uid.isEmpty || user == null) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Could not load admin details.'),
                   ),
@@ -1194,7 +1220,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               final gameName = nameController.text.trim();
               if (gameName.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text(
                       'Enter the game name before uploading thumbnail.',
@@ -1222,7 +1249,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   });
 
                   if (!mounted) return;
-                  AppToast.fromSnackBar(context, 
+                  AppToast.fromSnackBar(
+                    context,
                     const SnackBar(
                       content: Text('Thumbnail uploaded successfully.'),
                     ),
@@ -1230,7 +1258,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 }
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(e, fallback: 'Could not upload thumbnail.'),
@@ -1257,14 +1286,16 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                   int.tryParse(durationController.text.trim()) ?? 0;
 
               if (name.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(content: Text('Please enter the game name.')),
                 );
                 return;
               }
 
               if (description.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please enter the game description.'),
                   ),
@@ -1273,7 +1304,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
               }
 
               if (link.isEmpty) {
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Please upload the game file first.'),
                   ),
@@ -1286,7 +1318,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
 
               if (currentUser == null || uid == null || uid.isEmpty) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Could not load admin details.'),
                   ),
@@ -1383,7 +1416,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 if (!mounted) return;
                 Navigator.of(ctx).pop();
 
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       isEdit
@@ -1394,7 +1428,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                 );
               } catch (e) {
                 if (!mounted) return;
-                AppToast.fromSnackBar(context, 
+                AppToast.fromSnackBar(
+                  context,
                   SnackBar(
                     content: Text(
                       toHumanError(
@@ -1580,7 +1615,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                         ClipboardData(text: uploadedUrl),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text('Link copied'),
                                         ),
@@ -1675,7 +1711,8 @@ class _AdminGamesManagerState extends State<_AdminGamesManager>
                                         ClipboardData(text: uploadedThumbnail),
                                       );
                                       if (!mounted) return;
-                                      AppToast.fromSnackBar(context,  
+                                      AppToast.fromSnackBar(
+                                        context,
                                         const SnackBar(
                                           content: Text(
                                             'Thumbnail link copied',

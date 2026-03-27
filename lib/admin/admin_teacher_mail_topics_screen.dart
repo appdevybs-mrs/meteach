@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'mail_topic_thread_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminTeacherMailTopicsScreen extends StatefulWidget {
   const AdminTeacherMailTopicsScreen({
@@ -213,6 +214,16 @@ class _AdminTeacherMailTopicsScreenState
       appBar: AppBar(
         title: Text('Mail — $teacherName'),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_teacher_mail_topics',
+              screenTitle: 'Teacher Mail Topics',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
           IconButton(
             tooltip: 'New topic',
             onPressed: _createNewTopic,

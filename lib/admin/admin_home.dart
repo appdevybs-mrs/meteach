@@ -28,6 +28,7 @@ import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/payment_status.dart';
+import '../shared/screen_help_guide.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 
@@ -482,6 +483,16 @@ class _AdminHomeState extends State<AdminHome> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_home',
+              screenTitle: _screenTitle,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 10, top: 8, bottom: 8),
             child: Material(

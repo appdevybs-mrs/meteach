@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'admin_teacher_mail_thread_screen.dart'; // reuse your existing thread screen
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminMailInboxScreen extends StatefulWidget {
   const AdminMailInboxScreen({super.key});
@@ -71,6 +72,16 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
       appBar: AppBar(
         title: const Text('Mail'),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_mail_inbox',
+              screenTitle: 'Mail',
+            ),
+          ),
           IconButton(
             tooltip: 'New mail',
             icon: const Icon(Icons.edit),

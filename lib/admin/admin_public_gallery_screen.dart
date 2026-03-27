@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
@@ -1010,6 +1011,18 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
           'Gallery',
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_public_gallery',
+              screenTitle: 'Gallery',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
         bottom: TabBar(
           controller: _tab,
           labelColor: primaryBlue,
@@ -1578,6 +1591,18 @@ class _AdminLearnerGalleryScreenState extends State<AdminLearnerGalleryScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_learner_gallery',
+              screenTitle: '${widget.learnerName} Gallery',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
       ),
       body: SafeArea(
         child: StreamBuilder<DatabaseEvent>(
@@ -2339,6 +2364,16 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_gallery_viewer',
+              screenTitle: isVideo ? 'Video' : 'Photo',
+            ),
+            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
+          ),
           if (onDelete != null && itemId.isNotEmpty)
             IconButton(
               tooltip: 'Delete',
@@ -2496,6 +2531,16 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_gallery_viewer',
+              screenTitle: isVideo ? 'Video' : 'Photo',
+            ),
+            icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
+          ),
           if (onDelete != null && itemId.isNotEmpty)
             IconButton(
               tooltip: 'Delete',

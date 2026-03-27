@@ -12,6 +12,7 @@ import 'package:dream_english_academy/shared/human_error.dart';
 import 'package:dream_english_academy/services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminCoursesScreen extends StatefulWidget {
   const AdminCoursesScreen({super.key});
@@ -96,6 +97,16 @@ class _AdminCoursesScreenState extends State<AdminCoursesScreen>
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_courses',
+              screenTitle: 'Courses',
+            ),
+          ),
           // Add only on Courses tab
           AnimatedBuilder(
             animation: _tabController,
@@ -2006,6 +2017,18 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_course_editor',
+              screenTitle: isEdit ? 'Edit Course' : 'Add Course',
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(

@@ -15,6 +15,7 @@ import '../shared/human_error.dart';
 import '../services/push_client.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class MailUploadClient {
   MailUploadClient({
@@ -52,12 +53,10 @@ class MailUploadClient {
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-    final streamed = await _http
-        .send(req)
-        .timeout(const Duration(seconds: 90));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(seconds: 90),
+    );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -143,7 +142,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
   }
 
   Future<void> _loadSubject() async {
@@ -204,7 +206,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       }
       final f = picked.files.first;
       if (f.path == null) {
-        _snack('The app does not have permission to access this file or action.');
+        _snack(
+          'The app does not have permission to access this file or action.',
+        );
         return;
       }
 
@@ -267,7 +271,12 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       await _stateRef.child(_meUid).child(widget.threadId).remove();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not delete this topic. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not delete this topic. Please try again.',
+        ),
+      );
     }
   }
 
@@ -276,7 +285,12 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not delete this message. Please try again.',
+        ),
+      );
     }
   }
 
@@ -413,6 +427,16 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_mail_topic_thread',
+              screenTitle: title,
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) async {
               if (v == 'delete_topic') await _deleteThreadForMe();
@@ -426,167 +450,173 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           ),
         ],
       ),
-       body: SelectionArea(
-         child: Column(
-         children: [
-          Expanded(
-            child: StreamBuilder<DatabaseEvent>(
-              stream: _msgStream,
-              builder: (_, snap) {
-                final msgs = _parseMessages(snap.data?.snapshot.value);
-                if (msgs.isEmpty)
-                  return const Center(child: Text('No messages yet.'));
+      body: SelectionArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<DatabaseEvent>(
+                stream: _msgStream,
+                builder: (_, snap) {
+                  final msgs = _parseMessages(snap.data?.snapshot.value);
+                  if (msgs.isEmpty)
+                    return const Center(child: Text('No messages yet.'));
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: msgs.length,
-                  itemBuilder: (_, i) {
-                    final m = msgs[i];
-                    final mine = m.fromUid == _meUid;
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: msgs.length,
+                    itemBuilder: (_, i) {
+                      final m = msgs[i];
+                      final mine = m.fromUid == _meUid;
 
-                    return Align(
-                      alignment: mine
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 340),
-                        child: Card(
-                          elevation: 0,
-                          color: mine
-                              ? Colors.blue.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.05),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: mine
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      mine ? 'Me' : widget.peerName,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.black.withValues(alpha: 0.6),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _fmt(m.createdAtMs),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.black.withValues(alpha: 0.55),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    PopupMenuButton<String>(
-                                      tooltip: 'Message actions',
-                                      onSelected: (v) async {
-                                        if (v == 'delete_for_me')
-                                          await _deleteMessageForMe(m);
-                                      },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem(
-                                          value: 'delete_for_me',
-                                          child: Text('Delete (for me)'),
+                      return Align(
+                        alignment: mine
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: Card(
+                            elevation: 0,
+                            color: mine
+                                ? Colors.blue.withValues(alpha: 0.12)
+                                : Colors.black.withValues(alpha: 0.05),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: mine
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        mine ? 'Me' : widget.peerName,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.black.withValues(
+                                            alpha: 0.6,
+                                          ),
+                                          fontSize: 12,
                                         ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                                if (m.body.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  SelectableText(m.body),
-                                ],
-                                if (m.attachments.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  ...m.attachments.map((a) {
-                                    final name = a['name'] ?? 'Attachment';
-                                    final url = a['url'] ?? '';
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
-                                      child: InkWell(
-                                        onTap: () => _openUrlExternal(url),
-                                        child: Text(
-                                          '📎 $name',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            decoration:
-                                                TextDecoration.underline,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _fmt(m.createdAtMs),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black.withValues(
+                                            alpha: 0.55,
                                           ),
                                         ),
                                       ),
-                                    );
-                                  }),
+                                      const SizedBox(width: 6),
+                                      PopupMenuButton<String>(
+                                        tooltip: 'Message actions',
+                                        onSelected: (v) async {
+                                          if (v == 'delete_for_me')
+                                            await _deleteMessageForMe(m);
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(
+                                            value: 'delete_for_me',
+                                            child: Text('Delete (for me)'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  if (m.body.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    SelectableText(m.body),
+                                  ],
+                                  if (m.attachments.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    ...m.attachments.map((a) {
+                                      final name = a['name'] ?? 'Attachment';
+                                      final url = a['url'] ?? '';
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 6,
+                                        ),
+                                        child: InkWell(
+                                          onTap: () => _openUrlExternal(url),
+                                          child: Text(
+                                            '📎 $name',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              decoration:
+                                                  TextDecoration.underline,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                children: [
-                  if (_attachments.isNotEmpty)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _attachments.map((a) {
-                          return Chip(
-                            label: Text(a['name'] ?? 'file'),
-                            onDeleted: () =>
-                                setState(() => _attachments.remove(a)),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Attach',
-                        onPressed: _sending ? null : _pickAndUploadAttachment,
-                        icon: const Icon(Icons.attach_file),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _bodyC,
-                          minLines: 1,
-                          maxLines: 4,
-                          decoration: const InputDecoration(
-                            hintText: 'Write…',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _sending ? null : _send,
-                        child: Text(_sending ? 'Sending…' : 'Send'),
-                      ),
-                    ],
-                  ),
-                ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
-          ),
-        ],
+
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Column(
+                  children: [
+                    if (_attachments.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _attachments.map((a) {
+                            return Chip(
+                              label: Text(a['name'] ?? 'file'),
+                              onDeleted: () =>
+                                  setState(() => _attachments.remove(a)),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Attach',
+                          onPressed: _sending ? null : _pickAndUploadAttachment,
+                          icon: const Icon(Icons.attach_file),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _bodyC,
+                            minLines: 1,
+                            maxLines: 4,
+                            decoration: const InputDecoration(
+                              hintText: 'Write…',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _sending ? null : _send,
+                          child: Text(_sending ? 'Sending…' : 'Send'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-       ),
     );
   }
 

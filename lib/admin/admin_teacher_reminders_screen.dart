@@ -13,6 +13,7 @@ import '../shared/human_error.dart';
 import '../services/push_client.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
   const AdminTeacherRemindersScreen({super.key, this.teacherUid, this.teacher});
@@ -448,7 +449,9 @@ class _AdminTeacherRemindersScreenState
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                  bottom: BorderSide(
+                    color: Colors.black.withValues(alpha: 0.08),
+                  ),
                 ),
               ),
               child: Row(
@@ -578,7 +581,10 @@ class _AdminTeacherRemindersScreenState
           url,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12),
+          style: TextStyle(
+            color: Colors.black.withValues(alpha: 0.55),
+            fontSize: 12,
+          ),
         ),
       ],
     );
@@ -905,6 +911,18 @@ class _AdminTeacherRemindersScreenState
               : 'All reminders',
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_teacher_reminders',
+              screenTitle: _isSingleTeacherMode
+                  ? 'Teacher Reminders'
+                  : 'All Reminders',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
           IconButton(
             tooltip: _isSingleTeacherMode ? 'Add reminder' : 'Send reminder',
             onPressed: _openAddDialog,
@@ -1378,7 +1396,8 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
       });
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(context, 
+      AppToast.fromSnackBar(
+        context,
         SnackBar(
           content: Text(
             toHumanError(e, fallback: 'Could not upload attachment.'),

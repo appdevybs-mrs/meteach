@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:dream_english_academy/admin/admin_classes.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminTimetableScreen extends StatefulWidget {
   const AdminTimetableScreen({super.key});
@@ -1145,6 +1146,16 @@ class _AdminTimetableScreenState extends State<AdminTimetableScreen> {
       appBar: AppBar(
         title: const Text("Weekly Timetable"),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_timetable',
+              screenTitle: 'Weekly Timetable',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
           IconButton(
             tooltip: "Reload teachers",
             onPressed: _loadTeachers,

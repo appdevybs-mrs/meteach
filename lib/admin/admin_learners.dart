@@ -8,6 +8,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
+import '../shared/screen_help_guide.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
@@ -272,6 +273,16 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_learners',
+              screenTitle: 'Learners',
+            ),
+          ),
           IconButton(
             tooltip: 'Payments',
             icon: const Icon(
@@ -1931,6 +1942,18 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_learner_editor',
+              screenTitle: isEdit ? 'Edit Learner' : 'Add Learner',
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(

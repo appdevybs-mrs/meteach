@@ -9,6 +9,7 @@ import '../services/backend_api.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminSharedFilesScreen extends StatefulWidget {
   const AdminSharedFilesScreen({super.key});
@@ -124,7 +125,21 @@ class _AdminSharedFilesScreenState extends State<AdminSharedFilesScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Shared Files')),
+      appBar: AppBar(
+        title: const Text('Shared Files'),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_shared_files',
+              screenTitle: 'Shared Files',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
+      ),
       body: StreamBuilder<DatabaseEvent>(
         stream: _sharedRef.onValue,
         builder: (context, snap) {

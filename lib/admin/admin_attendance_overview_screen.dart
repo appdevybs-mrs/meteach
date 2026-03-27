@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminAttendanceOverviewScreen extends StatefulWidget {
   const AdminAttendanceOverviewScreen({super.key});
@@ -1098,6 +1099,16 @@ class _AdminAttendanceOverviewScreenState
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_attendance_overview',
+              screenTitle: 'Attendance Overview',
+            ),
+            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _load,

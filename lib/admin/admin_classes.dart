@@ -34,6 +34,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
 
 class AdminClassesScreen extends StatefulWidget {
@@ -2464,7 +2465,21 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return ScaffoldMessenger(
       key: _messengerKey,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Classes')),
+        appBar: AppBar(
+          title: const Text('Classes'),
+          actions: [
+            IconButton(
+              tooltip: 'Help / Instructions',
+              icon: const Icon(Icons.help_outline_rounded),
+              onPressed: () => ScreenHelpGuide.show(
+                context,
+                role: GuideRole.admin,
+                screenId: 'admin_classes',
+                screenTitle: 'Classes',
+              ),
+            ),
+          ],
+        ),
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: _buildClassesList(),

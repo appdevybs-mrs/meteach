@@ -14,6 +14,7 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/payment_status.dart';
+import '../shared/screen_help_guide.dart';
 import '../shared/study_variant.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
@@ -1090,76 +1091,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   }
 
   Future<void> _showPaymentsHelpDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('How Payment Calculation Works'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Text(
-                '1) Session-based courses (In-Class, Private, Flexible)',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 6),
-              Text(
-                '- Paid sessions are cumulative per learner + course + variant.',
-              ),
-              Text(
-                '- Consumed sessions are counted from PRESENT attendance only.',
-              ),
-              Text('- ABSENT sessions do not consume paid balance.'),
-              SizedBox(height: 8),
-              Text(
-                '2) Due and warning rules',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 6),
-              Text('- Sessions left = sessionsPaidTotal - sessionsPresent.'),
-              Text('- Due when sessions left is 0 or less.'),
-              Text(
-                '- Warning when sessions left is above 0 and less than or equal to reminder threshold.',
-              ),
-              SizedBox(height: 8),
-              Text(
-                '3) Flexible attendance source',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 6),
-              Text(
-                '- Flexible payment consumption uses teacher-confirmed online attendance only.',
-              ),
-              SizedBox(height: 8),
-              Text(
-                '4) Recorded courses',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 6),
-              Text(
-                '- Recorded access is evaluated by expiry date, not session attendance.',
-              ),
-              SizedBox(height: 8),
-              Text(
-                '5) New payment behavior',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              SizedBox(height: 6),
-              Text(
-                '- New payments add to existing paid balance for the same learner/course/variant.',
-              ),
-              Text('- Reminder value is normalized to avoid early due states.'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+    await ScreenHelpGuide.show(
+      context,
+      role: GuideRole.admin,
+      screenId: 'admin_payments',
+      screenTitle: 'Payments',
     );
   }
 

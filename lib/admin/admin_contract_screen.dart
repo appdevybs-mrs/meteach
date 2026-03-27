@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminContractScreen extends StatefulWidget {
   const AdminContractScreen({super.key});
@@ -64,7 +65,8 @@ class _AdminContractScreenState extends State<AdminContractScreen>
       if (l.value == null) await _learnerRoot.set({});
     } catch (e) {
       if (mounted) {
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           SnackBar(
             content: Text(
               toHumanError(e, fallback: 'Could not initialize contract data.'),
@@ -141,11 +143,15 @@ class _AdminContractScreenState extends State<AdminContractScreen>
           .toList();
 
       if (t.isEmpty) {
-        AppToast.fromSnackBar(context,  const SnackBar(content: Text('Title is required')));
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('Title is required')),
+        );
         return;
       }
       if (items.isEmpty) {
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           const SnackBar(content: Text('Add at least 1 item (one per line)')),
         );
         return;
@@ -170,7 +176,8 @@ class _AdminContractScreenState extends State<AdminContractScreen>
 
         if (!mounted) return;
         Navigator.pop(context);
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           SnackBar(
             content: Text(
               existingId == null ? '$kindLabel contract added ✅' : 'Updated ✅',
@@ -179,7 +186,8 @@ class _AdminContractScreenState extends State<AdminContractScreen>
         );
       } catch (e) {
         if (!mounted) return;
-        AppToast.fromSnackBar(context, 
+        AppToast.fromSnackBar(
+          context,
           SnackBar(
             content: Text(
               toHumanError(e, fallback: 'Could not save contract settings.'),
@@ -293,7 +301,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryBlue,
-                          side: BorderSide(color: primaryBlue.withValues(alpha: 0.5)),
+                          side: BorderSide(
+                            color: primaryBlue.withValues(alpha: 0.5),
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -393,7 +403,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     decoration: BoxDecoration(
                       color: primaryBlue.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: primaryBlue.withValues(alpha: 0.12)),
+                      border: Border.all(
+                        color: primaryBlue.withValues(alpha: 0.12),
+                      ),
                     ),
                     child: const Icon(Icons.edit_rounded, color: primaryBlue),
                   ),
@@ -420,7 +432,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.red.withValues(alpha: 0.12)),
+                      border: Border.all(
+                        color: Colors.red.withValues(alpha: 0.12),
+                      ),
                     ),
                     child: const Icon(
                       Icons.delete_outline_rounded,
@@ -440,12 +454,14 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                     try {
                       await root.child(id).remove();
                       if (!mounted) return;
-                      AppToast.fromSnackBar(context, 
+                      AppToast.fromSnackBar(
+                        context,
                         const SnackBar(content: Text('Deleted ✅')),
                       );
                     } catch (e) {
                       if (!mounted) return;
-                      AppToast.fromSnackBar(context, 
+                      AppToast.fromSnackBar(
+                        context,
                         SnackBar(
                           content: Text(
                             toHumanError(e, fallback: 'Could not delete item.'),
@@ -488,7 +504,9 @@ class _AdminContractScreenState extends State<AdminContractScreen>
                 decoration: BoxDecoration(
                   color: primaryBlue.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: primaryBlue.withValues(alpha: 0.12)),
+                  border: Border.all(
+                    color: primaryBlue.withValues(alpha: 0.12),
+                  ),
                 ),
                 child: Icon(icon, color: primaryBlue, size: 26),
               ),
@@ -541,6 +559,16 @@ class _AdminContractScreenState extends State<AdminContractScreen>
           style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_contract',
+              screenTitle: 'Contract',
+            ),
+            icon: const Icon(Icons.help_outline_rounded, color: primaryBlue),
+          ),
           IconButton(
             tooltip: 'Reload',
             onPressed: _ensuring ? null : _ensureBaseNodes,

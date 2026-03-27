@@ -15,6 +15,7 @@ import '../services/route_state.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -55,12 +56,10 @@ class MailUploadClient {
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-    final streamed = await _http
-        .send(req)
-        .timeout(const Duration(seconds: 90));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(seconds: 90),
+    );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
@@ -194,7 +193,10 @@ class _AdminTeacherMailThreadScreenState
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(msg))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(msg))),
+    );
   }
 
   Future<String?> _getFcmToken(String uid) async {
@@ -228,7 +230,8 @@ class _AdminTeacherMailThreadScreenState
       _snack(
         toHumanError(
           e,
-          fallback: 'Could not open this mail thread right now. Please try again.',
+          fallback:
+              'Could not open this mail thread right now. Please try again.',
         ),
       );
     }
@@ -291,7 +294,9 @@ class _AdminTeacherMailThreadScreenState
       }
       final f = picked.files.first;
       if (f.path == null) {
-        _snack('The app does not have permission to access this file or action.');
+        _snack(
+          'The app does not have permission to access this file or action.',
+        );
         return;
       }
 
@@ -353,7 +358,12 @@ class _AdminTeacherMailThreadScreenState
         'subject': s.trim(),
       });
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not update the thread subject. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not update the thread subject. Please try again.',
+        ),
+      );
     }
   }
 
@@ -511,7 +521,12 @@ class _AdminTeacherMailThreadScreenState
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not delete this thread. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not delete this thread. Please try again.',
+        ),
+      );
     }
   }
 
@@ -520,7 +535,12 @@ class _AdminTeacherMailThreadScreenState
       await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
       _snack('Deleted for you ✅');
     } catch (e) {
-      _snack(toHumanError(e, fallback: 'Could not delete this message. Please try again.'));
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'Could not delete this message. Please try again.',
+        ),
+      );
     }
   }
 
@@ -550,6 +570,16 @@ class _AdminTeacherMailThreadScreenState
         title: Text(teacherName.isEmpty ? 'Mail' : 'Mail — $teacherName'),
         actions: [
           IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_teacher_mail_thread',
+              screenTitle: 'Mail Thread',
+            ),
+          ),
+          IconButton(
             tooltip: 'Set subject',
             onPressed: _setSubjectIfNeeded,
             icon: const Icon(Icons.subject),
@@ -571,187 +601,193 @@ class _AdminTeacherMailThreadScreenState
       ),
       body: SelectionArea(
         child: Column(
-        children: [
-          if (_subject.trim().isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              color: Colors.black.withValues(alpha: 0.04),
-              child: Text(
-                'Topic: $_subject',
-                style: const TextStyle(fontWeight: FontWeight.w800),
+          children: [
+            if (_subject.trim().isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                color: Colors.black.withValues(alpha: 0.04),
+                child: Text(
+                  'Topic: $_subject',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
-            ),
-          Expanded(
-            child: StreamBuilder<DatabaseEvent>(
-              stream: _msgStream,
-              builder: (_, snap) {
-                final msgs = _parseMessages(snap.data?.snapshot.value);
-                if (msgs.isEmpty) {
-                  return const Center(child: Text('No mail yet.'));
-                }
+            Expanded(
+              child: StreamBuilder<DatabaseEvent>(
+                stream: _msgStream,
+                builder: (_, snap) {
+                  final msgs = _parseMessages(snap.data?.snapshot.value);
+                  if (msgs.isEmpty) {
+                    return const Center(child: Text('No mail yet.'));
+                  }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: msgs.length,
-                  itemBuilder: (_, i) {
-                    final m = msgs[i];
-                    final mine = m.fromUid == _meUid;
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: msgs.length,
+                    itemBuilder: (_, i) {
+                      final m = msgs[i];
+                      final mine = m.fromUid == _meUid;
 
-                    return Align(
-                      alignment: mine
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 340),
-                        child: Card(
-                          elevation: 0,
-                          color: mine
-                              ? Colors.blue.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.05),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: mine
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        mine ? 'Me' : 'Teacher',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _fmt(m.createdAtMs),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.black.withValues(alpha: 0.55),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: PopupMenuButton<String>(
-                                        padding: EdgeInsets.zero,
-                                        tooltip: 'Message actions',
-                                        onSelected: (v) async {
-                                          if (v == 'delete_for_me') {
-                                            await _deleteMessageForMe(m);
-                                          }
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(
-                                            value: 'delete_for_me',
-                                            child: Text('Delete (for me)'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (m.body.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  SelectableText(m.body),
-                                ],
-                                if (m.attachments.isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  ...m.attachments.map((a) {
-                                    final name = a['name'] ?? 'Attachment';
-                                    final url = a['url'] ?? '';
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
-                                      child: InkWell(
-                                        onTap: () => _openUrlExternal(url),
+                      return Align(
+                        alignment: mine
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: Card(
+                            elevation: 0,
+                            color: mine
+                                ? Colors.blue.withValues(alpha: 0.12)
+                                : Colors.black.withValues(alpha: 0.05),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: mine
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
                                         child: Text(
-                                          '📎 $name',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            decoration:
-                                                TextDecoration.underline,
+                                          mine ? 'Me' : 'Teacher',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.6,
+                                            ),
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ),
-                                    );
-                                  }),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _fmt(m.createdAtMs),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black.withValues(
+                                            alpha: 0.55,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      SizedBox(
+                                        width: 32,
+                                        height: 32,
+                                        child: PopupMenuButton<String>(
+                                          padding: EdgeInsets.zero,
+                                          tooltip: 'Message actions',
+                                          onSelected: (v) async {
+                                            if (v == 'delete_for_me') {
+                                              await _deleteMessageForMe(m);
+                                            }
+                                          },
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(
+                                              value: 'delete_for_me',
+                                              child: Text('Delete (for me)'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (m.body.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    SelectableText(m.body),
+                                  ],
+                                  if (m.attachments.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    ...m.attachments.map((a) {
+                                      final name = a['name'] ?? 'Attachment';
+                                      final url = a['url'] ?? '';
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 6,
+                                        ),
+                                        child: InkWell(
+                                          onTap: () => _openUrlExternal(url),
+                                          child: Text(
+                                            '📎 $name',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              decoration:
+                                                  TextDecoration.underline,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-
-          // composer
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                children: [
-                  if (_attachments.isNotEmpty)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _attachments.map((a) {
-                          return Chip(
-                            label: Text(a['name'] ?? 'file'),
-                            onDeleted: () {
-                              setState(() => _attachments.remove(a));
-                            },
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Attach',
-                        onPressed: _sending ? null : _pickAndUploadAttachment,
-                        icon: const Icon(Icons.attach_file),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _bodyC,
-                          minLines: 1,
-                          maxLines: 4,
-                          decoration: const InputDecoration(
-                            hintText: 'Write mail…',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _sending ? null : _send,
-                        child: Text(_sending ? 'Sending…' : 'Send'),
-                      ),
-                    ],
-                  ),
-                ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
-          ),
-        ],
-      ),
+
+            // composer
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Column(
+                  children: [
+                    if (_attachments.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _attachments.map((a) {
+                            return Chip(
+                              label: Text(a['name'] ?? 'file'),
+                              onDeleted: () {
+                                setState(() => _attachments.remove(a));
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Attach',
+                          onPressed: _sending ? null : _pickAndUploadAttachment,
+                          icon: const Icon(Icons.attach_file),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _bodyC,
+                            minLines: 1,
+                            maxLines: 4,
+                            decoration: const InputDecoration(
+                              hintText: 'Write mail…',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _sending ? null : _send,
+                          child: Text(_sending ? 'Sending…' : 'Send'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

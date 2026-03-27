@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart' show AppToast, AppToastType;
+import '../shared/screen_help_guide.dart';
 
 const _primaryBlue = Color(0xFF1A2B48);
 const _actionOrange = Color(0xFFF98D28);
@@ -378,6 +379,16 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           style: TextStyle(color: _primaryBlue, fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_certificates',
+              screenTitle: 'Certificates',
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline, color: _actionOrange),
             onPressed: _showAddCertificateForm,

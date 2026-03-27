@@ -6,6 +6,7 @@ import '../shared/human_error.dart';
 import 'mail_topic_thread_screen.dart'; // the topic thread screen you already have
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminLearnerMailTopicsScreen extends StatefulWidget {
   const AdminLearnerMailTopicsScreen({
@@ -45,7 +46,10 @@ class _AdminLearnerMailTopicsScreenState
 
   void _snack(String s) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context,  SnackBar(content: Text(humanizeUiMessage(s))));
+    AppToast.fromSnackBar(
+      context,
+      SnackBar(content: Text(humanizeUiMessage(s))),
+    );
   }
 
   List<_InboxRow> _parseAndFilter(dynamic data) {
@@ -179,7 +183,8 @@ class _AdminLearnerMailTopicsScreenState
       context,
       screenId: 'admin_learner_mail_topics',
       title: 'مواضيع بريد المتعلم',
-      line: 'تعرض هذه الشاشة مواضيع البريد الخاصة بالمتعلم ويمكنك اضافة موضوع جديد.',
+      line:
+          'تعرض هذه الشاشة مواضيع البريد الخاصة بالمتعلم ويمكنك اضافة موضوع جديد.',
     );
 
     return Scaffold(
@@ -188,6 +193,16 @@ class _AdminLearnerMailTopicsScreenState
           'Mail — ${widget.learnerName.isEmpty ? 'Learner' : widget.learnerName}',
         ),
         actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_learner_mail_topics',
+              screenTitle: 'Learner Mail Topics',
+            ),
+          ),
           IconButton(
             tooltip: 'New topic',
             icon: const Icon(Icons.add),

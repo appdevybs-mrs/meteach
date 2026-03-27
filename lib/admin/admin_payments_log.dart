@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/screen_help_guide.dart';
 
 class AdminPaymentsLogScreen extends StatefulWidget {
   const AdminPaymentsLogScreen({super.key});
@@ -43,6 +44,18 @@ class _AdminPaymentsLogScreenState extends State<AdminPaymentsLogScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Help / Instructions',
+            onPressed: () => ScreenHelpGuide.show(
+              context,
+              role: GuideRole.admin,
+              screenId: 'admin_payments_log',
+              screenTitle: 'Payments Log',
+            ),
+            icon: const Icon(Icons.help_outline_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
