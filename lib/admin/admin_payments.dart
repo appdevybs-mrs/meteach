@@ -1,6 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:excel/excel.dart' hide Border;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
@@ -610,6 +619,461 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     };
   }
 
+  String _timestampTag() {
+    final d = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}${two(d.month)}${two(d.day)}_${two(d.hour)}${two(d.minute)}${two(d.second)}';
+  }
+
+  String _safeFilePart(String raw) {
+    final s = raw.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_');
+    return s.isEmpty ? 'all' : s;
+  }
+
+  String _monthOfPayment(Map<String, dynamic> p) {
+    final byPaidAt = _fmtMonthFromMs(p['paidAt']);
+    if (byPaidAt.isNotEmpty) return byPaidAt;
+    final mk = (p['monthKey'] ?? '').toString().trim();
+    return mk;
+  }
+
+  List<Map<String, dynamic>> _applyExportFilters({
+    required List<Map<String, dynamic>> all,
+    required String? month,
+    required String? learnerUid,
+  }) {
+    return all.where((p) {
+      if ((month ?? '').isNotEmpty && _monthOfPayment(p) != month) {
+        return false;
+      }
+      if ((learnerUid ?? '').isNotEmpty) {
+        final uid = (p['uid'] ?? '').toString().trim();
+        if (uid != learnerUid) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  Future<String?> _defaultDownloadsDirectoryPath() async {
+    try {
+      if (Platform.isAndroid) {
+        const androidDownloads = '/storage/emulated/0/Download';
+        final dir = Directory(androidDownloads);
+        if (await dir.exists()) return dir.path;
+      }
+
+      if (Platform.isLinux || Platform.isMacOS) {
+        final home = Platform.environment['HOME'] ?? '';
+        if (home.isNotEmpty) {
+          final d = Directory('$home/Downloads');
+          if (await d.exists()) return d.path;
+        }
+      }
+
+      if (Platform.isWindows) {
+        final profile = Platform.environment['USERPROFILE'] ?? '';
+        if (profile.isNotEmpty) {
+          final d = Directory('$profile\\Downloads');
+          if (await d.exists()) return d.path;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final fallback = await getApplicationDocumentsDirectory();
+      return fallback.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Uint8List> _buildExcelBytes(List<Map<String, dynamic>> rows) async {
+    final sorted = [...rows]
+      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+
+    final excel = Excel.createExcel();
+    final defaultName = excel.getDefaultSheet();
+    if (defaultName != null && excel.sheets.containsKey(defaultName)) {
+      excel.rename(defaultName, 'Payments');
+    }
+    final sheet = excel['Payments'];
+
+    sheet.appendRow([
+      TextCellValue('No'),
+      TextCellValue('Paid Date'),
+      TextCellValue('Learner'),
+      TextCellValue('Serial'),
+      TextCellValue('Variant'),
+      TextCellValue('Amount'),
+      TextCellValue('Sessions/Months'),
+      TextCellValue('Teacher'),
+      TextCellValue('Course'),
+      TextCellValue('Start/Expiry'),
+      TextCellValue('Method'),
+      TextCellValue('Notes'),
+      TextCellValue('Payment ID'),
+    ]);
+
+    for (int i = 0; i < sorted.length; i++) {
+      final p = sorted[i];
+      final paidDate = _fmtDateFromMs(p['paidAt']);
+      final learnerName = (p['learner_name'] ?? '').toString().trim();
+      final serial = (p['learner_serial'] ?? '').toString().trim();
+      final variantText = _variantLabel(
+        variantKey: (p['variantKey'] ?? '').toString(),
+        studyMode: (p['studyMode'] ?? '').toString(),
+      );
+      final detail = _variantIsRecorded((p['variantKey'] ?? '').toString())
+          ? 'Months ${_asInt(p['durationMonths'])}'
+          : _variantUsesSessions((p['variantKey'] ?? '').toString())
+          ? 'Sessions ${_asInt(p['sessionsPaid'])}'
+          : '—';
+      final teacher = (p['teacherName'] ?? '').toString().trim();
+      final courseTitle = (p['course_title'] ?? '').toString().trim();
+      final startDate = (p['startDate'] ?? '').toString().trim();
+      final expiresAt = _fmtDateFromMs(p['expiresAt']);
+      final startOrExpiry = startDate.isNotEmpty
+          ? startDate
+          : (expiresAt.isNotEmpty ? expiresAt : '');
+      final method = (p['method'] ?? '').toString().trim();
+      final notes = (p['notes'] ?? '').toString().trim();
+      final pid = (p['paymentId'] ?? '').toString().trim();
+
+      sheet.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(paidDate),
+        TextCellValue(learnerName),
+        TextCellValue(serial),
+        TextCellValue(variantText),
+        IntCellValue(_asInt(p['amount'])),
+        TextCellValue(detail),
+        TextCellValue(teacher),
+        TextCellValue(courseTitle),
+        TextCellValue(startOrExpiry),
+        TextCellValue(method),
+        TextCellValue(notes),
+        TextCellValue(pid),
+      ]);
+    }
+
+    final bytes = excel.encode();
+    if (bytes == null) {
+      throw Exception('Failed to encode Excel file');
+    }
+    return Uint8List.fromList(bytes);
+  }
+
+  Future<Uint8List> _buildPdfBytes({
+    required List<Map<String, dynamic>> rows,
+    required String month,
+    required String learner,
+  }) async {
+    final sorted = [...rows]
+      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
+
+    final doc = pw.Document();
+    final tableData = <List<String>>[];
+
+    for (final p in sorted) {
+      final variantText = _variantLabel(
+        variantKey: (p['variantKey'] ?? '').toString(),
+        studyMode: (p['studyMode'] ?? '').toString(),
+      );
+      final detail = _variantIsRecorded((p['variantKey'] ?? '').toString())
+          ? 'M ${_asInt(p['durationMonths'])}'
+          : _variantUsesSessions((p['variantKey'] ?? '').toString())
+          ? 'S ${_asInt(p['sessionsPaid'])}'
+          : '—';
+      tableData.add([
+        _fmtDateFromMs(p['paidAt']),
+        (p['learner_name'] ?? '').toString(),
+        variantText,
+        _asInt(p['amount']).toString(),
+        detail,
+        (p['teacherName'] ?? '').toString(),
+        (p['course_title'] ?? '').toString(),
+      ]);
+    }
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        build: (context) => [
+          pw.Text(
+            'Payments Export',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text('Month: $month'),
+          pw.Text('Learner: $learner'),
+          pw.Text('Rows: ${tableData.length}'),
+          pw.Text('Generated: ${DateTime.now().toIso8601String()}'),
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headers: const [
+              'Paid Date',
+              'Learner',
+              'Variant',
+              'Amount',
+              'Sessions/Months',
+              'Teacher',
+              'Course',
+            ],
+            data: tableData,
+            headerStyle: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+            ),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            cellAlignment: pw.Alignment.centerLeft,
+          ),
+        ],
+      ),
+    );
+
+    return await doc.save();
+  }
+
+  Future<Uint8List> _buildBackupJsonBytes({
+    required List<Map<String, dynamic>> rows,
+    required String month,
+    required String learner,
+  }) async {
+    final payload = {
+      'generatedAtMs': DateTime.now().millisecondsSinceEpoch,
+      'generatedAtIso': DateTime.now().toIso8601String(),
+      'filters': {'month': month, 'learner': learner, 'count': rows.length},
+      'payments': rows,
+    };
+    final text = const JsonEncoder.withIndent('  ').convert(payload);
+    return Uint8List.fromList(utf8.encode(text));
+  }
+
+  Future<void> _openExportDialog({
+    required List<Map<String, dynamic>> all,
+    required List<String> months,
+  }) async {
+    final learnersByUid = <String, String>{};
+    for (final p in all) {
+      final uid = (p['uid'] ?? '').toString().trim();
+      if (uid.isEmpty) continue;
+      final name = (p['learner_name'] ?? '').toString().trim();
+      if (name.isNotEmpty) learnersByUid[uid] = name;
+    }
+    final learnerUids = learnersByUid.keys.toList()
+      ..sort((a, b) {
+        final an = (learnersByUid[a] ?? '').toLowerCase();
+        final bn = (learnersByUid[b] ?? '').toLowerCase();
+        return an.compareTo(bn);
+      });
+
+    String? pickedMonth = _selectedMonthYyyyMm;
+    String? pickedUid;
+    String exportType = 'all'; // all | backup | excel | pdf
+    String saveMode = 'downloads'; // downloads | choose
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setD) {
+            return AlertDialog(
+              title: const Text('Backup / Export Payments'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: exportType,
+                      decoration: const InputDecoration(
+                        labelText: 'What to export',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text('Backup + Excel + PDF'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'backup',
+                          child: Text('Backup JSON only'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'excel',
+                          child: Text('Excel only'),
+                        ),
+                        DropdownMenuItem(value: 'pdf', child: Text('PDF only')),
+                      ],
+                      onChanged: (v) => setD(() => exportType = v ?? 'all'),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String?>(
+                      initialValue: pickedMonth,
+                      decoration: const InputDecoration(
+                        labelText: 'Month filter',
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('All months'),
+                        ),
+                        ...months.map(
+                          (m) => DropdownMenuItem<String?>(
+                            value: m,
+                            child: Text(m),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) => setD(() => pickedMonth = v),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String?>(
+                      initialValue: pickedUid,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Learner filter',
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('All learners'),
+                        ),
+                        ...learnerUids.map((uid) {
+                          final name = learnersByUid[uid] ?? uid;
+                          return DropdownMenuItem<String?>(
+                            value: uid,
+                            child: Text(name, overflow: TextOverflow.ellipsis),
+                          );
+                        }),
+                      ],
+                      onChanged: (v) => setD(() => pickedUid = v),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: saveMode,
+                      decoration: const InputDecoration(
+                        labelText: 'Where to save',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'downloads',
+                          child: Text('Downloads (timestamped)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'choose',
+                          child: Text('Ask me folder now'),
+                        ),
+                      ],
+                      onChanged: (v) => setD(() => saveMode = v ?? 'downloads'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Export'),
+                  onPressed: () async {
+                    try {
+                      final filtered = _applyExportFilters(
+                        all: all,
+                        month: pickedMonth,
+                        learnerUid: pickedUid,
+                      );
+
+                      if (filtered.isEmpty) {
+                        _toast('No payments match selected filters.');
+                        return;
+                      }
+
+                      String? dirPath;
+                      if (saveMode == 'choose') {
+                        dirPath = await FilePicker.platform.getDirectoryPath(
+                          dialogTitle: 'Choose folder to save exports',
+                        );
+                      } else {
+                        dirPath = await _defaultDownloadsDirectoryPath();
+                      }
+
+                      if ((dirPath ?? '').trim().isEmpty) {
+                        _toast('Export cancelled: no folder selected.');
+                        return;
+                      }
+
+                      final dir = Directory(dirPath!);
+                      if (!await dir.exists()) {
+                        await dir.create(recursive: true);
+                      }
+
+                      final monthTag = _safeFilePart(
+                        pickedMonth ?? 'all_months',
+                      );
+                      final learnerTag = _safeFilePart(
+                        pickedUid == null
+                            ? 'all_learners'
+                            : (learnersByUid[pickedUid!] ?? pickedUid!),
+                      );
+                      final stamp = _timestampTag();
+                      final prefix =
+                          'payments_${monthTag}_${learnerTag}_$stamp';
+
+                      final savedPaths = <String>[];
+
+                      if (exportType == 'all' || exportType == 'backup') {
+                        final b = await _buildBackupJsonBytes(
+                          rows: filtered,
+                          month: pickedMonth ?? 'all',
+                          learner: pickedUid == null
+                              ? 'all'
+                              : (learnersByUid[pickedUid!] ?? pickedUid!),
+                        );
+                        final file = File('${dir.path}/$prefix.backup.json');
+                        await file.writeAsBytes(b, flush: true);
+                        savedPaths.add(file.path);
+                      }
+
+                      if (exportType == 'all' || exportType == 'excel') {
+                        final b = await _buildExcelBytes(filtered);
+                        final file = File('${dir.path}/$prefix.xlsx');
+                        await file.writeAsBytes(b, flush: true);
+                        savedPaths.add(file.path);
+                      }
+
+                      if (exportType == 'all' || exportType == 'pdf') {
+                        final b = await _buildPdfBytes(
+                          rows: filtered,
+                          month: pickedMonth ?? 'all',
+                          learner: pickedUid == null
+                              ? 'all'
+                              : (learnersByUid[pickedUid!] ?? pickedUid!),
+                        );
+                        final file = File('${dir.path}/$prefix.pdf');
+                        await file.writeAsBytes(b, flush: true);
+                        savedPaths.add(file.path);
+                      }
+
+                      if (!mounted) return;
+                      Navigator.pop(dialogCtx);
+                      _toast(
+                        'Exported ${savedPaths.length} file(s) to ${dir.path}',
+                      );
+                    } catch (e) {
+                      _toast(toHumanError(e, fallback: 'Export failed.'));
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ---------------- UI ----------------
 
   @override
@@ -781,6 +1245,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 child: Center(child: todayPill),
               ),
               const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Backup / Export',
+                icon: const Icon(
+                  Icons.download_rounded,
+                  color: AdminPaymentsScreen.primaryBlue,
+                ),
+                onPressed: () => _openExportDialog(all: all, months: months),
+              ),
               IconButton(
                 tooltip: 'Add payment',
                 icon: const Icon(
