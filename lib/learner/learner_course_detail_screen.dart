@@ -31,6 +31,7 @@ import 'dart:async';
 
 import 'learner_homework_screen.dart';
 import '../shared/human_error.dart';
+import '../shared/payment_status.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
@@ -982,7 +983,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             : TabBarView(
                 controller: _tab,
                 children: [
-                  _paymentTab(sessionsPassed: meetingsHeld),
+                  _paymentTab(sessionsPassed: present),
                   _attendanceTab(
                     attPct: attPct,
                     present: present,
@@ -1018,8 +1019,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final bool hasPayments = sessionsPaidTotal > 0;
 
     final left = sessionsPaidTotal - sessionsPassed;
-    final bool overdue = hasPayments && left <= 0;
-    final bool dueSoon = hasPayments && left > 0 && left <= remindBeforeSession;
+    final bool overdue =
+        hasPayments &&
+        isPaymentDueBySessions(
+          sessionsPaidTotal: sessionsPaidTotal,
+          sessionsPresent: sessionsPassed,
+        );
+    final bool dueSoon =
+        hasPayments &&
+        isPaymentWarningBySessions(
+          sessionsPaidTotal: sessionsPaidTotal,
+          sessionsPresent: sessionsPassed,
+          remindBeforeSession: remindBeforeSession,
+        );
 
     final int leftSafe = left < 0 ? 0 : left;
 

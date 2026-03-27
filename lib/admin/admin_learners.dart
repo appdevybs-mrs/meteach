@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/payment_status.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
@@ -260,8 +261,8 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
         bottom: TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,
-          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withValues(alpha: 
-            0.55,
+          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withValues(
+            alpha: 0.55,
           ),
           indicatorColor: AdminLearnersScreen.primaryBlue,
           tabs: const [
@@ -855,16 +856,20 @@ class _LearnersListState extends State<_LearnersList>
   }) {
     if (sessionsPaidTotal <= 0) return _PayFlag.black;
 
-    final rb = remindBeforeSession > 0 ? remindBeforeSession : 1;
-    final currentSession = sessionsDone + 1;
+    if (isPaymentDueBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+    )) {
+      return _PayFlag.red;
+    }
 
-    var dueAt = sessionsPaidTotal - rb;
-    if (dueAt < 1) dueAt = 1;
-
-    final warnAt = dueAt - 1;
-
-    if (currentSession >= dueAt) return _PayFlag.red;
-    if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
+    if (isPaymentWarningBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+      remindBeforeSession: remindBeforeSession,
+    )) {
+      return _PayFlag.yellow;
+    }
 
     return _PayFlag.ok;
   }
@@ -918,13 +923,19 @@ class _LearnersListState extends State<_LearnersList>
 
       if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
       if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
-      if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal) {
+      if (isPaymentDueBySessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPresent: sessionsDone,
+      )) {
         return _PayFlag.red;
       }
       if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
-      if (sessionsPaidTotal > 0) {
-        final left = sessionsPaidTotal - sessionsDone;
-        if (left <= 1) return _PayFlag.yellow;
+      if (isPaymentWarningBySessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPresent: sessionsDone,
+        remindBeforeSession: 1,
+      )) {
+        return _PayFlag.yellow;
       }
       return _PayFlag.ok;
     }
@@ -932,7 +943,10 @@ class _LearnersListState extends State<_LearnersList>
     return _sessionPaymentFlag(
       sessionsPaidTotal: sessionsPaidTotal,
       sessionsDone: sessionsDone,
-      remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
+      remindBeforeSession: normalizeReminderForSessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        remindBeforeSession: remindBeforeSession,
+      ),
     );
   }
 
@@ -1263,7 +1277,9 @@ class _LearnersListState extends State<_LearnersList>
                                                           FontWeight.w800,
                                                       color: AdminLearnersScreen
                                                           .primaryBlue
-                                                          .withValues(alpha: 0.9),
+                                                          .withValues(
+                                                            alpha: 0.9,
+                                                          ),
                                                       decoration: TextDecoration
                                                           .underline,
                                                     ),
@@ -1281,7 +1297,9 @@ class _LearnersListState extends State<_LearnersList>
                                                         fontWeight:
                                                             FontWeight.w800,
                                                         color: Colors.black
-                                                            .withValues(alpha: 0.65),
+                                                            .withValues(
+                                                              alpha: 0.65,
+                                                            ),
                                                       ),
                                                       maxLines: 1,
                                                       overflow:
@@ -1297,8 +1315,8 @@ class _LearnersListState extends State<_LearnersList>
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w700,
-                                                color: Colors.black.withValues(alpha: 
-                                                  0.5,
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.5,
                                                 ),
                                               ),
                                             ),
@@ -1309,8 +1327,8 @@ class _LearnersListState extends State<_LearnersList>
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w700,
-                                                color: Colors.black.withValues(alpha: 
-                                                  0.65,
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.65,
                                                 ),
                                               ),
                                               maxLines: 2,
@@ -3075,8 +3093,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,
-          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withValues(alpha: 
-            0.55,
+          unselectedLabelColor: AdminLearnersScreen.primaryBlue.withValues(
+            alpha: 0.55,
           ),
           indicatorColor: AdminLearnersScreen.primaryBlue,
           tabs: [
@@ -3195,9 +3213,30 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     required int sessionsDone,
     required int remindBeforeSession,
   }) {
-    if (sessionsPaidTotal <= 0) return false;
-    final left = sessionsPaidTotal - sessionsDone;
-    return left <= remindBeforeSession;
+    return isPaymentDueBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+    );
+  }
+
+  Future<int> _sessionsConsumedForCourse({
+    required String uid,
+    required String courseId,
+    required String variantKey,
+    required dynamic attendance,
+  }) async {
+    if (_variantIsFlexible(variantKey) && courseId.isNotEmpty) {
+      try {
+        final snap = await widget.db
+            .ref('booking_progress/$uid/$courseId/online_attendance')
+            .get();
+        return countPresentOnlineAttendance(snap.value);
+      } catch (_) {
+        return 0;
+      }
+    }
+
+    return countPresentUniqueAttendanceDates(attendance);
   }
 
   Widget _paymentTab(BuildContext context, List<String> keys) {
@@ -3246,7 +3285,12 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         : _variantLabel(variantKey);
 
     final attendance = courseNode['attendance'];
-    final sessionsDone = _countUniqueAttendance(attendance);
+    final sessionsDoneFuture = _sessionsConsumedForCourse(
+      uid: widget.uid,
+      courseId: courseId,
+      variantKey: variantKey,
+      attendance: attendance,
+    );
 
     final flexibleAccessRaw = courseNode['flexible_access'];
     final flexibleAccess = flexibleAccessRaw is Map
@@ -3258,357 +3302,385 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         ? recordedAccessRaw.map((k, v) => MapEntry(k.toString(), v))
         : <String, dynamic>{};
 
-    return FutureBuilder<DataSnapshot>(
-      key: ValueKey('payment-course-$courseId'),
-      future: _coursesRef.child(courseId).get(),
-      builder: (context, snap) {
-        if (!snap.hasData) {
-          return const Padding(
-            padding: EdgeInsets.all(12),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
-        }
-
-        final courseMapRaw = snap.data!.value;
-        final courseMap = courseMapRaw is Map
-            ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v))
-            : <String, dynamic>{};
-
-        final totalSessions = _parseTotalSessions(
-          courseMap['duration']?.toString() ?? '',
-        );
-        final pricePerLevel = _asInt(courseMap['price_per_level']);
-        final pricePerMonth = _asInt(courseMap['price_per_month']);
+    return FutureBuilder<int>(
+      future: sessionsDoneFuture,
+      builder: (context, consumedSnap) {
+        final sessionsDone = consumedSnap.data ?? 0;
 
         return FutureBuilder<DataSnapshot>(
-          key: ValueKey('payment-sum-$courseKey'),
-          future: widget.db
-              .ref('users/${widget.uid}/courses/$courseKey/payment_summary')
-              .get(),
-          builder: (context, sumSnap) {
-            final sumRaw = sumSnap.data?.value;
-            final sum = sumRaw is Map
-                ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
+          key: ValueKey('payment-course-$courseId'),
+          future: _coursesRef.child(courseId).get(),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              );
+            }
+
+            final courseMapRaw = snap.data!.value;
+            final courseMap = courseMapRaw is Map
+                ? courseMapRaw.map((k, v) => MapEntry(k.toString(), v))
                 : <String, dynamic>{};
 
-            final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
-            final remindBeforeSession = _asInt(sum['remindBeforeSession']);
-            final totalPaid = _asInt(sum['totalPaid']);
-
-            final flexibleExpiresAt = _asInt(flexibleAccess['expiresAt']);
-            final flexibleExpiryMonths = _asInt(flexibleAccess['expiryMonths']);
-
-            final recordedExpiresAt = _asInt(recordedAccess['expiresAt']);
-            final recordedDurationMonths = _asInt(
-              recordedAccess['durationMonths'],
+            final totalSessions = _parseTotalSessions(
+              courseMap['duration']?.toString() ?? '',
             );
+            final pricePerLevel = _asInt(courseMap['price_per_level']);
+            final pricePerMonth = _asInt(courseMap['price_per_month']);
 
-            final usesSessions = _variantUsesSessions(variantKey);
-            final usesReminder = _variantUsesReminder(variantKey);
-            final usesExpiry = _variantUsesExpiry(variantKey);
+            return FutureBuilder<DataSnapshot>(
+              key: ValueKey('payment-sum-$courseKey'),
+              future: widget.db
+                  .ref('users/${widget.uid}/courses/$courseKey/payment_summary')
+                  .get(),
+              builder: (context, sumSnap) {
+                final sumRaw = sumSnap.data?.value;
+                final sum = sumRaw is Map
+                    ? sumRaw.map((k, v) => MapEntry(k.toString(), v))
+                    : <String, dynamic>{};
 
-            final due = usesReminder
-                ? _isSessionDue(
-                    sessionsPaidTotal: sessionsPaidTotal,
-                    sessionsDone: sessionsDone,
-                    remindBeforeSession: remindBeforeSession > 0
-                        ? remindBeforeSession
-                        : 1,
-                  )
-                : false;
+                final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
+                final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+                final totalPaid = _asInt(sum['totalPaid']);
 
-            final sessionsLeft = (sessionsPaidTotal - sessionsDone) < 0
-                ? 0
-                : (sessionsPaidTotal - sessionsDone);
+                final flexibleExpiresAt = _asInt(flexibleAccess['expiresAt']);
+                final flexibleExpiryMonths = _asInt(
+                  flexibleAccess['expiryMonths'],
+                );
 
-            final expiresAt = _variantIsRecorded(variantKey)
-                ? recordedExpiresAt
-                : flexibleExpiresAt;
-            final monthsValue = _variantIsRecorded(variantKey)
-                ? recordedDurationMonths
-                : flexibleExpiryMonths;
-            final expiryText = expiresAt > 0 ? _fmtDateMs(expiresAt) : '—';
-            final expired = usesExpiry ? _isExpiredMs(expiresAt) : false;
-            final nearExpiry = usesExpiry ? _isNearExpiryMs(expiresAt) : false;
+                final recordedExpiresAt = _asInt(recordedAccess['expiresAt']);
+                final recordedDurationMonths = _asInt(
+                  recordedAccess['durationMonths'],
+                );
 
-            return _miniCard(
-              bg: Colors.white,
-              borderColor: AdminLearnersScreen.uiBorders,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                final usesSessions = _variantUsesSessions(variantKey);
+                final usesReminder = _variantUsesReminder(variantKey);
+                final usesExpiry = _variantUsesExpiry(variantKey);
+
+                final due = usesReminder
+                    ? _isSessionDue(
+                        sessionsPaidTotal: sessionsPaidTotal,
+                        sessionsDone: sessionsDone,
+                        remindBeforeSession: remindBeforeSession > 0
+                            ? remindBeforeSession
+                            : 1,
+                      )
+                    : false;
+
+                final sessionsLeft = (sessionsPaidTotal - sessionsDone) < 0
+                    ? 0
+                    : (sessionsPaidTotal - sessionsDone);
+
+                final expiresAt = _variantIsRecorded(variantKey)
+                    ? recordedExpiresAt
+                    : flexibleExpiresAt;
+                final monthsValue = _variantIsRecorded(variantKey)
+                    ? recordedDurationMonths
+                    : flexibleExpiryMonths;
+                final expiryText = expiresAt > 0 ? _fmtDateMs(expiresAt) : '—';
+                final expired = usesExpiry ? _isExpiredMs(expiresAt) : false;
+                final nearExpiry = usesExpiry
+                    ? _isNearExpiryMs(expiresAt)
+                    : false;
+
+                return _miniCard(
+                  bg: Colors.white,
+                  borderColor: AdminLearnersScreen.uiBorders,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _miniPill('Type: $variantText'),
-                      if (usesSessions)
-                        _miniPill(
-                          totalSessions > 0
-                              ? 'Sessions: $sessionsDone / $totalSessions'
-                              : 'Sessions done: $sessionsDone',
-                        ),
-                      if (!usesSessions && _variantIsRecorded(variantKey))
-                        _miniPill('Recorded access'),
-                      if (pricePerMonth > 0)
-                        _miniPill('Month fee: $pricePerMonth'),
-                      if (pricePerLevel > 0)
-                        _miniPill('Level fee: $pricePerLevel'),
-                      if (totalPaid > 0) _miniPill('Total paid: $totalPaid'),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        final ck = _selectedCourseKey!;
-                        final node = (_userCourses[ck] ?? {}) as Map;
-                        final cid = (node['id'] ?? '').toString().trim();
-                        if (cid.isEmpty) return;
-
-                        await PaymentDialogShared.showAddFromLearnerTab(
-                          context: context,
-                          db: widget.db,
-                          uid: widget.uid,
-                          courseKey: ck,
-                          courseId: cid,
-                        );
-                      },
-                      icon: const Icon(Icons.add_card_rounded),
-                      label: const Text('Add payment'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AdminLearnersScreen.appBg,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AdminLearnersScreen.uiBorders),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Payment summary',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 6),
-                        if (usesSessions)
-                          Text(
-                            'Sessions paid total: $sessionsPaidTotal',
-                            style: TextStyle(
-                              color: Colors.black.withValues(alpha: 0.75),
-                              fontWeight: FontWeight.w700,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _miniPill('Type: $variantText'),
+                          if (usesSessions)
+                            _miniPill(
+                              totalSessions > 0
+                                  ? 'Sessions: $sessionsDone / $totalSessions'
+                                  : 'Sessions done: $sessionsDone',
                             ),
-                          ),
-                        if (usesSessions)
-                          Text(
-                            'Sessions left: $sessionsLeft',
-                            style: TextStyle(
-                              color: Colors.black.withValues(alpha: 0.75),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        if (usesReminder)
-                          Text(
-                            'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
-                            style: TextStyle(
-                              color: Colors.black.withValues(alpha: 0.75),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        if (usesExpiry)
-                          Text(
-                            _variantIsRecorded(variantKey)
-                                ? 'Duration: ${monthsValue > 0 ? monthsValue : 0} month(s)'
-                                : 'Expiry window: ${monthsValue > 0 ? monthsValue : 0} month(s)',
-                            style: TextStyle(
-                              color: Colors.black.withValues(alpha: 0.75),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        if (usesExpiry)
-                          Text(
-                            'Expires on: $expiryText',
-                            style: TextStyle(
-                              color: Colors.black.withValues(alpha: 0.75),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        if (due) ...[
-                          const SizedBox(height: 8),
-                          const Text(
-                            '⚠️ Payment is due (near last paid session).',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
+                          if (!usesSessions && _variantIsRecorded(variantKey))
+                            _miniPill('Recorded access'),
+                          if (pricePerMonth > 0)
+                            _miniPill('Month fee: $pricePerMonth'),
+                          if (pricePerLevel > 0)
+                            _miniPill('Level fee: $pricePerLevel'),
+                          if (totalPaid > 0)
+                            _miniPill('Total paid: $totalPaid'),
                         ],
-                        if (expired) ...[
-                          const SizedBox(height: 8),
-                          const Text(
-                            '⛔ Access expired.',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ] else if (nearExpiry) ...[
-                          const SizedBox(height: 8),
-                          const Text(
-                            '⚠️ Access is near expiry.',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'History',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 160,
-                    child: StreamBuilder<DatabaseEvent>(
-                      stream: _paymentsRef
-                          .orderByChild('uid')
-                          .equalTo(widget.uid)
-                          .onValue,
-                      builder: (context, snap) {
-                        final v = snap.data?.snapshot.value;
-                        final items = <Map<String, dynamic>>[];
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            final ck = _selectedCourseKey!;
+                            final node = (_userCourses[ck] ?? {}) as Map;
+                            final cid = (node['id'] ?? '').toString().trim();
+                            if (cid.isEmpty) return;
 
-                        if (v is Map) {
-                          v.forEach((k, val) {
-                            if (val is Map) {
-                              final m = val.map(
-                                (kk, vv) => MapEntry(kk.toString(), vv),
-                              );
-                              if ((m['courseKey'] ?? '').toString() !=
-                                  courseKey) {
-                                return;
-                              }
-                              items.add({'paymentId': k.toString(), ...m});
-                            }
-                          });
-                        }
-
-                        items.sort(
-                          (a, b) => _asInt(
-                            b['paidAt'],
-                          ).compareTo(_asInt(a['paidAt'])),
-                        );
-
-                        if (items.isEmpty) {
-                          return const _MiniState(text: 'No payments yet.');
-                        }
-
-                        return ListView.builder(
-                          padding: EdgeInsets.zero,
-                          itemCount: items.length,
-                          itemBuilder: (context, i) {
-                            final p = items[i];
-                            final fee = _asInt(p['amount']);
-                            final method = (p['method'] ?? '').toString();
-                            final notes = (p['notes'] ?? '').toString();
-
-                            final payVariant = _normalizeVariantKey(
-                              (p['variantKey'] ?? variantKey).toString(),
-                            );
-                            final payStudyMode = (p['studyMode'] ?? '')
-                                .toString();
-                            final paidAt = _fmtDateMs(_asInt(p['paidAt']));
-                            final startDate = (p['startDate'] ?? '')
-                                .toString()
-                                .trim();
-                            final expiresAt = _fmtDateMs(
-                              _asInt(p['expiresAt']),
-                            );
-                            final sp = _asInt(p['sessionsPaid']);
-                            final durationMonths = _asInt(p['durationMonths']);
-                            final expiryMonths = _asInt(p['expiryMonths']);
-
-                            final variantBadge =
-                                payVariant == 'private' &&
-                                    payStudyMode.trim().isNotEmpty
-                                ? '${_variantLabel(payVariant)} • ${_studyModeLabel(payStudyMode)}'
-                                : _variantLabel(payVariant);
-
-                            final left = (sessionsPaidTotal - sessionsDone) < 0
-                                ? 0
-                                : (sessionsPaidTotal - sessionsDone);
-
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: _miniCard(
-                                bg: Colors.white,
-                                borderColor: AdminLearnersScreen.uiBorders,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        _miniPill('Type: $variantBadge'),
-                                        _miniPill('Fee: $fee'),
-                                        _miniPill(
-                                          'Paid: ${paidAt.isEmpty ? '-' : paidAt}',
-                                        ),
-                                        if (_variantUsesSessions(payVariant))
-                                          _miniPill('Sessions: $sp'),
-                                        if (_variantUsesReminder(payVariant))
-                                          _miniPill('Left: $left'),
-                                        if (_variantUsesStartDate(payVariant))
-                                          _miniPill(
-                                            'Start: ${startDate.isEmpty ? '-' : startDate}',
-                                          ),
-                                        if (_variantIsFlexible(payVariant))
-                                          _miniPill(
-                                            'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
-                                          ),
-                                        if (_variantIsFlexible(payVariant))
-                                          _miniPill(
-                                            'Window: ${expiryMonths > 0 ? expiryMonths : 0} month(s)',
-                                          ),
-                                        if (_variantIsRecorded(payVariant))
-                                          _miniPill(
-                                            'Duration: ${durationMonths > 0 ? durationMonths : 0} month(s)',
-                                          ),
-                                        if (_variantIsRecorded(payVariant))
-                                          _miniPill(
-                                            'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
-                                          ),
-                                      ],
-                                    ),
-                                    if (method.trim().isNotEmpty ||
-                                        notes.trim().isNotEmpty) ...[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        [
-                                          if (method.trim().isNotEmpty) method,
-                                          if (notes.trim().isNotEmpty) notes,
-                                        ].join(' • '),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Colors.black.withValues(alpha: 0.65),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
+                            await PaymentDialogShared.showAddFromLearnerTab(
+                              context: context,
+                              db: widget.db,
+                              uid: widget.uid,
+                              courseKey: ck,
+                              courseId: cid,
                             );
                           },
-                        );
-                      },
-                    ),
+                          icon: const Icon(Icons.add_card_rounded),
+                          label: const Text('Add payment'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AdminLearnersScreen.appBg,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AdminLearnersScreen.uiBorders,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Payment summary',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 6),
+                            if (usesSessions)
+                              Text(
+                                'Sessions paid total: $sessionsPaidTotal',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (usesSessions)
+                              Text(
+                                'Sessions left: $sessionsLeft',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (usesReminder)
+                              Text(
+                                'Reminder when left: ${remindBeforeSession > 0 ? remindBeforeSession : 1}.',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (usesExpiry)
+                              Text(
+                                _variantIsRecorded(variantKey)
+                                    ? 'Duration: ${monthsValue > 0 ? monthsValue : 0} month(s)'
+                                    : 'Expiry window: ${monthsValue > 0 ? monthsValue : 0} month(s)',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (usesExpiry)
+                              Text(
+                                'Expires on: $expiryText',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.75),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (due) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                '⚠️ Payment is due now (all paid sessions consumed).',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ],
+                            if (expired) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                '⛔ Access expired.',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ] else if (nearExpiry) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                '⚠️ Access is near expiry.',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'History',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 160,
+                        child: StreamBuilder<DatabaseEvent>(
+                          stream: _paymentsRef
+                              .orderByChild('uid')
+                              .equalTo(widget.uid)
+                              .onValue,
+                          builder: (context, snap) {
+                            final v = snap.data?.snapshot.value;
+                            final items = <Map<String, dynamic>>[];
+
+                            if (v is Map) {
+                              v.forEach((k, val) {
+                                if (val is Map) {
+                                  final m = val.map(
+                                    (kk, vv) => MapEntry(kk.toString(), vv),
+                                  );
+                                  if ((m['courseKey'] ?? '').toString() !=
+                                      courseKey) {
+                                    return;
+                                  }
+                                  items.add({'paymentId': k.toString(), ...m});
+                                }
+                              });
+                            }
+
+                            items.sort(
+                              (a, b) => _asInt(
+                                b['paidAt'],
+                              ).compareTo(_asInt(a['paidAt'])),
+                            );
+
+                            if (items.isEmpty) {
+                              return const _MiniState(text: 'No payments yet.');
+                            }
+
+                            return ListView.builder(
+                              padding: EdgeInsets.zero,
+                              itemCount: items.length,
+                              itemBuilder: (context, i) {
+                                final p = items[i];
+                                final fee = _asInt(p['amount']);
+                                final method = (p['method'] ?? '').toString();
+                                final notes = (p['notes'] ?? '').toString();
+
+                                final payVariant = _normalizeVariantKey(
+                                  (p['variantKey'] ?? variantKey).toString(),
+                                );
+                                final payStudyMode = (p['studyMode'] ?? '')
+                                    .toString();
+                                final paidAt = _fmtDateMs(_asInt(p['paidAt']));
+                                final startDate = (p['startDate'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final expiresAt = _fmtDateMs(
+                                  _asInt(p['expiresAt']),
+                                );
+                                final sp = _asInt(p['sessionsPaid']);
+                                final durationMonths = _asInt(
+                                  p['durationMonths'],
+                                );
+                                final expiryMonths = _asInt(p['expiryMonths']);
+
+                                final variantBadge =
+                                    payVariant == 'private' &&
+                                        payStudyMode.trim().isNotEmpty
+                                    ? '${_variantLabel(payVariant)} • ${_studyModeLabel(payStudyMode)}'
+                                    : _variantLabel(payVariant);
+
+                                final left =
+                                    (sessionsPaidTotal - sessionsDone) < 0
+                                    ? 0
+                                    : (sessionsPaidTotal - sessionsDone);
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: _miniCard(
+                                    bg: Colors.white,
+                                    borderColor: AdminLearnersScreen.uiBorders,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            _miniPill('Type: $variantBadge'),
+                                            _miniPill('Fee: $fee'),
+                                            _miniPill(
+                                              'Paid: ${paidAt.isEmpty ? '-' : paidAt}',
+                                            ),
+                                            if (_variantUsesSessions(
+                                              payVariant,
+                                            ))
+                                              _miniPill('Sessions: $sp'),
+                                            if (_variantUsesReminder(
+                                              payVariant,
+                                            ))
+                                              _miniPill('Left: $left'),
+                                            if (_variantUsesStartDate(
+                                              payVariant,
+                                            ))
+                                              _miniPill(
+                                                'Start: ${startDate.isEmpty ? '-' : startDate}',
+                                              ),
+                                            if (_variantIsFlexible(payVariant))
+                                              _miniPill(
+                                                'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                              ),
+                                            if (_variantIsFlexible(payVariant))
+                                              _miniPill(
+                                                'Window: ${expiryMonths > 0 ? expiryMonths : 0} month(s)',
+                                              ),
+                                            if (_variantIsRecorded(payVariant))
+                                              _miniPill(
+                                                'Duration: ${durationMonths > 0 ? durationMonths : 0} month(s)',
+                                              ),
+                                            if (_variantIsRecorded(payVariant))
+                                              _miniPill(
+                                                'Expires: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                              ),
+                                          ],
+                                        ),
+                                        if (method.trim().isNotEmpty ||
+                                            notes.trim().isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            [
+                                              if (method.trim().isNotEmpty)
+                                                method,
+                                              if (notes.trim().isNotEmpty)
+                                                notes,
+                                            ].join(' • '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.65,
+                                              ),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -3855,7 +3927,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                         'Read: ${readDone ? 'done' : 'pending'}',
                                     ].join(' • '),
                                     style: TextStyle(
-                                      color: Colors.black.withValues(alpha: 0.65),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.65,
+                                      ),
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12,
                                     ),
@@ -4018,7 +4092,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                       if (teacher.trim().isNotEmpty) teacher,
                                     ].join(' • '),
                                     style: TextStyle(
-                                      color: Colors.black.withValues(alpha: 0.65),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.65,
+                                      ),
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12,
                                     ),
@@ -4188,7 +4264,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                         if (teacher.trim().isNotEmpty) teacher,
                                       ].join(' • '),
                                       style: TextStyle(
-                                        color: Colors.black.withValues(alpha: 0.65),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.65,
+                                        ),
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12,
                                       ),
@@ -4298,7 +4376,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
   }
 
   static int _countUniqueAttendance(dynamic attendance) {
-    return _uniqueAttendanceByDate(attendance).length;
+    return countPresentUniqueAttendanceDates(attendance);
   }
 
   static List<Map<String, dynamic>> _mapToList(dynamic v) {

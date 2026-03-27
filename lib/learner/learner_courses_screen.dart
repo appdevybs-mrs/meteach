@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/payment_status.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_tour_guide.dart';
 import 'learner_course_detail_screen.dart';
@@ -548,11 +549,15 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
     if (sessionsPaidTotal <= 0) return '';
 
-    final warnBefore = (remindBeforeSession > 0) ? remindBeforeSession : 1;
-
-    final overdue = sessionsDone >= sessionsPaidTotal;
-    final dueSoon =
-        !overdue && sessionsDone >= (sessionsPaidTotal - warnBefore);
+    final overdue = isPaymentDueBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+    );
+    final dueSoon = isPaymentWarningBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+      remindBeforeSession: remindBeforeSession,
+    );
 
     if (overdue) return 'PAYMENT NEEDED';
     if (dueSoon) return 'PAYMENT SOON';
@@ -773,42 +778,65 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           ? raw.map((k, v) => MapEntry(k.toString(), v))
                           : <String, dynamic>{};
 
-                      final attCounts = _attendanceCounts(course);
-                      final sessionsDone = attCounts['total'] ?? 0;
+                      Widget stateChipForDone(int sessionsDone) {
+                        final state = _paymentStateFromSummary(
+                          sessionsDone: sessionsDone,
+                          summary: sum,
+                        );
 
-                      final state = _paymentStateFromSummary(
-                        sessionsDone: sessionsDone,
-                        summary: sum,
-                      );
+                        if (state.isEmpty) return const SizedBox.shrink();
 
-                      if (state.isEmpty) return const SizedBox.shrink();
+                        final bool isDue = state == 'PAYMENT NEEDED';
 
-                      final bool isDue = state == 'PAYMENT NEEDED';
-
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: (isDue ? Colors.red : p.accent).withValues(
-                            alpha: 0.12,
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
                           ),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
+                          decoration: BoxDecoration(
                             color: (isDue ? Colors.red : p.accent).withValues(
-                              alpha: 0.28,
+                              alpha: 0.12,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: (isDue ? Colors.red : p.accent).withValues(
+                                alpha: 0.28,
+                              ),
                             ),
                           ),
-                        ),
-                        child: Text(
-                          state,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
-                            color: isDue ? Colors.red : p.accent,
+                          child: Text(
+                            state,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
+                              color: isDue ? Colors.red : p.accent,
+                            ),
                           ),
-                        ),
+                        );
+                      }
+
+                      final inClassPresent = countPresentUniqueAttendanceDates(
+                        course['attendance'],
+                      );
+                      if (variantKey != 'flexible') {
+                        return stateChipForDone(inClassPresent);
+                      }
+
+                      final cid = _courseIdOf(course);
+                      if (cid.isEmpty) return stateChipForDone(inClassPresent);
+
+                      return FutureBuilder<DataSnapshot>(
+                        future: _db
+                            .child(
+                              '$bookingProgressNode/$_uid/$cid/online_attendance',
+                            )
+                            .get(),
+                        builder: (context, onlineSnap) {
+                          final onlinePresent = countPresentOnlineAttendance(
+                            onlineSnap.data?.value,
+                          );
+                          return stateChipForDone(onlinePresent);
+                        },
                       );
                     },
                   ),

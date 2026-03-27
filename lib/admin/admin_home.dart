@@ -27,6 +27,7 @@ import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
+import '../shared/payment_status.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 
@@ -1304,24 +1305,7 @@ class _PaymentAttentionDetails {
 }
 
 class _PaymentAttentionLogic {
-  static int asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  static int countUniqueAttendanceDates(dynamic attendance) {
-    if (attendance is! Map) return 0;
-    final dates = <String>{};
-    attendance.forEach((_, v) {
-      if (v is! Map) return;
-      final m = v.map((k, vv) => MapEntry(k.toString(), vv));
-      final d = (m['date'] ?? '').toString().trim();
-      if (d.isNotEmpty) dates.add(d);
-    });
-    return dates.length;
-  }
+  static int asInt(dynamic v) => paymentAsInt(v);
 
   static String normalizeVariantKey(String raw) {
     final v = raw.trim().toLowerCase();
@@ -1382,17 +1366,21 @@ class _PaymentAttentionLogic {
   }) {
     if (sessionsPaidTotal <= 0) return _PayFlag.black;
 
-    final rb = remindBeforeSession > 0 ? remindBeforeSession : 1;
-    final currentSession = sessionsDone + 1;
+    if (isPaymentDueBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+    )) {
+      return _PayFlag.red;
+    }
 
-    if (currentSession > sessionsPaidTotal) return _PayFlag.black;
+    if (isPaymentWarningBySessions(
+      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPresent: sessionsDone,
+      remindBeforeSession: remindBeforeSession,
+    )) {
+      return _PayFlag.yellow;
+    }
 
-    var dueAt = sessionsPaidTotal - rb;
-    if (dueAt < 1) dueAt = 1;
-
-    final warnAt = dueAt - 1;
-    if (currentSession >= dueAt) return _PayFlag.red;
-    if (warnAt >= 1 && currentSession == warnAt) return _PayFlag.yellow;
     return _PayFlag.ok;
   }
 
@@ -1407,7 +1395,7 @@ class _PaymentAttentionLogic {
         : <String, dynamic>{};
 
     final attendance = courseMap['attendance'];
-    final sessionsDone = countUniqueAttendanceDates(attendance);
+    final sessionsDone = countPresentUniqueAttendanceDates(attendance);
     final sessionsPaidTotal = asInt(summaryMap['sessionsPaidTotal']);
     final remindBeforeSession = asInt(summaryMap['remindBeforeSession']);
 
@@ -1432,13 +1420,19 @@ class _PaymentAttentionLogic {
 
       if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
       if (expiresAt > 0 && isExpiredMs(expiresAt)) return _PayFlag.red;
-      if (sessionsPaidTotal > 0 && sessionsDone >= sessionsPaidTotal) {
+      if (isPaymentDueBySessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPresent: sessionsDone,
+      )) {
         return _PayFlag.red;
       }
       if (expiresAt > 0 && isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
-      if (sessionsPaidTotal > 0) {
-        final left = sessionsPaidTotal - sessionsDone;
-        if (left <= 1) return _PayFlag.yellow;
+      if (isPaymentWarningBySessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPresent: sessionsDone,
+        remindBeforeSession: 1,
+      )) {
+        return _PayFlag.yellow;
       }
       return _PayFlag.ok;
     }
@@ -1446,7 +1440,10 @@ class _PaymentAttentionLogic {
     return paymentFlag(
       sessionsPaidTotal: sessionsPaidTotal,
       sessionsDone: sessionsDone,
-      remindBeforeSession: remindBeforeSession > 0 ? remindBeforeSession : 1,
+      remindBeforeSession: normalizeReminderForSessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        remindBeforeSession: remindBeforeSession,
+      ),
     );
   }
 }

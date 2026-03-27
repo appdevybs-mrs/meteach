@@ -13,6 +13,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 
 class AdminPaymentsScreen extends StatefulWidget {
@@ -371,6 +372,21 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     required String uid,
     required String courseKey,
   }) async {
+    final courseSnap = await _usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .get();
+    final courseMap = courseSnap.value is Map
+        ? (courseSnap.value as Map)
+              .map((k, v) => MapEntry(k.toString(), v))
+              .cast<String, dynamic>()
+        : <String, dynamic>{};
+    final expectedVariant = normalizeVariantKey(
+      (courseMap['variantKey'] ?? courseMap['variant'] ?? '').toString(),
+      fallback: '',
+    );
+
     final sumRef = _usersRef
         .child(uid)
         .child('courses')
@@ -411,6 +427,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         final variantKey = _normalizeVariantKey(
           (m['variantKey'] ?? '').toString(),
         );
+        if (expectedVariant.isNotEmpty && variantKey != expectedVariant) {
+          continue;
+        }
 
         totalPaid += amount;
         if (_variantUsesSessions(variantKey)) {
@@ -430,16 +449,12 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
     int remindBeforeSession = 0;
     if (_variantUsesReminder(lastVariantKey)) {
-      remindBeforeSession = (lastRemind > 0)
-          ? lastRemind
-          : _asInt(oldSum['remindBeforeSession']);
-      if (sessionsTotal <= 0) {
-        remindBeforeSession = 0;
-      } else {
-        if (remindBeforeSession <= 0) remindBeforeSession = sessionsTotal;
-        if (remindBeforeSession > sessionsTotal)
-          remindBeforeSession = sessionsTotal;
-      }
+      remindBeforeSession = normalizeReminderForSessions(
+        sessionsPaidTotal: sessionsTotal,
+        remindBeforeSession: (lastRemind > 0)
+            ? lastRemind
+            : _asInt(oldSum['remindBeforeSession']),
+      );
     }
 
     await sumRef.update({
@@ -1699,7 +1714,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       }
 
       if (_variantUsesReminder(pickedVariantKey)) {
-        remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
+        remindBeforeSession = normalizeReminderForSessions(
+          sessionsPaidTotal: sessionsPaid,
+          remindBeforeSession: 1,
+        );
       } else {
         remindBeforeSession = 0;
       }
@@ -2026,11 +2044,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           ).toString();
 
                           if (usesReminder) {
-                            if (remindBeforeSession <= 0)
-                              remindBeforeSession = sessionsPaid;
-                            if (remindBeforeSession > sessionsPaid) {
-                              remindBeforeSession = sessionsPaid;
-                            }
+                            remindBeforeSession = normalizeReminderForSessions(
+                              sessionsPaidTotal: sessionsPaid,
+                              remindBeforeSession: remindBeforeSession,
+                            );
                           }
                           setD(() {});
                         },
@@ -2041,9 +2058,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     if (usesReminder) ...[
                       _NumberPickerRow(
                         label: 'Reminder when left',
-                        value: (remindBeforeSession <= 0
-                            ? sessionsPaid
-                            : remindBeforeSession),
+                        value: normalizeReminderForSessions(
+                          sessionsPaidTotal: sessionsPaid,
+                          remindBeforeSession: remindBeforeSession,
+                        ),
                         min: 1,
                         max: (sessionsPaid > 0 ? sessionsPaid : 1),
                         onChanged: (v) => setD(() => remindBeforeSession = v),
@@ -2220,9 +2238,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                               .toString();
 
                           final remind = usesReminder
-                              ? (remindBeforeSession <= 0
-                                    ? sessionsPaid
-                                    : remindBeforeSession)
+                              ? normalizeReminderForSessions(
+                                  sessionsPaidTotal: sessionsPaid,
+                                  remindBeforeSession: remindBeforeSession,
+                                )
                               : 0;
 
                           final monthKey = paidDateYmd.substring(0, 7);
@@ -2332,8 +2351,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     if (sessionsPaid <= 0 && _variantUsesSessions(variantKey)) sessionsPaid = 8;
 
     int remindBeforeSession = _asInt(p['remindBeforeSession']);
-    if (_variantUsesReminder(variantKey) && remindBeforeSession <= 0) {
-      remindBeforeSession = (sessionsPaid > 0 ? sessionsPaid : 1);
+    if (_variantUsesReminder(variantKey)) {
+      remindBeforeSession = normalizeReminderForSessions(
+        sessionsPaidTotal: sessionsPaid,
+        remindBeforeSession: remindBeforeSession,
+      );
     }
 
     int expiryMonths = _asInt(p['expiryMonths']);
@@ -2464,9 +2486,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         max: 60,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder &&
-                              remindBeforeSession > sessionsPaid) {
-                            remindBeforeSession = sessionsPaid;
+                          if (usesReminder) {
+                            remindBeforeSession = normalizeReminderForSessions(
+                              sessionsPaidTotal: sessionsPaid,
+                              remindBeforeSession: remindBeforeSession,
+                            );
                           }
                           setD(() {});
                         },
@@ -2590,7 +2614,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                 : null,
                             'remindBeforeSession':
                                 _variantUsesReminder(variantKey)
-                                ? remindBeforeSession
+                                ? normalizeReminderForSessions(
+                                    sessionsPaidTotal: sessionsPaid,
+                                    remindBeforeSession: remindBeforeSession,
+                                  )
                                 : null,
                             'method': method,
                             'amount': fee,

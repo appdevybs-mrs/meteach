@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
+import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 
 class PaymentDialogShared {
@@ -403,6 +404,21 @@ class PaymentDialogShared {
     final paymentsRef = db.ref('payments');
     final usersRef = db.ref('users');
 
+    final courseSnap = await usersRef
+        .child(uid)
+        .child('courses')
+        .child(courseKey)
+        .get();
+    final courseMap = courseSnap.value is Map
+        ? (courseSnap.value as Map)
+              .map((k, v) => MapEntry(k.toString(), v))
+              .cast<String, dynamic>()
+        : <String, dynamic>{};
+    final expectedVariant = normalizeVariantKey(
+      (courseMap['variantKey'] ?? courseMap['variant'] ?? '').toString(),
+      fallback: '',
+    );
+
     final sumRef = usersRef
         .child(uid)
         .child('courses')
@@ -444,6 +460,9 @@ class PaymentDialogShared {
         final variantKey = _normalizeDeliveryKey(
           (p['variantKey'] ?? '').toString(),
         );
+        if (expectedVariant.isNotEmpty && variantKey != expectedVariant) {
+          return;
+        }
 
         totalPaid += amount;
         if (_variantUsesSessions(variantKey)) {
@@ -463,15 +482,12 @@ class PaymentDialogShared {
 
     int remind = 0;
     if (_variantUsesReminder(latestVariantKey)) {
-      remind = latestRemind > 0
-          ? latestRemind
-          : _asInt(oldSum['remindBeforeSession']);
-      if (sessionsPaidTotal <= 0) {
-        remind = 0;
-      } else {
-        if (remind <= 0) remind = sessionsPaidTotal;
-        if (remind > sessionsPaidTotal) remind = sessionsPaidTotal;
-      }
+      remind = normalizeReminderForSessions(
+        sessionsPaidTotal: sessionsPaidTotal,
+        remindBeforeSession: latestRemind > 0
+            ? latestRemind
+            : _asInt(oldSum['remindBeforeSession']),
+      );
     }
 
     await sumRef.update({
@@ -515,11 +531,10 @@ class PaymentDialogShared {
       final newTotalPaid = oldTotalPaid + addAmount;
       final newSessionsPaidTotal = oldSessionsPaid + addSessionsPaid;
 
-      final remind = remindBeforeSession <= 0
-          ? newSessionsPaidTotal
-          : (remindBeforeSession > newSessionsPaidTotal
-                ? newSessionsPaidTotal
-                : remindBeforeSession);
+      final remind = normalizeReminderForSessions(
+        sessionsPaidTotal: newSessionsPaidTotal,
+        remindBeforeSession: remindBeforeSession,
+      );
 
       return Transaction.success({
         ...cur,
@@ -788,8 +803,11 @@ class PaymentDialogShared {
     if (sessionsPaid <= 0) sessionsPaid = 8;
 
     int remindBeforeSession = _asInt(payment['remindBeforeSession']);
-    if (_variantUsesReminder(variantKey) && remindBeforeSession <= 0) {
-      remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
+    if (_variantUsesReminder(variantKey)) {
+      remindBeforeSession = normalizeReminderForSessions(
+        sessionsPaidTotal: sessionsPaid,
+        remindBeforeSession: remindBeforeSession,
+      );
     }
 
     int expiryMonths = _asInt(payment['expiryMonths']);
@@ -941,9 +959,11 @@ class PaymentDialogShared {
                         max: 60,
                         onChanged: (v) {
                           sessionsPaid = v;
-                          if (usesReminder &&
-                              remindBeforeSession > sessionsPaid) {
-                            remindBeforeSession = sessionsPaid;
+                          if (usesReminder) {
+                            remindBeforeSession = normalizeReminderForSessions(
+                              sessionsPaidTotal: sessionsPaid,
+                              remindBeforeSession: remindBeforeSession,
+                            );
                           }
                           setD(() {});
                         },
@@ -956,7 +976,10 @@ class PaymentDialogShared {
                         label: 'Reminder (how many sessions left)',
                         value: remindBeforeSession <= 0
                             ? 1
-                            : remindBeforeSession,
+                            : normalizeReminderForSessions(
+                                sessionsPaidTotal: sessionsPaid,
+                                remindBeforeSession: remindBeforeSession,
+                              ),
                         min: 1,
                         max: sessionsPaid > 0 ? sessionsPaid : 1,
                         onChanged: (v) => setD(() => remindBeforeSession = v),
@@ -1069,7 +1092,10 @@ class PaymentDialogShared {
                     await paymentsRef.child(paymentId).update({
                       'sessionsPaid': usesSessions ? sessionsPaid : null,
                       'remindBeforeSession': usesReminder
-                          ? remindBeforeSession
+                          ? normalizeReminderForSessions(
+                              sessionsPaidTotal: sessionsPaid,
+                              remindBeforeSession: remindBeforeSession,
+                            )
                           : null,
                       'method': method,
                       'amount': fee,
@@ -1215,7 +1241,10 @@ class PaymentDialogShared {
       }
 
       if (_variantUsesReminder(variantKey)) {
-        remindBeforeSession = sessionsPaid > 0 ? sessionsPaid : 1;
+        remindBeforeSession = normalizeReminderForSessions(
+          sessionsPaidTotal: sessionsPaid,
+          remindBeforeSession: 1,
+        );
       } else {
         remindBeforeSession = 0;
       }
@@ -1625,11 +1654,10 @@ class PaymentDialogShared {
                           ).toString();
 
                           if (usesReminder) {
-                            if (remindBeforeSession <= 0)
-                              remindBeforeSession = sessionsPaid;
-                            if (remindBeforeSession > sessionsPaid) {
-                              remindBeforeSession = sessionsPaid;
-                            }
+                            remindBeforeSession = normalizeReminderForSessions(
+                              sessionsPaidTotal: sessionsPaid,
+                              remindBeforeSession: remindBeforeSession,
+                            );
                           }
 
                           setD(() {});
@@ -1641,9 +1669,10 @@ class PaymentDialogShared {
                     if (usesReminder) ...[
                       _NumberPickerRow(
                         label: 'Reminder (before session)',
-                        value: (remindBeforeSession <= 0
-                            ? sessionsPaid
-                            : remindBeforeSession),
+                        value: normalizeReminderForSessions(
+                          sessionsPaidTotal: sessionsPaid,
+                          remindBeforeSession: remindBeforeSession,
+                        ),
                         min: 1,
                         max: sessionsPaid > 0 ? sessionsPaid : 1,
                         onChanged: (v) => setD(() => remindBeforeSession = v),
@@ -1820,9 +1849,10 @@ class PaymentDialogShared {
                   }
 
                   final remind = usesReminder
-                      ? (remindBeforeSession <= 0
-                            ? sessionsPaid
-                            : remindBeforeSession)
+                      ? normalizeReminderForSessions(
+                          sessionsPaidTotal: sessionsPaid,
+                          remindBeforeSession: remindBeforeSession,
+                        )
                       : 0;
 
                   try {
