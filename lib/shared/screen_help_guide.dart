@@ -3,28 +3,6 @@ import 'package:flutter/material.dart';
 enum GuideRole { admin, teacher }
 
 class ScreenHelpGuide {
-  static List<Widget> appBarActions({
-    required BuildContext context,
-    required GuideRole role,
-    required String screenId,
-    required String screenTitle,
-    List<Widget> trailing = const [],
-  }) {
-    return [
-      IconButton(
-        tooltip: 'Help / Instructions',
-        icon: const Icon(Icons.help_outline_rounded),
-        onPressed: () => show(
-          context,
-          role: role,
-          screenId: screenId,
-          screenTitle: screenTitle,
-        ),
-      ),
-      ...trailing,
-    ];
-  }
-
   static Future<void> show(
     BuildContext context, {
     required GuideRole role,

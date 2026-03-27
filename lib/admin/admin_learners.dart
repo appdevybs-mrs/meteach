@@ -824,21 +824,6 @@ class _LearnersListState extends State<_LearnersList>
     }
   }
 
-  bool _variantUsesSessions(String variantKey) {
-    final v = _normalizeVariantKey(variantKey);
-    return v == 'inclass' || v == 'private' || v == 'flexible';
-  }
-
-  bool _variantUsesReminder(String variantKey) {
-    final v = _normalizeVariantKey(variantKey);
-    return v == 'inclass' || v == 'private';
-  }
-
-  bool _variantUsesExpiry(String variantKey) {
-    final v = _normalizeVariantKey(variantKey);
-    return v == 'flexible' || v == 'recorded';
-  }
-
   bool _variantIsRecorded(String variantKey) {
     return _normalizeVariantKey(variantKey) == 'recorded';
   }
@@ -4350,52 +4335,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         ),
       ),
     );
-  }
-
-  static List<Map<String, dynamic>> _uniqueAttendanceByDate(
-    dynamic attendance,
-  ) {
-    if (attendance is! Map) return [];
-
-    final Map<String, Map<String, dynamic>> best = {};
-
-    attendance.forEach((_, v) {
-      if (v is! Map) return;
-
-      final m = v
-          .map((kk, vv) => MapEntry(kk.toString(), vv))
-          .cast<String, dynamic>();
-      final date = (m['date'] ?? '').toString().trim();
-      if (date.isEmpty) return;
-
-      int ts(dynamic x) {
-        if (x is int) return x;
-        if (x is num) return x.toInt();
-        return int.tryParse(x?.toString() ?? '') ?? 0;
-      }
-
-      final curScore = ts(m['updatedAt']) > 0
-          ? ts(m['updatedAt'])
-          : ts(m['createdAt']);
-
-      final old = best[date];
-      if (old == null) {
-        best[date] = m;
-        return;
-      }
-
-      final oldScore = ts(old['updatedAt']) > 0
-          ? ts(old['updatedAt'])
-          : ts(old['createdAt']);
-      if (curScore >= oldScore) best[date] = m;
-    });
-
-    final out = best.values.toList();
-    out.sort(
-      (a, b) =>
-          (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()),
-    );
-    return out;
   }
 
   static int _countUniqueAttendance(dynamic attendance) {
