@@ -25,6 +25,7 @@ import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
+import '../shared/app_theme.dart';
 import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/payment_status.dart';
@@ -122,6 +123,10 @@ class _AdminHomeState extends State<AdminHome> {
       if (userId != null && userId.isNotEmpty) {
         await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
       }
+    } catch (_) {}
+
+    try {
+      await appThemeController.resetToDefault();
     } catch (_) {}
 
     await FirebaseAuth.instance.signOut();
@@ -1395,6 +1400,24 @@ class _PaymentAttentionLogic {
     return _PayFlag.ok;
   }
 
+  static int _flexibleSessionsConsumed(Map<String, dynamic> courseMap) {
+    final directOnline = countPresentOnlineAttendance(
+      courseMap['online_attendance'],
+    );
+    if (directOnline > 0) return directOnline;
+
+    final bookingProgress = courseMap['booking_progress'];
+    if (bookingProgress is Map) {
+      final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
+      final nestedOnline = countPresentOnlineAttendance(
+        bp['online_attendance'],
+      );
+      if (nestedOnline > 0) return nestedOnline;
+    }
+
+    return countPresentUniqueAttendanceDates(courseMap['attendance']);
+  }
+
   static _PayFlag variantPaymentFlag(Map<String, dynamic> courseMap) {
     final variantKey = normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
@@ -1406,7 +1429,12 @@ class _PaymentAttentionLogic {
         : <String, dynamic>{};
 
     final attendance = courseMap['attendance'];
-    final sessionsDone = countPresentUniqueAttendanceDates(attendance);
+    final sessionsDone = switch (variantKey) {
+      'inclass' => countHeldUniqueAttendanceDates(attendance),
+      'private' => countPresentUniqueAttendanceDates(attendance),
+      'flexible' => _flexibleSessionsConsumed(courseMap),
+      _ => countPresentUniqueAttendanceDates(attendance),
+    };
     final sessionsPaidTotal = asInt(summaryMap['sessionsPaidTotal']);
     final remindBeforeSession = asInt(summaryMap['remindBeforeSession']);
 

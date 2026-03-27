@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/services.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/media_download.dart';
 
 class LearnerGalleryScreen extends StatefulWidget {
   const LearnerGalleryScreen({super.key});
@@ -74,7 +75,8 @@ class _LearnerGalleryScreenState extends State<LearnerGalleryScreen> {
       hints: const [
         LearnerTourHint(
           title: 'المعرض',
-          line: 'تتضمن هذه الصفحة الصور ومقاطع الفيديو المرسلة إليك من المعلمين.',
+          line:
+              'تتضمن هذه الصفحة الصور ومقاطع الفيديو المرسلة إليك من المعلمين.',
         ),
         LearnerTourHint(
           title: 'فتح الوسائط',
@@ -664,6 +666,19 @@ class _LearnerGalleryViewerScreen extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Download',
+            icon: const Icon(Icons.download_rounded, color: Colors.white),
+            onPressed: () => MediaDownload.downloadUrl(
+              context,
+              url: url,
+              suggestedName: isVideo
+                  ? 'learner_video_${DateTime.now().millisecondsSinceEpoch}.mp4'
+                  : 'learner_photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+            ),
+          ),
+        ],
         systemOverlayStyle: SystemUiOverlayStyle.light,
       ),
       body: SafeArea(

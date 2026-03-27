@@ -114,6 +114,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       }
     } catch (_) {}
 
+    try {
+      await appThemeController.resetToDefault();
+    } catch (_) {}
+
     await FirebaseAuth.instance.signOut();
 
     if (!context.mounted) return;

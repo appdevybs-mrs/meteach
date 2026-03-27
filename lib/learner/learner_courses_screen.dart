@@ -565,6 +565,19 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
     return '';
   }
 
+  bool _isExpiredMs(int ms) {
+    if (ms <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= ms;
+  }
+
+  bool _isNearExpiryMs(int ms, {int days = 3}) {
+    if (ms <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = ms - now;
+    if (diff <= 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = palette;
@@ -784,46 +797,101 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           summary: sum,
                         );
 
-                        if (state.isEmpty) return const SizedBox.shrink();
-
-                        final bool isDue = state == 'PAYMENT NEEDED';
-
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: (isDue ? Colors.red : p.accent).withValues(
-                              alpha: 0.12,
+                        Widget buildPill(String label, Color tone) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
                             ),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: (isDue ? Colors.red : p.accent).withValues(
-                                alpha: 0.28,
+                            decoration: BoxDecoration(
+                              color: tone.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: tone.withValues(alpha: 0.28),
                               ),
                             ),
-                          ),
-                          child: Text(
-                            state,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
-                              color: isDue ? Colors.red : p.accent,
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11,
+                                color: tone,
+                              ),
                             ),
-                          ),
-                        );
+                          );
+                        }
+
+                        final flexAccess = course['flexible_access'];
+                        final flexMap = flexAccess is Map
+                            ? flexAccess.map(
+                                (k, v) => MapEntry(k.toString(), v),
+                              )
+                            : <String, dynamic>{};
+                        final flexExpiresAt = _asInt(flexMap['expiresAt']);
+                        final expired =
+                            variantKey == 'flexible' &&
+                            _isExpiredMs(flexExpiresAt);
+                        final nearExpiry =
+                            variantKey == 'flexible' &&
+                            _isNearExpiryMs(flexExpiresAt);
+
+                        if (variantKey == 'flexible') {
+                          final cues = <Widget>[];
+                          if (state.isNotEmpty) {
+                            final sessionTone = switch (state) {
+                              'PAYMENT NEEDED' => Colors.red,
+                              'PAYMENT SOON' => const Color(0xFFD97706),
+                              _ => p.accent,
+                            };
+                            cues.add(buildPill(state, sessionTone));
+                          }
+
+                          if (expired) {
+                            cues.add(buildPill('ACCESS EXPIRED', Colors.red));
+                          } else if (nearExpiry) {
+                            cues.add(
+                              buildPill('EXPIRY SOON', const Color(0xFF7C3AED)),
+                            );
+                          }
+
+                          if (cues.isEmpty) return const SizedBox.shrink();
+                          return Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: cues,
+                          );
+                        }
+
+                        if (state.isEmpty) return const SizedBox.shrink();
+                        final tone = switch (state) {
+                          'PAYMENT NEEDED' => Colors.red,
+                          'PAYMENT SOON' => const Color(0xFFD97706),
+                          _ => p.accent,
+                        };
+                        return buildPill(state, tone);
                       }
 
-                      final inClassPresent = countPresentUniqueAttendanceDates(
+                      final inclassHeld = countHeldUniqueAttendanceDates(
                         course['attendance'],
                       );
+                      final privatePresent = countPresentUniqueAttendanceDates(
+                        course['attendance'],
+                      );
+
+                      if (variantKey == 'inclass') {
+                        return stateChipForDone(inclassHeld);
+                      }
+
+                      if (variantKey == 'private') {
+                        return stateChipForDone(privatePresent);
+                      }
+
                       if (variantKey != 'flexible') {
-                        return stateChipForDone(inClassPresent);
+                        return stateChipForDone(privatePresent);
                       }
 
                       final cid = _courseIdOf(course);
-                      if (cid.isEmpty) return stateChipForDone(inClassPresent);
+                      if (cid.isEmpty) return stateChipForDone(privatePresent);
 
                       return FutureBuilder<DataSnapshot>(
                         future: _db

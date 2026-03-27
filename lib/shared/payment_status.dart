@@ -14,8 +14,8 @@ bool paymentRecordIsPresent(Map<String, dynamic> record) {
   return false;
 }
 
-int countPresentUniqueAttendanceDates(dynamic attendance) {
-  if (attendance is! Map) return 0;
+Map<String, Map<String, dynamic>> _latestAttendanceByDate(dynamic attendance) {
+  if (attendance is! Map) return {};
 
   final Map<String, Map<String, dynamic>> byDate = {};
 
@@ -50,11 +50,21 @@ int countPresentUniqueAttendanceDates(dynamic attendance) {
     if (score >= oldScore) byDate[date] = rec;
   });
 
+  return byDate;
+}
+
+int countPresentUniqueAttendanceDates(dynamic attendance) {
+  final byDate = _latestAttendanceByDate(attendance);
   int present = 0;
   for (final rec in byDate.values) {
     if (paymentRecordIsPresent(rec)) present += 1;
   }
   return present;
+}
+
+int countHeldUniqueAttendanceDates(dynamic attendance) {
+  final byDate = _latestAttendanceByDate(attendance);
+  return byDate.length;
 }
 
 int countPresentOnlineAttendance(dynamic onlineAttendance) {

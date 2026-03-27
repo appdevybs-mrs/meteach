@@ -2381,6 +2381,29 @@ class _CourseLite {
     return out;
   }
 
+  String feeRangeLabel() {
+    final options = toEnrollOptions();
+    final fees = options
+        .map((o) => o.fee)
+        .whereType<double>()
+        .where((f) => f > 0)
+        .toList();
+    if (fees.isEmpty) return '';
+    fees.sort();
+
+    String fmt(double v) {
+      final rounded = v.round();
+      return rounded.toString();
+    }
+
+    final min = fees.first;
+    final max = fees.last;
+    if ((max - min).abs() < 0.0001) {
+      return 'From ${fmt(min)}';
+    }
+    return 'From ${fmt(min)} to ${fmt(max)}';
+  }
+
   static int? _parseInt(dynamic v) {
     if (v == null) return null;
     if (v is int) return v;
@@ -2669,6 +2692,19 @@ class _CoursesByCategory extends StatelessWidget {
                                           ),
                                         ),
                                         const SizedBox(height: 8),
+                                        if (c.feeRangeLabel().isNotEmpty) ...[
+                                          Text(
+                                            c.feeRangeLabel(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Brand.actionOrange,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                        ],
                                         SizedBox(
                                           width: double.infinity,
                                           child: OutlinedButton.icon(

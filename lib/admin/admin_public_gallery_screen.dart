@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import '../services/backend_api.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_tour_guide.dart';
+import '../shared/media_download.dart';
 import '../shared/screen_help_guide.dart';
 
 String _coursesRelativePathFromUrl(String rawUrl) {
@@ -2374,6 +2375,17 @@ class _AdminPublicGalleryViewerScreen extends StatelessWidget {
             ),
             icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
           ),
+          IconButton(
+            tooltip: 'Download',
+            icon: const Icon(Icons.download_rounded, color: Colors.white),
+            onPressed: () => MediaDownload.downloadUrl(
+              context,
+              url: url,
+              suggestedName: isVideo
+                  ? 'admin_gallery_video_${DateTime.now().millisecondsSinceEpoch}.mp4'
+                  : 'admin_gallery_photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+            ),
+          ),
           if (onDelete != null && itemId.isNotEmpty)
             IconButton(
               tooltip: 'Delete',
@@ -2540,6 +2552,17 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
               screenTitle: isVideo ? 'Video' : 'Photo',
             ),
             icon: const Icon(Icons.help_outline_rounded, color: Colors.white),
+          ),
+          IconButton(
+            tooltip: 'Download',
+            icon: const Icon(Icons.download_rounded, color: Colors.white),
+            onPressed: () => MediaDownload.downloadUrl(
+              context,
+              url: url,
+              suggestedName: isVideo
+                  ? 'admin_gallery_video_${DateTime.now().millisecondsSinceEpoch}.mp4'
+                  : 'admin_gallery_photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+            ),
           ),
           if (onDelete != null && itemId.isNotEmpty)
             IconButton(

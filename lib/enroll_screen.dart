@@ -745,6 +745,14 @@ class _EnrollScreenState extends State<EnrollScreen> {
                           ),
                           const SizedBox(height: 14),
                           if (selected != null)
+                            _SelectedOptionSummary(
+                              option: selected,
+                              studyMode: showPrivateMode
+                                  ? _privateStudyMode
+                                  : '',
+                            ),
+                          if (selected != null) const SizedBox(height: 12),
+                          if (selected != null)
                             _DeliveryExplanation(option: selected),
                         ],
                       ],
@@ -773,14 +781,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
                           ),
                         ],
                       ),
-                    ),
-                  ],
-
-                  if (selected != null) ...[
-                    const SizedBox(height: 14),
-                    _SelectedOptionSummary(
-                      option: selected,
-                      studyMode: showPrivateMode ? _privateStudyMode : '',
                     ),
                   ],
 
@@ -945,7 +945,7 @@ class _DeliveryCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 390;
     return SizedBox(
-      height: compact ? 162 : 170,
+      height: compact ? 146 : 154,
       child: PageView.builder(
         controller: controller,
         itemCount: options.length,
@@ -958,13 +958,13 @@ class _DeliveryCarousel extends StatelessWidget {
             duration: const Duration(milliseconds: 220),
             padding: EdgeInsets.symmetric(
               horizontal: 6,
-              vertical: selected ? 2 : 10,
+              vertical: selected ? 1 : 8,
             ),
             child: GestureDetector(
               onTap: () => onTapIndex(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                padding: EdgeInsets.all(compact ? 12 : 14),
+                padding: EdgeInsets.all(compact ? 10 : 12),
                 decoration: BoxDecoration(
                   gradient: selected
                       ? LinearGradient(
@@ -1002,8 +1002,8 @@ class _DeliveryCarousel extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      width: compact ? 42 : 48,
-                      height: compact ? 42 : 48,
+                      width: compact ? 38 : 44,
+                      height: compact ? 38 : 44,
                       decoration: BoxDecoration(
                         color: selected
                             ? Colors.white.withValues(alpha: 0.12)
@@ -1018,10 +1018,10 @@ class _DeliveryCarousel extends StatelessWidget {
                       child: Icon(
                         option.icon(),
                         color: selected ? Colors.white : Brand.primaryBlue,
-                        size: compact ? 22 : 24,
+                        size: compact ? 20 : 22,
                       ),
                     ),
-                    SizedBox(height: compact ? 7 : 9),
+                    SizedBox(height: compact ? 6 : 8),
                     Text(
                       option.label,
                       maxLines: 1,
@@ -1030,17 +1030,17 @@ class _DeliveryCarousel extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         color: selected ? Colors.white : Brand.primaryBlue,
-                        fontSize: compact ? 15 : 16,
+                        fontSize: compact ? 14 : 15,
                       ),
                     ),
-                    SizedBox(height: compact ? 4 : 5),
+                    SizedBox(height: compact ? 3 : 4),
                     Text(
                       option.shortLabelAr,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: compact ? 11.5 : 12,
+                        fontSize: compact ? 11 : 11.5,
                         color: selected
                             ? Colors.white.withValues(alpha: 0.92)
                             : Brand.mainText.withValues(alpha: 0.75),

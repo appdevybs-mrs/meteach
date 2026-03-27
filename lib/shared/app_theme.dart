@@ -305,6 +305,16 @@ class AppThemeController extends ChangeNotifier {
     await prefs.setString(_fontPrefsKey, fontMode.name);
   }
 
+  Future<void> resetToDefault() async {
+    _mode = AppThemeMode.navy;
+    _fontMode = AppFontMode.system;
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themePrefsKey, _mode.name);
+    await prefs.setString(_fontPrefsKey, _fontMode.name);
+  }
+
   String? _fontFamilyFromMode(AppFontMode mode) {
     switch (mode) {
       case AppFontMode.system:

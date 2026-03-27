@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/route_state.dart';
@@ -12,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -126,6 +126,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   bool _sending = false;
 
   final List<Map<String, String>> _attachments = [];
+  final Set<String> _selectedMessageIds = <String>{};
+  List<_MailMsg> _visibleMessages = const <_MailMsg>[];
   final List<_ComposerUploadItem> _uploadingItems = [];
 
   bool _peerIsLearner = false;
@@ -186,6 +188,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       _recUploading ||
       _hasPendingUploads;
   bool get _disableMicAction => _composerBusy || _hasPendingUploads;
+  bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
   @override
   void initState() {
@@ -865,6 +868,55 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ),
       );
     }
+  }
+
+  void _toggleMessageSelection(_MailMsg m) {
+    setState(() {
+      if (_selectedMessageIds.contains(m.id)) {
+        _selectedMessageIds.remove(m.id);
+      } else {
+        _selectedMessageIds.add(m.id);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedMessages(List<_MailMsg> visibleMsgs) async {
+    if (_selectedMessageIds.isEmpty) return;
+    final targets = visibleMsgs
+        .where((m) => _selectedMessageIds.contains(m.id))
+        .toList();
+    if (targets.isEmpty) return;
+
+    try {
+      for (final m in targets) {
+        await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
+      }
+      if (!mounted) return;
+      setState(() => _selectedMessageIds.clear());
+      _snack('Deleted ${targets.length} message(s) ✅');
+    } catch (e) {
+      _snack(toHumanError(e, fallback: 'Could not delete selected messages.'));
+    }
+  }
+
+  Future<void> _copySelectedMessages(List<_MailMsg> visibleMsgs) async {
+    if (_selectedMessageIds.isEmpty) return;
+    final targets =
+        visibleMsgs.where((m) => _selectedMessageIds.contains(m.id)).toList()
+          ..sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+    if (targets.isEmpty) return;
+
+    final text = targets
+        .map((m) {
+          final body = m.body.trim().isEmpty ? '(Attachment)' : m.body.trim();
+          final sender = m.fromUid == _meUid ? _meDisplayName : _peerNameShown;
+          return '[${_fmtTime(m.createdAtMs)}] $sender: $body';
+        })
+        .join('\n');
+
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    _snack('Copied ${targets.length} message(s) to clipboard.');
   }
 
   Future<void> _toggleReaction(_MailMsg m, String emoji) async {
@@ -3728,7 +3780,9 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _peerNameShown.isEmpty ? 'Mail' : _peerNameShown;
+    final title = _selectionMode
+        ? '${_selectedMessageIds.length} selected'
+        : (_peerNameShown.isEmpty ? 'Mail' : _peerNameShown);
     final subjectTrim = widget.subject.trim();
     final canReport = _peerIsLearner;
 
@@ -3814,6 +3868,24 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               });
             },
           ),
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'Copy selected',
+              icon: const Icon(Icons.copy_all_rounded, color: _navy),
+              onPressed: () => _copySelectedMessages(_visibleMessages),
+            ),
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'Delete selected',
+              icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red),
+              onPressed: () => _deleteSelectedMessages(_visibleMessages),
+            ),
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'Clear selection',
+              icon: const Icon(Icons.close_rounded, color: _navy),
+              onPressed: () => setState(() => _selectedMessageIds.clear()),
+            ),
           IconButton(
             tooltip: 'Evaluate homework',
             icon: Icon(
@@ -3889,6 +3961,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               builder: (_, snap) {
                 final msgsAll = _parseMessages(snap.data?.snapshot.value);
                 final msgs = _applyLocalSearch(msgsAll);
+                _visibleMessages = msgs;
 
                 if (msgsAll.isEmpty)
                   return const Center(child: Text('No mail yet.'));
@@ -3925,18 +3998,32 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
                             child: GestureDetector(
-                              onLongPress: () => _openQuickReactions(m),
+                              onLongPress: () => _toggleMessageSelection(m),
+                              onTap: _selectionMode
+                                  ? () => _toggleMessageSelection(m)
+                                  : null,
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: mine
                                     ? CrossAxisAlignment.end
                                     : CrossAxisAlignment.start,
                                 children: [
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxWidth: _messageMaxWidth(m),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: _selectedMessageIds.contains(m.id)
+                                          ? Border.all(
+                                              color: _orange,
+                                              width: 1.5,
+                                            )
+                                          : null,
                                     ),
-                                    child: _buildMessageBubble(m, mine: mine),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: _messageMaxWidth(m),
+                                      ),
+                                      child: _buildMessageBubble(m, mine: mine),
+                                    ),
                                   ),
                                   if (m.reactions.isNotEmpty)
                                     _buildReactionsRow(m, mine: mine),

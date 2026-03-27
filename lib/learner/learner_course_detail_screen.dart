@@ -72,9 +72,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   String _uid = '';
   Map<String, dynamic> _course = {};
 
-  // In-class attendance (existing)
-  List<Map<String, dynamic>> _attendance = [];
-
   // ✅ NEW: online attendance list
   List<Map<String, dynamic>> _onlineAttendance = [];
 
@@ -235,6 +232,48 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     return '';
   }
 
+  int _sessionsConsumedForPayment({
+    required int held,
+    required int present,
+    required int onlinePresent,
+  }) {
+    final studyType = _deliveryKey;
+    if (studyType == 'inclass') return held;
+    if (studyType == 'private') return present;
+    if (studyType == 'flexible') return onlinePresent;
+    return present;
+  }
+
+  int _studyTypeExpiresAtMs() {
+    final studyType = _deliveryKey;
+    if (studyType == 'flexible') {
+      final node = (_course['flexible_access'] is Map)
+          ? Map<String, dynamic>.from(_course['flexible_access'] as Map)
+          : <String, dynamic>{};
+      return _asInt(node['expiresAt']);
+    }
+    if (studyType == 'recorded') {
+      final node = (_course['recorded_access'] is Map)
+          ? Map<String, dynamic>.from(_course['recorded_access'] as Map)
+          : <String, dynamic>{};
+      return _asInt(node['expiresAt']);
+    }
+    return 0;
+  }
+
+  bool _isExpiredMs(int ms) {
+    if (ms <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= ms;
+  }
+
+  bool _isNearExpiryMs(int ms, {int days = 3}) {
+    if (ms <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = ms - now;
+    if (diff <= 0) return false;
+    return diff <= Duration(days: days).inMilliseconds;
+  }
+
   DatabaseReference get _paymentSummaryRef => _usersRef
       .child(_uid)
       .child('courses')
@@ -292,7 +331,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       _busy = true;
       _error = null;
       _course = {};
-      _attendance = [];
       _onlineAttendance = [];
       _attendanceAll = [];
       _syllabiFlat = [];
@@ -670,7 +708,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       // --------------------
       // finalize state
       // --------------------
-      _attendance = attList;
       _onlineAttendance = onlineList;
 
       _coveredSessionIds = covered;
@@ -905,6 +942,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     // ✅ Meetings = attendance records (in-class + online)
     final meetingsHeld = counts['total'] ?? 0;
     final present = counts['present'] ?? 0;
+    final onlinePresent = _attendanceAll
+        .where(
+          (x) =>
+              (x['source'] ?? '').toString().toLowerCase() == 'online' &&
+              (x['status'] ?? '').toString().toLowerCase() == 'present',
+        )
+        .length;
+    final sessionsConsumed = _sessionsConsumedForPayment(
+      held: meetingsHeld,
+      present: present,
+      onlinePresent: onlinePresent,
+    );
     final attPct = meetingsHeld == 0
         ? 0
         : ((present / meetingsHeld) * 100).round();
@@ -983,7 +1032,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             : TabBarView(
                 controller: _tab,
                 children: [
-                  _paymentTab(sessionsPassed: present),
+                  _paymentTab(sessionsPassed: sessionsConsumed),
                   _attendanceTab(
                     attPct: attPct,
                     present: present,
@@ -1033,6 +1082,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           remindBeforeSession: remindBeforeSession,
         );
 
+    final expiresAt = _studyTypeExpiresAtMs();
+    final expiryDue = _deliveryKey == 'flexible' && _isExpiredMs(expiresAt);
+    final expirySoon =
+        _deliveryKey == 'flexible' && !expiryDue && _isNearExpiryMs(expiresAt);
+
     final int leftSafe = left < 0 ? 0 : left;
 
     return ListView(
@@ -1056,6 +1110,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 const SizedBox(height: 12),
                 if (overdue || dueSoon)
                   _dueBanner(overdue: overdue, left: leftSafe),
+                if (expiryDue || expirySoon)
+                  _expiryBanner(expired: expiryDue, expiresAt: expiresAt),
                 _sessionsTable(
                   paid: hasPayments ? sessionsPaidTotal : null,
                   passed: sessionsPassed,
@@ -1147,9 +1203,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                             Text(
                               !hasPayments
                                   ? 'Payment is not synced yet.'
-                                  : overdue
+                                  : (overdue || expiryDue)
                                   ? 'Payment is due now. Please contact the academy to renew your sessions.'
-                                  : dueSoon
+                                  : (dueSoon || expirySoon)
                                   ? (leftSafe == 1
                                         ? 'Payment due in 1 session. It’s a good time to renew now.'
                                         : 'Payment due soon. It’s a good time to renew.')
@@ -1292,6 +1348,50 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _expiryBanner({required bool expired, required int expiresAt}) {
+    final title = expired ? 'Access expired' : 'Expiry date is near';
+    final msg = expired
+        ? 'Your flexible access period has ended. Please renew to continue.'
+        : 'Your flexible access expires on ${_fmtDateFromMs(expiresAt)}.';
+    final tone = expired ? Colors.red : const Color(0xFF7C3AED);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tone.withValues(alpha: 0.35)),
+        color: tone.withValues(alpha: 0.08),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            expired ? Icons.event_busy_rounded : Icons.event_available_rounded,
+            color: tone,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: UiK.mainText,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(msg, style: UiK.subtleText()),
               ],
             ),
           ),

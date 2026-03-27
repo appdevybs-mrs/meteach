@@ -11,6 +11,7 @@ import '../services/backend_api.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
+import '../shared/media_download.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/teacher_tour_guide.dart';
 
@@ -1716,6 +1717,17 @@ class _TeacherPublicGalleryViewerScreen extends StatelessWidget {
               role: GuideRole.teacher,
               screenId: 'teacher_gallery_viewer',
               screenTitle: isVideo ? 'Video' : 'Photo',
+            ),
+          ),
+          IconButton(
+            tooltip: 'Download',
+            icon: const Icon(Icons.download_rounded, color: Colors.white),
+            onPressed: () => MediaDownload.downloadUrl(
+              context,
+              url: url,
+              suggestedName: isVideo
+                  ? 'teacher_gallery_video_${DateTime.now().millisecondsSinceEpoch}.mp4'
+                  : 'teacher_gallery_photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
             ),
           ),
           if (onDelete != null)

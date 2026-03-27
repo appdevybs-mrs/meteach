@@ -355,6 +355,10 @@ class _LearnerHomeState extends State<LearnerHome> {
       } catch (_) {}
     }
 
+    try {
+      await appThemeController.resetToDefault();
+    } catch (_) {}
+
     await FirebaseAuth.instance.signOut();
 
     if (!context.mounted) return;
@@ -721,10 +725,29 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
         .toString()
         .trim()
         .toLowerCase();
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+    final studyMode =
+        (course['studyMode'] ?? cls['study_mode'] ?? cls['studyMode'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
     if (variant == 'recorded') return 'Recorded course';
-    if (variant == 'flexible' || variant == 'online') return 'Flexible course';
-    if (variant == 'private' || variant == 'live') return 'Private course';
+    if (variant == 'flexible' || variant == 'online') {
+      return 'Flexible course (Flexible)';
+    }
+    if (variant == 'private' || variant == 'live') {
+      if (studyMode == 'online') return 'Private course (Online)';
+      if (studyMode == 'inclass' ||
+          studyMode == 'in_class' ||
+          studyMode == 'in-class' ||
+          studyMode == 'in class') {
+        return 'Private course (In-Class)';
+      }
+      return 'Private course (Private)';
+    }
     if (variant == 'inclass' ||
         variant == 'in_class' ||
         variant == 'in-class' ||
@@ -735,10 +758,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (variant.isNotEmpty) {
       return '${variant[0].toUpperCase()}${variant.substring(1)} course';
     }
-
-    final cls = (course['class'] is Map)
-        ? Map<String, dynamic>.from(course['class'] as Map)
-        : <String, dynamic>{};
 
     final classType = (cls['type'] ?? cls['class_type'] ?? '')
         .toString()
@@ -1829,7 +1848,7 @@ class _ProgressCard extends StatelessWidget {
         return 'Recorded';
       case 'flexible':
       case 'online':
-        return 'Online';
+        return 'Flexible';
       case 'private':
       case 'live':
         return 'Private';

@@ -870,6 +870,24 @@ class _LearnersListState extends State<_LearnersList>
     return _PayFlag.ok;
   }
 
+  int _flexibleSessionsConsumedFromCourseMap(Map<String, dynamic> courseMap) {
+    final directOnline = countPresentOnlineAttendance(
+      courseMap['online_attendance'],
+    );
+    if (directOnline > 0) return directOnline;
+
+    final bookingProgress = courseMap['booking_progress'];
+    if (bookingProgress is Map) {
+      final bp = bookingProgress.map((k, v) => MapEntry(k.toString(), v));
+      final nestedOnline = countPresentOnlineAttendance(
+        bp['online_attendance'],
+      );
+      if (nestedOnline > 0) return nestedOnline;
+    }
+
+    return countPresentUniqueAttendanceDates(courseMap['attendance']);
+  }
+
   _PayFlag _variantPaymentFlag(Map<String, dynamic> courseMap) {
     final variantKey = _normalizeVariantKey(
       (courseMap['variantKey'] ?? courseMap['variant'] ?? 'inclass').toString(),
@@ -881,9 +899,12 @@ class _LearnersListState extends State<_LearnersList>
         : <String, dynamic>{};
 
     final attendance = courseMap['attendance'];
-    final sessionsDone = _LearnerExpandedTabsState._countUniqueAttendance(
-      attendance,
-    );
+    final sessionsDone = switch (variantKey) {
+      'inclass' => countHeldUniqueAttendanceDates(attendance),
+      'private' => countPresentUniqueAttendanceDates(attendance),
+      'flexible' => _flexibleSessionsConsumedFromCourseMap(courseMap),
+      _ => _LearnerExpandedTabsState._countUniqueAttendance(attendance),
+    };
 
     final sessionsPaidTotal = _LearnerExpandedTabsState._asInt(
       summaryMap['sessionsPaidTotal'],
@@ -3244,6 +3265,13 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       }
     }
 
+    final v = _normalizeVariantKey(variantKey);
+    if (v == 'private') {
+      return countPresentUniqueAttendanceDates(attendance);
+    }
+    if (v == 'inclass') {
+      return countHeldUniqueAttendanceDates(attendance);
+    }
     return countPresentUniqueAttendanceDates(attendance);
   }
 

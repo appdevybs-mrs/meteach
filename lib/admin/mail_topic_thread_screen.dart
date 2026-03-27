@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
@@ -122,6 +123,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   bool _sending = false;
 
   final List<Map<String, String>> _attachments = [];
+  final Set<String> _selectedMessageIds = <String>{};
+  List<_MailMsg> _visibleMessages = const <_MailMsg>[];
+
+  bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
   @override
   void initState() {
@@ -294,6 +299,55 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     }
   }
 
+  void _toggleMessageSelection(_MailMsg m) {
+    setState(() {
+      if (_selectedMessageIds.contains(m.id)) {
+        _selectedMessageIds.remove(m.id);
+      } else {
+        _selectedMessageIds.add(m.id);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedMessages(List<_MailMsg> visibleMsgs) async {
+    if (_selectedMessageIds.isEmpty) return;
+    final targets = visibleMsgs
+        .where((m) => _selectedMessageIds.contains(m.id))
+        .toList();
+    if (targets.isEmpty) return;
+
+    try {
+      for (final m in targets) {
+        await _msgsRef.child(m.id).child('deletedFor').child(_meUid).set(true);
+      }
+      if (!mounted) return;
+      setState(() => _selectedMessageIds.clear());
+      _snack('Deleted ${targets.length} message(s) ✅');
+    } catch (e) {
+      _snack(toHumanError(e, fallback: 'Could not delete selected messages.'));
+    }
+  }
+
+  Future<void> _copySelectedMessages(List<_MailMsg> visibleMsgs) async {
+    if (_selectedMessageIds.isEmpty) return;
+    final targets =
+        visibleMsgs.where((m) => _selectedMessageIds.contains(m.id)).toList()
+          ..sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+    if (targets.isEmpty) return;
+
+    final text = targets
+        .map((m) {
+          final body = m.body.trim().isEmpty ? '(Attachment)' : m.body.trim();
+          final sender = m.fromUid == _meUid ? 'Me' : widget.peerName;
+          return '[${_fmt(m.createdAtMs)}] $sender: $body';
+        })
+        .join('\n');
+
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    _snack('Copied ${targets.length} message(s) to clipboard.');
+  }
+
   Future<void> _send() async {
     if (_sending) return;
 
@@ -414,7 +468,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _subject.trim().isEmpty ? 'Topic' : _subject.trim();
+    final baseTitle = _subject.trim().isEmpty ? 'Topic' : _subject.trim();
+    final title = _selectionMode
+        ? '${_selectedMessageIds.length} selected'
+        : baseTitle;
 
     AdminTourGuide.scheduleSimple(
       context,
@@ -427,6 +484,24 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'Copy selected',
+              icon: const Icon(Icons.copy_all_rounded),
+              onPressed: () => _copySelectedMessages(_visibleMessages),
+            ),
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'Delete selected',
+              icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red),
+              onPressed: () => _deleteSelectedMessages(_visibleMessages),
+            ),
+          if (_selectionMode)
+            IconButton(
+              tooltip: 'Clear selection',
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => setState(() => _selectedMessageIds.clear()),
+            ),
           IconButton(
             tooltip: 'Help / Instructions',
             onPressed: () => ScreenHelpGuide.show(
@@ -458,8 +533,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                 stream: _msgStream,
                 builder: (_, snap) {
                   final msgs = _parseMessages(snap.data?.snapshot.value);
-                  if (msgs.isEmpty)
+                  _visibleMessages = msgs;
+                  if (msgs.isEmpty) {
                     return const Center(child: Text('No messages yet.'));
+                  }
 
                   return ListView.builder(
                     padding: const EdgeInsets.all(12),
@@ -468,91 +545,114 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                       final m = msgs[i];
                       final mine = m.fromUid == _meUid;
 
-                      return Align(
-                        alignment: mine
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 340),
-                          child: Card(
-                            elevation: 0,
-                            color: mine
-                                ? Colors.blue.withValues(alpha: 0.12)
-                                : Colors.black.withValues(alpha: 0.05),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: mine
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
+                      return GestureDetector(
+                        onLongPress: () => _toggleMessageSelection(m),
+                        onTap: _selectionMode
+                            ? () => _toggleMessageSelection(m)
+                            : null,
+                        child: Align(
+                          alignment: mine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 340),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: _selectedMessageIds.contains(m.id)
+                                    ? Border.all(
+                                        color: Colors.orange,
+                                        width: 1.5,
+                                      )
+                                    : null,
+                              ),
+                              child: Card(
+                                elevation: 0,
+                                color: mine
+                                    ? Colors.blue.withValues(alpha: 0.12)
+                                    : Colors.black.withValues(alpha: 0.05),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: mine
+                                        ? CrossAxisAlignment.end
+                                        : CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        mine ? 'Me' : widget.peerName,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.black.withValues(
-                                            alpha: 0.6,
-                                          ),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _fmt(m.createdAtMs),
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.black.withValues(
-                                            alpha: 0.55,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      PopupMenuButton<String>(
-                                        tooltip: 'Message actions',
-                                        onSelected: (v) async {
-                                          if (v == 'delete_for_me')
-                                            await _deleteMessageForMe(m);
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(
-                                            value: 'delete_for_me',
-                                            child: Text('Delete (for me)'),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  if (m.body.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    SelectableText(m.body),
-                                  ],
-                                  if (m.attachments.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    ...m.attachments.map((a) {
-                                      final name = a['name'] ?? 'Attachment';
-                                      final url = a['url'] ?? '';
-                                      return Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 6,
-                                        ),
-                                        child: InkWell(
-                                          onTap: () => _openUrlExternal(url),
-                                          child: Text(
-                                            '📎 $name',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              decoration:
-                                                  TextDecoration.underline,
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            mine ? 'Me' : widget.peerName,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.6,
+                                              ),
+                                              fontSize: 12,
                                             ),
                                           ),
-                                        ),
-                                      );
-                                    }),
-                                  ],
-                                ],
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            _fmt(m.createdAtMs),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.black.withValues(
+                                                alpha: 0.55,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          if (!_selectionMode)
+                                            PopupMenuButton<String>(
+                                              tooltip: 'Message actions',
+                                              onSelected: (v) async {
+                                                if (v == 'delete_for_me') {
+                                                  await _deleteMessageForMe(m);
+                                                }
+                                              },
+                                              itemBuilder: (_) => const [
+                                                PopupMenuItem(
+                                                  value: 'delete_for_me',
+                                                  child: Text(
+                                                    'Delete (for me)',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                        ],
+                                      ),
+                                      if (m.body.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        SelectableText(m.body),
+                                      ],
+                                      if (m.attachments.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        ...m.attachments.map((a) {
+                                          final name =
+                                              a['name'] ?? 'Attachment';
+                                          final url = a['url'] ?? '';
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 6,
+                                            ),
+                                            child: InkWell(
+                                              onTap: () =>
+                                                  _openUrlExternal(url),
+                                              child: Text(
+                                                '📎 $name',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  decoration:
+                                                      TextDecoration.underline,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }),
+                                      ],
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
