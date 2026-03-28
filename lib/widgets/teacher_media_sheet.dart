@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
 
@@ -101,15 +100,6 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
 
   Future<void> _loadTeacher() async {
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        if (!mounted) return;
-        setState(() {
-          _error = 'Please log in to view instructor media.';
-        });
-        return;
-      }
-
       final cleanUid = widget.teacherUid.trim();
       if (!_isLikelyUid(cleanUid)) {
         setState(() {
@@ -119,19 +109,34 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
         return;
       }
 
-      final baseRef = FirebaseDatabase.instance.ref('users/$cleanUid');
+      final profileRef = FirebaseDatabase.instance.ref(
+        'website/teachers/$cleanUid/profile',
+      );
+      final profileSnap = await profileRef.get();
+      final profileVal = profileSnap.value;
+      if (profileVal == null || profileVal is! Map) {
+        if (!mounted) return;
+        setState(() {
+          _error =
+              'This instructor profile is not available yet. Please refresh and try again.';
+        });
+        return;
+      }
 
-      final firstSnap = await baseRef.child('first_name').get();
-      final lastSnap = await baseRef.child('last_name').get();
-      final photosSnap = await baseRef.child('profile_photos').get();
-      final videoSnap = await baseRef.child('intro_video_url').get();
+      final profile = profileVal.map((k, v) => MapEntry(k.toString(), v));
 
-      final first = (firstSnap.value ?? '').toString().trim();
-      final last = (lastSnap.value ?? '').toString().trim();
-      final dbName = ('$first $last').trim();
+      String pickName() {
+        for (final key in const ['name', 'display_name', 'full_name']) {
+          final raw = (profile[key] ?? '').toString().trim();
+          if (raw.isNotEmpty) return raw;
+        }
+        return widget.teacherName.trim();
+      }
+
+      final dbName = pickName();
 
       final photos = <String>[];
-      final rawPhotos = photosSnap.value;
+      final rawPhotos = profile['profile_photos'];
 
       if (rawPhotos != null) {
         if (rawPhotos is List) {
@@ -157,8 +162,15 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
         }
       }
 
+      if (photos.isEmpty) {
+        final one = _urlFromUnknown(profile['profile_photo']);
+        if (one.isNotEmpty && _isHttpUrl(one)) {
+          photos.add(one);
+        }
+      }
+
       String? video;
-      final rawVideo = videoSnap.value;
+      final rawVideo = profile['intro_video_url'];
       if (rawVideo != null) {
         final s = _urlFromUnknown(rawVideo);
         if (s.isNotEmpty && _isHttpUrl(s)) {
@@ -195,17 +207,22 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
       }
     } catch (e) {
       if (!mounted) return;
+      final human = toHumanError(
+        e,
+        fallback: 'Could not load this instructor profile right now.',
+      );
+      final lower = human.toLowerCase();
       setState(() {
-        _error = toHumanError(
-          e,
-          fallback: 'Could not load this instructor profile right now.',
-        );
+        _error = (lower.contains('log in') || lower.contains('session'))
+            ? 'Teacher media is currently restricted by database rules. Please make sure `website/teachers` is publicly readable.'
+            : human;
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 

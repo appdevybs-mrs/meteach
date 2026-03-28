@@ -698,9 +698,6 @@ class _EnrollScreenState extends State<EnrollScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _MascotHeader(courseTitle: widget.courseTitle),
-                  const SizedBox(height: 14),
-
                   _GlassCard(
                     radius: _cardRadius(context),
                     child: Column(
@@ -1446,74 +1443,6 @@ class _GlassCard extends StatelessWidget {
           ),
           child: child,
         ),
-      ),
-    );
-  }
-}
-
-class _MascotHeader extends StatelessWidget {
-  const _MascotHeader({required this.courseTitle});
-  final String courseTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
-    final compact = w < 380;
-
-    return _GlassCard(
-      radius: (w < 420 ? 18 : 22),
-      child: Row(
-        children: [
-          Container(
-            width: compact ? 54 : 62,
-            height: compact ? 54 : 62,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Brand.appBg,
-              border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
-            ),
-            padding: const EdgeInsets.all(8),
-            child: ClipOval(
-              child: Image.asset(
-                'assets/images/character.png',
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.person_rounded,
-                  color: Brand.primaryBlue,
-                  size: compact ? 30 : 34,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Complete your enrollment',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Brand.primaryBlue,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  courseTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Brand.mainText,
-                    fontWeight: FontWeight.w900,
-                    height: 1.15,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -2817,35 +2817,22 @@ class _CoursesByCategory extends StatelessWidget {
 
         final cats = grouped.keys.toList()..sort();
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final oneColumn = constraints.maxWidth < 420;
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: cats.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: oneColumn ? 1 : 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: oneColumn ? 1.72 : 1.04,
+        return Column(
+          children: [
+            for (int i = 0; i < cats.length; i++) ...[
+              _CategoryGridCard(
+                title: cats[i],
+                courses: grouped[cats[i]] ?? const <_CourseLite>[],
+                onTap: () => _showCategoryCourses(
+                  context,
+                  category: cats[i],
+                  courses: grouped[cats[i]] ?? const <_CourseLite>[],
+                ),
+                onOpenCourse: (course) => _openCourseDetails(context, course),
               ),
-              itemBuilder: (_, index) {
-                final cat = cats[index];
-                final list = grouped[cat] ?? const <_CourseLite>[];
-                return _CategoryGridCard(
-                  title: cat,
-                  count: list.length,
-                  courses: list,
-                  onTap: () => _showCategoryCourses(
-                    context,
-                    category: cat,
-                    courses: list,
-                  ),
-                );
-              },
-            );
-          },
+              if (i != cats.length - 1) const SizedBox(height: 10),
+            ],
+          ],
         );
       },
     );
@@ -2855,132 +2842,149 @@ class _CoursesByCategory extends StatelessWidget {
 class _CategoryGridCard extends StatelessWidget {
   const _CategoryGridCard({
     required this.title,
-    required this.count,
     required this.courses,
     required this.onTap,
+    required this.onOpenCourse,
   });
 
   final String title;
-  final int count;
   final List<_CourseLite> courses;
   final VoidCallback onTap;
+  final void Function(_CourseLite course) onOpenCourse;
 
   @override
   Widget build(BuildContext context) {
-    final previews = courses.take(2).toList();
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 390;
-    final thumbHeight = compact ? 50.0 : 58.0;
+    final cardW = compact ? 146.0 : 158.0;
+    final thumbH = compact ? 84.0 : 92.0;
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Brand.uiBorder),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white, Brand.appBg.withValues(alpha: 0.85)],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 6),
-              ),
-            ],
+      child: Ink(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Brand.uiBorder),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Brand.appBg.withValues(alpha: 0.88)],
           ),
-          padding: EdgeInsets.all(compact ? 10 : 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: compact ? 34 : 36,
-                height: compact ? 34 : 36,
-                decoration: BoxDecoration(
-                  color: Brand.primaryBlue.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        padding: EdgeInsets.all(compact ? 10 : 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: compact ? 30 : 32,
+                  height: compact ? 30 : 32,
+                  decoration: BoxDecoration(
+                    color: Brand.primaryBlue.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.category_rounded,
+                    color: Brand.primaryBlue,
+                    size: 18,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.category_rounded,
-                  color: Brand.primaryBlue,
-                  size: 20,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '$title (${courses.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Brand.primaryBlue,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
-              ),
-              SizedBox(height: compact ? 7 : 8),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Brand.primaryBlue,
-                  fontWeight: FontWeight.w900,
-                  height: 1.15,
-                ),
-              ),
-              SizedBox(height: compact ? 6 : 7),
-              Row(
-                children: [
-                  for (int i = 0; i < 2; i++) ...[
-                    Expanded(
-                      child: Container(
-                        height: thumbHeight,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Brand.uiBorder),
-                        ),
-                        child: previews.length > i
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(9),
-                                child: _FastNetworkThumb(
-                                  url: previews[i].thumb,
-                                  fit: BoxFit.cover,
+                TextButton(onPressed: onTap, child: const Text('View all')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: compact ? 142 : 150,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: courses.length,
+                separatorBuilder: (_, ignoredSeparator) =>
+                    const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  final c = courses[i];
+                  return SizedBox(
+                    width: cardW,
+                    child: Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => onOpenCourse(c),
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Brand.uiBorder),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ClipRRect(
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(11),
                                 ),
-                              )
-                            : const Icon(
-                                Icons.school_rounded,
-                                color: Brand.primaryBlue,
+                                child: SizedBox(
+                                  height: thumbH,
+                                  child: c.thumb.trim().isNotEmpty
+                                      ? _FastNetworkThumb(
+                                          url: c.thumb,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Container(
+                                          color: Brand.appBg,
+                                          alignment: Alignment.center,
+                                          child: const Icon(
+                                            Icons.school_rounded,
+                                            color: Brand.primaryBlue,
+                                          ),
+                                        ),
+                                ),
                               ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                                child: Text(
+                                  c.title.trim().isEmpty
+                                      ? '(Untitled course)'
+                                      : c.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: Brand.primaryBlue,
+                                    height: 1.15,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                    if (i == 0) SizedBox(width: compact ? 6 : 7),
-                  ],
-                ],
+                  );
+                },
               ),
-              SizedBox(height: compact ? 5 : 6),
-              Text(
-                '$count course${count == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Brand.mainText.withValues(alpha: 0.72),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              SizedBox(height: compact ? 4 : 5),
-              const Row(
-                children: [
-                  Text(
-                    'Browse',
-                    style: TextStyle(
-                      color: Brand.actionOrange,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                    ),
-                  ),
-                  SizedBox(width: 4),
-                  Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 16,
-                    color: Brand.actionOrange,
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -3186,6 +3190,12 @@ class _CourseDetailsSheet extends StatelessWidget {
                     _InfoTile(
                       icon: Icons.category_rounded,
                       text: course.category,
+                    ),
+                  if (course.feeRangeLabel().trim().isNotEmpty)
+                    _InfoTile(
+                      icon: Icons.payments_rounded,
+                      text: 'Fees: ${course.feeRangeLabel()}',
+                      highlight: true,
                     ),
                 ],
               ),
@@ -3559,26 +3569,12 @@ class _TeacherChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canOpen = _isSafeUid(teacher.uid);
-    final isLoggedIn = FirebaseAuth.instance.currentUser != null;
-    final canOpenMedia = canOpen && isLoggedIn;
 
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: !canOpen
           ? null
           : () {
-              if (!isLoggedIn) {
-                AppToast.show(
-                  context,
-                  'Please log in to view teacher media.',
-                  type: AppToastType.info,
-                );
-                Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
-                return;
-              }
-
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
@@ -3594,16 +3590,10 @@ class _TeacherChip extends StatelessWidget {
               );
             },
       child: Opacity(
-        opacity: canOpenMedia ? 1 : 0.75,
+        opacity: canOpen ? 1 : 0.75,
         child: _PrettyChip(
-          icon: canOpenMedia
-              ? Icons.person_rounded
-              : Icons.lock_outline_rounded,
-          label: teacher.name.isEmpty
-              ? (canOpenMedia ? 'Teacher' : 'Teacher (Login required)')
-              : (canOpenMedia
-                    ? teacher.name
-                    : '${teacher.name} (Login required)'),
+          icon: Icons.person_rounded,
+          label: teacher.name.isEmpty ? 'Teacher' : teacher.name,
         ),
       ),
     );

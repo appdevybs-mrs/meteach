@@ -867,7 +867,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   right: 24,
                   bottom: 26,
                   child: pw.Opacity(
-                    opacity: 0.08,
+                    opacity: 0.03,
                     child: pw.Image(logoImage, width: 200, height: 200),
                   ),
                 ),

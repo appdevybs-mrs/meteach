@@ -346,6 +346,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     final courseFolderName = _isRecordedVariant
         ? await _loadCourseFolderName()
         : '';
+    if (!mounted) return;
 
     final res = await showModalBottomSheet<_SessionDraft>(
       context: context,
@@ -410,6 +411,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     final courseFolderName = _isRecordedVariant
         ? await _loadCourseFolderName()
         : '';
+    if (!mounted) return;
 
     final res = await showModalBottomSheet<_SessionDraft>(
       context: context,
@@ -514,6 +516,76 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     });
   }
 
+  Future<void> _openBulkRecordedUpload() async {
+    if (!_isRecordedVariant) return;
+    if (_units.isEmpty) {
+      AppToast.show(
+        context,
+        'Add at least one unit/session before bulk upload.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final hasAnySession = _units.any((u) => u.sessions.isNotEmpty);
+    if (!hasAnySession) {
+      AppToast.show(
+        context,
+        'No sessions found. Add sessions first.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final courseFolderName = await _loadCourseFolderName();
+    if (!mounted) return;
+
+    final result = await showModalBottomSheet<_BulkUploadResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFF8FAFC),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) => _RecordedBulkUploadSheet(
+        units: _units,
+        courseFolderName: courseFolderName,
+      ),
+    );
+
+    if (!mounted || result == null || result.updates.isEmpty) return;
+
+    setState(() {
+      final nextUnits = [..._units];
+      for (final u in result.updates) {
+        if (u.unitIndex < 0 || u.unitIndex >= nextUnits.length) continue;
+        final unit = nextUnits[u.unitIndex];
+        if (u.sessionIndex < 0 || u.sessionIndex >= unit.sessions.length) {
+          continue;
+        }
+
+        final sessions = [...unit.sessions];
+        final current = sessions[u.sessionIndex];
+        sessions[u.sessionIndex] = current.copyWith(
+          videoUrl: u.videoUrl ?? current.videoUrl,
+          materialsUrl: u.materialsUrl ?? current.materialsUrl,
+          videoThumbnailUrl: (u.videoUrl != null)
+              ? ''
+              : current.videoThumbnailUrl,
+          serverFolderPath: u.serverFolderPath ?? current.serverFolderPath,
+        );
+        nextUnits[u.unitIndex] = unit.copyWith(sessions: sessions);
+      }
+      _units = nextUnits;
+    });
+
+    AppToast.show(
+      context,
+      'Bulk upload applied to ${result.updates.length} session file(s). Tap Save to write to RTDB.',
+      type: AppToastType.success,
+    );
+  }
+
   // ----------------------------
   // UI
   // ----------------------------
@@ -552,6 +624,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         ),
         iconTheme: const IconThemeData(color: Color(0xFF1A2B48)),
         actions: [
+          if (_isRecordedVariant)
+            IconButton(
+              tooltip: 'Bulk upload assets',
+              onPressed: _loading ? null : _openBulkRecordedUpload,
+              icon: const Icon(Icons.cloud_upload_outlined),
+            ),
           IconButton(
             tooltip: 'Reload',
             onPressed: _loading ? null : _loadSyllabus,
@@ -2442,6 +2520,688 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BulkUploadResult {
+  const _BulkUploadResult({required this.updates});
+
+  final List<_BulkSessionUpdate> updates;
+}
+
+class _BulkSessionUpdate {
+  const _BulkSessionUpdate({
+    required this.unitIndex,
+    required this.sessionIndex,
+    this.videoUrl,
+    this.materialsUrl,
+    this.serverFolderPath,
+  });
+
+  final int unitIndex;
+  final int sessionIndex;
+  final String? videoUrl;
+  final String? materialsUrl;
+  final String? serverFolderPath;
+}
+
+class _BulkSessionEntry {
+  const _BulkSessionEntry({
+    required this.key,
+    required this.unitIndex,
+    required this.sessionIndex,
+    required this.unitTitle,
+    required this.sessionTitle,
+    required this.sessionNumber,
+  });
+
+  final String key;
+  final int unitIndex;
+  final int sessionIndex;
+  final String unitTitle;
+  final String sessionTitle;
+  final int sessionNumber;
+}
+
+enum _BulkAssetStatus { idle, queued, uploading, done, failed }
+
+class _BulkAssetSlot {
+  const _BulkAssetSlot({
+    this.file,
+    this.status = _BulkAssetStatus.idle,
+    this.progress = 0,
+    this.uploadedUrl,
+    this.error,
+  });
+
+  final PlatformFile? file;
+  final _BulkAssetStatus status;
+  final double progress;
+  final String? uploadedUrl;
+  final String? error;
+
+  _BulkAssetSlot copyWith({
+    PlatformFile? file,
+    bool clearFile = false,
+    _BulkAssetStatus? status,
+    double? progress,
+    String? uploadedUrl,
+    bool clearUploadedUrl = false,
+    String? error,
+    bool clearError = false,
+  }) {
+    return _BulkAssetSlot(
+      file: clearFile ? null : (file ?? this.file),
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      uploadedUrl: clearUploadedUrl ? null : (uploadedUrl ?? this.uploadedUrl),
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+}
+
+class _RecordedBulkUploadSheet extends StatefulWidget {
+  const _RecordedBulkUploadSheet({
+    required this.units,
+    required this.courseFolderName,
+  });
+
+  final List<SyllabusUnit> units;
+  final String courseFolderName;
+
+  @override
+  State<_RecordedBulkUploadSheet> createState() =>
+      _RecordedBulkUploadSheetState();
+}
+
+class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
+  static const int _maxUploadBytes = 250 * 1024 * 1024;
+
+  final Map<String, _BulkAssetSlot> _videoSlots = <String, _BulkAssetSlot>{};
+  final Map<String, _BulkAssetSlot> _htmlSlots = <String, _BulkAssetSlot>{};
+
+  late final List<_BulkSessionEntry> _entries;
+  bool _uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = <_BulkSessionEntry>[];
+    for (int ui = 0; ui < widget.units.length; ui++) {
+      final unit = widget.units[ui];
+      for (int si = 0; si < unit.sessions.length; si++) {
+        final s = unit.sessions[si];
+        final sessionNo = s.sessionNumber > 0 ? s.sessionNumber : (si + 1);
+        _entries.add(
+          _BulkSessionEntry(
+            key: '${ui}_$si',
+            unitIndex: ui,
+            sessionIndex: si,
+            unitTitle: unit.title.trim().isEmpty
+                ? 'Unit ${ui + 1}'
+                : unit.title,
+            sessionTitle: s.title.trim().isEmpty
+                ? 'Session $sessionNo'
+                : s.title,
+            sessionNumber: sessionNo,
+          ),
+        );
+      }
+    }
+  }
+
+  _BulkAssetSlot _videoOf(String key) =>
+      _videoSlots[key] ?? const _BulkAssetSlot();
+  _BulkAssetSlot _htmlOf(String key) =>
+      _htmlSlots[key] ?? const _BulkAssetSlot();
+
+  int get _queuedFileCount {
+    int n = 0;
+    for (final e in _entries) {
+      if (_videoOf(e.key).file != null) n++;
+      if (_htmlOf(e.key).file != null) n++;
+    }
+    return n;
+  }
+
+  int get _completedFileCount {
+    int n = 0;
+    for (final e in _entries) {
+      if (_videoOf(e.key).status == _BulkAssetStatus.done) n++;
+      if (_htmlOf(e.key).status == _BulkAssetStatus.done) n++;
+    }
+    return n;
+  }
+
+  int get _failedFileCount {
+    int n = 0;
+    for (final e in _entries) {
+      if (_videoOf(e.key).status == _BulkAssetStatus.failed) n++;
+      if (_htmlOf(e.key).status == _BulkAssetStatus.failed) n++;
+    }
+    return n;
+  }
+
+  Future<void> _pickVideo(_BulkSessionEntry entry) async {
+    if (_uploading) return;
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      withData: false,
+      type: FileType.video,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.single;
+    if (file.size > _maxUploadBytes) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Video is too large. Maximum is 250 MB.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    setState(() {
+      _videoSlots[entry.key] = _videoOf(entry.key).copyWith(
+        file: file,
+        status: _BulkAssetStatus.queued,
+        progress: 0,
+        clearUploadedUrl: true,
+        clearError: true,
+      );
+    });
+  }
+
+  Future<void> _pickHtml(_BulkSessionEntry entry) async {
+    if (_uploading) return;
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      withData: false,
+      type: FileType.custom,
+      allowedExtensions: const ['html', 'htm'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.single;
+    if (file.size > _maxUploadBytes) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'HTML file is too large. Maximum is 250 MB.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    setState(() {
+      _htmlSlots[entry.key] = _htmlOf(entry.key).copyWith(
+        file: file,
+        status: _BulkAssetStatus.queued,
+        progress: 0,
+        clearUploadedUrl: true,
+        clearError: true,
+      );
+    });
+  }
+
+  void _clearSelections() {
+    if (_uploading) return;
+    setState(() {
+      _videoSlots.clear();
+      _htmlSlots.clear();
+    });
+  }
+
+  String _fmtBytes(int size) {
+    if (size < 1024) return '$size B';
+    final kb = size / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    final gb = mb / 1024;
+    return '${gb.toStringAsFixed(2)} GB';
+  }
+
+  String _statusLabel(_BulkAssetSlot slot) {
+    switch (slot.status) {
+      case _BulkAssetStatus.idle:
+        return 'Not selected';
+      case _BulkAssetStatus.queued:
+        return 'Ready';
+      case _BulkAssetStatus.uploading:
+        return 'Uploading ${(slot.progress * 100).round()}%';
+      case _BulkAssetStatus.done:
+        return 'Uploaded';
+      case _BulkAssetStatus.failed:
+        return 'Failed';
+    }
+  }
+
+  Color _statusColor(_BulkAssetSlot slot) {
+    switch (slot.status) {
+      case _BulkAssetStatus.done:
+        return const Color(0xFF15803D);
+      case _BulkAssetStatus.failed:
+        return const Color(0xFFB91C1C);
+      case _BulkAssetStatus.uploading:
+        return const Color(0xFF1D4ED8);
+      case _BulkAssetStatus.queued:
+        return const Color(0xFF334155);
+      case _BulkAssetStatus.idle:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  Future<void> _uploadAll() async {
+    if (_uploading) return;
+
+    final hasQueued = _entries.any(
+      (e) => _videoOf(e.key).file != null || _htmlOf(e.key).file != null,
+    );
+    if (!hasQueued) {
+      AppToast.show(
+        context,
+        'Pick at least one video or HTML file first.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    setState(() => _uploading = true);
+    try {
+      for (final e in _entries) {
+        final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
+          sessionNumber: e.sessionNumber,
+          sessionTitle: e.sessionTitle,
+        );
+        final serverPath = '${widget.courseFolderName}/$sessionFolder';
+
+        final videoSlot = _videoOf(e.key);
+        if (videoSlot.file != null) {
+          setState(() {
+            _videoSlots[e.key] = videoSlot.copyWith(
+              status: _BulkAssetStatus.uploading,
+              progress: 0,
+              clearError: true,
+            );
+          });
+          try {
+            final url = await _SyllabusServerStorage.uploadPlatformFile(
+              file: videoSlot.file!,
+              root: 'courses',
+              path: serverPath,
+              customName: _SyllabusServerStorage.buildCustomBaseName(
+                sessionNumber: e.sessionNumber,
+                suffix: 'video',
+              ),
+              onProgress: (p) {
+                if (!mounted) return;
+                setState(() {
+                  _videoSlots[e.key] = _videoOf(
+                    e.key,
+                  ).copyWith(progress: p.clamp(0.0, 1.0));
+                });
+              },
+            );
+            if (!mounted) return;
+            setState(() {
+              _videoSlots[e.key] = _videoOf(e.key).copyWith(
+                status: _BulkAssetStatus.done,
+                progress: 1,
+                uploadedUrl: url,
+                clearError: true,
+              );
+            });
+          } catch (err) {
+            if (!mounted) return;
+            setState(() {
+              _videoSlots[e.key] = _videoOf(e.key).copyWith(
+                status: _BulkAssetStatus.failed,
+                error: toHumanError(err, fallback: 'Upload failed.'),
+              );
+            });
+          }
+        }
+
+        final htmlSlot = _htmlOf(e.key);
+        if (htmlSlot.file != null) {
+          setState(() {
+            _htmlSlots[e.key] = htmlSlot.copyWith(
+              status: _BulkAssetStatus.uploading,
+              progress: 0,
+              clearError: true,
+            );
+          });
+          try {
+            final url = await _SyllabusServerStorage.uploadPlatformFile(
+              file: htmlSlot.file!,
+              root: 'courses',
+              path: serverPath,
+              customName: _SyllabusServerStorage.buildCustomBaseName(
+                sessionNumber: e.sessionNumber,
+                suffix: 'materials',
+              ),
+              onProgress: (p) {
+                if (!mounted) return;
+                setState(() {
+                  _htmlSlots[e.key] = _htmlOf(
+                    e.key,
+                  ).copyWith(progress: p.clamp(0.0, 1.0));
+                });
+              },
+            );
+            if (!mounted) return;
+            setState(() {
+              _htmlSlots[e.key] = _htmlOf(e.key).copyWith(
+                status: _BulkAssetStatus.done,
+                progress: 1,
+                uploadedUrl: url,
+                clearError: true,
+              );
+            });
+          } catch (err) {
+            if (!mounted) return;
+            setState(() {
+              _htmlSlots[e.key] = _htmlOf(e.key).copyWith(
+                status: _BulkAssetStatus.failed,
+                error: toHumanError(err, fallback: 'Upload failed.'),
+              );
+            });
+          }
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+
+    if (!mounted) return;
+
+    if (_failedFileCount == 0 && _completedFileCount > 0) {
+      _applyUploaded();
+      return;
+    }
+
+    if (_completedFileCount > 0) {
+      AppToast.show(
+        context,
+        'Uploaded $_completedFileCount files. $_failedFileCount failed. You can apply successful uploads.',
+        type: AppToastType.info,
+      );
+    } else {
+      AppToast.show(
+        context,
+        'No files uploaded successfully. Check errors and retry.',
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  void _applyUploaded() {
+    final updates = <_BulkSessionUpdate>[];
+    for (final e in _entries) {
+      final v = _videoOf(e.key);
+      final h = _htmlOf(e.key);
+      final videoUrl = v.status == _BulkAssetStatus.done ? v.uploadedUrl : null;
+      final htmlUrl = h.status == _BulkAssetStatus.done ? h.uploadedUrl : null;
+      if ((videoUrl ?? '').isEmpty && (htmlUrl ?? '').isEmpty) continue;
+
+      final sessionFolder = _SyllabusServerStorage.buildSessionFolderName(
+        sessionNumber: e.sessionNumber,
+        sessionTitle: e.sessionTitle,
+      );
+      final serverPath = '${widget.courseFolderName}/$sessionFolder';
+
+      updates.add(
+        _BulkSessionUpdate(
+          unitIndex: e.unitIndex,
+          sessionIndex: e.sessionIndex,
+          videoUrl: videoUrl,
+          materialsUrl: htmlUrl,
+          serverFolderPath: serverPath,
+        ),
+      );
+    }
+
+    if (updates.isEmpty) {
+      AppToast.show(
+        context,
+        'No uploaded files to apply yet.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    Navigator.pop(context, _BulkUploadResult(updates: updates));
+  }
+
+  Widget _buildAssetCell({
+    required String label,
+    required _BulkAssetSlot slot,
+    required VoidCallback onPick,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        if (slot.file != null)
+          Text(
+            '${slot.file!.name} • ${_fmtBytes(slot.file!.size)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          )
+        else
+          Text(
+            'No file selected',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.black.withValues(alpha: 0.55),
+            ),
+          ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            FilledButton.tonalIcon(
+              onPressed: _uploading ? null : onPick,
+              icon: const Icon(Icons.attach_file_rounded, size: 16),
+              label: const Text('Pick'),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _statusLabel(slot),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: _statusColor(slot),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (slot.status == _BulkAssetStatus.uploading ||
+            slot.status == _BulkAssetStatus.done) ...[
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: slot.status == _BulkAssetStatus.done
+                  ? 1
+                  : slot.progress.clamp(0.0, 1.0),
+            ),
+          ),
+        ],
+        if ((slot.error ?? '').trim().isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            slot.error!,
+            style: const TextStyle(
+              color: Color(0xFFB91C1C),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _queuedFileCount;
+    final done = _completedFileCount;
+    final failed = _failedFileCount;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.cloud_upload_rounded,
+                  color: Color(0xFF1A2B48),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Bulk Upload Recorded Assets',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: _uploading ? null : () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Pick video/HTML per session, then upload all together. Progress is shown per file.',
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _Pill(label: 'Selected $selected'),
+                const SizedBox(width: 8),
+                _Pill(label: 'Uploaded $done'),
+                if (failed > 0) ...[
+                  const SizedBox(width: 8),
+                  _Pill(label: 'Failed $failed'),
+                ],
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _uploading ? null : _clearSelections,
+                  icon: const Icon(Icons.layers_clear_rounded, size: 17),
+                  label: const Text('Clear all'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.separated(
+                itemCount: _entries.length,
+                separatorBuilder: (_, ignoredSeparator) =>
+                    const SizedBox(height: 10),
+                itemBuilder: (_, i) {
+                  final e = _entries[i];
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'U${e.unitIndex + 1} • S${e.sessionNumber} • ${e.unitTitle}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF1A2B48),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          e.sessionTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black.withValues(alpha: 0.65),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: _buildAssetCell(
+                                label: 'Video',
+                                slot: _videoOf(e.key),
+                                onPick: () => _pickVideo(e),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _buildAssetCell(
+                                label: 'HTML',
+                                slot: _htmlOf(e.key),
+                                onPick: () => _pickHtml(e),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: (_uploading || done == 0)
+                        ? null
+                        : _applyUploaded,
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Apply uploaded'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _uploading ? null : _uploadAll,
+                    icon: _uploading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.cloud_upload_rounded),
+                    label: Text(_uploading ? 'Uploading…' : 'Upload all'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
