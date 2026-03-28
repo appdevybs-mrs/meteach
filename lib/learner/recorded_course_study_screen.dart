@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -318,8 +319,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return _completedSessions / _totalSessions;
   }
 
-  bool get _courseCompleted {
-    return _totalSessions > 0 && _completedSessions == _totalSessions;
+  bool get _courseCertificateUnlocked {
+    return _totalUnits > 0 && _completedUnits == _totalUnits;
   }
 
   int get _totalUnits => _units.length;
@@ -336,14 +337,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       if (_isUnitCompleted(unit)) done++;
     }
     return done;
-  }
-
-  String get _deviceSettingsLabel {
-    final locale = WidgetsBinding.instance.platformDispatcher.locale
-        .toLanguageTag();
-    final tz = DateTime.now().timeZoneName;
-    final os = Platform.operatingSystem;
-    return '$os • $locale • $tz';
   }
 
   int get _daysLeft {
@@ -745,7 +738,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<Uint8List> _buildCertificatePdfBytes({
     required String learnerName,
     required String courseTitle,
-    required String deviceSettings,
     String? moduleTitle,
     int? moduleNumber,
     int? moduleCount,
@@ -810,6 +802,58 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   ),
                 ),
               ),
+              pw.Positioned(
+                top: 20,
+                left: 20,
+                child: pw.Container(
+                  width: 22,
+                  height: 22,
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(_kYbsDeepOrangeHex),
+                    shape: pw.BoxShape.circle,
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                top: 16,
+                right: 20,
+                child: pw.Container(
+                  width: 16,
+                  height: 16,
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(_kYbsDeepBlueHex),
+                    shape: pw.BoxShape.circle,
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                bottom: 20,
+                left: 18,
+                child: pw.Container(
+                  width: 18,
+                  height: 18,
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFF7DD3FC),
+                    shape: pw.BoxShape.circle,
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                bottom: 20,
+                right: 20,
+                child: pw.Container(
+                  width: 26,
+                  height: 26,
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFFFFE7CC),
+                    border: pw.Border.all(
+                      color: PdfColor.fromInt(_kYbsDeepOrangeHex),
+                      width: 1,
+                    ),
+                    shape: pw.BoxShape.circle,
+                  ),
+                ),
+              ),
               if (logoImage != null)
                 pw.Positioned(
                   left: 0,
@@ -846,7 +890,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     pw.SizedBox(height: 6),
                     pw.Center(
                       child: pw.Text(
-                        heading,
+                        courseTitle,
                         style: pw.TextStyle(
                           fontSize: 14,
                           color: PdfColor.fromInt(_kYbsDeepOrangeHex),
@@ -898,20 +942,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         ),
                       ),
                     ),
-                    if (isModuleCertificate)
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.only(top: 8),
-                        child: pw.Center(
-                          child: pw.Text(
-                            'Course: $courseTitle${(moduleNumber != null && moduleCount != null) ? ' • Module $moduleNumber of $moduleCount' : ''}',
-                            textAlign: pw.TextAlign.center,
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              color: PdfColor.fromInt(0xFF475569),
-                            ),
-                          ),
-                        ),
-                      ),
                     pw.Spacer(),
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -924,7 +954,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                           ),
                         ),
                         pw.Text(
-                          'Generated with device settings: $deviceSettings',
+                          isModuleCertificate
+                              ? 'Module ${moduleNumber ?? '-'} of ${moduleCount ?? '-'}'
+                              : heading,
                           style: pw.TextStyle(
                             fontSize: 8.5,
                             color: PdfColor.fromInt(0xFF64748B),
@@ -950,7 +982,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final bytes = await _buildCertificatePdfBytes(
         learnerName: learnerName,
         courseTitle: _title,
-        deviceSettings: _deviceSettingsLabel,
       );
       await _presentCertificate(
         bytes: bytes,
@@ -975,7 +1006,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final bytes = await _buildCertificatePdfBytes(
         learnerName: learnerName,
         courseTitle: _title,
-        deviceSettings: _deviceSettingsLabel,
         moduleTitle: unit.displayTitle,
         moduleNumber: unitIndex + 1,
         moduleCount: _totalUnits,
@@ -1188,14 +1218,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       iconColor: style.fg,
                     ),
                     _InfoTile(
-                      icon: _courseCompleted
+                      icon: _courseCertificateUnlocked
                           ? Icons.workspace_premium_rounded
                           : Icons.lock_outline_rounded,
                       title: 'Certificate',
-                      value: _courseCompleted
+                      value: _courseCertificateUnlocked
                           ? 'Unlocked'
-                          : 'Locked until all sessions are completed',
-                      iconColor: _courseCompleted
+                          : 'Locked until all modules are completed',
+                      iconColor: _courseCertificateUnlocked
                           ? const Color(0xFF15803D)
                           : const Color(0xFF64748B),
                     ),
@@ -1217,7 +1247,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: _courseCompleted ? _onCertificateTap : null,
+                        onPressed: _courseCertificateUnlocked
+                            ? _onCertificateTap
+                            : null,
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF111827),
                           foregroundColor: Colors.white,
@@ -1674,10 +1706,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         } else if (value == 'info') {
           await _showCourseInfoSheet();
         } else if (value == 'certificate') {
-          if (_courseCompleted) {
+          if (_courseCertificateUnlocked) {
             _onCertificateTap();
           } else {
-            _snack('Complete all sessions to unlock your certificate.');
+            _snack('Complete all modules to unlock your certificate.');
           }
         }
       },
@@ -1881,7 +1913,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        actions: [_buildMenuButton()],
+        actions: [
+          if (kDebugMode)
+            IconButton(
+              tooltip: 'Debug certificate',
+              onPressed: _onCertificateTap,
+              icon: const Icon(Icons.bug_report_rounded),
+            ),
+          _buildMenuButton(),
+        ],
       ),
       body: Stack(
         children: [
