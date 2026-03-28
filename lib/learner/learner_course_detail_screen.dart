@@ -37,6 +37,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../shared/app_feedback.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/course_join_rules.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
   final String courseKey; // course_1, course_2 ...
@@ -275,27 +276,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   String get _courseId => (_cls['course_id'] ?? _course['id'] ?? '').toString();
 
   String get _deliveryKey {
-    final rootVariant = (_course['variantKey'] ?? _course['variant'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
-    if (rootVariant.isNotEmpty) return rootVariant;
-
-    final classMap = (_course['class'] is Map)
-        ? Map<String, dynamic>.from(_course['class'] as Map)
-        : <String, dynamic>{};
-
-    final classVariant = (classMap['variantKey'] ?? classMap['variant'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
-    if (classVariant.isNotEmpty) return classVariant;
-
-    return (_course['deliveryKey'] ?? '').toString().trim().toLowerCase();
+    return resolveCourseDeliveryKey(_course);
   }
 
-  String get _studyMode =>
-      (_course['studyMode'] ?? '').toString().trim().toLowerCase();
+  String get _studyMode => resolveCourseStudyMode(_course);
 
   String get _legacyVariantKey =>
       (_course['variantKey'] ?? _course['variant'] ?? '')
@@ -338,10 +322,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   bool get _isPrivateOnlineCourse {
-    if (_deliveryKey != 'private') return false;
-    final classMode = (_cls['studyMode'] ?? '').toString().trim().toLowerCase();
-    final mode = _studyMode.isNotEmpty ? _studyMode : classMode;
-    return mode == 'online' || mode.isEmpty;
+    return isPrivateOnlineCourse(_course);
   }
 
   String _weeklyScheduleLine(dynamic sessionsRaw) {
@@ -1493,19 +1474,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         return const SizedBox.shrink();
                       }
 
-                      final now = DateTime.now();
                       final next = meta.nextStart;
                       final hasMeet = meta.meetUrl.trim().isNotEmpty;
-
-                      bool canJoin = false;
-                      if (next != null) {
-                        final openFrom = next.subtract(
-                          const Duration(minutes: 5),
-                        );
-                        final openUntil = next.add(const Duration(minutes: 10));
-                        canJoin =
-                            !now.isBefore(openFrom) && now.isBefore(openUntil);
-                      }
 
                       String nextLabel = 'Next session: -';
                       if (next != null) {
@@ -1533,30 +1503,53 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                             const SizedBox(height: 8),
                             SizedBox(
                               width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: (canJoin && hasMeet)
-                                    ? () => _openExternalUrl(meta.meetUrl)
-                                    : null,
-                                icon: const Icon(Icons.video_call_rounded),
-                                label: Text(
-                                  canJoin && hasMeet
-                                      ? 'Join'
-                                      : (hasMeet
-                                            ? 'Join (opens 5 min before)'
-                                            : 'Meet link not set'),
+                              child: StreamBuilder<int>(
+                                stream: Stream.periodic(
+                                  const Duration(seconds: 1),
+                                  (x) => x,
                                 ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: canJoin && hasMeet
-                                      ? UiK.actionOrange
-                                      : Colors.grey.shade500,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey.shade500,
-                                  disabledForegroundColor: Colors.white,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
+                                initialData: 0,
+                                builder: (context, _) {
+                                  final now = DateTime.now();
+                                  final canJoin =
+                                      next != null &&
+                                      canJoinFromStart(next, now: now) &&
+                                      hasMeet;
+
+                                  final joinLabel = next == null
+                                      ? (hasMeet
+                                            ? 'Join (schedule unavailable)'
+                                            : 'Meet link not set')
+                                      : joinButtonLabelForWindow(
+                                          openFrom: joinOpensAt(next),
+                                          openUntil: joinClosesAt(next),
+                                          hasMeetLink: hasMeet,
+                                          now: now,
+                                          actionLabel: 'Join',
+                                          closedLabel: 'Join window closed',
+                                        );
+
+                                  return ElevatedButton.icon(
+                                    onPressed: canJoin
+                                        ? () => _openExternalUrl(meta.meetUrl)
+                                        : null,
+                                    icon: const Icon(Icons.video_call_rounded),
+                                    label: Text(joinLabel),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: canJoin
+                                          ? UiK.actionOrange
+                                          : Colors.grey.shade500,
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor:
+                                          Colors.grey.shade500,
+                                      disabledForegroundColor: Colors.white,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                           ],

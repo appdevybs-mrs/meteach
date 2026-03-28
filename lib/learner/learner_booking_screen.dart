@@ -9,6 +9,7 @@ import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/course_join_rules.dart';
 
 class LearnerBookingScreen extends StatefulWidget {
   const LearnerBookingScreen({super.key, this.courseId});
@@ -262,20 +263,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok) _toast('Could not open the link.');
-  }
-
-  bool _canOpenMeetNow(_Slot slot) {
-    if (!slot.bookedByMe) return false;
-    if (slot.meetUrl.trim().isEmpty) return false;
-
-    final now = DateTime.now();
-    final openFrom = slot.start.subtract(const Duration(minutes: 10));
-    final dur = slot.durationMinutes <= 0 ? 60 : slot.durationMinutes;
-    final openUntil = slot.start
-        .add(Duration(minutes: dur))
-        .add(const Duration(minutes: 15));
-
-    return now.isAfter(openFrom) && now.isBefore(openUntil);
   }
 
   bool _isWithin24Hours(_Slot slot) {
@@ -2050,7 +2037,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
             slot.start.isAfter(DateTime.now().add(const Duration(hours: 24)));
         final cancelLocked = slot.bookedByMe && !canCancel;
 
-        final canJoinMeet = _canOpenMeetNow(slot);
         final newBookingLocked = _isBookingLockedForNewBooking(slot);
 
         final shownSessionNo = slot.groupSessionNo ?? currentSession;
@@ -2182,27 +2168,56 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen> {
                   ),
                 if (peerGroup) const SizedBox(height: 12),
                 if (slot.bookedByMe && slot.meetUrl.trim().isNotEmpty) ...[
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: actionOrange,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      minimumSize: const Size(double.infinity, 48),
+                  StreamBuilder<int>(
+                    stream: Stream.periodic(
+                      const Duration(seconds: 1),
+                      (x) => x,
                     ),
-                    onPressed: canJoinMeet
-                        ? () {
-                            Navigator.pop(context);
-                            _openExternalUrl(slot.meetUrl);
-                          }
-                        : null,
-                    child: Text(
-                      canJoinMeet
-                          ? 'Join Google Meet'
-                          : 'Join available near session time',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
+                    initialData: 0,
+                    builder: (context, _) {
+                      final now = DateTime.now();
+                      final openFrom = slot.start.subtract(
+                        const Duration(minutes: 10),
+                      );
+                      final dur = slot.durationMinutes <= 0
+                          ? 60
+                          : slot.durationMinutes;
+                      final openUntil = slot.start
+                          .add(Duration(minutes: dur))
+                          .add(const Duration(minutes: 15));
+
+                      final dynamicCanJoin =
+                          now.isAfter(openFrom) && now.isBefore(openUntil);
+                      final joinLabel = joinButtonLabelForWindow(
+                        openFrom: openFrom,
+                        openUntil: openUntil,
+                        hasMeetLink: true,
+                        now: now,
+                        actionLabel: 'Join Google Meet',
+                        closedLabel: 'Join window closed',
+                      );
+
+                      return FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: actionOrange,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                        onPressed: dynamicCanJoin
+                            ? () {
+                                Navigator.pop(context);
+                                _openExternalUrl(slot.meetUrl);
+                              }
+                            : null,
+                        child: Text(
+                          joinLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 10),
                 ],

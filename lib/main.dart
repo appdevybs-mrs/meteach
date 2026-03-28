@@ -21,6 +21,7 @@ import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
 import 'shared/app_theme.dart';
 import 'shared/app_feedback.dart';
+import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'auth/auth_gate.dart';
@@ -970,8 +971,6 @@ class _JoinOnlineCircleEntryButtonState
   }
 
   Future<void> _showCircleDetails(_OnlineCircle circle) async {
-    final joinState = circle.joinStateAt(DateTime.now());
-
     await showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -1072,44 +1071,80 @@ class _JoinOnlineCircleEntryButtonState
                 ),
               ),
               const SizedBox(height: 16),
-              _CircleJoinStatusBanner(state: joinState, circle: circle),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: const Text('Close'),
+              StreamBuilder<int>(
+                stream: Stream.periodic(const Duration(seconds: 1), (x) => x),
+                initialData: 0,
+                builder: (context, _) {
+                  final now = DateTime.now();
+                  final joinState = circle.joinStateAt(now);
+                  final start = DateTime.fromMillisecondsSinceEpoch(
+                    circle.timeMs,
+                  );
+                  final openFrom = start.subtract(const Duration(minutes: 5));
+                  final openUntil = start.add(
+                    Duration(
+                      minutes: circle.durationMinutes <= 0
+                          ? 60
+                          : circle.durationMinutes,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: joinState.canJoin
-                          ? () async {
-                              Navigator.of(context).pop();
-                              await _joinCircle(circle);
-                            }
-                          : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Brand.primaryBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                  );
+                  final joinLabel = joinButtonLabelForWindow(
+                    openFrom: openFrom,
+                    openUntil: openUntil,
+                    hasMeetLink: circle.meetingUrl.trim().isNotEmpty,
+                    now: now,
+                    actionLabel: 'Join',
+                    closedLabel: 'Join closed',
+                  );
+
+                  return Column(
+                    children: [
+                      _CircleJoinStatusBanner(state: joinState, circle: circle),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text('Close'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: joinState.canJoin
+                                  ? () async {
+                                      Navigator.of(context).pop();
+                                      await _joinCircle(circle);
+                                    }
+                                  : null,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Brand.primaryBlue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              icon: const Icon(Icons.video_call_rounded),
+                              label: Text(joinLabel),
+                            ),
+                          ),
+                        ],
                       ),
-                      icon: const Icon(Icons.video_call_rounded),
-                      label: const Text('Join'),
-                    ),
-                  ),
-                ],
+                    ],
+                  );
+                },
               ),
             ],
           ),

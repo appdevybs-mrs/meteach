@@ -10,6 +10,7 @@ import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/watermark_background.dart';
 import '../shared/learner_tour_guide.dart';
+import '../shared/course_join_rules.dart';
 import 'learner_course_detail_screen.dart';
 import 'recorded_course_study_screen.dart';
 
@@ -1468,8 +1469,8 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                   final now = DateTime.now();
                   final current = _currentOccurrence(meta, now);
                   final next = _nextOccurrence(meta, now);
-                  final canJoin =
-                      current != null && meta.meetUrl.trim().isNotEmpty;
+                  final hasMeet = meta.meetUrl.trim().isNotEmpty;
+                  final canJoin = current != null && hasMeet;
 
                   String timeLine;
                   if (current != null) {
@@ -1480,6 +1481,32 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                   } else {
                     timeLine = 'No upcoming session found';
                   }
+
+                  final joinLabel = current != null
+                      ? joinButtonLabelForWindow(
+                          openFrom: current.start.subtract(
+                            const Duration(minutes: 5),
+                          ),
+                          openUntil: current.end,
+                          hasMeetLink: hasMeet,
+                          actionLabel: 'Join',
+                          closedLabel: 'Join window closed',
+                        )
+                      : (next != null
+                            ? joinButtonLabelForWindow(
+                                openFrom: next.start.subtract(
+                                  const Duration(minutes: 5),
+                                ),
+                                openUntil: next.start.add(
+                                  const Duration(minutes: 10),
+                                ),
+                                hasMeetLink: hasMeet,
+                                actionLabel: 'Join',
+                                closedLabel: 'Join window closed',
+                              )
+                            : (hasMeet
+                                  ? 'Join (no upcoming session)'
+                                  : 'Meet link not set'));
 
                   return Container(
                     width: double.infinity,
@@ -1510,11 +1537,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                           width: double.infinity,
                           child: ElevatedButton.icon(
                             icon: const Icon(Icons.video_call_rounded),
-                            label: Text(
-                              canJoin
-                                  ? 'Join'
-                                  : 'Join (available at session time)',
-                            ),
+                            label: Text(joinLabel),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: canJoin
                                   ? variantStyle.fg

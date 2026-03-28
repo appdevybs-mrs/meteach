@@ -25,6 +25,7 @@ import '../shared/app_feedback.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
+import '../shared/course_join_rules.dart';
 
 class LearnerHome extends StatefulWidget {
   const LearnerHome({super.key});
@@ -961,16 +962,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     );
   }
 
-  String _studyModeFromCourse(Map<String, dynamic> course) {
-    final cls = (course['class'] is Map)
-        ? Map<String, dynamic>.from(course['class'] as Map)
-        : <String, dynamic>{};
-    return (course['studyMode'] ?? cls['studyMode'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
-  }
-
   String _weeklyScheduleLine(dynamic sessionsRaw) {
     final nodes = <Map<String, dynamic>>[];
     if (sessionsRaw is List) {
@@ -1475,13 +1466,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             ? (completed / total).clamp(0.0, 1.0)
             : 0.0;
 
-        final variantKey = (course['variantKey'] ?? course['variant'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
-        final studyMode = _studyModeFromCourse(course);
-        final isPrivateOnline =
-            variantKey == 'private' && studyMode == 'online';
+        final variantKey = resolveCourseDeliveryKey(course);
+        final isPrivateOnline = isPrivateOnlineCourse(course);
 
         String scheduleLine = '';
         int nextStartMs = 0;
@@ -2117,11 +2103,7 @@ class _ProgressCard extends StatelessWidget {
   final VoidCallback onTap;
 
   bool _canJoinNow(int startMs) {
-    if (startMs <= 0) return false;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final openFrom = startMs - const Duration(minutes: 5).inMilliseconds;
-    final openUntil = startMs + const Duration(minutes: 10).inMilliseconds;
-    return now >= openFrom && now < openUntil;
+    return canJoinFromStartMs(startMs);
   }
 
   Future<void> _openExternalUrl(BuildContext context, String url) async {
@@ -2370,9 +2352,25 @@ class _ProgressCard extends StatelessWidget {
                       ),
                       initialData: 0,
                       builder: (context, _) {
+                        final start = item.nextStartMs > 0
+                            ? DateTime.fromMillisecondsSinceEpoch(
+                                item.nextStartMs,
+                              )
+                            : null;
                         final canJoin = item.isPrivateOnline && hasMeet
                             ? _canJoinNow(item.nextStartMs)
                             : false;
+                        final joinLabel = start == null
+                            ? (hasMeet
+                                  ? 'Join (schedule unavailable)'
+                                  : 'Meet link not set')
+                            : joinButtonLabelForWindow(
+                                openFrom: joinOpensAt(start),
+                                openUntil: joinClosesAt(start),
+                                hasMeetLink: hasMeet,
+                                actionLabel: 'Join',
+                                closedLabel: 'Join window closed',
+                              );
                         return SizedBox(
                           width: double.infinity,
                           child: FilledButton(
@@ -2390,11 +2388,7 @@ class _ProgressCard extends StatelessWidget {
                                 ? () => _openExternalUrl(context, item.meetUrl)
                                 : null,
                             child: Text(
-                              canJoin
-                                  ? 'Join'
-                                  : (hasMeet
-                                        ? 'Join (opens 5 min before)'
-                                        : 'Meet link not set'),
+                              joinLabel,
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
                                 fontSize: compact ? 11 : 12,
@@ -2547,6 +2541,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
   String? _meetInfoKey;
 
   Timer? _ticker;
+  Timer? _nextBookingRefreshTimer;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseScale;
 
@@ -2557,6 +2552,14 @@ class _BookingTopCardState extends State<_BookingTopCard>
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {});
+    });
+    _nextBookingRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!mounted) return;
+      setState(() {
+        _nextBookingFuture = _findMyNextBookingAcrossCourses();
+        _meetInfoFuture = null;
+        _meetInfoKey = null;
+      });
     });
 
     _pulseController = AnimationController(
@@ -2572,6 +2575,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
   @override
   void dispose() {
     _ticker?.cancel();
+    _nextBookingRefreshTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -2611,21 +2615,15 @@ class _BookingTopCardState extends State<_BookingTopCard>
       final realCourseId = (m['id'] ?? m['courseId'] ?? '').toString().trim();
       final courseId = realCourseId.isNotEmpty ? realCourseId : key;
 
-      final variantKey = (m['variantKey'] ?? m['variant'] ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
-
       final classMap = (m['class'] is Map)
           ? Map<String, dynamic>.from(m['class'] as Map)
           : <String, dynamic>{};
-      final studyMode = (m['studyMode'] ?? classMap['studyMode'] ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
+
+      final variantKey = resolveCourseDeliveryKey(m);
+      final studyMode = resolveCourseStudyMode(m);
 
       final isFlexible = variantKey == 'flexible';
-      final isPrivateOnline = variantKey == 'private' && studyMode == 'online';
+      final isPrivateOnline = isPrivateOnlineCourse(m);
       if (!isFlexible && !isPrivateOnline) continue;
 
       final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
@@ -3056,19 +3054,16 @@ class _BookingTopCardState extends State<_BookingTopCard>
   }
 
   bool _canJoinNow(DateTime start, int durationMinutes) {
-    final now = DateTime.now();
-    final openFrom = start.subtract(const Duration(minutes: 5));
-    final openUntil = start.add(const Duration(minutes: 10));
-    return !now.isBefore(openFrom) && now.isBefore(openUntil);
+    return canJoinFromStart(start);
   }
 
   Duration _untilJoinOpens(DateTime start) {
-    final openFrom = start.subtract(const Duration(minutes: 5));
+    final openFrom = joinOpensAt(start);
     return openFrom.difference(DateTime.now());
   }
 
   Duration _untilJoinCloses(DateTime start, int durationMinutes) {
-    final openUntil = start.add(const Duration(minutes: 10));
+    final openUntil = joinClosesAt(start);
     return openUntil.difference(DateTime.now());
   }
 
@@ -3094,8 +3089,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
   double _joinWindowProgress(DateTime start, int durationMinutes) {
     final now = DateTime.now();
-    final openFrom = start.subtract(const Duration(minutes: 5));
-    final openUntil = start.add(const Duration(minutes: 10));
+    final openFrom = joinOpensAt(start);
+    final openUntil = joinClosesAt(start);
 
     final totalMs = openUntil.difference(openFrom).inMilliseconds;
     if (totalMs <= 0) return 0;
@@ -3110,7 +3105,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
   double _preJoinProgress(DateTime start) {
     final now = DateTime.now();
-    final openFrom = start.subtract(const Duration(minutes: 5));
+    final openFrom = joinOpensAt(start);
 
     final totalMs = openFrom.difference(now).inMilliseconds;
     final fullSpanMs = openFrom
@@ -3701,9 +3696,9 @@ class _BookingTopCardState extends State<_BookingTopCard>
                               : null,
                           child: Text(
                             canJoin
-                                ? 'Join Google Meet'
+                                ? 'Join Google Meet ($closesInText left)'
                                 : beforeOpen
-                                ? 'Session booked'
+                                ? 'Join in $opensInText'
                                 : afterClose
                                 ? 'Join window closed'
                                 : 'Join unavailable',
