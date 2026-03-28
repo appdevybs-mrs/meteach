@@ -22,9 +22,6 @@ const int _kYbsDeepOrangeHex = 0xFFE56A00;
 
 const Color _kYbsDeepBlue = Color(_kYbsDeepBlueHex);
 const Color _kYbsDeepOrange = Color(_kYbsDeepOrangeHex);
-const Color _kYbsOrangeSoft = Color(0xFFFFF4E8);
-const Color _kYbsOrangeSoft2 = Color(0xFFFFE1C2);
-const Color _kYbsOrangeText = Color(0xFF9A3412);
 const Color _kYbsOrangeTextStrong = Color(0xFF7C2D12);
 
 class RecordedCourseStudyScreen extends StatefulWidget {
@@ -774,7 +771,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         ? 'Module Milestone Certificate'
         : 'Certificate of Completion';
     final String completionLine = isModuleCertificate
-        ? 'has successfully completed milestone'
+        ? 'has successfully completed'
         : 'has successfully completed';
     final String awardTitle = isModuleCertificate
         ? moduleTitleText
@@ -783,221 +780,159 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(26),
+        margin: const pw.EdgeInsets.all(28),
         build: (context) {
           return pw.Stack(
             children: [
               pw.Positioned.fill(
                 child: pw.Container(
                   decoration: pw.BoxDecoration(
-                    gradient: pw.LinearGradient(
-                      colors: [
-                        PdfColor.fromInt(_kYbsDeepBlueHex),
-                        PdfColor.fromInt(0xFF163B66),
-                      ],
-                      begin: pw.Alignment.topLeft,
-                      end: pw.Alignment.bottomRight,
-                    ),
+                    color: PdfColors.white,
                     border: pw.Border.all(
-                      color: PdfColor.fromInt(_kYbsDeepOrangeHex),
-                      width: 2.4,
+                      color: PdfColor.fromInt(_kYbsDeepBlueHex),
+                      width: 2,
                     ),
-                    borderRadius: pw.BorderRadius.circular(18),
+                    borderRadius: pw.BorderRadius.circular(2),
                   ),
                 ),
               ),
               pw.Positioned(
-                top: 18,
-                left: 18,
-                right: 18,
+                top: 8,
+                left: 8,
+                right: 8,
+                bottom: 8,
                 child: pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 10,
-                  ),
                   decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(_kYbsDeepOrangeHex),
-                    borderRadius: pw.BorderRadius.circular(14),
-                  ),
-                  child: pw.Row(
-                    children: [
-                      if (logoImage != null)
-                        pw.Container(
-                          width: 52,
-                          height: 52,
-                          padding: const pw.EdgeInsets.all(5),
-                          decoration: pw.BoxDecoration(
-                            color: PdfColors.white,
-                            borderRadius: pw.BorderRadius.circular(10),
-                          ),
-                          child: pw.Image(logoImage),
-                        )
-                      else
-                        pw.SizedBox(width: 52, height: 52),
-                      pw.SizedBox(width: 12),
-                      pw.Expanded(
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              'YOUR BRIDGE SCHOOL',
-                              style: pw.TextStyle(
-                                fontSize: 18,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.white,
-                              ),
-                            ),
-                            pw.SizedBox(height: 2),
-                            pw.Text(
-                              heading,
-                              style: pw.TextStyle(
-                                fontSize: 12,
-                                color: PdfColors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    border: pw.Border.all(
+                      color: PdfColor.fromInt(_kYbsDeepOrangeHex),
+                      width: 1,
+                    ),
                   ),
                 ),
               ),
               if (logoImage != null)
                 pw.Positioned(
-                  right: 24,
-                  bottom: 26,
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
                   child: pw.Opacity(
-                    opacity: 0.03,
-                    child: pw.Image(logoImage, width: 200, height: 200),
-                  ),
-                ),
-              pw.Positioned(
-                left: 28,
-                right: 28,
-                top: 108,
-                bottom: 28,
-                child: pw.Container(
-                  padding: const pw.EdgeInsets.fromLTRB(22, 20, 22, 16),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.white,
-                    borderRadius: pw.BorderRadius.circular(16),
-                    border: pw.Border.all(
-                      color: PdfColor.fromInt(0xFFD9E0E7),
-                      width: 1.2,
+                    opacity: 0.02,
+                    child: pw.Center(
+                      child: pw.Image(logoImage, width: 260, height: 260),
                     ),
                   ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                    children: [
+                ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.fromLTRB(34, 28, 34, 26),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: [
+                    if (logoImage != null)
                       pw.Center(
-                        child: pw.Column(
-                          children: [
-                            pw.Text(
-                              'This certifies that',
-                              style: pw.TextStyle(
-                                fontSize: 16,
-                                color: PdfColor.fromInt(0xFF334155),
-                              ),
-                            ),
-                            pw.SizedBox(height: 8),
-                            pw.Text(
-                              learnerName,
-                              textAlign: pw.TextAlign.center,
-                              style: pw.TextStyle(
-                                fontSize: 33,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                              ),
-                            ),
-                            pw.SizedBox(height: 10),
-                            pw.Text(
-                              completionLine,
-                              style: pw.TextStyle(
-                                fontSize: 14.5,
-                                color: PdfColor.fromInt(0xFF334155),
-                              ),
-                            ),
-                            pw.SizedBox(height: 8),
-                            pw.Container(
-                              padding: const pw.EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 7,
-                              ),
-                              decoration: pw.BoxDecoration(
-                                color: PdfColor.fromInt(0xFFFFF2E6),
-                                borderRadius: pw.BorderRadius.circular(999),
-                                border: pw.Border.all(
-                                  color: PdfColor.fromInt(0xFFF5B67A),
-                                ),
-                              ),
-                              child: pw.Text(
-                                awardTitle,
-                                textAlign: pw.TextAlign.center,
-                                style: pw.TextStyle(
-                                  fontSize: 21,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                                ),
-                              ),
-                            ),
-                            if (isModuleCertificate)
-                              pw.Padding(
-                                padding: const pw.EdgeInsets.only(top: 8),
-                                child: pw.Text(
-                                  'Within course: $courseTitle${(moduleNumber != null && moduleCount != null) ? ' • Module $moduleNumber of $moduleCount' : ''}',
-                                  textAlign: pw.TextAlign.center,
-                                  style: pw.TextStyle(
-                                    fontSize: 11.5,
-                                    color: PdfColor.fromInt(0xFF475569),
-                                  ),
-                                ),
-                              ),
-                          ],
+                        child: pw.Image(logoImage, width: 58, height: 58),
+                      ),
+                    pw.SizedBox(height: 8),
+                    pw.Center(
+                      child: pw.Text(
+                        'YOUR BRIDGE SCHOOL',
+                        style: pw.TextStyle(
+                          fontSize: 18,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromInt(_kYbsDeepBlueHex),
                         ),
                       ),
-                      pw.Spacer(),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Issued on $date',
+                    ),
+                    pw.SizedBox(height: 6),
+                    pw.Center(
+                      child: pw.Text(
+                        heading,
+                        style: pw.TextStyle(
+                          fontSize: 14,
+                          color: PdfColor.fromInt(_kYbsDeepOrangeHex),
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    pw.Spacer(),
+                    pw.Center(
+                      child: pw.Text(
+                        'This certifies that',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          color: PdfColor.fromInt(0xFF334155),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    pw.Center(
+                      child: pw.Text(
+                        learnerName,
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          fontSize: 34,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromInt(_kYbsDeepBlueHex),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    pw.Center(
+                      child: pw.Text(
+                        completionLine,
+                        style: pw.TextStyle(
+                          fontSize: 14,
+                          color: PdfColor.fromInt(0xFF334155),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    pw.Center(
+                      child: pw.Text(
+                        awardTitle,
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromInt(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    if (isModuleCertificate)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: 8),
+                        child: pw.Center(
+                          child: pw.Text(
+                            'Course: $courseTitle${(moduleNumber != null && moduleCount != null) ? ' • Module $moduleNumber of $moduleCount' : ''}',
+                            textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 11,
                               color: PdfColor.fromInt(0xFF475569),
                             ),
                           ),
-                          pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 6,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                              borderRadius: pw.BorderRadius.circular(999),
-                            ),
-                            child: pw.Text(
-                              isModuleCertificate
-                                  ? 'Verified Milestone'
-                                  : 'Verified Completion',
-                              style: pw.TextStyle(
-                                color: PdfColors.white,
-                                fontSize: 10,
-                                fontWeight: pw.FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                        'Generated with device settings: $deviceSettings',
-                        style: pw.TextStyle(
-                          fontSize: 9,
-                          color: PdfColor.fromInt(0xFF64748B),
                         ),
                       ),
-                    ],
-                  ),
+                    pw.Spacer(),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Issued on $date',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            color: PdfColor.fromInt(0xFF475569),
+                          ),
+                        ),
+                        pw.Text(
+                          'Generated with device settings: $deviceSettings',
+                          style: pw.TextStyle(
+                            fontSize: 8.5,
+                            color: PdfColor.fromInt(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1117,127 +1052,52 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required int unitIndex,
   }) {
     final completed = _isUnitCompleted(unit);
-    final nextTitle = unitIndex + 1 < _units.length
-        ? _units[unitIndex + 1].displayTitle
-        : 'Course completion';
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(top: 10),
+      margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_kYbsOrangeSoft, _kYbsOrangeSoft2],
-        ),
-        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: completed
-              ? _kYbsDeepOrange
-              : _kYbsDeepOrange.withValues(alpha: 0.45),
+          color: completed ? _kYbsDeepOrange : const Color(0xFFF3D3B4),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: _kYbsDeepOrange.withValues(alpha: 0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
-          ),
-        ],
       ),
-      child: Stack(
-        children: [
-          if (completed)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SizedBox(height: 46, child: _MilestoneConfetti()),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: completed
-                        ? const Color(0xFF16A34A)
-                        : _kYbsDeepOrange,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    completed
-                        ? Icons.workspace_premium_rounded
-                        : Icons.flag_circle_rounded,
-                    color: Colors.white,
-                  ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Milestone • ${unit.displayTitle}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: _kYbsOrangeTextStrong,
+                  fontSize: 13.5,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Module Milestone • ${unit.displayTitle}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: _kYbsOrangeTextStrong,
-                          fontSize: 13.8,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        completed
-                            ? 'Congratulations! You completed this module. Next module: $nextTitle'
-                            : 'Complete all sessions in this module to unlock your milestone certificate.',
-                        style: const TextStyle(
-                          color: _kYbsOrangeText,
-                          fontWeight: FontWeight.w700,
-                          height: 1.3,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (completed)
-                        const Text(
-                          'Great progress! Keep the same pace for the next milestone.',
-                          style: TextStyle(
-                            color: Color(0xFF92400E),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11.5,
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: FilledButton.icon(
-                          onPressed: completed
-                              ? () => _onUnitCertificateTap(
-                                  unit: unit,
-                                  unitIndex: unitIndex,
-                                )
-                              : null,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _kYbsDeepBlue,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: const Color(0xFFE5E7EB),
-                            disabledForegroundColor: const Color(0xFF94A3B8),
-                            minimumSize: const Size(0, 35),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                          ),
-                          icon: const Icon(Icons.download_rounded, size: 16),
-                          label: const Text('Module certificate'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            FilledButton.icon(
+              onPressed: completed
+                  ? () =>
+                        _onUnitCertificateTap(unit: unit, unitIndex: unitIndex)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: _kYbsDeepBlue,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFFE5E7EB),
+                disabledForegroundColor: const Color(0xFF94A3B8),
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              icon: const Icon(Icons.download_rounded, size: 15),
+              label: const Text('Module certificate'),
+            ),
+          ],
+        ),
       ),
     );
   }
