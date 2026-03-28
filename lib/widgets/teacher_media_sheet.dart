@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:video_player/video_player.dart';
 import '../shared/human_error.dart';
 
@@ -100,6 +101,15 @@ class _TeacherMediaSheetState extends State<TeacherMediaSheet> {
 
   Future<void> _loadTeacher() async {
     try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Please log in to view instructor media.';
+        });
+        return;
+      }
+
       final cleanUid = widget.teacherUid.trim();
       if (!_isLikelyUid(cleanUid)) {
         setState(() {

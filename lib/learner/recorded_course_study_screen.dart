@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -15,6 +16,16 @@ import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_tour_guide.dart';
 import 'recorded_video_player_screen.dart';
+
+const int _kYbsDeepBlueHex = 0xFF0B2545;
+const int _kYbsDeepOrangeHex = 0xFFE56A00;
+
+const Color _kYbsDeepBlue = Color(_kYbsDeepBlueHex);
+const Color _kYbsDeepOrange = Color(_kYbsDeepOrangeHex);
+const Color _kYbsOrangeSoft = Color(0xFFFFF4E8);
+const Color _kYbsOrangeSoft2 = Color(0xFFFFE1C2);
+const Color _kYbsOrangeText = Color(0xFF9A3412);
+const Color _kYbsOrangeTextStrong = Color(0xFF7C2D12);
 
 class RecordedCourseStudyScreen extends StatefulWidget {
   const RecordedCourseStudyScreen({
@@ -314,6 +325,30 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return _totalSessions > 0 && _completedSessions == _totalSessions;
   }
 
+  int get _totalUnits => _units.length;
+
+  bool _isUnitCompleted(_RecordedUnit unit) {
+    final total = unit.sessions.length;
+    if (total <= 0) return false;
+    return _countCompletedInUnit(unit) == total;
+  }
+
+  int get _completedUnits {
+    int done = 0;
+    for (final unit in _units) {
+      if (_isUnitCompleted(unit)) done++;
+    }
+    return done;
+  }
+
+  String get _deviceSettingsLabel {
+    final locale = WidgetsBinding.instance.platformDispatcher.locale
+        .toLanguageTag();
+    final tz = DateTime.now().timeZoneName;
+    final os = Platform.operatingSystem;
+    return '$os • $locale • $tz';
+  }
+
   int get _daysLeft {
     if (_expiresAt <= 0) return 0;
     final now = DateTime.now();
@@ -546,17 +581,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ],
               ),
               const SizedBox(height: 7),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  minHeight: 5,
-                  value: _progressValue.clamp(0, 1),
-                  backgroundColor: const Color(0xFFE2E8F0),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF4F46E5),
-                  ),
-                ),
-              ),
+              _buildUnitProgressTrack(),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -598,6 +623,86 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildUnitProgressTrack() {
+    final unitCount = _totalUnits;
+
+    if (unitCount <= 0) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: LinearProgressIndicator(
+          minHeight: 5,
+          value: _progressValue.clamp(0, 1),
+          backgroundColor: const Color(0xFFE2E8F0),
+          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 16,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 5,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 5,
+                    value: _progressValue.clamp(0, 1),
+                    backgroundColor: const Color(0xFFE2E8F0),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF4F46E5),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: List.generate(unitCount, (i) {
+                    final unitDone = _isUnitCompleted(_units[i]);
+                    return Container(
+                      width: 11,
+                      height: 11,
+                      decoration: BoxDecoration(
+                        color: unitDone
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFFFFFFFF),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: unitDone
+                              ? const Color(0xFF15803D)
+                              : const Color(0xFF94A3B8),
+                          width: 1.4,
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Module milestones: $_completedUnits/$unitCount',
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w700,
+              fontSize: 11.5,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -643,6 +748,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<Uint8List> _buildCertificatePdfBytes({
     required String learnerName,
     required String courseTitle,
+    required String deviceSettings,
+    String? moduleTitle,
+    int? moduleNumber,
+    int? moduleCount,
   }) async {
     final doc = pw.Document();
     final now = DateTime.now();
@@ -658,10 +767,23 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     final logoImage = logo != null ? pw.MemoryImage(logo) : null;
 
+    final bool isModuleCertificate =
+        moduleTitle != null && moduleTitle.trim().isNotEmpty;
+    final String moduleTitleText = moduleTitle?.trim() ?? '';
+    final String heading = isModuleCertificate
+        ? 'Module Milestone Certificate'
+        : 'Certificate of Completion';
+    final String completionLine = isModuleCertificate
+        ? 'has successfully completed milestone'
+        : 'has successfully completed';
+    final String awardTitle = isModuleCertificate
+        ? moduleTitleText
+        : courseTitle;
+
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(28),
+        margin: const pw.EdgeInsets.all(26),
         build: (context) {
           return pw.Stack(
             children: [
@@ -670,54 +792,51 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   decoration: pw.BoxDecoration(
                     gradient: pw.LinearGradient(
                       colors: [
-                        PdfColor.fromInt(0xFFF8FAFC),
-                        PdfColor.fromInt(0xFFEAF2FF),
+                        PdfColor.fromInt(_kYbsDeepBlueHex),
+                        PdfColor.fromInt(0xFF163B66),
                       ],
                       begin: pw.Alignment.topLeft,
                       end: pw.Alignment.bottomRight,
                     ),
                     border: pw.Border.all(
-                      color: PdfColor.fromInt(0xFF1A2B48),
-                      width: 2,
+                      color: PdfColor.fromInt(_kYbsDeepOrangeHex),
+                      width: 2.4,
                     ),
-                    borderRadius: pw.BorderRadius.circular(16),
+                    borderRadius: pw.BorderRadius.circular(18),
                   ),
                 ),
               ),
-              if (logoImage != null)
-                pw.Positioned(
-                  right: 28,
-                  bottom: 20,
-                  child: pw.Opacity(
-                    opacity: 0.08,
-                    child: pw.Image(logoImage, width: 210, height: 210),
+              pw.Positioned(
+                top: 18,
+                left: 18,
+                right: 18,
+                child: pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
                   ),
-                ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(28),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    pw.Row(
-                      children: [
-                        if (logoImage != null)
-                          pw.Container(
-                            width: 58,
-                            height: 58,
-                            padding: const pw.EdgeInsets.all(6),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColors.white,
-                              borderRadius: pw.BorderRadius.circular(12),
-                              border: pw.Border.all(
-                                color: PdfColor.fromInt(0xFFD1D9E0),
-                              ),
-                            ),
-                            child: pw.Image(logoImage),
-                          )
-                        else
-                          pw.SizedBox(width: 58, height: 58),
-                        pw.SizedBox(width: 12),
-                        pw.Column(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromInt(_kYbsDeepOrangeHex),
+                    borderRadius: pw.BorderRadius.circular(14),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      if (logoImage != null)
+                        pw.Container(
+                          width: 52,
+                          height: 52,
+                          padding: const pw.EdgeInsets.all(5),
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.white,
+                            borderRadius: pw.BorderRadius.circular(10),
+                          ),
+                          child: pw.Image(logoImage),
+                        )
+                      else
+                        pw.SizedBox(width: 52, height: 52),
+                      pw.SizedBox(width: 12),
+                      pw.Expanded(
+                        child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text(
@@ -725,93 +844,160 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                               style: pw.TextStyle(
                                 fontSize: 18,
                                 fontWeight: pw.FontWeight.bold,
-                                color: PdfColor.fromInt(0xFF1A2B48),
+                                color: PdfColors.white,
                               ),
                             ),
+                            pw.SizedBox(height: 2),
                             pw.Text(
-                              'Certificate of Completion',
+                              heading,
                               style: pw.TextStyle(
                                 fontSize: 12,
-                                color: PdfColor.fromInt(0xFF334155),
+                                color: PdfColors.white,
                               ),
                             ),
                           ],
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (logoImage != null)
+                pw.Positioned(
+                  right: 24,
+                  bottom: 26,
+                  child: pw.Opacity(
+                    opacity: 0.08,
+                    child: pw.Image(logoImage, width: 200, height: 200),
+                  ),
+                ),
+              pw.Positioned(
+                left: 28,
+                right: 28,
+                top: 108,
+                bottom: 28,
+                child: pw.Container(
+                  padding: const pw.EdgeInsets.fromLTRB(22, 20, 22, 16),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    borderRadius: pw.BorderRadius.circular(16),
+                    border: pw.Border.all(
+                      color: PdfColor.fromInt(0xFFD9E0E7),
+                      width: 1.2,
                     ),
-                    pw.Spacer(),
-                    pw.Center(
-                      child: pw.Column(
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      pw.Center(
+                        child: pw.Column(
+                          children: [
+                            pw.Text(
+                              'This certifies that',
+                              style: pw.TextStyle(
+                                fontSize: 16,
+                                color: PdfColor.fromInt(0xFF334155),
+                              ),
+                            ),
+                            pw.SizedBox(height: 8),
+                            pw.Text(
+                              learnerName,
+                              textAlign: pw.TextAlign.center,
+                              style: pw.TextStyle(
+                                fontSize: 33,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromInt(_kYbsDeepBlueHex),
+                              ),
+                            ),
+                            pw.SizedBox(height: 10),
+                            pw.Text(
+                              completionLine,
+                              style: pw.TextStyle(
+                                fontSize: 14.5,
+                                color: PdfColor.fromInt(0xFF334155),
+                              ),
+                            ),
+                            pw.SizedBox(height: 8),
+                            pw.Container(
+                              padding: const pw.EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 7,
+                              ),
+                              decoration: pw.BoxDecoration(
+                                color: PdfColor.fromInt(0xFFFFF2E6),
+                                borderRadius: pw.BorderRadius.circular(999),
+                                border: pw.Border.all(
+                                  color: PdfColor.fromInt(0xFFF5B67A),
+                                ),
+                              ),
+                              child: pw.Text(
+                                awardTitle,
+                                textAlign: pw.TextAlign.center,
+                                style: pw.TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColor.fromInt(_kYbsDeepBlueHex),
+                                ),
+                              ),
+                            ),
+                            if (isModuleCertificate)
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.only(top: 8),
+                                child: pw.Text(
+                                  'Within course: $courseTitle${(moduleNumber != null && moduleCount != null) ? ' • Module $moduleNumber of $moduleCount' : ''}',
+                                  textAlign: pw.TextAlign.center,
+                                  style: pw.TextStyle(
+                                    fontSize: 11.5,
+                                    color: PdfColor.fromInt(0xFF475569),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      pw.Spacer(),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
                           pw.Text(
-                            'This certifies that',
+                            'Issued on $date',
                             style: pw.TextStyle(
-                              fontSize: 18,
-                              color: PdfColor.fromInt(0xFF334155),
+                              fontSize: 10.5,
+                              color: PdfColor.fromInt(0xFF475569),
                             ),
                           ),
-                          pw.SizedBox(height: 10),
-                          pw.Text(
-                            learnerName,
-                            style: pw.TextStyle(
-                              fontSize: 34,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromInt(0xFF0F172A),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
                             ),
-                          ),
-                          pw.SizedBox(height: 12),
-                          pw.Text(
-                            'has successfully completed',
-                            style: pw.TextStyle(
-                              fontSize: 16,
-                              color: PdfColor.fromInt(0xFF334155),
+                            decoration: pw.BoxDecoration(
+                              color: PdfColor.fromInt(_kYbsDeepBlueHex),
+                              borderRadius: pw.BorderRadius.circular(999),
                             ),
-                          ),
-                          pw.SizedBox(height: 8),
-                          pw.Text(
-                            courseTitle,
-                            textAlign: pw.TextAlign.center,
-                            style: pw.TextStyle(
-                              fontSize: 24,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColor.fromInt(0xFF1A2B48),
+                            child: pw.Text(
+                              isModuleCertificate
+                                  ? 'Verified Milestone'
+                                  : 'Verified Completion',
+                              style: pw.TextStyle(
+                                color: PdfColors.white,
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    pw.Spacer(),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text(
-                          'Issued on $date',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            color: PdfColor.fromInt(0xFF475569),
-                          ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Generated with device settings: $deviceSettings',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          color: PdfColor.fromInt(0xFF64748B),
                         ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 6,
-                          ),
-                          decoration: pw.BoxDecoration(
-                            color: PdfColor.fromInt(0xFF1A2B48),
-                            borderRadius: pw.BorderRadius.circular(999),
-                          ),
-                          child: pw.Text(
-                            'Verified Completion',
-                            style: pw.TextStyle(
-                              color: PdfColors.white,
-                              fontSize: 10,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -829,56 +1015,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final bytes = await _buildCertificatePdfBytes(
         learnerName: learnerName,
         courseTitle: _title,
+        deviceSettings: _deviceSettingsLabel,
       );
-
-      if (!mounted) return;
-
-      final action = await showDialog<String>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Certificate Ready'),
-          content: const Text('Print now or save/share to your device.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, 'share'),
-              child: const Text('Save / Share'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, 'print'),
-              child: const Text('Print'),
-            ),
-          ],
-        ),
+      await _presentCertificate(
+        bytes: bytes,
+        defaultFileName: 'course_certificate_${widget.courseKey}.pdf',
       );
-
-      if (action == 'print') {
-        await Printing.layoutPdf(onLayout: (_) async => bytes);
-        if (mounted) {
-          AppToast.show(
-            context,
-            'Certificate opened in print preview.',
-            type: AppToastType.success,
-          );
-        }
-        return;
-      }
-
-      final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/certificate_${widget.courseKey}_${DateTime.now().millisecondsSinceEpoch}.pdf',
-      );
-      await file.writeAsBytes(bytes, flush: true);
-      await Share.shareXFiles([
-        XFile(file.path, mimeType: 'application/pdf', name: 'certificate.pdf'),
-      ]);
-
-      if (mounted) {
-        AppToast.show(
-          context,
-          'Certificate is ready to save or share.',
-          type: AppToastType.success,
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       AppToast.show(
@@ -887,6 +1029,217 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         type: AppToastType.error,
       );
     }
+  }
+
+  Future<void> _onUnitCertificateTap({
+    required _RecordedUnit unit,
+    required int unitIndex,
+  }) async {
+    try {
+      final learnerName = await _learnerDisplayName();
+      final bytes = await _buildCertificatePdfBytes(
+        learnerName: learnerName,
+        courseTitle: _title,
+        deviceSettings: _deviceSettingsLabel,
+        moduleTitle: unit.displayTitle,
+        moduleNumber: unitIndex + 1,
+        moduleCount: _totalUnits,
+      );
+      await _presentCertificate(
+        bytes: bytes,
+        defaultFileName:
+            'module_${unitIndex + 1}_certificate_${widget.courseKey}.pdf',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        toHumanError(e, fallback: 'Could not generate milestone certificate.'),
+        type: AppToastType.error,
+      );
+    }
+  }
+
+  Future<void> _presentCertificate({
+    required Uint8List bytes,
+    required String defaultFileName,
+  }) async {
+    if (!mounted) return;
+
+    final action = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Certificate Ready'),
+        content: const Text('Print now or save/share to your device.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'share'),
+            child: const Text('Save / Share'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'print'),
+            child: const Text('Print'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == 'print') {
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Certificate opened in print preview.',
+        type: AppToastType.success,
+      );
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final file = File(
+      '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$defaultFileName',
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    await Share.shareXFiles([
+      XFile(file.path, mimeType: 'application/pdf', name: defaultFileName),
+    ]);
+
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Certificate is ready to save or share.',
+      type: AppToastType.success,
+    );
+  }
+
+  Widget _buildUnitMilestoneCard({
+    required _RecordedUnit unit,
+    required int unitIndex,
+  }) {
+    final completed = _isUnitCompleted(unit);
+    final nextTitle = unitIndex + 1 < _units.length
+        ? _units[unitIndex + 1].displayTitle
+        : 'Course completion';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_kYbsOrangeSoft, _kYbsOrangeSoft2],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: completed
+              ? _kYbsDeepOrange
+              : _kYbsDeepOrange.withValues(alpha: 0.45),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _kYbsDeepOrange.withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          if (completed)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SizedBox(height: 46, child: _MilestoneConfetti()),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: completed
+                        ? const Color(0xFF16A34A)
+                        : _kYbsDeepOrange,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    completed
+                        ? Icons.workspace_premium_rounded
+                        : Icons.flag_circle_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Module Milestone • ${unit.displayTitle}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: _kYbsOrangeTextStrong,
+                          fontSize: 13.8,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        completed
+                            ? 'Congratulations! You completed this module. Next module: $nextTitle'
+                            : 'Complete all sessions in this module to unlock your milestone certificate.',
+                        style: const TextStyle(
+                          color: _kYbsOrangeText,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (completed)
+                        const Text(
+                          'Great progress! Keep the same pace for the next milestone.',
+                          style: TextStyle(
+                            color: Color(0xFF92400E),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FilledButton.icon(
+                          onPressed: completed
+                              ? () => _onUnitCertificateTap(
+                                  unit: unit,
+                                  unitIndex: unitIndex,
+                                )
+                              : null,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _kYbsDeepBlue,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: const Color(0xFFE5E7EB),
+                            disabledForegroundColor: const Color(0xFF94A3B8),
+                            minimumSize: const Size(0, 35),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          icon: const Icon(Icons.download_rounded, size: 16),
+                          label: const Text('Module certificate'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _snack(String message) {
@@ -1294,8 +1647,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               final isExpanded = _expandedUnitIds.contains(unitId);
               final completedInUnit = _countCompletedInUnit(unit);
               final totalInUnit = unit.sessions.length;
-              final isUnitDone =
-                  totalInUnit > 0 && completedInUnit == totalInUnit;
+              final isUnitDone = _isUnitCompleted(unit);
 
               final List<Widget> sessionWidgets = [];
               for (int si = 0; si < unit.sessions.length; si++) {
@@ -1308,134 +1660,143 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 );
               }
 
-              return Container(
-                width: double.infinity,
-                margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.035),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: () {
-                        setState(() {
-                          if (isExpanded) {
-                            _expandedUnitIds.remove(unitId);
-                          } else {
-                            _expandedUnitIds.add(unitId);
-                          }
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 13,
+              return Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    margin: EdgeInsets.only(top: ui == 0 ? 0 : 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFFFFFFF), Color(0xFFF8FAFC)],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.035),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: isUnitDone
-                                    ? const Color(0xFFDCFCE7)
-                                    : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(11),
-                              ),
-                              child: Icon(
-                                isUnitDone
-                                    ? Icons.check_rounded
-                                    : Icons.folder_open_rounded,
-                                color: isUnitDone
-                                    ? const Color(0xFF15803D)
-                                    : const Color(0xFF475569),
-                                size: 20,
-                              ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () {
+                            setState(() {
+                              if (isExpanded) {
+                                _expandedUnitIds.remove(unitId);
+                              } else {
+                                _expandedUnitIds.add(unitId);
+                              }
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 13,
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    unit.displayTitle,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 14.5,
-                                      color: Color(0xFF0F172A),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: isUnitDone
+                                        ? const Color(0xFFDCFCE7)
+                                        : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: Icon(
+                                    isUnitDone
+                                        ? Icons.check_rounded
+                                        : Icons.folder_open_rounded,
+                                    color: isUnitDone
+                                        ? const Color(0xFF15803D)
+                                        : const Color(0xFF475569),
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        unit.displayTitle,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 14.5,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '$completedInUnit of $totalInUnit completed',
+                                        style: const TextStyle(
+                                          color: Color(0xFF64748B),
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  isExpanded
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (isExpanded)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (unit.description.trim().isNotEmpty) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      unit.description.trim(),
+                                      style: TextStyle(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.70,
+                                        ),
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.3,
+                                        fontSize: 12.5,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '$completedInUnit of $totalInUnit completed',
-                                    style: const TextStyle(
-                                      color: Color(0xFF64748B),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
+                                  const SizedBox(height: 8),
                                 ],
-                              ),
+                                ...sessionWidgets,
+                              ],
                             ),
-                            Icon(
-                              isExpanded
-                                  ? Icons.expand_less_rounded
-                                  : Icons.expand_more_rounded,
-                              color: const Color(0xFF64748B),
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
+                      ],
                     ),
-                    if (isExpanded)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (unit.description.trim().isNotEmpty) ...[
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(0xFFE2E8F0),
-                                  ),
-                                ),
-                                child: Text(
-                                  unit.description.trim(),
-                                  style: TextStyle(
-                                    color: Colors.black.withValues(alpha: 0.70),
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.3,
-                                    fontSize: 12.5,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                            ...sessionWidgets,
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
+                  ),
+                  if (ui < _units.length - 1)
+                    _buildUnitMilestoneCard(unit: unit, unitIndex: ui),
+                ],
               );
             },
           ),
@@ -1756,6 +2117,99 @@ class _InfoTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MilestoneConfetti extends StatefulWidget {
+  const _MilestoneConfetti();
+
+  @override
+  State<_MilestoneConfetti> createState() => _MilestoneConfettiState();
+}
+
+class _MilestoneConfettiState extends State<_MilestoneConfetti>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  static const List<_ConfettiPiece> _pieces = [
+    _ConfettiPiece(x: 0.05, size: 7, phase: 0.0, color: _kYbsDeepOrange),
+    _ConfettiPiece(x: 0.12, size: 6, phase: 0.7, color: _kYbsDeepBlue),
+    _ConfettiPiece(x: 0.19, size: 8, phase: 1.1, color: Color(0xFFF59E0B)),
+    _ConfettiPiece(x: 0.28, size: 6, phase: 1.7, color: Color(0xFF1D4ED8)),
+    _ConfettiPiece(x: 0.36, size: 7, phase: 2.2, color: _kYbsDeepOrange),
+    _ConfettiPiece(x: 0.46, size: 8, phase: 2.9, color: _kYbsDeepBlue),
+    _ConfettiPiece(x: 0.57, size: 6, phase: 3.4, color: Color(0xFFF59E0B)),
+    _ConfettiPiece(x: 0.67, size: 7, phase: 3.9, color: _kYbsDeepOrange),
+    _ConfettiPiece(x: 0.77, size: 6, phase: 4.5, color: Color(0xFF1D4ED8)),
+    _ConfettiPiece(x: 0.87, size: 8, phase: 5.2, color: Color(0xFFF59E0B)),
+    _ConfettiPiece(x: 0.94, size: 6, phase: 5.8, color: _kYbsDeepBlue),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (_, child) {
+            final t = _controller.value;
+            return LayoutBuilder(
+              builder: (context, c) {
+                return Stack(
+                  children: [
+                    for (final p in _pieces)
+                      Positioned(
+                        left: c.maxWidth * p.x,
+                        top: 2 + (math.sin((t * 8) + p.phase) * 8) + (t * 30),
+                        child: Transform.rotate(
+                          angle: (t * 6.2831) + p.phase,
+                          child: Container(
+                            width: p.size,
+                            height: p.size,
+                            decoration: BoxDecoration(
+                              color: p.color.withValues(alpha: 0.90),
+                              borderRadius: BorderRadius.circular(1.4),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfettiPiece {
+  const _ConfettiPiece({
+    required this.x,
+    required this.size,
+    required this.phase,
+    required this.color,
+  });
+
+  final double x;
+  final double size;
+  final double phase;
+  final Color color;
 }
 
 class _SessionBadge extends StatelessWidget {

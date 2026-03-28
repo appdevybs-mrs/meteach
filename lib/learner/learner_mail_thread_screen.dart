@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../services/backend_api.dart';
 import '../services/push_client.dart';
@@ -124,6 +125,9 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   bool _recStarting = false;
   bool _recRecording = false;
   bool _recUploading = false;
+  bool _fileUploading = false;
+  double _fileUploadProgress = 0;
+  String _uploadingFileName = '';
 
   bool _recLocked = false;
   bool _recCancelling = false;
@@ -143,11 +147,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static const double _lockDeadzoneDx = 45;
 
   bool get _composerBusy =>
-      _sending || _recStarting || _recRecording || _recUploading;
+      _sending ||
+      _recStarting ||
+      _recRecording ||
+      _recUploading ||
+      _fileUploading;
   bool get _disableTextInput => _recStarting || _recRecording || _recUploading;
   bool get _disableAttachActions => _composerBusy;
   bool get _disableSendAction =>
-      _sending || _recStarting || _recRecording || _recUploading;
+      _sending ||
+      _recStarting ||
+      _recRecording ||
+      _recUploading ||
+      _fileUploading;
   bool get _disableMicAction => _composerBusy;
   bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
@@ -370,7 +382,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     if (_disableAttachActions) return;
 
     try {
-      final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
+      final picked = await FilePicker.platform.pickFiles(
+        withData: kIsWeb,
+        withReadStream: !kIsWeb,
+      );
       if (picked == null || picked.files.isEmpty) {
         _snack('Upload was cancelled.');
         return;
@@ -381,7 +396,19 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           ? f.name
           : 'file_${DateTime.now().millisecondsSinceEpoch}';
 
+      if (f.size > MailUploadClient.maxUploadBytes) {
+        _snack('This file is too large. Maximum allowed size is 250 MB.');
+        return;
+      }
+
       final client = MailUploadClient.defaultClient();
+      if (mounted) {
+        setState(() {
+          _fileUploading = true;
+          _fileUploadProgress = 0;
+          _uploadingFileName = name;
+        });
+      }
 
       String url;
       if (kIsWeb) {
@@ -392,21 +419,53 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           );
           return;
         }
-        url = await client.uploadBytes(bytes: bytes, filename: name);
+        url = await client.uploadBytes(
+          bytes: bytes,
+          filename: name,
+          onProgress: (p) {
+            if (!mounted) return;
+            setState(() => _fileUploadProgress = p.clamp(0.0, 1.0));
+          },
+        );
       } else {
-        final path = f.path;
-        if (path == null || path.trim().isEmpty) {
-          _snack(
-            'The app does not have permission to access this file or action.',
+        final stream = f.readStream;
+        if (stream != null && f.size > 0) {
+          url = await client.uploadStream(
+            stream: stream,
+            length: f.size,
+            filename: name,
+            onProgress: (p) {
+              if (!mounted) return;
+              setState(() => _fileUploadProgress = p.clamp(0.0, 1.0));
+            },
           );
-          return;
+        } else {
+          final path = f.path;
+          if (path == null || path.trim().isEmpty) {
+            _snack(
+              'The app does not have permission to access this file or action.',
+            );
+            return;
+          }
+          url = await client.uploadPath(path: path, filename: name);
         }
-        url = await client.uploadPath(path: path, filename: name);
       }
 
       if (!mounted) return;
-      setState(() => _attachments.add({'name': name, 'url': url}));
+      setState(() {
+        _attachments.add({'name': name, 'url': url});
+        _fileUploading = false;
+        _fileUploadProgress = 0;
+        _uploadingFileName = '';
+      });
     } catch (e) {
+      if (mounted) {
+        setState(() {
+          _fileUploading = false;
+          _fileUploadProgress = 0;
+          _uploadingFileName = '';
+        });
+      }
       _snack(
         toHumanError(
           e,
@@ -923,8 +982,32 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
         s.endsWith('.m4a') ||
         s.endsWith('.aac') ||
         s.endsWith('.wav') ||
-        s.endsWith('.ogg') ||
-        s.endsWith('.webm');
+        s.endsWith('.ogg');
+  }
+
+  static bool _looksLikeVideo(String urlOrName) {
+    final s = urlOrName.toLowerCase();
+    return s.endsWith('.mp4') ||
+        s.endsWith('.m4v') ||
+        s.endsWith('.mov') ||
+        s.endsWith('.webm') ||
+        s.endsWith('.mkv') ||
+        s.endsWith('.avi');
+  }
+
+  Future<void> _showVideoViewer(String rawUrl, {String? title}) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty || !mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: _MailVideoViewer(url: url, title: title),
+      ),
+    );
   }
 
   Future<void> _showImageViewer(String rawUrl, {String? title}) async {
@@ -1267,10 +1350,90 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       return _looksLikeAudio(name) || _looksLikeAudio(url);
     });
 
+    final hasVideo = m.attachments.any((a) {
+      final name = (a['name'] ?? '').toString();
+      final url = (a['url'] ?? '').toString();
+      return _looksLikeVideo(name) || _looksLikeVideo(url);
+    });
+
     if (hasImage) return 230;
+    if (hasVideo) return 240;
     if (hasAudio) return 240;
     if (m.attachments.isNotEmpty && m.body.trim().isEmpty) return 240;
     return 290;
+  }
+
+  Widget _buildCompactVideoBubble({
+    required String name,
+    required String url,
+    required bool mine,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        onTap: () => _showVideoViewer(url, title: name),
+        borderRadius: BorderRadius.circular(14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: Container(
+            height: 140,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: mine
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : Colors.white.withValues(alpha: 0.40),
+              border: Border.all(
+                color: mine
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : _navy.withValues(alpha: 0.10),
+              ),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.18),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.40),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 34,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 8,
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildCompactAudioBubble({
@@ -1496,6 +1659,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     final url = _safeNetworkUrl(rawUrl);
 
     final isImg = _looksLikeImage(url) || _looksLikeImage(name);
+    final isVid = _looksLikeVideo(url) || _looksLikeVideo(name);
     final isAud = _looksLikeAudio(url) || _looksLikeAudio(name);
 
     if (isImg && url.isNotEmpty) {
@@ -1546,6 +1710,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
 
     if (isAud && url.isNotEmpty) {
       return _buildCompactAudioBubble(name: name, url: url, mine: mine);
+    }
+
+    if (isVid && url.isNotEmpty) {
+      return _buildCompactVideoBubble(name: name, url: url, mine: mine);
     }
 
     return _buildCompactFileBubble(name: name, url: url, mine: mine);
@@ -1775,6 +1943,54 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
               child: const Text('Send'),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFileUploadingBar() {
+    if (!_fileUploading) return const SizedBox.shrink();
+    final pct = (_fileUploadProgress * 100).clamp(0, 100).toStringAsFixed(0);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _navy.withValues(alpha: 0.10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.upload_file_rounded, color: _orange),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Uploading ${_uploadingFileName.isEmpty ? 'attachment' : _uploadingFileName}…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _navy.withValues(alpha: 0.90),
+                  ),
+                ),
+              ),
+              Text(
+                '$pct%',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: _navy.withValues(alpha: 0.80),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(value: _fileUploadProgress),
+          ),
         ],
       ),
     );
@@ -2083,6 +2299,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                       ),
 
                     _buildRecordingBar(),
+                    _buildFileUploadingBar(),
 
                     Row(
                       children: [
@@ -2164,7 +2381,11 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                               ),
                             ),
                             onPressed: _disableSendAction ? null : _send,
-                            child: Text(_sending ? 'Sending…' : 'Send'),
+                            child: Text(
+                              _sending
+                                  ? 'Sending…'
+                                  : (_fileUploading ? 'Uploading…' : 'Send'),
+                            ),
                           )
                         else
                           (_disableMicAction
@@ -2205,6 +2426,135 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MailVideoViewer extends StatefulWidget {
+  const _MailVideoViewer({required this.url, this.title});
+
+  final String url;
+  final String? title;
+
+  @override
+  State<_MailVideoViewer> createState() => _MailVideoViewerState();
+}
+
+class _MailVideoViewerState extends State<_MailVideoViewer> {
+  late final VideoPlayerController _controller;
+  late final Future<void> _initFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _initFuture = _controller.initialize();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+              ),
+              Expanded(
+                child: Text(
+                  (widget.title ?? 'Video').trim(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          FutureBuilder<void>(
+            future: _initFuture,
+            builder: (_, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const SizedBox(
+                  height: 220,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (!_controller.value.isInitialized) {
+                return const SizedBox(
+                  height: 220,
+                  child: Center(
+                    child: Text(
+                      'Failed to load video',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                );
+              }
+              return AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: _controller,
+            builder: (_, v, _) {
+              final isReady = v.isInitialized;
+              return Row(
+                children: [
+                  IconButton(
+                    onPressed: !isReady
+                        ? null
+                        : () {
+                            if (v.isPlaying) {
+                              _controller.pause();
+                            } else {
+                              _controller.play();
+                            }
+                          },
+                    icon: Icon(
+                      v.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Expanded(
+                    child: VideoProgressIndicator(
+                      _controller,
+                      allowScrubbing: isReady,
+                      colors: const VideoProgressColors(
+                        playedColor: Color(0xFFEC740A),
+                        bufferedColor: Colors.white38,
+                        backgroundColor: Colors.white24,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -2302,6 +2652,7 @@ class MailUploadClient {
   final String endpoint;
   final String appId;
   final http.Client _http;
+  static const int maxUploadBytes = 250 * 1024 * 1024;
 
   factory MailUploadClient.defaultClient() {
     return MailUploadClient(
@@ -2313,11 +2664,51 @@ class MailUploadClient {
   Future<String> uploadBytes({
     required List<int> bytes,
     required String filename,
+    void Function(double progress)? onProgress,
   }) async {
+    if (bytes.isEmpty) throw Exception('Could not read selected file bytes.');
+    if (bytes.length > maxUploadBytes) {
+      throw Exception('File is too large. Maximum allowed size is 250 MB.');
+    }
+    return uploadStream(
+      stream: _chunkBytes(bytes),
+      length: bytes.length,
+      filename: filename,
+      onProgress: onProgress,
+    );
+  }
+
+  Future<String> uploadStream({
+    required Stream<List<int>> stream,
+    required int length,
+    required String filename,
+    void Function(double progress)? onProgress,
+  }) async {
+    if (length <= 0) {
+      throw Exception('Could not read selected file bytes.');
+    }
+    if (length > maxUploadBytes) {
+      throw Exception('File is too large. Maximum allowed size is 250 MB.');
+    }
+
     final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Not logged in.');
     final token = await BackendApi.authToken();
+
+    var sent = 0;
+    onProgress?.call(0);
+    final tracked = stream.transform(
+      StreamTransformer<List<int>, List<int>>.fromHandlers(
+        handleData: (chunk, sink) {
+          sent += chunk.length;
+          if (length > 0) {
+            onProgress?.call((sent / length).clamp(0.0, 1.0));
+          }
+          sink.add(chunk);
+        },
+      ),
+    );
 
     final req = http.MultipartRequest('POST', uri)
       ..headers.addAll({
@@ -2330,12 +2721,12 @@ class MailUploadClient {
       ..fields['auth_uid'] = user.uid
       ..fields['app_id'] = appId
       ..files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+        http.MultipartFile('file', tracked, length, filename: filename),
       );
 
-    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    final streamed = await _http.send(req).timeout(const Duration(minutes: 10));
     final body = await streamed.stream.bytesToString().timeout(
-      const Duration(seconds: 90),
+      const Duration(minutes: 10),
     );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
@@ -2348,6 +2739,8 @@ class MailUploadClient {
     final ok = decoded['success'] == true;
     final url = (decoded['url'] ?? '').toString();
     if (!ok || url.trim().isEmpty) throw Exception('Upload failed: $decoded');
+
+    onProgress?.call(1);
 
     return url;
   }
@@ -2375,9 +2768,13 @@ class MailUploadClient {
         await http.MultipartFile.fromPath('file', path, filename: filename),
       );
 
-    final streamed = await _http.send(req).timeout(const Duration(seconds: 90));
+    if (req.files.isEmpty || req.files.first.length > maxUploadBytes) {
+      throw Exception('File is too large. Maximum allowed size is 250 MB.');
+    }
+
+    final streamed = await _http.send(req).timeout(const Duration(minutes: 10));
     final body = await streamed.stream.bytesToString().timeout(
-      const Duration(seconds: 90),
+      const Duration(minutes: 10),
     );
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
@@ -2399,6 +2796,16 @@ class MailUploadClient {
       return (jsonDecode(s) as Map).cast<String, dynamic>();
     } catch (_) {
       return null;
+    }
+  }
+
+  static Stream<List<int>> _chunkBytes(
+    List<int> bytes, {
+    int size = 64 * 1024,
+  }) async* {
+    for (var i = 0; i < bytes.length; i += size) {
+      final end = (i + size < bytes.length) ? i + size : bytes.length;
+      yield bytes.sublist(i, end);
     }
   }
 }

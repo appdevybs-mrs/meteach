@@ -5,7 +5,7 @@ require_once __DIR__ . '/file_ops.php';
 
 $auth = require_auth(['admin', 'teacher', 'learner']);
 
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [
     'jpg', 'jpeg', 'png', 'webp', 'gif',
     'mp4', 'm4v', 'mov', 'webm',

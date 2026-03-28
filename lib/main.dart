@@ -3559,12 +3559,26 @@ class _TeacherChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canOpen = _isSafeUid(teacher.uid);
+    final isLoggedIn = FirebaseAuth.instance.currentUser != null;
+    final canOpenMedia = canOpen && isLoggedIn;
 
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: !canOpen
           ? null
           : () {
+              if (!isLoggedIn) {
+                AppToast.show(
+                  context,
+                  'Please log in to view teacher media.',
+                  type: AppToastType.info,
+                );
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
+                return;
+              }
+
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
@@ -3580,10 +3594,16 @@ class _TeacherChip extends StatelessWidget {
               );
             },
       child: Opacity(
-        opacity: canOpen ? 1 : 0.75,
+        opacity: canOpenMedia ? 1 : 0.75,
         child: _PrettyChip(
-          icon: Icons.person_rounded,
-          label: teacher.name.isEmpty ? 'Teacher' : teacher.name,
+          icon: canOpenMedia
+              ? Icons.person_rounded
+              : Icons.lock_outline_rounded,
+          label: teacher.name.isEmpty
+              ? (canOpenMedia ? 'Teacher' : 'Teacher (Login required)')
+              : (canOpenMedia
+                    ? teacher.name
+                    : '${teacher.name} (Login required)'),
         ),
       ),
     );
