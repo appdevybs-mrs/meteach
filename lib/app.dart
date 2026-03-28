@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 import 'l10n/app_localizations.dart';
 import 'models/workbook_models.dart';
@@ -153,6 +154,117 @@ Widget _processingOverlay(BuildContext context, String message) {
             ),
           ],
         ),
+      ),
+    ),
+  );
+}
+
+Future<void> _launchExternalUrl(BuildContext context, String url) async {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) {
+    return;
+  }
+  final ok = await launchUrlString(
+    trimmed,
+    mode: LaunchMode.externalApplication,
+  );
+  if (!ok && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocalizations.of(context).t('openLinkFailed'))),
+    );
+  }
+}
+
+Future<void> _launchEmail(BuildContext context, String email) async {
+  final normalized = email.trim().replaceAll(',', '.');
+  if (normalized.isEmpty) {
+    return;
+  }
+  final uri = 'mailto:$normalized';
+  final ok = await launchUrlString(uri, mode: LaunchMode.externalApplication);
+  if (!ok && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocalizations.of(context).t('openLinkFailed'))),
+    );
+  }
+}
+
+Widget _aboutUsCard(
+  BuildContext context,
+  MeTeachState state,
+  AppLocalizations l10n,
+) {
+  final about = state.aboutUs;
+  return Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/intilak_logo.png',
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.t('aboutUs'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: l10n.t('refresh'),
+                onPressed: state.aboutUsLoading ? null : state.refreshAboutUs,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (state.aboutUsLoading)
+            const LinearProgressIndicator(minHeight: 2)
+          else
+            Text(
+              about.hasDescription ? about.description : l10n.t('aboutUsEmpty'),
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+            ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (about.hasFacebook)
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      _launchExternalUrl(context, about.facebookUrl),
+                  icon: const Icon(Icons.facebook_rounded),
+                  label: Text(l10n.t('facebook')),
+                ),
+              if (about.hasInstagram)
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      _launchExternalUrl(context, about.instagramUrl),
+                  icon: const Icon(Icons.camera_alt_rounded),
+                  label: Text(l10n.t('instagram')),
+                ),
+              if (about.hasEmail)
+                OutlinedButton.icon(
+                  onPressed: () => _launchEmail(context, about.email),
+                  icon: const Icon(Icons.mail_outline_rounded),
+                  label: Text(l10n.t('email')),
+                ),
+            ],
+          ),
+        ],
       ),
     ),
   );
@@ -373,9 +485,11 @@ Future<void> showThemePicker(BuildContext context, MeTeachState state) async {
   );
 }
 
-Future<void> showVersionPopup(BuildContext context) async {
-  final service = VersionCheckService();
-  final info = await service.fetch();
+Future<void> showVersionPopup(
+  BuildContext context, {
+  VersionInfo? preloadedInfo,
+}) async {
+  final info = preloadedInfo ?? await VersionCheckService().fetch();
   if (!context.mounted) return;
   final l10n = AppLocalizations.of(context);
   final scheme = Theme.of(context).colorScheme;
@@ -415,6 +529,174 @@ Future<void> showVersionPopup(BuildContext context) async {
             child: Text(l10n.t('close')),
           ),
         ],
+      );
+    },
+  );
+}
+
+Future<void> showAboutUsPopup(
+  BuildContext context,
+  MeTeachState state, {
+  bool refreshFirst = true,
+}) async {
+  if (refreshFirst) {
+    await state.refreshAboutUs();
+    if (!context.mounted) {
+      return;
+    }
+  }
+  final l10n = AppLocalizations.of(context);
+  final about = state.aboutUs;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(l10n.t('aboutUs')),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      'assets/intilak_logo.png',
+                      width: 96,
+                      height: 96,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  about.hasDescription
+                      ? about.description
+                      : l10n.t('aboutUsEmpty'),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (about.hasFacebook)
+                      OutlinedButton.icon(
+                        onPressed: () => _launchExternalUrl(
+                          dialogContext,
+                          about.facebookUrl,
+                        ),
+                        icon: const Icon(Icons.facebook_rounded),
+                        label: Text(l10n.t('facebook')),
+                      ),
+                    if (about.hasInstagram)
+                      OutlinedButton.icon(
+                        onPressed: () => _launchExternalUrl(
+                          dialogContext,
+                          about.instagramUrl,
+                        ),
+                        icon: const Icon(Icons.camera_alt_rounded),
+                        label: Text(l10n.t('instagram')),
+                      ),
+                    if (about.hasEmail)
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            _launchEmail(dialogContext, about.email),
+                        icon: const Icon(Icons.mail_outline_rounded),
+                        label: Text(l10n.t('email')),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(l10n.t('close')),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> showForceUpdateDialog(
+  BuildContext context, {
+  required String minVersion,
+  required String? updateUrl,
+}) async {
+  final l10n = AppLocalizations.of(context);
+  var openingStore = false;
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      return PopScope(
+        canPop: false,
+        child: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(l10n.t('forceUpdateTitle')),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.t('forceUpdateMessage')),
+                  const SizedBox(height: 10),
+                  _VersionChip(
+                    label: l10n.t('minVersion'),
+                    value: minVersion,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
+                ],
+              ),
+              actions: [
+                FilledButton.icon(
+                  onPressed: openingStore
+                      ? null
+                      : () async {
+                          final url = VersionCheckService.normalizeStoreUrl(
+                            updateUrl,
+                          );
+                          if (url.isEmpty) {
+                            return;
+                          }
+                          setDialogState(() => openingStore = true);
+                          final launched = await launchUrlString(
+                            url,
+                            mode: LaunchMode.externalApplication,
+                          );
+                          if (!launched && dialogContext.mounted) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  AppLocalizations.of(
+                                    dialogContext,
+                                  ).t('openLinkFailed'),
+                                ),
+                              ),
+                            );
+                          }
+                          if (dialogContext.mounted) {
+                            setDialogState(() => openingStore = false);
+                          }
+                        },
+                  icon: openingStore
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update_alt_rounded),
+                  label: Text(l10n.t('updateNow')),
+                ),
+              ],
+            );
+          },
+        ),
       );
     },
   );
@@ -662,16 +944,75 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _lastBackPress;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkVersionAndPrompt();
+    });
+  }
+
+  Future<void> _checkVersionAndPrompt() async {
+    final state = context.read<MeTeachState>();
+    final info = await VersionCheckService().fetch();
+    if (!mounted) {
+      return;
+    }
+
+    final cachedMin = state.forcedUpdateMinVersion;
+    final cachedUrl = state.forcedUpdateUrl;
+    final remoteMin = info.minVersion?.trim() ?? '';
+    final hasRemoteMin = remoteMin.isNotEmpty;
+
+    if (hasRemoteMin) {
+      if (info.needsUpdate) {
+        await state.saveForcedUpdateRequirement(
+          minVersion: remoteMin,
+          updateUrl: info.storeUrl,
+        );
+        if (!mounted) {
+          return;
+        }
+        await showForceUpdateDialog(
+          context,
+          minVersion: remoteMin,
+          updateUrl: info.storeUrl,
+        );
+        return;
+      }
+
+      if (cachedMin != null || (cachedUrl ?? '').isNotEmpty) {
+        await state.clearForcedUpdateRequirement();
+        if (!mounted) {
+          return;
+        }
+      }
+    } else if (cachedMin != null &&
+        VersionCheckService.isUpdateRequired(info.appVersion, cachedMin)) {
+      await showForceUpdateDialog(
+        context,
+        minVersion: cachedMin,
+        updateUrl: cachedUrl?.trim().isNotEmpty == true
+            ? cachedUrl
+            : info.storeUrl,
+      );
+      return;
+    }
+
+    if (!state.versionPopupShown) {
+      state.markVersionPopupShown();
+      await showVersionPopup(context, preloadedInfo: info);
+      if (!mounted) {
+        return;
+      }
+      await showAboutUsPopup(context, state);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final state = context.watch<MeTeachState>();
     final scheme = Theme.of(context).colorScheme;
-    if (!state.versionPopupShown) {
-      state.markVersionPopupShown();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        showVersionPopup(context);
-      });
-    }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -693,7 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const MeTeachLogo(size: 36, showLabel: true),
+          title: Text(l10n.t('appTitle')),
           actions: [
             IconButton(
               tooltip: l10n.t('guideTitle'),
@@ -704,6 +1045,11 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: l10n.t('themeTitle'),
               onPressed: () => showThemePicker(context, state),
               icon: Icon(Icons.palette_rounded, color: scheme.secondary),
+            ),
+            IconButton(
+              tooltip: l10n.t('aboutUs'),
+              onPressed: () => showAboutUsPopup(context, state),
+              icon: Icon(Icons.info_outline_rounded, color: scheme.secondary),
             ),
             PopupMenuButton<Locale>(
               icon: const Icon(Icons.language_rounded),
@@ -749,112 +1095,86 @@ class _HomeScreenState extends State<HomeScreen> {
                   ListView(
                     padding: const EdgeInsets.all(22),
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: scheme.primary,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Row(
+                      Center(
+                        child: Column(
                           children: [
-                            const MeTeachLogo(size: 60),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    l10n.t('welcome'),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    children: [
-                                      FilledButton.icon(
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: Colors.white,
-                                          foregroundColor: scheme.primary,
-                                        ),
-                                        onPressed: state.busy
-                                            ? null
-                                            : () async {
-                                                final ok = await state
-                                                    .importWorkbookFromPicker();
-                                                if (!context.mounted) {
-                                                  return;
-                                                }
-                                                if (ok) {
-                                                  final createCopy =
-                                                      await showConfirmDialog(
-                                                        context,
-                                                        l10n.t('copyTitle'),
-                                                        l10n.t('copyMessage'),
-                                                        l10n,
-                                                      );
-                                                  if (createCopy) {
-                                                    state
-                                                        .createEditableBackupCopy();
-                                                  }
-                                                  if (!context.mounted) {
-                                                    return;
-                                                  }
-                                                  _goToWorkspace(context);
-                                                }
-                                              },
-                                        icon: state.busy
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              )
-                                            : const Icon(
-                                                Icons.upload_file_rounded,
-                                              ),
-                                        label: Text(l10n.t('uploadWorkbook')),
-                                      ),
-                                      if (state.recentWorkbooks.isNotEmpty)
-                                        OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            side: const BorderSide(
-                                              color: Colors.white,
-                                            ),
-                                            foregroundColor: Colors.white,
-                                          ),
-                                          onPressed: () async {
-                                            final ok = state
-                                                .reopenRecentWorkbook(0);
-                                            if (ok) {
-                                              if (!context.mounted) {
-                                                return;
-                                              }
-                                              _goToWorkspace(context);
+                            const MarkaGlyph(size: 132),
+                            const SizedBox(height: 10),
+                            Text(
+                              l10n.t('welcome'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: state.busy
+                                      ? null
+                                      : () async {
+                                          final ok = await state
+                                              .importWorkbookFromPicker();
+                                          if (!context.mounted) {
+                                            return;
+                                          }
+                                          if (ok) {
+                                            final createCopy =
+                                                await showConfirmDialog(
+                                                  context,
+                                                  l10n.t('copyTitle'),
+                                                  l10n.t('copyMessage'),
+                                                  l10n,
+                                                );
+                                            if (createCopy) {
+                                              state.createEditableBackupCopy();
                                             }
-                                          },
-                                          icon: const Icon(
-                                            Icons.history_rounded,
+                                            if (!context.mounted) {
+                                              return;
+                                            }
+                                            _goToWorkspace(context);
+                                          }
+                                        },
+                                  icon: state.busy
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
                                           ),
-                                          label: Text(l10n.t('reopen')),
-                                        ),
-                                    ],
+                                        )
+                                      : const Icon(Icons.upload_file_rounded),
+                                  label: Text(l10n.t('uploadWorkbook')),
+                                ),
+                                if (state.recentWorkbooks.isNotEmpty)
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final ok = state.reopenRecentWorkbook(0);
+                                      if (ok) {
+                                        if (!context.mounted) {
+                                          return;
+                                        }
+                                        _goToWorkspace(context);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.history_rounded),
+                                    label: Text(l10n.t('reopen')),
                                   ),
-                                ],
-                              ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: () => showAboutUsPopup(context, state),
+                              icon: const Icon(Icons.info_outline_rounded),
+                              label: Text(l10n.t('aboutUs')),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 18),
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(12),
@@ -924,94 +1244,122 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                       ),
                                     ),
-                                    child: Row(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Icon(
-                                          Icons.description_outlined,
-                                          color: scheme.primary,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(item.displayName),
-                                              Text(
-                                                '${l10n.t('openedAt')}: ${item.openedAt.toLocal().toString().replaceFirst('.000', '')}',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        OutlinedButton(
-                                          onPressed: () async {
-                                            final ok = state
-                                                .reopenRecentWorkbook(
-                                                  entry.key,
-                                                );
-                                            if (ok) {
-                                              if (!context.mounted) {
-                                                return;
-                                              }
-                                              _goToWorkspace(context);
-                                            }
-                                          },
-                                          child: Text(l10n.t('reopen')),
-                                        ),
-                                        IconButton(
-                                          icon: Icon(
-                                            Icons.drive_file_rename_outline,
-                                            color: scheme.secondary,
-                                          ),
-                                          onPressed: () {
-                                            final controller =
-                                                TextEditingController(
-                                                  text: item.displayName,
-                                                );
-                                            showDialog<void>(
-                                              context: context,
-                                              builder: (context) => AlertDialog(
-                                                title: Text(l10n.t('rename')),
-                                                content: TextField(
-                                                  controller: controller,
-                                                  autofocus: true,
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(context),
-                                                    child: Text(
-                                                      l10n.t('cancel'),
-                                                    ),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Icon(
+                                              Icons.description_outlined,
+                                              color: scheme.primary,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    item.displayName,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                   ),
-                                                  FilledButton(
-                                                    onPressed: () {
-                                                      state
-                                                          .renameRecentWorkbook(
-                                                            entry.key,
-                                                            controller.text,
-                                                          );
-                                                      Navigator.pop(context);
-                                                    },
-                                                    child: Text(
-                                                      l10n.t('saveSettings'),
-                                                    ),
+                                                  Text(
+                                                    '${l10n.t('openedAt')}: ${item.openedAt.toLocal().toString().replaceFirst('.000', '')}',
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.bodySmall,
                                                   ),
                                                 ],
                                               ),
-                                            );
-                                          },
+                                            ),
+                                          ],
                                         ),
-                                        IconButton(
-                                          icon: Icon(
-                                            Icons.delete_outline_rounded,
-                                            color: scheme.secondary,
-                                          ),
-                                          onPressed: () => state
-                                              .deleteRecentWorkbook(entry.key),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 6,
+                                          children: [
+                                            OutlinedButton(
+                                              onPressed: () async {
+                                                final ok = state
+                                                    .reopenRecentWorkbook(
+                                                      entry.key,
+                                                    );
+                                                if (ok) {
+                                                  if (!context.mounted) {
+                                                    return;
+                                                  }
+                                                  _goToWorkspace(context);
+                                                }
+                                              },
+                                              child: Text(l10n.t('reopen')),
+                                            ),
+                                            IconButton.filledTonal(
+                                              icon: const Icon(
+                                                Icons.drive_file_rename_outline,
+                                              ),
+                                              onPressed: () {
+                                                final controller =
+                                                    TextEditingController(
+                                                      text: item.displayName,
+                                                    );
+                                                showDialog<void>(
+                                                  context: context,
+                                                  builder: (context) => AlertDialog(
+                                                    title: Text(
+                                                      l10n.t('rename'),
+                                                    ),
+                                                    content: TextField(
+                                                      controller: controller,
+                                                      autofocus: true,
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                              context,
+                                                            ),
+                                                        child: Text(
+                                                          l10n.t('cancel'),
+                                                        ),
+                                                      ),
+                                                      FilledButton(
+                                                        onPressed: () {
+                                                          state
+                                                              .renameRecentWorkbook(
+                                                                entry.key,
+                                                                controller.text,
+                                                              );
+                                                          Navigator.pop(
+                                                            context,
+                                                          );
+                                                        },
+                                                        child: Text(
+                                                          l10n.t(
+                                                            'saveSettings',
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                            IconButton.filledTonal(
+                                              icon: const Icon(
+                                                Icons.delete_outline_rounded,
+                                              ),
+                                              onPressed: () =>
+                                                  state.deleteRecentWorkbook(
+                                                    entry.key,
+                                                  ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -1049,7 +1397,6 @@ class WorkspaceScreen extends StatefulWidget {
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
   late final TextEditingController _searchController;
-  final TextEditingController _bulkRemarkController = TextEditingController();
   @override
   void initState() {
     super.initState();
@@ -1073,14 +1420,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   final TextEditingController _ruleRemarkController = TextEditingController();
   ScoreSource _selectedScoreSource = ScoreSource.exam;
   int? _editingRuleIndex;
-  bool _bulkProcessing = false;
-  String _bulkFeedback = '';
   bool _pageLoading = false;
 
   @override
   void dispose() {
     _searchController.dispose();
-    _bulkRemarkController.dispose();
     _ruleMinController.dispose();
     _ruleMaxController.dispose();
     _ruleRemarkController.dispose();
@@ -1318,6 +1662,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 ),
               ],
             ),
+            floatingActionButton: _navIndex == 1
+                ? FloatingActionButton.extended(
+                    onPressed: () => showBulkActionsPopup(context, state, l10n),
+                    icon: const Icon(Icons.bolt_rounded),
+                    label: Text(l10n.t('bulkActions')),
+                  )
+                : null,
             body: Stack(
               children: [
                 Container(color: scheme.surface.withValues(alpha: 0.92)),
@@ -1538,6 +1889,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              _aboutUsCard(context, state, l10n),
             ],
           ),
         ),
@@ -1556,6 +1909,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final brand = Theme.of(context).extension<BrandColors>()!;
     final workbook = state.workbook;
     final sheet = state.currentSheet;
+    final identityWidth = _adaptiveIdentityWidth(state.filteredRows);
     if (workbook == null || sheet == null) {
       return Center(child: Text(l10n.t('noWorkbook')));
     }
@@ -1642,33 +1996,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               ],
             );
 
-            if (isWide) {
-              return Row(
-                children: [
-                  sheetDropdown,
-                  const SizedBox(width: 12),
-                  Expanded(child: searchField),
-                  const SizedBox(width: 12),
-                  scopeToggle,
-                  const SizedBox(width: 12),
-                  filterDropdown,
-                  const SizedBox(width: 12),
-                  IconButton(
-                    tooltip: l10n.t('bulkActions'),
-                    onPressed: () => showBulkActionsPopup(context, state, l10n),
-                    icon: Icon(Icons.bolt_rounded, color: scheme.secondary),
-                  ),
-                ],
-              );
-            }
-
             return Wrap(
               spacing: 10,
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 sheetDropdown,
-                SizedBox(width: constraints.maxWidth, child: searchField),
+                SizedBox(
+                  width: isWide ? 320 : constraints.maxWidth,
+                  child: searchField,
+                ),
                 scopeToggle,
                 filterDropdown,
                 IconButton(
@@ -1741,7 +2078,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             width: 44,
                             child: Text('${row.rowIndex + 1}'),
                           ),
-                          SizedBox(width: 100, child: Text(row.identity)),
+                          SizedBox(
+                            width: identityWidth,
+                            child: Text(
+                              row.identity,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                            ),
+                          ),
                           SizedBox(width: 140, child: Text(row.surname)),
                           SizedBox(width: 140, child: Text(row.name)),
                           SizedBox(width: 120, child: Text(row.matricule)),
@@ -1946,11 +2291,166 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       Text(l10n.t('bulkHowStep2')),
                       Text(l10n.t('bulkHowStep3')),
                       const SizedBox(height: 12),
-                      Row(
+                      Text(
+                        l10n.t('buildRemarkRules'),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(l10n.t('rulesHelp')),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 100,
+                            child: TextField(
+                              controller: _ruleMinController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText: l10n.t('from'),
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 100,
+                            child: TextField(
+                              controller: _ruleMaxController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText: l10n.t('to'),
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 260,
+                            child: TextField(
+                              controller: _ruleRemarkController,
+                              decoration: InputDecoration(
+                                labelText: l10n.t('remark'),
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          FilledButton.icon(
+                            onPressed: () {
+                              final min =
+                                  double.tryParse(
+                                    _ruleMinController.text.trim(),
+                                  ) ??
+                                  0;
+                              final max =
+                                  double.tryParse(
+                                    _ruleMaxController.text.trim(),
+                                  ) ??
+                                  0;
+                              final remark = _ruleRemarkController.text.trim();
+                              if (remark.isEmpty || max < min) {
+                                return;
+                              }
+                              final rule = RemarkRule(
+                                min: min,
+                                max: max,
+                                remark: remark,
+                              );
+                              if (_editingRuleIndex == null) {
+                                state.addRemarkRule(rule);
+                              } else {
+                                state.updateRemarkRule(
+                                  _editingRuleIndex!,
+                                  rule,
+                                );
+                              }
+                              setModalState(() {
+                                _editingRuleIndex = null;
+                                _ruleMinController.clear();
+                                _ruleMaxController.clear();
+                                _ruleRemarkController.clear();
+                              });
+                            },
+                            icon: const Icon(Icons.add_task_rounded),
+                            label: Text(
+                              _editingRuleIndex == null
+                                  ? l10n.t('addRule')
+                                  : l10n.t('updateRule'),
+                            ),
+                          ),
+                          if (_editingRuleIndex != null)
+                            OutlinedButton(
+                              onPressed: () {
+                                setModalState(() {
+                                  _editingRuleIndex = null;
+                                  _ruleMinController.clear();
+                                  _ruleMaxController.clear();
+                                  _ruleRemarkController.clear();
+                                });
+                              },
+                              child: Text(l10n.t('cancelEdit')),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...List<Widget>.generate(state.remarkRules.length, (
+                        index,
+                      ) {
+                        final rule = state.remarkRules[index];
+                        return Card(
+                          color: const Color(0xFFF9FBFF),
+                          child: ListTile(
+                            title: Text(
+                              '${rule.min} - ${rule.max}  ->  ${rule.remark}',
+                            ),
+                            trailing: Wrap(
+                              spacing: 4,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_rounded),
+                                  onPressed: () {
+                                    setModalState(() {
+                                      _editingRuleIndex = index;
+                                      _ruleMinController.text = rule.min
+                                          .toString();
+                                      _ruleMaxController.text = rule.max
+                                          .toString();
+                                      _ruleRemarkController.text = rule.remark;
+                                    });
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                  ),
+                                  onPressed: () {
+                                    state.deleteRemarkRule(index);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 320,
                             child: DropdownButton<ScoreSource>(
                               value: _selectedScoreSource,
+                              isExpanded: true,
                               onChanged: (value) {
                                 if (value != null) {
                                   setModalState(
@@ -1978,7 +2478,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
                           FilledButton.icon(
                             onPressed: localBusy
                                 ? null
@@ -2019,42 +2518,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _bulkRemarkController,
-                              decoration: InputDecoration(
-                                labelText: l10n.t('bulkRemarkLabel'),
-                                border: const OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            onPressed: () {
-                              final remark = _bulkRemarkController.text.trim();
-                              if (remark.isEmpty) return;
-                              state.applyBulkRemark(
-                                remark: remark,
-                                onlyFiltered: false,
-                                scope: ApplyScope.currentSheet,
-                              );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(l10n.t('bulkRemarkDone')),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.edit_note_rounded),
-                            label: Text(l10n.t('applyRemark')),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       Text(l10n.t('quickFillOptional')),
                       const SizedBox(height: 8),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           SizedBox(
                             width: 120,
@@ -2066,7 +2535,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
                           FilledButton(
                             onPressed: () => state.fillEmptyScores(
                               double.tryParse(fillController.text.trim()) ?? 0,
@@ -2204,467 +2672,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       },
     );
     fillController.dispose();
-  }
-
-  Widget _bulkPage(
-    BuildContext context,
-    MeTeachState state,
-    AppLocalizations l10n,
-  ) {
-    final scheme = Theme.of(context).colorScheme;
-    final fillController = TextEditingController(text: '10');
-    return ListView(
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l10n.t('bulkHowTitle'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 6),
-                Text(l10n.t('bulkHowStep1')),
-                Text(l10n.t('bulkHowStep2')),
-                Text(l10n.t('bulkHowStep3')),
-              ],
-            ),
-          ),
-        ),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l10n.t('buildRemarkRules'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(l10n.t('rulesHelp')),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    SizedBox(
-                      width: 100,
-                      child: TextField(
-                        controller: _ruleMinController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(labelText: l10n.t('from')),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 100,
-                      child: TextField(
-                        controller: _ruleMaxController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(labelText: l10n.t('to')),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 280,
-                      child: TextField(
-                        controller: _ruleRemarkController,
-                        decoration: InputDecoration(
-                          labelText: l10n.t('remark'),
-                        ),
-                      ),
-                    ),
-                    FilledButton.icon(
-                      onPressed: () {
-                        final min =
-                            double.tryParse(_ruleMinController.text.trim()) ??
-                            0;
-                        final max =
-                            double.tryParse(_ruleMaxController.text.trim()) ??
-                            0;
-                        final remark = _ruleRemarkController.text.trim();
-                        if (remark.isEmpty || max < min) {
-                          return;
-                        }
-                        final rule = RemarkRule(
-                          min: min,
-                          max: max,
-                          remark: remark,
-                        );
-                        if (_editingRuleIndex == null) {
-                          state.addRemarkRule(rule);
-                        } else {
-                          state.updateRemarkRule(_editingRuleIndex!, rule);
-                        }
-                        setState(() {
-                          _editingRuleIndex = null;
-                          _ruleMinController.clear();
-                          _ruleMaxController.clear();
-                          _ruleRemarkController.clear();
-                          _bulkFeedback = l10n.t('ruleSaved');
-                        });
-                      },
-                      icon: const Icon(Icons.add_task_rounded),
-                      label: Text(
-                        _editingRuleIndex == null
-                            ? l10n.t('addRule')
-                            : l10n.t('updateRule'),
-                      ),
-                    ),
-                    if (_editingRuleIndex != null)
-                      OutlinedButton(
-                        onPressed: () {
-                          setState(() {
-                            _editingRuleIndex = null;
-                            _ruleMinController.clear();
-                            _ruleMaxController.clear();
-                            _ruleRemarkController.clear();
-                          });
-                        },
-                        child: Text(l10n.t('cancelEdit')),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ...List<Widget>.generate(state.remarkRules.length, (index) {
-                  final rule = state.remarkRules[index];
-                  return Card(
-                    color: const Color(0xFFF9FBFF),
-                    child: ListTile(
-                      title: Text(
-                        '${rule.min} - ${rule.max}  ->  ${rule.remark}',
-                      ),
-                      trailing: Wrap(
-                        spacing: 4,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit_rounded),
-                            onPressed: () {
-                              setState(() {
-                                _editingRuleIndex = index;
-                                _ruleMinController.text = rule.min.toString();
-                                _ruleMaxController.text = rule.max.toString();
-                                _ruleRemarkController.text = rule.remark;
-                              });
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            onPressed: () {
-                              state.deleteRemarkRule(index);
-                              setState(
-                                () => _bulkFeedback = l10n.t('ruleDeleted'),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l10n.t('chooseScopeApply'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(l10n.t('chooseScopeHelp')),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    DropdownButton<ScoreSource>(
-                      value: _selectedScoreSource,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedScoreSource = value);
-                        }
-                      },
-                      items: [
-                        DropdownMenuItem(
-                          value: ScoreSource.exam,
-                          child: Text(l10n.t('useExamScore')),
-                        ),
-                        DropdownMenuItem(
-                          value: ScoreSource.test,
-                          child: Text(l10n.t('useTestScore')),
-                        ),
-                        DropdownMenuItem(
-                          value: ScoreSource.continuous,
-                          child: Text(l10n.t('useContinuousScore')),
-                        ),
-                        DropdownMenuItem(
-                          value: ScoreSource.average,
-                          child: Text(l10n.t('useAverageScore')),
-                        ),
-                      ],
-                    ),
-                    FilledButton.icon(
-                      onPressed: _bulkProcessing
-                          ? null
-                          : () async {
-                              final preview = state.previewRemarkRulesAffected(
-                                scope: ApplyScope.currentSheet,
-                                scoreSource: _selectedScoreSource,
-                              );
-                              final confirm = await _confirmDialog(
-                                context,
-                                l10n.t('confirmAction'),
-                                '${l10n.t('confirmApplyRules')}\n${l10n.t('affectedLearners')}: $preview',
-                                l10n,
-                              );
-                              if (!confirm) {
-                                return;
-                              }
-                              setState(() => _bulkProcessing = true);
-                              setState(() => _pageLoading = true);
-                              await Future<void>.delayed(
-                                const Duration(milliseconds: 250),
-                              );
-                              final affected = state.applyRemarkRules(
-                                scope: ApplyScope.currentSheet,
-                                scoreSource: _selectedScoreSource,
-                              );
-                              if (!context.mounted) {
-                                return;
-                              }
-                              setState(() {
-                                _bulkProcessing = false;
-                                _pageLoading = false;
-                                _bulkFeedback =
-                                    '${l10n.t('done')}: ${l10n.t('affectedLearners')} $affected';
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(_bulkFeedback)),
-                              );
-                              await showProcessDoneLogoAnimation(context);
-                            },
-                      icon: _bulkProcessing
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.play_arrow_rounded),
-                      label: Text(l10n.t('applyRulesNow')),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        state.saveProgressCheckpoint('Manual save from bulk');
-                        setState(() => _bulkFeedback = l10n.t('saveProgress'));
-                      },
-                      icon: const Icon(Icons.save_rounded),
-                      label: Text(l10n.t('saveProgress')),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 260,
-                      child: TextField(
-                        controller: _bulkRemarkController,
-                        decoration: InputDecoration(
-                          labelText: l10n.t('bulkRemarkLabel'),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    FilledButton.icon(
-                      onPressed: () {
-                        final remark = _bulkRemarkController.text.trim();
-                        if (remark.isEmpty) return;
-                        state.applyBulkRemark(
-                          remark: remark,
-                          onlyFiltered: false,
-                          scope: ApplyScope.currentSheet,
-                        );
-                        setState(
-                          () => _bulkFeedback = l10n.t('bulkRemarkDone'),
-                        );
-                      },
-                      icon: const Icon(Icons.edit_note_rounded),
-                      label: Text(l10n.t('applyRemark')),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (_bulkFeedback.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: scheme.tertiary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: scheme.tertiary.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(_bulkFeedback),
-                  ),
-                const SizedBox(height: 12),
-                Text(l10n.t('quickFillOptional')),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    SizedBox(
-                      width: 100,
-                      child: TextField(
-                        controller: fillController,
-                        decoration: InputDecoration(
-                          labelText: l10n.t('emptyScore'),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    FilledButton(
-                      onPressed: () => state.fillEmptyScores(
-                        double.tryParse(fillController.text.trim()) ?? 0,
-                      ),
-                      child: Text(l10n.t('fillEmptyScores')),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  title: Text(l10n.t('advancedScoreTools')),
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () async {
-                            var clearContinuous = false;
-                            var clearTest = false;
-                            var clearExam = false;
-                            var clearRemark = false;
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => StatefulBuilder(
-                                builder: (context, setDialogState) {
-                                  return AlertDialog(
-                                    title: Text(l10n.t('confirmClearCells')),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        CheckboxListTile(
-                                          value: clearContinuous,
-                                          title: Text(
-                                            l10n.t('clearContinuous'),
-                                          ),
-                                          onChanged: (v) => setDialogState(
-                                            () => clearContinuous = v ?? false,
-                                          ),
-                                        ),
-                                        CheckboxListTile(
-                                          value: clearTest,
-                                          title: Text(l10n.t('clearTest')),
-                                          onChanged: (v) => setDialogState(
-                                            () => clearTest = v ?? false,
-                                          ),
-                                        ),
-                                        CheckboxListTile(
-                                          value: clearExam,
-                                          title: Text(l10n.t('clearExam')),
-                                          onChanged: (v) => setDialogState(
-                                            () => clearExam = v ?? false,
-                                          ),
-                                        ),
-                                        CheckboxListTile(
-                                          value: clearRemark,
-                                          title: Text(l10n.t('clearRemark')),
-                                          onChanged: (v) => setDialogState(
-                                            () => clearRemark = v ?? false,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(context, false),
-                                        child: Text(l10n.t('cancel')),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(context, true),
-                                        child: Text(l10n.t('confirm')),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            );
-                            if (confirmed != true) {
-                              return;
-                            }
-                            if (!clearContinuous &&
-                                !clearTest &&
-                                !clearExam &&
-                                !clearRemark) {
-                              return;
-                            }
-                            setState(() => _pageLoading = true);
-                            await Future<void>.delayed(
-                              const Duration(milliseconds: 200),
-                            );
-                            state.clearSelectedEditableCellsForCurrentSheet(
-                              clearContinuous: clearContinuous,
-                              clearTest: clearTest,
-                              clearExam: clearExam,
-                              clearRemark: clearRemark,
-                            );
-                            if (mounted) {
-                              setState(() => _pageLoading = false);
-                              await showProcessDoneLogoAnimation(this.context);
-                            }
-                          },
-                          child: Text(l10n.t('clearEditableCells')),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => state.setScoreValueForFiltered(10),
-                          child: Text(l10n.t('setFilteredTo10')),
-                        ),
-                        OutlinedButton(
-                          onPressed: () =>
-                              state.randomizeScoresForFiltered(8, 15),
-                          child: Text(l10n.t('randomize8to15')),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   Widget _validationPage(
@@ -2934,6 +2941,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+                _aboutUsCard(context, state, l10n),
               ],
             ),
           ),
@@ -3063,6 +3072,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         isDense: true,
       ),
     );
+  }
+
+  double _adaptiveIdentityWidth(List<LearnerRow> rows) {
+    if (rows.isEmpty) {
+      return 120;
+    }
+    var longest = 10;
+    for (final row in rows) {
+      final length = row.identity.trim().length;
+      if (length > longest) {
+        longest = length;
+      }
+    }
+    final estimated = 16 + (longest * 7.0);
+    return estimated.clamp(120.0, 320.0);
   }
 
   Widget _statCard(

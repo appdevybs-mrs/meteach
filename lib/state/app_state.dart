@@ -9,22 +9,27 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/workbook_models.dart';
+import '../services/about_us_service.dart';
 import '../services/excel_service.dart';
 import '../services/validation_service.dart';
 import '../theme/theme_palettes.dart';
 
 class MeTeachState extends ChangeNotifier {
   MeTeachState({
+    AboutUsService? aboutUsService,
     ExcelService? excelService,
     ValidationService? validationService,
-  }) : _excelService = excelService ?? ExcelService(),
+  }) : _aboutUsService = aboutUsService ?? AboutUsService(),
+       _excelService = excelService ?? ExcelService(),
        _validationService = validationService ?? ValidationService() {
     _remarkRules.addAll(_defaultRemarkRulesForLocale(_locale));
     _favoriteRemarks.addAll(_defaultFavoriteRemarksForLocale(_locale));
     _loadPersistedRecentWorkbooks();
     _loadUiPrefs();
+    _loadAboutUs();
   }
 
+  final AboutUsService _aboutUsService;
   final ExcelService _excelService;
   final ValidationService _validationService;
 
@@ -49,14 +54,26 @@ class MeTeachState extends ChangeNotifier {
   static const String _recentStorageKey = 'meteach_recent_workbooks_v1';
   static const String _showGuideStorageKey = 'meteach_show_guide_v1';
   static const String _themeStorageKey = 'meteach_theme_v1';
+  static const String _forceUpdateMinVersionStorageKey =
+      'meteach_force_update_min_version_v1';
+  static const String _forceUpdateUrlStorageKey = 'meteach_force_update_url_v1';
   bool _showGuide = true;
   int _themeIndex = 0;
   bool _versionPopupShown = false;
+  String? _forcedUpdateMinVersion;
+  String? _forcedUpdateUrl;
   String? _processingKey;
   bool _suspendSnapshots = false;
   bool _justOpenedWorkbook = false;
   final List<LogEntry> _logs = <LogEntry>[];
   DateTime? _lastSavedAt;
+  AboutUsInfo _aboutUs = const AboutUsInfo(
+    description: '',
+    facebookUrl: '',
+    instagramUrl: '',
+    email: '',
+  );
+  bool _aboutUsLoading = true;
 
   Locale get locale => _locale;
   WorkbookData? get workbook => _workbook;
@@ -76,10 +93,14 @@ class MeTeachState extends ChangeNotifier {
   bool get showGuide => _showGuide;
   int get themeIndex => _themeIndex;
   bool get versionPopupShown => _versionPopupShown;
+  String? get forcedUpdateMinVersion => _forcedUpdateMinVersion;
+  String? get forcedUpdateUrl => _forcedUpdateUrl;
   String? get processingKey => _processingKey;
   bool get justOpenedWorkbook => _justOpenedWorkbook;
   List<LogEntry> get logs => List.unmodifiable(_logs);
   DateTime? get lastSavedAt => _lastSavedAt;
+  AboutUsInfo get aboutUs => _aboutUs;
+  bool get aboutUsLoading => _aboutUsLoading;
 
   bool get hasWorkbook => _workbook != null;
 
@@ -454,33 +475,6 @@ class MeTeachState extends ChangeNotifier {
     sheet.learners[pos] = sheet.learners[pos].copyWith(remark: remark);
     _setChangedCell(sheetName, rowIndex, 7, remark);
     runValidation();
-  }
-
-  void applyBulkRemark({
-    required String remark,
-    required bool onlyFiltered,
-    ApplyScope scope = ApplyScope.currentSheet,
-  }) {
-    _startProcessing('processingApply');
-    final wb = _workbook;
-    if (wb == null || remark.trim().isEmpty) {
-      _stopProcessing();
-      return;
-    }
-    final rows = onlyFiltered ? filteredRows : _rowsForScope(scope);
-    _withSnapshotSuspended(() {
-      for (final row in rows) {
-        updateRemark(
-          sheetName: row.sheetName,
-          rowIndex: row.rowIndex,
-          remark: remark,
-        );
-      }
-    });
-    _lastOperationFeedback = 'Applied remark to ${rows.length} learners';
-    _createSnapshot('Bulk remark');
-    _addLog('logBulkRemark');
-    _stopProcessing();
   }
 
   int applyRemarkRules({
@@ -963,6 +957,19 @@ class MeTeachState extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadAboutUs() async {
+    _aboutUsLoading = true;
+    notifyListeners();
+    final info = await _aboutUsService.fetch();
+    _aboutUs = info;
+    _aboutUsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> refreshAboutUs() async {
+    await _loadAboutUs();
+  }
+
   Future<void> _persistRecentWorkbooks() async {
     final prefs = await SharedPreferences.getInstance();
     final capped = _recentWorkbooks.take(6).toList();
@@ -985,7 +992,34 @@ class MeTeachState extends ChangeNotifier {
     _showGuide = prefs.getBool(_showGuideStorageKey) ?? true;
     final storedTheme = prefs.getInt(_themeStorageKey) ?? 0;
     _themeIndex = storedTheme.clamp(0, themePalettes.length - 1);
+    _forcedUpdateMinVersion = prefs.getString(_forceUpdateMinVersionStorageKey);
+    _forcedUpdateUrl = prefs.getString(_forceUpdateUrlStorageKey);
     notifyListeners();
+  }
+
+  Future<void> saveForcedUpdateRequirement({
+    required String minVersion,
+    required String? updateUrl,
+  }) async {
+    final normalizedMin = minVersion.trim();
+    if (normalizedMin.isEmpty) {
+      return;
+    }
+    _forcedUpdateMinVersion = normalizedMin;
+    _forcedUpdateUrl = (updateUrl ?? '').trim();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_forceUpdateMinVersionStorageKey, normalizedMin);
+    await prefs.setString(_forceUpdateUrlStorageKey, _forcedUpdateUrl!);
+  }
+
+  Future<void> clearForcedUpdateRequirement() async {
+    _forcedUpdateMinVersion = null;
+    _forcedUpdateUrl = null;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_forceUpdateMinVersionStorageKey);
+    await prefs.remove(_forceUpdateUrlStorageKey);
   }
 
   Future<void> setShowGuide(bool value) async {
