@@ -20,7 +20,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
   static const _uiBorder = Color(0xFFE3EAF2);
   static const _green = Color(0xFF22C55E);
   static const _red = Color(0xFFEF4444);
-  static const _amber = Color(0xFFF59E0B);
 
   final CertificateService _service = CertificateService();
   final _cvnController = TextEditingController();
@@ -259,17 +258,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
     try {
       await _service.incrementDownloadCount(key, cvn: cert.cvn);
     } catch (_) {}
-  }
-
-  Color _getStatusColor(CertificateStatus status) {
-    switch (status) {
-      case CertificateStatus.valid:
-        return _green;
-      case CertificateStatus.expired:
-        return _amber;
-      case CertificateStatus.revoked:
-        return _red;
-    }
   }
 
   @override

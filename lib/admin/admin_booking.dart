@@ -182,6 +182,12 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       _db.child('booking_reservations/$cid');
   DatabaseReference _reservationsRef(String cid, String dayKey, String hhmm) =>
       _db.child('booking_reservations/$cid/$dayKey/$hhmm');
+  DatabaseReference _reservationByTeacherRef(
+    String cid,
+    String dayKey,
+    String hhmm,
+    String teacherId,
+  ) => _db.child('booking_reservations/$cid/$dayKey/$hhmm/$teacherId');
 
   _CourseItem? _selectedCourse() {
     final cid = selectedCourseId;
@@ -275,6 +281,20 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                   found = true;
                   break;
                 }
+
+                for (final teacherEntry in m.entries) {
+                  final teacherSlot = teacherEntry.value;
+                  if (teacherSlot is! Map) continue;
+                  final tm = teacherSlot.map(
+                    (k, vv) => MapEntry(k.toString(), vv),
+                  );
+                  final tLearners = tm['learners'];
+                  if (tLearners is Map && tLearners.isNotEmpty) {
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
               }
               if (found) break;
             }
@@ -381,36 +401,52 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               if (slotVal is! Map) continue;
 
               final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
-
-              final learnersRaw = m['learners'];
-              if (learnersRaw is! Map) continue;
-
-              final learnersMap = learnersRaw.map(
-                (k, vv) => MapEntry(k.toString(), vv),
-              );
-              final learnerUids = learnersMap.keys
-                  .map((e) => e.toString())
-                  .toList();
-              if (learnerUids.isEmpty) continue;
-
               final start = _parseSlotStart(dayKey, hhmm);
               if (start == null) continue;
 
-              out.add(
-                _AdminBookedSlot(
-                  courseId: cid,
-                  dayKey: dayKey,
-                  time: hhmm,
-                  start: start,
-                  teacherId: (m['teacherId'] ?? '').toString().trim(),
-                  teacherName: (m['teacherName'] ?? 'Teacher')
-                      .toString()
-                      .trim(),
-                  sessionNo: _toInt(m['sessionNo'], fallback: 0),
-                  learnerUids: learnerUids,
-                  createdAt: _toInt(m['createdAt'], fallback: 0),
-                ),
-              );
+              void collect(Map<dynamic, dynamic> slotNode, String teacherKey) {
+                final learnersRaw = slotNode['learners'];
+                if (learnersRaw is! Map) return;
+                final learnersMap = learnersRaw.map(
+                  (k, vv) => MapEntry(k.toString(), vv),
+                );
+                final learnerUids = learnersMap.keys
+                    .map((e) => e.toString())
+                    .toList();
+                if (learnerUids.isEmpty) return;
+
+                out.add(
+                  _AdminBookedSlot(
+                    courseId: cid,
+                    dayKey: dayKey,
+                    time: hhmm,
+                    start: start,
+                    teacherId: (slotNode['teacherId'] ?? teacherKey)
+                        .toString()
+                        .trim(),
+                    teacherName: (slotNode['teacherName'] ?? 'Teacher')
+                        .toString()
+                        .trim(),
+                    sessionNo: _toInt(slotNode['sessionNo'], fallback: 0),
+                    learnerUids: learnerUids,
+                    createdAt: _toInt(slotNode['createdAt'], fallback: 0),
+                  ),
+                );
+              }
+
+              if (m['learners'] is Map) {
+                collect(m, '');
+                continue;
+              }
+
+              for (final teacherEntry in m.entries) {
+                final teacherNode = teacherEntry.value;
+                if (teacherNode is! Map) continue;
+                collect(
+                  teacherNode.map((k, vv) => MapEntry(k.toString(), vv)),
+                  teacherEntry.key.toString(),
+                );
+              }
             }
           }
         }
@@ -463,34 +499,52 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             if (slotVal is! Map) continue;
 
             final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
-
-            final learnersRaw = m['learners'];
-            if (learnersRaw is! Map) continue;
-
-            final learnersMap = learnersRaw.map(
-              (k, vv) => MapEntry(k.toString(), vv),
-            );
-            final learnerUids = learnersMap.keys
-                .map((e) => e.toString())
-                .toList();
-            if (learnerUids.isEmpty) continue;
-
             final start = _parseSlotStart(dayKey, hhmm);
             if (start == null) continue;
 
-            out.add(
-              _AdminBookedSlot(
-                courseId: cid,
-                dayKey: dayKey,
-                time: hhmm,
-                start: start,
-                teacherId: (m['teacherId'] ?? '').toString().trim(),
-                teacherName: (m['teacherName'] ?? 'Teacher').toString().trim(),
-                sessionNo: _toInt(m['sessionNo'], fallback: 0),
-                learnerUids: learnerUids,
-                createdAt: _toInt(m['createdAt'], fallback: 0),
-              ),
-            );
+            void collect(Map<dynamic, dynamic> slotNode, String teacherKey) {
+              final learnersRaw = slotNode['learners'];
+              if (learnersRaw is! Map) return;
+              final learnersMap = learnersRaw.map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              );
+              final learnerUids = learnersMap.keys
+                  .map((e) => e.toString())
+                  .toList();
+              if (learnerUids.isEmpty) return;
+
+              out.add(
+                _AdminBookedSlot(
+                  courseId: cid,
+                  dayKey: dayKey,
+                  time: hhmm,
+                  start: start,
+                  teacherId: (slotNode['teacherId'] ?? teacherKey)
+                      .toString()
+                      .trim(),
+                  teacherName: (slotNode['teacherName'] ?? 'Teacher')
+                      .toString()
+                      .trim(),
+                  sessionNo: _toInt(slotNode['sessionNo'], fallback: 0),
+                  learnerUids: learnerUids,
+                  createdAt: _toInt(slotNode['createdAt'], fallback: 0),
+                ),
+              );
+            }
+
+            if (m['learners'] is Map) {
+              collect(m, '');
+              continue;
+            }
+
+            for (final teacherEntry in m.entries) {
+              final teacherNode = teacherEntry.value;
+              if (teacherNode is! Map) continue;
+              collect(
+                teacherNode.map((k, vv) => MapEntry(k.toString(), vv)),
+                teacherEntry.key.toString(),
+              );
+            }
           }
         }
       }
@@ -667,35 +721,50 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     setState(() => busyAction = true);
 
     try {
-      final ref = _reservationsRef(slot.courseId, slot.dayKey, slot.time);
+      Future<bool> cancelAtRef(DatabaseReference ref) async {
+        final result = await ref.runTransaction((Object? currentData) {
+          if (currentData is! Map) return Transaction.abort();
 
-      final result = await ref.runTransaction((Object? currentData) {
-        if (currentData is! Map) return Transaction.abort();
+          final node = currentData.map((k, v) => MapEntry(k.toString(), v));
+          final learnersRaw = node['learners'];
+          if (learnersRaw is! Map) return Transaction.abort();
 
-        final node = currentData.map((k, v) => MapEntry(k.toString(), v));
-        final learnersRaw = node['learners'];
-        if (learnersRaw is! Map) return Transaction.abort();
+          final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
+          if (!learners.containsKey(learnerUid)) return Transaction.abort();
 
-        final learners = learnersRaw.map((k, v) => MapEntry(k.toString(), v));
-        if (!learners.containsKey(learnerUid)) return Transaction.abort();
+          learners.remove(learnerUid);
 
-        learners.remove(learnerUid);
+          if (learners.isEmpty) {
+            return Transaction.success(null);
+          }
 
-        if (learners.isEmpty) {
-          return Transaction.success(null);
-        }
+          node['learners'] = learners;
+          return Transaction.success(node);
+        });
 
-        node['learners'] = learners;
-        return Transaction.success(node);
-      });
+        return result.committed;
+      }
 
-      if (!result.committed) {
+      final nestedRef = _reservationByTeacherRef(
+        slot.courseId,
+        slot.dayKey,
+        slot.time,
+        slot.teacherId,
+      );
+      final nestedCancelled = await cancelAtRef(nestedRef);
+      final cancelled = nestedCancelled
+          ? true
+          : await cancelAtRef(
+              _reservationsRef(slot.courseId, slot.dayKey, slot.time),
+            );
+
+      if (!cancelled) {
         _toast('Cancel failed.');
         return;
       }
 
       _toast('Booking canceled ✅');
-      await _loadBookingsForCourse(slot.courseId);
+      await _loadAllBookedSlots();
 
       if (!mounted) return;
       if (Navigator.of(detailsSheetContext).canPop()) {
@@ -736,19 +805,41 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               (k, vv) => MapEntry(k.toString(), vv),
             );
 
-            final learnersRaw = m['learners'];
-            int count = 0;
-            if (learnersRaw is Map) count = learnersRaw.length;
+            void saveSummary(
+              Map<dynamic, dynamic> slotNode,
+              String teacherKey,
+            ) {
+              final learnersRaw = slotNode['learners'];
+              int count = 0;
+              if (learnersRaw is Map) count = learnersRaw.length;
+              if (count <= 0) return;
 
-            if (count <= 0) continue;
+              final teacherId = (slotNode['teacherId'] ?? teacherKey)
+                  .toString()
+                  .trim();
+              if (teacherId.isEmpty) return;
 
-            final key = '${dayEntry.key}|${timeEntry.key}';
-            final sessionNo = _toInt(m['sessionNo'], fallback: 0);
+              final key = '${dayEntry.key}|${timeEntry.key}|$teacherId';
+              final sessionNo = _toInt(slotNode['sessionNo'], fallback: 0);
 
-            summaries[key] = _ReservationSummary(
-              bookedCount: count,
-              groupSessionNo: sessionNo > 0 ? sessionNo : null,
-            );
+              summaries[key] = _ReservationSummary(
+                bookedCount: count,
+                groupSessionNo: sessionNo > 0 ? sessionNo : null,
+              );
+            }
+
+            if (m['learners'] is Map) {
+              saveSummary(m, '');
+            } else {
+              for (final teacherEntry in m.entries) {
+                final teacherNode = teacherEntry.value;
+                if (teacherNode is! Map) continue;
+                saveSummary(
+                  teacherNode.map((k, vv) => MapEntry(k.toString(), vv)),
+                  teacherEntry.key.toString(),
+                );
+              }
+            }
           }
         }
       }
@@ -809,7 +900,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             final start = _parseSlotStart(dayKey, hhmm);
             if (start == null) continue;
 
-            final key = '$dayKey|$hhmm';
+            final key = '$dayKey|$hhmm|$teacherId';
             final summary = summaries[key];
 
             out.add(
@@ -846,8 +937,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     if (!mounted) return;
 
     final possible = available.where((s) {
-      if (s.dayKey == sourceSlot.dayKey && s.time == sourceSlot.time)
+      if (s.dayKey == sourceSlot.dayKey &&
+          s.time == sourceSlot.time &&
+          s.teacherId == sourceSlot.teacherId) {
         return false;
+      }
       if (s.start.isBefore(DateTime.now().subtract(const Duration(minutes: 1))))
         return false;
       if (s.groupSessionNo != null && s.groupSessionNo != sourceSlot.sessionNo)
@@ -1041,15 +1135,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     setState(() => busyAction = true);
 
     try {
-      final sourceRef = _reservationsRef(
+      final sourceRef = _reservationByTeacherRef(
         sourceSlot.courseId,
         sourceSlot.dayKey,
         sourceSlot.time,
+        sourceSlot.teacherId,
       );
-      final targetRef = _reservationsRef(
+      final targetRef = _reservationByTeacherRef(
         target.courseId,
         target.dayKey,
         target.time,
+        target.teacherId,
       );
 
       final tx = await targetRef.runTransaction((Object? currentData) {
@@ -1118,7 +1214,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         _toast('Booking moved ✅');
       }
 
-      await _loadBookingsForCourse(sourceSlot.courseId);
+      await _loadAllBookedSlots();
 
       if (!mounted) return;
       if (Navigator.of(detailsSheetContext).canPop()) {

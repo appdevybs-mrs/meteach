@@ -897,8 +897,26 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           final dt = _parseSlotStart(dayKey, hhmm);
           if (dt == null) continue;
 
-          if (dt.isAfter(now)) {
+          if (!dt.isAfter(now)) continue;
+
+          final slotMap = Map<dynamic, dynamic>.from(slotNode);
+
+          // Flat shape: /{day}/{time} => {learners:{...}, ...}
+          final learnersRaw = slotMap['learners'];
+          if (learnersRaw is Map && learnersRaw.isNotEmpty) {
             count += 1;
+            continue;
+          }
+
+          // Nested shape: /{day}/{time}/{teacherId} => {learners:{...}, ...}
+          for (final teacherEntry in slotMap.entries) {
+            final teacherSlot = teacherEntry.value;
+            if (teacherSlot is! Map) continue;
+            final tm = Map<dynamic, dynamic>.from(teacherSlot);
+            final tLearners = tm['learners'];
+            if (tLearners is Map && tLearners.isNotEmpty) {
+              count += 1;
+            }
           }
         }
       }

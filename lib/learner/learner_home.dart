@@ -2925,7 +2925,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
           teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
         );
 
-        if (best == null || candidate.start.isBefore(best.start)) {
+        final bestNow = best;
+        if (bestNow == null || candidate.start.isBefore(bestNow.start)) {
           best = candidate;
         }
         continue;
@@ -2950,37 +2951,63 @@ class _BookingTopCardState extends State<_BookingTopCard>
           final node = e.value;
           if (node is! Map) continue;
 
-          final sm = Map<dynamic, dynamic>.from(node);
-          final learners = sm['learners'];
-          if (learners is! Map) continue;
-
-          final lm = Map<dynamic, dynamic>.from(learners);
-          if (!lm.containsKey(uid)) continue;
-
           final start = _parseSlotStart(dk, hhmm);
           if (start == null) continue;
           final joinWindowEnds = start.add(const Duration(minutes: 10));
           if (joinWindowEnds.isBefore(now)) continue;
 
-          final teacherId = (sm['teacherId'] ?? '').toString().trim();
-          final teacherName = (sm['teacherName'] ?? 'Teacher')
-              .toString()
-              .trim();
+          final sm = Map<dynamic, dynamic>.from(node);
 
-          final candidate = _NextBooking(
-            source: 'flexible',
-            courseId: cid,
-            classId: '',
-            dayKey: dk,
-            time: hhmm,
-            start: start,
-            durationMinutes: 60,
-            teacherId: teacherId,
-            teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
-          );
+          void considerCandidate(
+            Map<dynamic, dynamic> slotLike,
+            String teacherKey,
+          ) {
+            final learners = slotLike['learners'];
+            if (learners is! Map) return;
 
-          if (best == null || candidate.start.isBefore(best.start)) {
-            best = candidate;
+            final lm = Map<dynamic, dynamic>.from(learners);
+            if (!lm.containsKey(uid)) return;
+
+            final teacherId = (slotLike['teacherId'] ?? teacherKey)
+                .toString()
+                .trim();
+            final teacherName = (slotLike['teacherName'] ?? 'Teacher')
+                .toString()
+                .trim();
+
+            final candidate = _NextBooking(
+              source: 'flexible',
+              courseId: cid,
+              classId: '',
+              dayKey: dk,
+              time: hhmm,
+              start: start,
+              durationMinutes: 60,
+              teacherId: teacherId,
+              teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
+            );
+
+            final bestNow = best;
+            if (bestNow == null || candidate.start.isBefore(bestNow.start)) {
+              best = candidate;
+            }
+          }
+
+          // Flat legacy shape: /{day}/{time} => {learners:{...}, ...}
+          if (sm['learners'] is Map) {
+            considerCandidate(sm, '');
+            continue;
+          }
+
+          // Nested shape: /{day}/{time}/{teacherId} => {learners:{...}, ...}
+          for (final te in sm.entries) {
+            final teacherKey = te.key.toString();
+            final teacherNode = te.value;
+            if (teacherNode is! Map) continue;
+            considerCandidate(
+              Map<dynamic, dynamic>.from(teacherNode),
+              teacherKey,
+            );
           }
         }
       }

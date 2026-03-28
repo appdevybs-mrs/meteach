@@ -27,13 +27,6 @@ class CertificateService {
 
   DatabaseReference get _certificatesRef => _db.ref(_certificatesPath);
 
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
   String _cvnFromKey(String key, {required int nowMs}) {
     final year = DateTime.fromMillisecondsSinceEpoch(nowMs).year;
     final hash = key.codeUnits.fold<int>(
@@ -42,27 +35,6 @@ class CertificateService {
     );
     final sequence = (hash % 100000).toString().padLeft(5, '0');
     return '$_prefix-$year-$sequence';
-  }
-
-  Future<String> generateCVN() async {
-    final now = DateTime.now();
-    final year = now.year.toString();
-
-    try {
-      final snapshot = await _certificatesRef.get();
-      int count = 1;
-      if (snapshot.value != null && snapshot.value is Map) {
-        final map = snapshot.value as Map;
-        count = map.length + 1;
-      }
-
-      final sequence = count.toString().padLeft(5, '0');
-      return '$_prefix-$year-$sequence';
-    } catch (e) {
-      final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-      final sequence = timestamp.substring(timestamp.length - 5);
-      return '$_prefix-$year-$sequence';
-    }
   }
 
   Future<bool> isCVNUnique(String cvn, {String? excludeKey}) async {
@@ -189,32 +161,6 @@ class CertificateService {
       rethrow;
     } catch (e) {
       throw CertificateServiceException('Failed to create certificate: $e');
-    }
-  }
-
-  Future<String?> createCertificate(Certificate cert) async {
-    try {
-      final isUnique = await isCVNUnique(cert.cvn);
-      if (!isUnique) {
-        throw CertificateServiceException('CVN already exists');
-      }
-
-      final newRef = _certificatesRef.push();
-      final certData = cert.toMap();
-
-      await newRef.set(certData);
-
-      return newRef.key;
-    } on FirebaseException catch (e) {
-      if (e.code == 'permission-denied') {
-        throw CertificateServiceException(
-          'Permission denied. Please ensure you are logged in as an admin or teacher.',
-          isPermissionError: true,
-        );
-      }
-      throw CertificateServiceException(
-        'Failed to create certificate: ${e.message}',
-      );
     }
   }
 
@@ -452,10 +398,6 @@ class CertificateService {
       message: message,
       isValid: effectiveStatus == CertificateStatus.valid,
     );
-  }
-
-  String _normalizeCVN(String cvn) {
-    return cvn.toUpperCase().replaceAll(' ', '').replaceAll('-', '');
   }
 }
 

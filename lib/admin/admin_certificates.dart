@@ -191,18 +191,6 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     });
   }
 
-  void _setSort(String field, {bool? ascending}) {
-    setState(() {
-      if (_sortBy == field && ascending == null) {
-        _sortAscending = !_sortAscending;
-      } else {
-        _sortBy = field;
-        if (ascending != null) _sortAscending = ascending;
-      }
-      _applyFilters();
-    });
-  }
-
   void _clearFilters() {
     setState(() {
       _searchQuery = '';
@@ -323,48 +311,6 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       'Print functionality coming soon',
       type: AppToastType.info,
     );
-  }
-
-  Future<void> _selectDate(bool isFrom, bool isTrainingDate) async {
-    final initialDate = isTrainingDate
-        ? (isFrom
-              ? (_trainingDateFrom != null
-                    ? DateTime.parse(_trainingDateFrom!)
-                    : DateTime.now())
-              : (_trainingDateTo != null
-                    ? DateTime.parse(_trainingDateTo!)
-                    : DateTime.now()))
-        : (isFrom
-              ? (_expirationDateFrom != null
-                    ? DateTime.parse(_expirationDateFrom!)
-                    : DateTime.now())
-              : (_expirationDateTo != null
-                    ? DateTime.parse(_expirationDateTo!)
-                    : DateTime.now()));
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-
-    if (picked != null) {
-      final dateStr = DateFormat('yyyy-MM-dd').format(picked);
-      if (isTrainingDate) {
-        _setDateFilter(
-          isFrom ? dateStr : _trainingDateFrom,
-          isFrom ? _trainingDateTo : dateStr,
-          true,
-        );
-      } else {
-        _setDateFilter(
-          isFrom ? dateStr : _expirationDateFrom,
-          isFrom ? _expirationDateTo : dateStr,
-          false,
-        );
-      }
-    }
   }
 
   @override
