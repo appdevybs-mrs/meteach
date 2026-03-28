@@ -28,6 +28,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'learner_homework_screen.dart';
 import '../shared/human_error.dart';
@@ -57,6 +58,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   static const usersNode = 'users';
   static const syllabiNode = 'syllabi';
   static const classesNode = 'classes';
+  static const paymentsNode = 'payments';
 
   // ✅ NEW (online progress node)
   static const bookingProgressNode = 'booking_progress';
@@ -92,16 +94,25 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   StreamSubscription<DatabaseEvent>? _paySub;
   Map<String, dynamic> _paymentSummary = {};
   bool _payLoading = true;
+  int _derivedSessionsPaidTotal = 0;
+  bool _derivedSessionsReady = false;
+  Future<_DetailPrivateMeta?>? _privateMetaFuture;
+  Timer? _joinTicker;
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    _joinTicker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _joinTicker?.cancel();
     _paySub?.cancel();
     _tab.dispose();
     super.dispose();
@@ -155,6 +166,100 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       if (left > 1 && left % 3 == 1) buf.write(',');
     }
     return buf.toString();
+  }
+
+  static String _normalizeVariantKey(String raw) {
+    final v = raw.trim().toLowerCase();
+    switch (v) {
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return 'inclass';
+      case 'flexible':
+      case 'online':
+        return 'flexible';
+      case 'private':
+      case 'vip':
+      case 'live':
+        return 'private';
+      case 'recorded':
+      case 'record':
+        return 'recorded';
+      default:
+        return v;
+    }
+  }
+
+  static bool _variantUsesSessions(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private' || v == 'flexible';
+  }
+
+  static bool _variantUsesLegacySessionFallback(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
+  Future<int> _deriveSessionsPaidTotalFromPayments() async {
+    if (_uid.trim().isEmpty) return 0;
+
+    final expectedVariant = _normalizeVariantKey(_deliveryKey);
+    final expectedCourseId = _courseId.trim();
+
+    try {
+      final snap = await _db
+          .child(paymentsNode)
+          .orderByChild('uid')
+          .equalTo(_uid)
+          .get();
+      final raw = snap.value;
+      if (raw is! Map) return 0;
+
+      var total = 0;
+      for (final entry in raw.entries) {
+        final value = entry.value;
+        if (value is! Map) continue;
+        final p = value.map((k, v) => MapEntry(k.toString(), v));
+
+        final payCourseKey = (p['courseKey'] ?? '').toString().trim();
+        final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
+            .toString()
+            .trim();
+        final matchesCourse =
+            payCourseKey == widget.courseKey ||
+            (expectedCourseId.isNotEmpty && payCourseId == expectedCourseId);
+        if (!matchesCourse) continue;
+
+        final payVariant = _normalizeVariantKey(
+          (p['variantKey'] ?? p['deliveryKey'] ?? p['variant'] ?? '')
+              .toString(),
+        );
+        if (expectedVariant.isNotEmpty &&
+            payVariant.isNotEmpty &&
+            payVariant != expectedVariant) {
+          continue;
+        }
+
+        final effectiveVariant = payVariant.isNotEmpty
+            ? payVariant
+            : expectedVariant;
+        if (!_variantUsesSessions(effectiveVariant)) continue;
+
+        var sp = _asInt(p['sessionsPaid']);
+        final amount = _asInt(p['amount']);
+        if (sp <= 0 &&
+            amount > 0 &&
+            _variantUsesLegacySessionFallback(effectiveVariant)) {
+          sp = 8;
+        }
+        total += sp;
+      }
+
+      return total;
+    } catch (_) {
+      return 0;
+    }
   }
 
   Map<String, dynamic> get _cls => (_course['class'] is Map)
@@ -230,6 +335,243 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     if (delivery == 'recorded') return 'Recorded';
 
     return '';
+  }
+
+  bool get _isPrivateOnlineCourse {
+    if (_deliveryKey != 'private') return false;
+    final classMode = (_cls['studyMode'] ?? '').toString().trim().toLowerCase();
+    final mode = _studyMode.isNotEmpty ? _studyMode : classMode;
+    return mode == 'online' || mode.isEmpty;
+  }
+
+  String _weeklyScheduleLine(dynamic sessionsRaw) {
+    final nodes = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final s in sessionsRaw) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final s in sessionsRaw.values) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    if (nodes.isEmpty) return 'Schedule: not set';
+
+    String normDay(String raw) {
+      final d = raw.trim();
+      if (d.length <= 3) return d;
+      return d.substring(0, 3);
+    }
+
+    final parts = nodes
+        .map((n) {
+          final day = normDay((n['day'] ?? '').toString());
+          final start = (n['start_time'] ?? '').toString().trim();
+          if (day.isEmpty && start.isEmpty) return '';
+          if (day.isEmpty) return start;
+          if (start.isEmpty) return day;
+          return '$day $start';
+        })
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'Schedule: not set';
+    return 'Schedule: ${parts.join(' • ')}';
+  }
+
+  int _weekdayFromShort(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return 0;
+    }
+  }
+
+  ({DateTime start, int duration})? _nextOccurrenceFromSchedule(
+    Map<String, dynamic> schedule,
+  ) {
+    final firstRaw = (schedule['first_session_date'] ?? '').toString().trim();
+    final firstDate = DateTime.tryParse(firstRaw);
+    if (firstDate == null) return null;
+
+    final sessionsRaw = schedule['sessions'];
+    final nodes = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final s in sessionsRaw) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final s in sessionsRaw.values) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    if (nodes.isEmpty) return null;
+
+    final now = DateTime.now();
+    final firstDay = DateTime(firstDate.year, firstDate.month, firstDate.day);
+    DateTime? best;
+    int bestDur = 60;
+
+    for (int i = 0; i <= 35; i++) {
+      final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+      if (day.isBefore(firstDay)) continue;
+      for (final n in nodes) {
+        final wd = _weekdayFromShort((n['day'] ?? '').toString());
+        if (wd <= 0 || wd != day.weekday) continue;
+        final hm = (n['start_time'] ?? '').toString().trim().split(':');
+        if (hm.length != 2) continue;
+        final h = int.tryParse(hm[0]);
+        final m = int.tryParse(hm[1]);
+        if (h == null || m == null) continue;
+        final start = DateTime(day.year, day.month, day.day, h, m);
+        final dur = _asInt(n['duration_min']);
+        final safeDur = dur > 0 ? dur : 60;
+        final end = start.add(Duration(minutes: safeDur));
+        if (end.isBefore(now)) continue;
+        if (best == null || start.isBefore(best)) {
+          best = start;
+          bestDur = safeDur;
+        }
+      }
+    }
+
+    if (best == null) return null;
+    return (start: best, duration: bestDur);
+  }
+
+  Future<void> _openExternalUrl(String url) async {
+    var u = url.trim();
+    if (u.isEmpty) return;
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid meeting link.')),
+      );
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open the link.')),
+      );
+    }
+  }
+
+  Future<_DetailPrivateMeta?> _loadPrivateJoinMeta() async {
+    if (!_isPrivateOnlineCourse) return null;
+    if (_classId.trim().isEmpty) return null;
+
+    Map<String, dynamic> classNode = <String, dynamic>{};
+    try {
+      final cs = await _classesRef.child(_classId).get();
+      if (cs.exists && cs.value is Map) {
+        classNode = Map<String, dynamic>.from(cs.value as Map);
+      }
+    } catch (_) {}
+
+    final scheduleRaw = _cls['schedule'] ?? classNode['schedule'];
+    if (scheduleRaw is! Map) return null;
+    final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
+
+    final scheduleLine = _weeklyScheduleLine(schedule['sessions']);
+    final next = _nextOccurrenceFromSchedule(schedule);
+
+    String teacherUid =
+        (classNode['teacherUid'] ??
+                classNode['teacher_uid'] ??
+                classNode['teacherId'] ??
+                classNode['teacher_id'] ??
+                _cls['teacherUid'] ??
+                _cls['teacherId'] ??
+                '')
+            .toString()
+            .trim();
+
+    if (teacherUid.isEmpty && classNode['instructor_current'] is Map) {
+      teacherUid =
+          (Map<String, dynamic>.from(
+                    classNode['instructor_current'] as Map,
+                  )['uid'] ??
+                  '')
+              .toString()
+              .trim();
+    }
+
+    if (teacherUid.isEmpty && classNode['attendance'] is Map) {
+      final att = Map<dynamic, dynamic>.from(classNode['attendance'] as Map);
+      int bestTs = 0;
+      String bestUid = '';
+      for (final e in att.entries) {
+        if (e.value is! Map) continue;
+        final m = Map<String, dynamic>.from(e.value as Map);
+        final uid =
+            (m['teacherUid'] ??
+                    m['teacher_uid'] ??
+                    m['teacherId'] ??
+                    m['teacher_id'] ??
+                    '')
+                .toString()
+                .trim();
+        if (uid.isEmpty) continue;
+        final ts = _asInt(m['updatedAt']);
+        if (ts >= bestTs) {
+          bestTs = ts;
+          bestUid = uid;
+        }
+      }
+      if (bestUid.isNotEmpty) teacherUid = bestUid;
+    }
+
+    String meetUrl = '';
+    if (teacherUid.isNotEmpty) {
+      try {
+        final ms = await _usersRef
+            .child(teacherUid)
+            .child('google_meet_url')
+            .get();
+        meetUrl = (ms.value ?? '').toString().trim();
+      } catch (_) {}
+    }
+
+    return _DetailPrivateMeta(
+      scheduleLine: scheduleLine,
+      nextStart: next?.start,
+      durationMinutes: next?.duration ?? 60,
+      meetUrl: meetUrl,
+    );
   }
 
   int _sessionsConsumedForPayment({
@@ -338,6 +680,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       _sessionIdByNumber = {};
       _sessionTitleByNumber = {};
       _plannedMeetings = null;
+      _derivedSessionsPaidTotal = 0;
+      _derivedSessionsReady = false;
+      _privateMetaFuture = null;
     });
 
     try {
@@ -781,6 +1126,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
       _attendanceAll = all;
 
+      _derivedSessionsPaidTotal = await _deriveSessionsPaidTotalFromPayments();
+      _derivedSessionsReady = true;
+      _privateMetaFuture = _isPrivateOnlineCourse
+          ? _loadPrivateJoinMeta()
+          : null;
+
       if (!mounted) return;
       setState(() => _busy = false);
     } catch (e) {
@@ -1060,24 +1411,49 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
     final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
     final remindBeforeSession = _asInt(sum['remindBeforeSession']);
+    final totalPaid = _asInt(sum['totalPaid']);
 
     final lastAmount = _asInt(sum['lastAmount']);
     final lastMethod = (sum['lastMethod'] ?? '').toString();
-    final lastPaymentAt = _fmtDateFromMs(sum['lastPaymentAt']);
+    final lastPaymentAtMs = _asInt(sum['lastPaymentAt']);
+    final lastPaymentAt = _fmtDateFromMs(lastPaymentAtMs);
 
-    final bool hasPayments = sessionsPaidTotal > 0;
+    final hasPaymentHistory =
+        totalPaid > 0 ||
+        lastAmount > 0 ||
+        lastPaymentAtMs > 0 ||
+        lastMethod.trim().isNotEmpty;
 
-    final left = sessionsPaidTotal - sessionsPassed;
+    final derivedSessionsPaidTotal = _derivedSessionsReady
+        ? _derivedSessionsPaidTotal
+        : 0;
+
+    final mergedSessionsPaidTotal =
+        (sessionsPaidTotal >= derivedSessionsPaidTotal)
+        ? sessionsPaidTotal
+        : derivedSessionsPaidTotal;
+    final fallbackSessionsPaid = mergedSessionsPaidTotal <= 0
+        ? (hasPaymentHistory &&
+                  (_deliveryKey == 'private' || _deliveryKey == 'inclass')
+              ? 8
+              : 0)
+        : 0;
+    final effectiveSessionsPaidTotal = mergedSessionsPaidTotal > 0
+        ? mergedSessionsPaidTotal
+        : fallbackSessionsPaid;
+    final bool hasSessionBalance = effectiveSessionsPaidTotal > 0;
+
+    final left = effectiveSessionsPaidTotal - sessionsPassed;
     final bool overdue =
-        hasPayments &&
+        hasSessionBalance &&
         isPaymentDueBySessions(
-          sessionsPaidTotal: sessionsPaidTotal,
+          sessionsPaidTotal: effectiveSessionsPaidTotal,
           sessionsPresent: sessionsPassed,
         );
     final bool dueSoon =
-        hasPayments &&
+        hasSessionBalance &&
         isPaymentWarningBySessions(
-          sessionsPaidTotal: sessionsPaidTotal,
+          sessionsPaidTotal: effectiveSessionsPaidTotal,
           sessionsPresent: sessionsPassed,
           remindBeforeSession: remindBeforeSession,
         );
@@ -1108,14 +1484,94 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   style: UiK.subtleText(),
                 ),
                 const SizedBox(height: 12),
+                if (_isPrivateOnlineCourse && _privateMetaFuture != null)
+                  FutureBuilder<_DetailPrivateMeta?>(
+                    future: _privateMetaFuture,
+                    builder: (context, snap) {
+                      final meta = snap.data;
+                      if (meta == null) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final now = DateTime.now();
+                      final next = meta.nextStart;
+                      final hasMeet = meta.meetUrl.trim().isNotEmpty;
+
+                      bool canJoin = false;
+                      if (next != null) {
+                        final openFrom = next.subtract(
+                          const Duration(minutes: 5),
+                        );
+                        final openUntil = next.add(const Duration(minutes: 10));
+                        canJoin =
+                            !now.isBefore(openFrom) && now.isBefore(openUntil);
+                      }
+
+                      String nextLabel = 'Next session: -';
+                      if (next != null) {
+                        nextLabel =
+                            'Next session: ${_fmtDateTimeFromMs(next.millisecondsSinceEpoch)}';
+                      }
+
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: UiK.uiBorder.withValues(alpha: 0.85),
+                          ),
+                          color: UiK.primaryBlue.withValues(alpha: 0.04),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(meta.scheduleLine, style: UiK.subtleText()),
+                            const SizedBox(height: 4),
+                            Text(nextLabel, style: UiK.subtleText()),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: (canJoin && hasMeet)
+                                    ? () => _openExternalUrl(meta.meetUrl)
+                                    : null,
+                                icon: const Icon(Icons.video_call_rounded),
+                                label: Text(
+                                  canJoin && hasMeet
+                                      ? 'Join'
+                                      : (hasMeet
+                                            ? 'Join (opens 5 min before)'
+                                            : 'Meet link not set'),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: canJoin && hasMeet
+                                      ? UiK.actionOrange
+                                      : Colors.grey.shade500,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey.shade500,
+                                  disabledForegroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 if (overdue || dueSoon)
                   _dueBanner(overdue: overdue, left: leftSafe),
                 if (expiryDue || expirySoon)
                   _expiryBanner(expired: expiryDue, expiresAt: expiresAt),
                 _sessionsTable(
-                  paid: hasPayments ? sessionsPaidTotal : null,
+                  paid: hasSessionBalance ? effectiveSessionsPaidTotal : null,
                   passed: sessionsPassed,
-                  left: hasPayments ? leftSafe : null,
+                  left: hasSessionBalance ? leftSafe : null,
                 ),
                 const SizedBox(height: 12),
                 Container(
@@ -1148,7 +1604,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      if (!hasPayments)
+                      if (!hasPaymentHistory)
                         Text(
                           'Your payment info is not available yet. If you already paid, contact the academy to sync it.',
                           style: UiK.subtleText(),
@@ -1168,6 +1624,21 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                           'Date',
                           lastPaymentAt.isNotEmpty ? lastPaymentAt : '—',
                         ),
+                        if (!hasSessionBalance) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Payment is recorded, but the sessions balance is still syncing.',
+                            style: UiK.subtleText(),
+                          ),
+                        ],
+                        if (hasSessionBalance &&
+                            derivedSessionsPaidTotal > sessionsPaidTotal) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Sessions restored from payment history.',
+                            style: UiK.subtleText(),
+                          ),
+                        ],
                       ],
                       const SizedBox(height: 10),
                       Container(
@@ -1201,8 +1672,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              !hasPayments
+                              !hasPaymentHistory
                                   ? 'Payment is not synced yet.'
+                                  : !hasSessionBalance
+                                  ? 'Payment is saved. Session balance will appear after sync.'
                                   : (overdue || expiryDue)
                                   ? 'Payment is due now. Please contact the academy to renew your sessions.'
                                   : (dueSoon || expirySoon)
@@ -2550,6 +3023,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 }
 
 // -------------------- Small UI model + ReadMore widget --------------------
+
+class _DetailPrivateMeta {
+  final String scheduleLine;
+  final DateTime? nextStart;
+  final int durationMinutes;
+  final String meetUrl;
+
+  const _DetailPrivateMeta({
+    required this.scheduleLine,
+    required this.nextStart,
+    required this.durationMinutes,
+    required this.meetUrl,
+  });
+}
 
 class _HwBlock {
   final String title;

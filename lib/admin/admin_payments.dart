@@ -145,6 +145,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     return v == 'inclass' || v == 'private' || v == 'flexible';
   }
 
+  static bool _variantUsesLegacySessionFallback(String variantKey) {
+    final v = _normalizeVariantKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
   static bool _variantUsesReminder(String variantKey) {
     final v = _normalizeVariantKey(variantKey);
     return v == 'inclass' || v == 'private';
@@ -387,6 +392,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       (courseMap['variantKey'] ?? courseMap['variant'] ?? '').toString(),
       fallback: '',
     );
+    final expectedCourseId = (courseMap['id'] ?? '').toString().trim();
 
     final sumRef = _usersRef
         .child(uid)
@@ -418,22 +424,40 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         if (raw is! Map) continue;
         final m = raw.map((k, v) => MapEntry(k.toString(), v));
 
-        if ((m['courseKey'] ?? '').toString() != courseKey) continue;
+        final payCourseKey = (m['courseKey'] ?? '').toString().trim();
+        final payCourseId = (m['course_id'] ?? m['courseId'] ?? '')
+            .toString()
+            .trim();
+        final matchesCourse =
+            payCourseKey == courseKey ||
+            (expectedCourseId.isNotEmpty && payCourseId == expectedCourseId);
+        if (!matchesCourse) continue;
 
         final amount = _asInt(m['amount']);
-        final sp = _asInt(m['sessionsPaid']);
+        final rawVariant = (m['variantKey'] ?? m['deliveryKey'] ?? m['variant'])
+            .toString();
+        final payVariant = _normalizeVariantKey(rawVariant);
+        if (expectedVariant.isNotEmpty &&
+            payVariant.isNotEmpty &&
+            payVariant != expectedVariant) {
+          continue;
+        }
+        final effectiveVariant = payVariant.isNotEmpty
+            ? payVariant
+            : expectedVariant;
+
+        var sp = _asInt(m['sessionsPaid']);
+        if (sp <= 0 &&
+            amount > 0 &&
+            _variantUsesLegacySessionFallback(effectiveVariant)) {
+          sp = 8;
+        }
         final paidAt = _asInt(m['paidAt']);
         final method = (m['method'] ?? '').toString();
         final remind = _asInt(m['remindBeforeSession']);
-        final variantKey = _normalizeVariantKey(
-          (m['variantKey'] ?? '').toString(),
-        );
-        if (expectedVariant.isNotEmpty && variantKey != expectedVariant) {
-          continue;
-        }
 
         totalPaid += amount;
-        if (_variantUsesSessions(variantKey)) {
+        if (_variantUsesSessions(effectiveVariant)) {
           sessionsTotal += sp;
         }
 
@@ -443,7 +467,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           lastMethod = method;
           lastAmount = amount;
           lastRemind = remind;
-          lastVariantKey = variantKey;
+          lastVariantKey = effectiveVariant;
         }
       }
     }

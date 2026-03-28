@@ -293,6 +293,11 @@ class PaymentDialogShared {
     return v == 'inclass' || v == 'private' || v == 'flexible';
   }
 
+  static bool _variantUsesLegacySessionFallback(String variantKey) {
+    final v = _normalizeDeliveryKey(variantKey);
+    return v == 'inclass' || v == 'private';
+  }
+
   static bool _variantUsesReminder(String variantKey) {
     final v = _normalizeDeliveryKey(variantKey);
     return v == 'inclass' || v == 'private';
@@ -418,6 +423,7 @@ class PaymentDialogShared {
       (courseMap['variantKey'] ?? courseMap['variant'] ?? '').toString(),
       fallback: '',
     );
+    final expectedCourseId = (courseMap['id'] ?? '').toString().trim();
 
     final sumRef = usersRef
         .child(uid)
@@ -452,20 +458,39 @@ class PaymentDialogShared {
         if (payVal is! Map) return;
 
         final p = payVal.map((k, v) => MapEntry(k.toString(), v));
-        if ((p['courseKey'] ?? '').toString() != courseKey) return;
+
+        final payCourseKey = (p['courseKey'] ?? '').toString().trim();
+        final payCourseId = (p['course_id'] ?? p['courseId'] ?? '')
+            .toString()
+            .trim();
+        final matchesCourse =
+            payCourseKey == courseKey ||
+            (expectedCourseId.isNotEmpty && payCourseId == expectedCourseId);
+        if (!matchesCourse) return;
 
         final amount = _asInt(p['amount']);
-        final sp = _asInt(p['sessionsPaid']);
-        final paidAt = _asInt(p['paidAt']);
-        final variantKey = _normalizeDeliveryKey(
-          (p['variantKey'] ?? '').toString(),
-        );
-        if (expectedVariant.isNotEmpty && variantKey != expectedVariant) {
+        final rawVariant = (p['variantKey'] ?? p['deliveryKey'] ?? p['variant'])
+            .toString();
+        final payVariant = _normalizeDeliveryKey(rawVariant);
+        if (expectedVariant.isNotEmpty &&
+            payVariant.isNotEmpty &&
+            payVariant != expectedVariant) {
           return;
         }
+        final effectiveVariant = payVariant.isNotEmpty
+            ? payVariant
+            : expectedVariant;
+
+        var sp = _asInt(p['sessionsPaid']);
+        if (sp <= 0 &&
+            amount > 0 &&
+            _variantUsesLegacySessionFallback(effectiveVariant)) {
+          sp = 8;
+        }
+        final paidAt = _asInt(p['paidAt']);
 
         totalPaid += amount;
-        if (_variantUsesSessions(variantKey)) {
+        if (_variantUsesSessions(effectiveVariant)) {
           sessionsPaidTotal += sp;
         }
 
@@ -475,7 +500,7 @@ class PaymentDialogShared {
           latestMethod = (p['method'] ?? '').toString();
           latestAmount = amount;
           latestRemind = _asInt(p['remindBeforeSession']);
-          latestVariantKey = variantKey;
+          latestVariantKey = effectiveVariant;
         }
       });
     }
@@ -501,6 +526,18 @@ class PaymentDialogShared {
       'lastPaymentAt': latestPaidAt,
       'updatedAt': ServerValue.timestamp,
     });
+  }
+
+  static Future<void> repairLearnerCourseSummary({
+    required FirebaseDatabase db,
+    required String uid,
+    required String courseKey,
+  }) async {
+    await _rebuildLearnerSummaryFromPayments(
+      db: db,
+      uid: uid,
+      courseKey: courseKey,
+    );
   }
 
   static Future<void> _updateLearnerSummary({
@@ -788,16 +825,55 @@ class PaymentDialogShared {
     final uid = (payment['uid'] ?? '').toString().trim();
     final courseKey = (payment['courseKey'] ?? '').toString().trim();
 
-    if (variantKey.isEmpty && uid.isNotEmpty && courseKey.isNotEmpty) {
-      final study = await _loadStudyFieldsForLearnerCourse(
+    var loadedStudyFields = <String, String>{
+      'deliveryKey': '',
+      'deliveryLabel': '',
+      'studyMode': '',
+      'studyModeLabel': '',
+      'variantKey': '',
+      'variantLabel': '',
+    };
+
+    if (uid.isNotEmpty && courseKey.isNotEmpty) {
+      loadedStudyFields = await _loadStudyFieldsForLearnerCourse(
         usersRef: usersRef,
         uid: uid,
         courseKey: courseKey,
       );
+    }
+
+    if (variantKey.isEmpty) {
+      final study = loadedStudyFields;
       variantKey = _normalizeDeliveryKey(
         (study['variantKey'] ?? '').toString(),
       );
     }
+
+    final loadedStudyMode = _normalizeStudyMode(
+      (loadedStudyFields['studyMode'] ?? '').toString(),
+    );
+    final paymentStudyMode = _normalizeStudyMode(
+      (payment['studyMode'] ?? '').toString(),
+    );
+    final resolvedStudyMode = paymentStudyMode.isNotEmpty
+        ? paymentStudyMode
+        : loadedStudyMode;
+
+    final paymentVariantLabel = (payment['variantLabel'] ?? '')
+        .toString()
+        .trim();
+    final resolvedVariantLabel = paymentVariantLabel.isNotEmpty
+        ? paymentVariantLabel
+        : _variantLabel(deliveryKey: variantKey, studyMode: resolvedStudyMode);
+
+    final resolvedDeliveryLabel =
+        (loadedStudyFields['deliveryLabel'] ?? '').toString().trim().isNotEmpty
+        ? (loadedStudyFields['deliveryLabel'] ?? '').toString().trim()
+        : _deliveryLabelFromKey(variantKey);
+
+    final resolvedStudyModeLabel = resolvedStudyMode.isNotEmpty
+        ? _studyModeLabel(resolvedStudyMode)
+        : '';
 
     int sessionsPaid = _asInt(payment['sessionsPaid']);
     if (sessionsPaid <= 0) sessionsPaid = 8;
@@ -1090,6 +1166,20 @@ class PaymentDialogShared {
 
                   try {
                     await paymentsRef.child(paymentId).update({
+                      'variantKey': variantKey.isNotEmpty ? variantKey : null,
+                      'variantLabel': resolvedVariantLabel.isNotEmpty
+                          ? resolvedVariantLabel
+                          : null,
+                      'deliveryKey': variantKey.isNotEmpty ? variantKey : null,
+                      'deliveryLabel': resolvedDeliveryLabel.isNotEmpty
+                          ? resolvedDeliveryLabel
+                          : null,
+                      'studyMode': resolvedStudyMode.isNotEmpty
+                          ? resolvedStudyMode
+                          : null,
+                      'studyModeLabel': resolvedStudyModeLabel.isNotEmpty
+                          ? resolvedStudyModeLabel
+                          : null,
                       'sessionsPaid': usesSessions ? sessionsPaid : null,
                       'remindBeforeSession': usesReminder
                           ? normalizeReminderForSessions(

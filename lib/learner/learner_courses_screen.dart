@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
@@ -34,16 +37,24 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   String _uid = '';
   List<Map<String, dynamic>> _courses = [];
   bool _didOpenInitialCourse = false;
+  Timer? _joinTick;
+  final Map<String, Future<_PrivateOnlineMeta?>> _privateMetaFutureByCourseKey =
+      <String, Future<_PrivateOnlineMeta?>>{};
 
   @override
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
+    _joinTick = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
     _load();
   }
 
   @override
   void dispose() {
+    _joinTick?.cancel();
     appThemeController.removeListener(_onThemeChanged);
     super.dispose();
   }
@@ -73,6 +84,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       _error = null;
       _courses = [];
       _uid = '';
+      _privateMetaFutureByCourseKey.clear();
     });
 
     try {
@@ -199,6 +211,415 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   bool _isOnlineCourse(Map<String, dynamic> course) {
     final key = _variantKeyOf(course);
     return key == 'flexible' || key == 'private' || key == 'recorded';
+  }
+
+  String _studyModeOf(Map<String, dynamic> course) {
+    final root = (course['studyMode'] ?? '').toString().trim().toLowerCase();
+    if (root.isNotEmpty) return root;
+
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+    final inClass = (cls['studyMode'] ?? cls['study_mode'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (inClass.isNotEmpty) return inClass;
+
+    final rootModeLabel = (course['studyModeLabel'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (rootModeLabel == 'online' || rootModeLabel == 'in-class') {
+      return rootModeLabel == 'online' ? 'online' : 'inclass';
+    }
+
+    final classModeLabel =
+        (cls['studyModeLabel'] ?? cls['study_mode_label'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    if (classModeLabel == 'online' || classModeLabel == 'in-class') {
+      return classModeLabel == 'online' ? 'online' : 'inclass';
+    }
+
+    final variantLabel = (course['variantLabel'] ?? cls['variantLabel'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (variantLabel.contains('online')) return 'online';
+    if (variantLabel.contains('in-class') ||
+        variantLabel.contains('in class')) {
+      return 'inclass';
+    }
+
+    final deliveryLabel =
+        (course['deliveryLabel'] ?? cls['deliveryLabel'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    if (deliveryLabel.contains('online')) return 'online';
+
+    return '';
+  }
+
+  bool _isPrivateOnline(Map<String, dynamic> course) {
+    if (_variantKeyOf(course) != 'private') return false;
+    final mode = _studyModeOf(course);
+    return mode.isEmpty || mode == 'online';
+  }
+
+  String _readFirstNonEmpty(Map<String, dynamic> m, List<String> keys) {
+    for (final k in keys) {
+      final v = (m[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  int _weekdayFromShort(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return 1;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return 2;
+      case 'wed':
+      case 'wednesday':
+        return 3;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return 4;
+      case 'fri':
+      case 'friday':
+        return 5;
+      case 'sat':
+      case 'saturday':
+        return 6;
+      case 'sun':
+      case 'sunday':
+        return 7;
+      default:
+        return 0;
+    }
+  }
+
+  String _weekdayShort(int weekday) {
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    if (weekday < 1 || weekday > 7) return '-';
+    return labels[weekday - 1];
+  }
+
+  ({int hour, int minute})? _parseHm(String raw) {
+    final t = raw.trim();
+    final parts = t.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return (hour: h, minute: m);
+  }
+
+  DateTime? _safeDate(String ymd) {
+    try {
+      final p = ymd.trim().split('-');
+      if (p.length != 3) return null;
+      final y = int.tryParse(p[0]);
+      final m = int.tryParse(p[1]);
+      final d = int.tryParse(p[2]);
+      if (y == null || m == null || d == null) return null;
+      return DateTime(y, m, d);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _two(int n) => n.toString().padLeft(2, '0');
+
+  String _fmtHm(DateTime d) => '${_two(d.hour)}:${_two(d.minute)}';
+
+  String _fmtDateTime(DateTime d) {
+    return '${_weekdayShort(d.weekday)} ${_two(d.day)}/${_two(d.month)} ${_fmtHm(d)}';
+  }
+
+  Future<void> _openExternalUrl(BuildContext context, String url) async {
+    var u = url.trim();
+    if (u.isEmpty) return;
+
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invalid meeting link.')));
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open link.')));
+    }
+  }
+
+  Future<_PrivateOnlineMeta?> _loadPrivateOnlineMeta(
+    Map<String, dynamic> course,
+  ) async {
+    if (!_isPrivateOnline(course)) return null;
+
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+    final classId = (cls['class_id'] ?? '').toString().trim();
+
+    Map<String, dynamic> classNode = <String, dynamic>{};
+    if (classId.isNotEmpty) {
+      final snap = await _db.child('classes/$classId').get();
+      final raw = snap.value;
+      if (raw is Map) {
+        classNode = raw.map((k, v) => MapEntry(k.toString(), v));
+      }
+    }
+
+    final rawSchedule = cls['schedule'] ?? classNode['schedule'];
+    if (rawSchedule is! Map) {
+      return const _PrivateOnlineMeta(
+        slots: <_WeeklySlot>[],
+        firstDate: null,
+        meetUrl: '',
+      );
+    }
+
+    final schedule = rawSchedule.map((k, v) => MapEntry(k.toString(), v));
+    final firstDate = _safeDate(
+      (schedule['first_session_date'] ?? '').toString(),
+    );
+
+    final slots = <_WeeklySlot>[];
+    final sessionsRaw = schedule['sessions'];
+    final sessionNodes = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final item in sessionsRaw) {
+        if (item is! Map) continue;
+        sessionNodes.add(item.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final entry in sessionsRaw.entries) {
+        final item = entry.value;
+        if (item is! Map) continue;
+        sessionNodes.add(item.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+
+    for (final s in sessionNodes) {
+      final dayRaw = (s['day'] ?? '').toString();
+      final weekday = _weekdayFromShort(dayRaw);
+      if (weekday <= 0) continue;
+
+      final hm = _parseHm((s['start_time'] ?? '').toString());
+      if (hm == null) continue;
+
+      final duration = _asInt(s['duration_min']);
+      slots.add(
+        _WeeklySlot(
+          weekday: weekday,
+          startHour: hm.hour,
+          startMinute: hm.minute,
+          durationMinutes: duration > 0 ? duration : 60,
+        ),
+      );
+    }
+
+    slots.sort((a, b) {
+      final wd = a.weekday.compareTo(b.weekday);
+      if (wd != 0) return wd;
+      final ah = a.startHour.compareTo(b.startHour);
+      if (ah != 0) return ah;
+      return a.startMinute.compareTo(b.startMinute);
+    });
+
+    String teacherUid =
+        _readFirstNonEmpty(cls, [
+          'teacherUid',
+          'teacher_uid',
+          'teacherId',
+          'teacher_id',
+          'instructor_uid',
+          'instructorUid',
+        ]).isNotEmpty
+        ? _readFirstNonEmpty(cls, [
+            'teacherUid',
+            'teacher_uid',
+            'teacherId',
+            'teacher_id',
+            'instructor_uid',
+            'instructorUid',
+          ])
+        : _readFirstNonEmpty(classNode, [
+            'teacherUid',
+            'teacher_uid',
+            'teacherId',
+            'teacher_id',
+            'instructor_uid',
+            'instructorUid',
+          ]);
+
+    if (teacherUid.isEmpty && classNode['instructor_current'] is Map) {
+      final inst = Map<String, dynamic>.from(
+        classNode['instructor_current'] as Map,
+      );
+      teacherUid = _readFirstNonEmpty(inst, const ['uid']);
+    }
+
+    if (teacherUid.isEmpty && classNode['attendance'] is Map) {
+      final att = Map<dynamic, dynamic>.from(classNode['attendance'] as Map);
+      int bestTs = 0;
+      String bestUid = '';
+      for (final e in att.entries) {
+        if (e.value is! Map) continue;
+        final m = Map<String, dynamic>.from(e.value as Map);
+        final uid = _readFirstNonEmpty(m, [
+          'teacherUid',
+          'teacher_uid',
+          'teacherId',
+          'teacher_id',
+        ]);
+        if (uid.isEmpty) continue;
+        final ts = _asInt(m['updatedAt']);
+        if (ts >= bestTs) {
+          bestTs = ts;
+          bestUid = uid;
+        }
+      }
+      if (bestUid.isNotEmpty) teacherUid = bestUid;
+    }
+
+    var meetUrl = '';
+    if (teacherUid.isNotEmpty) {
+      final meetSnap = await _usersRef
+          .child(teacherUid)
+          .child('google_meet_url')
+          .get();
+      meetUrl = (meetSnap.value ?? '').toString().trim();
+    }
+
+    return _PrivateOnlineMeta(
+      slots: slots,
+      firstDate: firstDate,
+      meetUrl: meetUrl,
+    );
+  }
+
+  Future<_PrivateOnlineMeta?> _privateMetaForCourse(
+    Map<String, dynamic> course,
+  ) {
+    final key = (course['courseKey'] ?? '').toString().trim();
+    if (key.isEmpty) {
+      return _loadPrivateOnlineMeta(course);
+    }
+    return _privateMetaFutureByCourseKey.putIfAbsent(
+      key,
+      () => _loadPrivateOnlineMeta(course),
+    );
+  }
+
+  _SessionOccurrence? _currentOccurrence(
+    _PrivateOnlineMeta meta,
+    DateTime now,
+  ) {
+    if (meta.slots.isEmpty) return null;
+
+    for (int i = -1; i <= 14; i++) {
+      final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+      if (meta.firstDate != null) {
+        final firstDay = DateTime(
+          meta.firstDate!.year,
+          meta.firstDate!.month,
+          meta.firstDate!.day,
+        );
+        if (day.isBefore(firstDay)) continue;
+      }
+
+      for (final slot in meta.slots) {
+        if (slot.weekday != day.weekday) continue;
+
+        final start = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          slot.startHour,
+          slot.startMinute,
+        );
+        final openFrom = start.subtract(const Duration(minutes: 5));
+        final openUntil = start.add(const Duration(minutes: 10));
+
+        if (!now.isBefore(openFrom) && now.isBefore(openUntil)) {
+          return _SessionOccurrence(start: start, end: openUntil);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  _SessionOccurrence? _nextOccurrence(_PrivateOnlineMeta meta, DateTime now) {
+    if (meta.slots.isEmpty) return null;
+
+    _SessionOccurrence? best;
+
+    for (int i = 0; i <= 30; i++) {
+      final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+      if (meta.firstDate != null) {
+        final firstDay = DateTime(
+          meta.firstDate!.year,
+          meta.firstDate!.month,
+          meta.firstDate!.day,
+        );
+        if (day.isBefore(firstDay)) continue;
+      }
+
+      for (final slot in meta.slots) {
+        if (slot.weekday != day.weekday) continue;
+
+        final start = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          slot.startHour,
+          slot.startMinute,
+        );
+        if (!start.isAfter(now)) continue;
+
+        final end = start.add(Duration(minutes: slot.durationMinutes));
+        final candidate = _SessionOccurrence(start: start, end: end);
+        if (best == null || candidate.start.isBefore(best.start)) {
+          best = candidate;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  String _schedulePatternText(List<_WeeklySlot> slots) {
+    if (slots.isEmpty) return 'Schedule: not set yet';
+    final labels = slots
+        .map(
+          (s) =>
+              '${_weekdayShort(s.weekday)} ${_two(s.startHour)}:${_two(s.startMinute)}',
+        )
+        .toList();
+    return 'Schedule: ${labels.join(' • ')}';
   }
 
   ({Color bg, Color border, Color fg, IconData icon, String label})
@@ -541,10 +962,23 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
   }
 
   String _paymentStateFromSummary({
+    required String variantKey,
     required int sessionsDone,
     required Map<String, dynamic> summary,
   }) {
-    final sessionsPaidTotal = _asInt(summary['sessionsPaidTotal']);
+    final sessionsPaidTotalRaw = _asInt(summary['sessionsPaidTotal']);
+    final totalPaid = _asInt(summary['totalPaid']);
+    final lastAmount = _asInt(summary['lastAmount']);
+    final lastPaymentAt = _asInt(summary['lastPaymentAt']);
+    final hasPaymentHistory =
+        totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
+
+    final sessionsPaidTotal = sessionsPaidTotalRaw > 0
+        ? sessionsPaidTotalRaw
+        : (hasPaymentHistory &&
+                  (variantKey == 'private' || variantKey == 'inclass')
+              ? 8
+              : 0);
     final remindBeforeSession = _asInt(summary['remindBeforeSession']);
 
     if (sessionsPaidTotal <= 0) return '';
@@ -793,6 +1227,7 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
 
                       Widget stateChipForDone(int sessionsDone) {
                         final state = _paymentStateFromSummary(
+                          variantKey: variantKey,
                           sessionsDone: sessionsDone,
                           summary: sum,
                         );
@@ -1002,6 +1437,106 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
                 },
               ),
             ),
+            if (_isPrivateOnline(course)) ...[
+              const SizedBox(height: 10),
+              FutureBuilder<_PrivateOnlineMeta?>(
+                future: _privateMetaForCourse(course),
+                builder: (context, snap) {
+                  final meta = snap.data;
+                  if (meta == null) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: p.soft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      child: Text(
+                        'Loading private online session details...',
+                        style: TextStyle(
+                          color: p.text.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    );
+                  }
+
+                  final now = DateTime.now();
+                  final current = _currentOccurrence(meta, now);
+                  final next = _nextOccurrence(meta, now);
+                  final canJoin =
+                      current != null && meta.meetUrl.trim().isNotEmpty;
+
+                  String timeLine;
+                  if (current != null) {
+                    timeLine =
+                        'Join window open: ${_fmtDateTime(current.start)}';
+                  } else if (next != null) {
+                    timeLine = 'Next session: ${_fmtDateTime(next.start)}';
+                  } else {
+                    timeLine = 'No upcoming session found';
+                  }
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: p.soft,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: p.border.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _InfoLine(
+                          palette: p,
+                          icon: Icons.schedule_rounded,
+                          text: _schedulePatternText(meta.slots),
+                        ),
+                        const SizedBox(height: 6),
+                        _InfoLine(
+                          palette: p,
+                          icon: Icons.access_time_rounded,
+                          text: timeLine,
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.video_call_rounded),
+                            label: Text(
+                              canJoin
+                                  ? 'Join'
+                                  : 'Join (available at session time)',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: canJoin
+                                  ? variantStyle.fg
+                                  : Colors.grey.shade500,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: canJoin
+                                ? () => _openExternalUrl(context, meta.meetUrl)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -1066,6 +1601,39 @@ class _LearnerCoursesScreenState extends State<LearnerCoursesScreen> {
       ),
     );
   }
+}
+
+class _WeeklySlot {
+  final int weekday;
+  final int startHour;
+  final int startMinute;
+  final int durationMinutes;
+
+  const _WeeklySlot({
+    required this.weekday,
+    required this.startHour,
+    required this.startMinute,
+    required this.durationMinutes,
+  });
+}
+
+class _SessionOccurrence {
+  final DateTime start;
+  final DateTime end;
+
+  const _SessionOccurrence({required this.start, required this.end});
+}
+
+class _PrivateOnlineMeta {
+  final List<_WeeklySlot> slots;
+  final DateTime? firstDate;
+  final String meetUrl;
+
+  const _PrivateOnlineMeta({
+    required this.slots,
+    required this.firstDate,
+    required this.meetUrl,
+  });
 }
 
 class _CoursesHeroCard extends StatelessWidget {

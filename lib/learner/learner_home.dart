@@ -631,6 +631,26 @@ class _LearnerDashboardLite extends StatefulWidget {
 
 class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  Future<List<_CourseProgressItem>>? _progressFuture;
+  Timer? _progressRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _progressFuture = _loadProgressItems();
+    _progressRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!mounted) return;
+      setState(() {
+        _progressFuture = _loadProgressItems();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _progressRefreshTimer?.cancel();
+    super.dispose();
+  }
 
   bool _hasTarget(GlobalKey key) => key.currentContext != null;
 
@@ -939,6 +959,144 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       plannedMeetings: planned,
       totalLessons: totalLessons,
     );
+  }
+
+  String _studyModeFromCourse(Map<String, dynamic> course) {
+    final cls = (course['class'] is Map)
+        ? Map<String, dynamic>.from(course['class'] as Map)
+        : <String, dynamic>{};
+    return (course['studyMode'] ?? cls['studyMode'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
+  String _weeklyScheduleLine(dynamic sessionsRaw) {
+    final nodes = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final s in sessionsRaw) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final s in sessionsRaw.values) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    if (nodes.isEmpty) return 'Schedule: not set';
+
+    String normDay(String raw) {
+      final d = raw.trim();
+      if (d.length <= 3) return d;
+      return d.substring(0, 3);
+    }
+
+    final parts = nodes
+        .map((n) {
+          final day = normDay((n['day'] ?? '').toString());
+          final start = (n['start_time'] ?? '').toString().trim();
+          if (day.isEmpty && start.isEmpty) return '';
+          if (day.isEmpty) return start;
+          if (start.isEmpty) return day;
+          return '$day $start';
+        })
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'Schedule: not set';
+    return 'Schedule: ${parts.join(' • ')}';
+  }
+
+  ({DateTime start, int durationMinutes})? _nextOccurrenceFromSchedule(
+    Map<String, dynamic> schedule,
+  ) {
+    final firstSessionDate = (schedule['first_session_date'] ?? '')
+        .toString()
+        .trim();
+    final firstDate = DateTime.tryParse(firstSessionDate);
+    if (firstDate == null) return null;
+
+    final sessionsRaw = schedule['sessions'];
+    final nodes = <Map<String, dynamic>>[];
+    if (sessionsRaw is List) {
+      for (final s in sessionsRaw) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessionsRaw is Map) {
+      for (final s in sessionsRaw.values) {
+        if (s is! Map) continue;
+        nodes.add(s.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    if (nodes.isEmpty) return null;
+
+    int weekday(String day) {
+      switch (day.trim().toLowerCase()) {
+        case 'mon':
+        case 'monday':
+          return DateTime.monday;
+        case 'tue':
+        case 'tues':
+        case 'tuesday':
+          return DateTime.tuesday;
+        case 'wed':
+        case 'wednesday':
+          return DateTime.wednesday;
+        case 'thu':
+        case 'thur':
+        case 'thurs':
+        case 'thursday':
+          return DateTime.thursday;
+        case 'fri':
+        case 'friday':
+          return DateTime.friday;
+        case 'sat':
+        case 'saturday':
+          return DateTime.saturday;
+        case 'sun':
+        case 'sunday':
+          return DateTime.sunday;
+      }
+      return 0;
+    }
+
+    final now = DateTime.now();
+    final firstDay = DateTime(firstDate.year, firstDate.month, firstDate.day);
+    DateTime? bestStart;
+    int bestDuration = 60;
+
+    for (int i = 0; i <= 35; i++) {
+      final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+      if (day.isBefore(firstDay)) continue;
+
+      for (final n in nodes) {
+        final wd = weekday((n['day'] ?? '').toString());
+        if (wd <= 0 || wd != day.weekday) continue;
+
+        final startRaw = (n['start_time'] ?? '').toString().trim();
+        final hm = startRaw.split(':');
+        if (hm.length != 2) continue;
+        final h = int.tryParse(hm[0]);
+        final m = int.tryParse(hm[1]);
+        if (h == null || m == null) continue;
+
+        final start = DateTime(day.year, day.month, day.day, h, m);
+        final duration = _toInt(n['duration_min']);
+        final safeDuration = duration > 0 ? duration : 60;
+        final end = start.add(Duration(minutes: safeDuration));
+        if (end.isBefore(now)) continue;
+
+        if (bestStart == null || start.isBefore(bestStart)) {
+          bestStart = start;
+          bestDuration = safeDuration;
+        }
+      }
+    }
+
+    if (bestStart == null) return null;
+    return (start: bestStart, durationMinutes: bestDuration);
   }
 
   Future<Set<String>> _coveredSessionIdsFromAttendance({
@@ -1317,20 +1475,122 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             ? (completed / total).clamp(0.0, 1.0)
             : 0.0;
 
+        final variantKey = (course['variantKey'] ?? course['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        final studyMode = _studyModeFromCourse(course);
+        final isPrivateOnline =
+            variantKey == 'private' && studyMode == 'online';
+
+        String scheduleLine = '';
+        int nextStartMs = 0;
+        int sessionDurationMinutes = 60;
+        String meetUrl = '';
+
+        if (isPrivateOnline) {
+          final cls = (course['class'] is Map)
+              ? Map<String, dynamic>.from(course['class'] as Map)
+              : <String, dynamic>{};
+
+          final classId = (cls['class_id'] ?? '').toString().trim();
+          Map<String, dynamic> classNode = <String, dynamic>{};
+          if (classId.isNotEmpty) {
+            try {
+              final cs = await _db.child('classes/$classId').get();
+              if (cs.exists && cs.value is Map) {
+                classNode = Map<String, dynamic>.from(cs.value as Map);
+              }
+            } catch (_) {}
+          }
+
+          final scheduleRaw = cls['schedule'] ?? classNode['schedule'];
+          if (scheduleRaw is Map) {
+            final schedule = scheduleRaw.map(
+              (k, v) => MapEntry(k.toString(), v),
+            );
+            scheduleLine = _weeklyScheduleLine(schedule['sessions']);
+
+            final next = _nextOccurrenceFromSchedule(schedule);
+            if (next != null) {
+              nextStartMs = next.start.millisecondsSinceEpoch;
+              sessionDurationMinutes = next.durationMinutes;
+            }
+          }
+
+          String teacherUid =
+              (classNode['teacherUid'] ??
+                      classNode['teacher_uid'] ??
+                      classNode['teacherId'] ??
+                      classNode['teacher_id'] ??
+                      cls['teacherUid'] ??
+                      cls['teacherId'] ??
+                      '')
+                  .toString()
+                  .trim();
+          if (teacherUid.isEmpty && classNode['instructor_current'] is Map) {
+            teacherUid =
+                (Map<String, dynamic>.from(
+                          classNode['instructor_current'] as Map,
+                        )['uid'] ??
+                        '')
+                    .toString()
+                    .trim();
+          }
+
+          if (teacherUid.isEmpty && classNode['attendance'] is Map) {
+            final att = Map<dynamic, dynamic>.from(
+              classNode['attendance'] as Map,
+            );
+            int bestTs = 0;
+            String bestUid = '';
+            for (final e in att.entries) {
+              if (e.value is! Map) continue;
+              final m = Map<String, dynamic>.from(e.value as Map);
+              final uidVal =
+                  (m['teacherUid'] ??
+                          m['teacher_uid'] ??
+                          m['teacherId'] ??
+                          m['teacher_id'] ??
+                          '')
+                      .toString()
+                      .trim();
+              if (uidVal.isEmpty) continue;
+              final ts = _toInt(m['updatedAt']);
+              if (ts >= bestTs) {
+                bestTs = ts;
+                bestUid = uidVal;
+              }
+            }
+            if (bestUid.isNotEmpty) teacherUid = bestUid;
+          }
+
+          if (teacherUid.isNotEmpty) {
+            try {
+              final ms = await _db
+                  .child('users/$teacherUid/google_meet_url')
+                  .get();
+              meetUrl = (ms.value ?? '').toString().trim();
+            } catch (_) {}
+          }
+        }
+
         out.add(
           _CourseProgressItem(
             courseKey: key,
             title: title.isEmpty ? 'Course' : title,
             code: code,
-            variantKey: (course['variantKey'] ?? course['variant'] ?? '')
-                .toString()
-                .trim()
-                .toLowerCase(),
+            variantKey: variantKey,
             classType: _courseTypeLabel(course),
             detailsLine: _courseDetailsLine(course),
             completed: completed,
             total: total,
             progress: progress,
+            isPrivateOnline: isPrivateOnline,
+            scheduleLine: scheduleLine,
+            nextStartMs: nextStartMs,
+            sessionDurationMinutes: sessionDurationMinutes,
+            meetUrl: meetUrl,
           ),
         );
       }
@@ -1472,7 +1732,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           KeyedSubtree(
             key: widget.coursesListKey,
             child: FutureBuilder<List<_CourseProgressItem>>(
-              future: _loadProgressItems(),
+              future: _progressFuture,
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return _LoadingCard(
@@ -1488,6 +1748,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                     text: 'No course progress found yet.',
                   );
                 }
+
+                final hasJoinCards = items.any((e) => e.isPrivateOnline);
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
@@ -1507,7 +1769,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                       itemCount: items.length,
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossAxisCount,
-                        childAspectRatio: 1,
+                        childAspectRatio: hasJoinCards
+                            ? (useSingle ? 0.92 : 0.86)
+                            : 1,
                         mainAxisSpacing: 10,
                         crossAxisSpacing: 10,
                       ),
@@ -1557,6 +1821,11 @@ class _CourseProgressItem {
   final int completed;
   final int total;
   final double progress;
+  final bool isPrivateOnline;
+  final String scheduleLine;
+  final int nextStartMs;
+  final int sessionDurationMinutes;
+  final String meetUrl;
 
   const _CourseProgressItem({
     required this.courseKey,
@@ -1568,6 +1837,11 @@ class _CourseProgressItem {
     required this.completed,
     required this.total,
     required this.progress,
+    required this.isPrivateOnline,
+    required this.scheduleLine,
+    required this.nextStartMs,
+    required this.sessionDurationMinutes,
+    required this.meetUrl,
   });
 }
 
@@ -1842,6 +2116,41 @@ class _ProgressCard extends StatelessWidget {
   final _CourseProgressItem item;
   final VoidCallback onTap;
 
+  bool _canJoinNow(int startMs) {
+    if (startMs <= 0) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final openFrom = startMs - const Duration(minutes: 5).inMilliseconds;
+    final openUntil = startMs + const Duration(minutes: 10).inMilliseconds;
+    return now >= openFrom && now < openUntil;
+  }
+
+  Future<void> _openExternalUrl(BuildContext context, String url) async {
+    var u = url.trim();
+    if (u.isEmpty) return;
+
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      if (!context.mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Invalid meeting link.')),
+      );
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Could not open the link.')),
+      );
+    }
+  }
+
   String _variantBadgeText(String variantKey) {
     switch (variantKey) {
       case 'recorded':
@@ -1917,6 +2226,7 @@ class _ProgressCard extends StatelessWidget {
     final hasProgress = item.completed > 0;
     final completedAll = item.total > 0 && item.completed >= item.total;
     final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final hasMeet = item.meetUrl.trim().isNotEmpty;
 
     return Material(
       color: palette.cardBg,
@@ -2038,6 +2348,63 @@ class _ProgressCard extends StatelessWidget {
                       fontSize: compact ? 10 : 11,
                     ),
                   ),
+                  if (item.isPrivateOnline) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.scheduleLine.trim().isEmpty
+                          ? 'Schedule: not set'
+                          : item.scheduleLine,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.text.withValues(alpha: 0.64),
+                        fontWeight: FontWeight.w700,
+                        fontSize: compact ? 9 : 10,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    StreamBuilder<int>(
+                      stream: Stream.periodic(
+                        const Duration(seconds: 20),
+                        (x) => x,
+                      ),
+                      initialData: 0,
+                      builder: (context, _) {
+                        final canJoin = item.isPrivateOnline && hasMeet
+                            ? _canJoinNow(item.nextStartMs)
+                            : false;
+                        return SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              minimumSize: Size.fromHeight(compact ? 34 : 38),
+                              backgroundColor: canJoin
+                                  ? palette.accent
+                                  : palette.text.withValues(alpha: 0.34),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: canJoin
+                                ? () => _openExternalUrl(context, item.meetUrl)
+                                : null,
+                            child: Text(
+                              canJoin
+                                  ? 'Join'
+                                  : (hasMeet
+                                        ? 'Join (opens 5 min before)'
+                                        : 'Meet link not set'),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: compact ? 11 : 12,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             );
@@ -2223,7 +2590,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
     );
   }
 
-  Future<List<Map<String, dynamic>>> _loadBookableCourses() async {
+  Future<List<Map<String, dynamic>>> _loadJoinableCourses() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return [];
 
@@ -2248,7 +2615,18 @@ class _BookingTopCardState extends State<_BookingTopCard>
           .toString()
           .trim()
           .toLowerCase();
-      if (variantKey != 'flexible') continue;
+
+      final classMap = (m['class'] is Map)
+          ? Map<String, dynamic>.from(m['class'] as Map)
+          : <String, dynamic>{};
+      final studyMode = (m['studyMode'] ?? classMap['studyMode'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+
+      final isFlexible = variantKey == 'flexible';
+      final isPrivateOnline = variantKey == 'private' && studyMode == 'online';
+      if (!isFlexible && !isPrivateOnline) continue;
 
       final title = (m['title'] ?? m['course_title'] ?? 'Course').toString();
 
@@ -2257,13 +2635,21 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
       final assignedAt = numVal(m['assignedAt']);
 
-      final flexibleSyllabusSnap = await _db
-          .child('syllabi/$courseId/flexible')
-          .get();
-      if (!flexibleSyllabusSnap.exists) continue;
+      if (isFlexible) {
+        final flexibleSyllabusSnap = await _db
+            .child('syllabi/$courseId/flexible')
+            .get();
+        if (!flexibleSyllabusSnap.exists) continue;
+      }
+
+      final classId = (classMap['class_id'] ?? '').toString().trim();
 
       temp.add({
         'courseId': courseId,
+        'courseKey': key,
+        'classId': classId,
+        'variantKey': variantKey,
+        'studyMode': studyMode,
         'title': title,
         'assignedAt': assignedAt,
       });
@@ -2278,6 +2664,37 @@ class _BookingTopCardState extends State<_BookingTopCard>
   String _two(int n) => n < 10 ? '0$n' : '$n';
 
   String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
+
+  int _weekdayFromShort(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'mon':
+      case 'monday':
+        return DateTime.monday;
+      case 'tue':
+      case 'tues':
+      case 'tuesday':
+        return DateTime.tuesday;
+      case 'wed':
+      case 'wednesday':
+        return DateTime.wednesday;
+      case 'thu':
+      case 'thur':
+      case 'thurs':
+      case 'thursday':
+        return DateTime.thursday;
+      case 'fri':
+      case 'friday':
+        return DateTime.friday;
+      case 'sat':
+      case 'saturday':
+        return DateTime.saturday;
+      case 'sun':
+      case 'sunday':
+        return DateTime.sunday;
+      default:
+        return 0;
+    }
+  }
 
   DateTime? _parseSlotStart(String dayKey, String hhmm) {
     try {
@@ -2321,11 +2738,85 @@ class _BookingTopCardState extends State<_BookingTopCard>
     return '$wd, ${_two(d.day)} $mo';
   }
 
+  String _readFirstNonEmptyMap(Map<String, dynamic> m, List<String> keys) {
+    for (final k in keys) {
+      final v = (m[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  DateTime? _parseYmd(String ymd) {
+    final p = ymd.trim().split('-');
+    if (p.length != 3) return null;
+    final y = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    final d = int.tryParse(p[2]);
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  DateTime? _nextPrivateSessionStart({
+    required Map<String, dynamic> schedule,
+    required DateTime now,
+  }) {
+    final firstDate = _parseYmd(
+      (schedule['first_session_date'] ?? '').toString(),
+    );
+    if (firstDate == null) return null;
+
+    final sessions = schedule['sessions'];
+    final sessionNodes = <Map<String, dynamic>>[];
+    if (sessions is List) {
+      for (final it in sessions) {
+        if (it is! Map) continue;
+        sessionNodes.add(it.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } else if (sessions is Map) {
+      for (final it in sessions.values) {
+        if (it is! Map) continue;
+        sessionNodes.add(it.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    if (sessionNodes.isEmpty) return null;
+
+    DateTime? best;
+    final firstDay = DateTime(firstDate.year, firstDate.month, firstDate.day);
+
+    for (int i = 0; i <= 35; i++) {
+      final day = DateTime(now.year, now.month, now.day).add(Duration(days: i));
+      if (day.isBefore(firstDay)) continue;
+
+      for (final s in sessionNodes) {
+        final weekday = _weekdayFromShort((s['day'] ?? '').toString());
+        if (weekday <= 0 || weekday != day.weekday) continue;
+
+        final startTime = (s['start_time'] ?? '').toString().trim();
+        final hm = startTime.split(':');
+        if (hm.length != 2) continue;
+        final h = int.tryParse(hm[0]);
+        final m = int.tryParse(hm[1]);
+        if (h == null || m == null) continue;
+
+        final start = DateTime(day.year, day.month, day.day, h, m);
+        final duration = _toInt(s['duration_min'], fallback: 60);
+        final end = start.add(Duration(minutes: duration > 0 ? duration : 60));
+        if (end.isBefore(now)) continue;
+
+        if (best == null || start.isBefore(best)) {
+          best = start;
+        }
+      }
+    }
+
+    return best;
+  }
+
   Future<_NextBooking?> _findMyNextBookingAcrossCourses() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return null;
 
-    final courses = await _loadBookableCourses();
+    final courses = await _loadJoinableCourses();
     if (courses.isEmpty) return null;
 
     final now = DateTime.now();
@@ -2334,8 +2825,113 @@ class _BookingTopCardState extends State<_BookingTopCard>
     const daysAhead = 14;
 
     for (final c in courses) {
+      final variantKey = (c['variantKey'] ?? '').toString();
       final cid = (c['courseId'] ?? '').toString().trim();
       if (cid.isEmpty) continue;
+
+      if (variantKey == 'private') {
+        final classId = (c['classId'] ?? '').toString().trim();
+        if (classId.isEmpty) continue;
+
+        Map<String, dynamic> classNode = <String, dynamic>{};
+        try {
+          final classSnap = await _db.child('classes/$classId').get();
+          final cv = classSnap.value;
+          if (cv is Map) {
+            classNode = cv.map((k, v) => MapEntry(k.toString(), v));
+          }
+        } catch (_) {}
+
+        final scheduleRaw = classNode['schedule'];
+        if (scheduleRaw is! Map) continue;
+        final schedule = scheduleRaw.map((k, v) => MapEntry(k.toString(), v));
+
+        final nextStart = _nextPrivateSessionStart(
+          schedule: schedule,
+          now: now,
+        );
+        if (nextStart == null) continue;
+
+        final sessions = schedule['sessions'];
+        int durationMinutes = 60;
+        if (sessions is List) {
+          for (final it in sessions) {
+            if (it is! Map) continue;
+            final sm = it.map((k, v) => MapEntry(k.toString(), v));
+            final weekday = _weekdayFromShort((sm['day'] ?? '').toString());
+            final startTime = (sm['start_time'] ?? '').toString().trim();
+            if (weekday != nextStart.weekday) continue;
+            if (startTime !=
+                '${_two(nextStart.hour)}:${_two(nextStart.minute)}') {
+              continue;
+            }
+            final dur = _toInt(sm['duration_min'], fallback: 60);
+            durationMinutes = dur > 0 ? dur : 60;
+            break;
+          }
+        }
+
+        final teacherId =
+            _readFirstNonEmptyMap(classNode, [
+              'teacherUid',
+              'teacher_uid',
+              'teacherId',
+              'teacher_id',
+              'instructorUid',
+            ]).isNotEmpty
+            ? _readFirstNonEmptyMap(classNode, [
+                'teacherUid',
+                'teacher_uid',
+                'teacherId',
+                'teacher_id',
+                'instructorUid',
+              ])
+            : ((classNode['instructor_current'] is Map)
+                  ? _readFirstNonEmptyMap(
+                      Map<String, dynamic>.from(
+                        classNode['instructor_current'] as Map,
+                      ),
+                      const ['uid'],
+                    )
+                  : '');
+
+        final teacherName =
+            _readFirstNonEmptyMap(classNode, [
+              'teacherName',
+              'teacher_name',
+              'instructor',
+            ]).isNotEmpty
+            ? _readFirstNonEmptyMap(classNode, [
+                'teacherName',
+                'teacher_name',
+                'instructor',
+              ])
+            : ((classNode['instructor_current'] is Map)
+                  ? _readFirstNonEmptyMap(
+                      Map<String, dynamic>.from(
+                        classNode['instructor_current'] as Map,
+                      ),
+                      const ['name'],
+                    )
+                  : 'Teacher');
+
+        final candidate = _NextBooking(
+          source: 'private_online',
+          courseId: cid,
+          classId: classId,
+          dayKey: _dateKey(nextStart),
+          time: '${_two(nextStart.hour)}:${_two(nextStart.minute)}',
+          start: nextStart,
+          durationMinutes: durationMinutes,
+          teacherId: teacherId,
+          teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
+        );
+
+        if (best == null || candidate.start.isBefore(best.start)) {
+          best = candidate;
+        }
+        continue;
+      }
 
       for (int i = 0; i < daysAhead; i++) {
         final day = DateTime(
@@ -2374,10 +2970,13 @@ class _BookingTopCardState extends State<_BookingTopCard>
               .trim();
 
           final candidate = _NextBooking(
+            source: 'flexible',
             courseId: cid,
+            classId: '',
             dayKey: dk,
             time: hhmm,
             start: start,
+            durationMinutes: 60,
             teacherId: teacherId,
             teacherName: teacherName.isEmpty ? 'Teacher' : teacherName,
           );
@@ -2398,15 +2997,30 @@ class _BookingTopCardState extends State<_BookingTopCard>
     return int.tryParse(v?.toString() ?? '') ?? fallback;
   }
 
-  Future<_MeetInfo?> _loadMeetInfo({
-    required String teacherId,
-    required String courseId,
-  }) async {
-    if (teacherId.isEmpty || courseId.isEmpty) return null;
+  Future<_MeetInfo?> _loadMeetInfo({required _NextBooking next}) async {
+    if (next.teacherId.isEmpty) return null;
+
+    if (next.source == 'private_online') {
+      try {
+        final meetSnap = await _db
+            .child('users/${next.teacherId}/google_meet_url')
+            .get();
+        final meetUrl = (meetSnap.value ?? '').toString().trim();
+        if (meetUrl.isEmpty) return null;
+        return _MeetInfo(
+          meetUrl: meetUrl,
+          durationMinutes: next.durationMinutes > 0 ? next.durationMinutes : 60,
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (next.courseId.isEmpty) return null;
 
     try {
       final snap = await _db
-          .child('booking_availability/$teacherId/$courseId')
+          .child('booking_availability/${next.teacherId}/${next.courseId}')
           .get();
       final v = snap.value;
       if (v is! Map) return null;
@@ -2426,7 +3040,14 @@ class _BookingTopCardState extends State<_BookingTopCard>
       if (dur <= 0) dur = _toInt(m['durationMin'], fallback: 0);
       if (dur <= 0) dur = 60;
 
-      if (meetUrl.isEmpty) return null;
+      if (meetUrl.isEmpty) {
+        final userMeetSnap = await _db
+            .child('users/${next.teacherId}/google_meet_url')
+            .get();
+        final fallback = (userMeetSnap.value ?? '').toString().trim();
+        if (fallback.isEmpty) return null;
+        return _MeetInfo(meetUrl: fallback, durationMinutes: dur);
+      }
 
       return _MeetInfo(meetUrl: meetUrl, durationMinutes: dur);
     } catch (_) {
@@ -2446,7 +3067,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
     return openFrom.difference(DateTime.now());
   }
 
-  Duration _untilJoinCloses(DateTime start) {
+  Duration _untilJoinCloses(DateTime start, int durationMinutes) {
     final openUntil = start.add(const Duration(minutes: 10));
     return openUntil.difference(DateTime.now());
   }
@@ -2471,7 +3092,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
     return '${minutes}m ${two(seconds)}s';
   }
 
-  double _joinWindowProgress(DateTime start) {
+  double _joinWindowProgress(DateTime start, int durationMinutes) {
     final now = DateTime.now();
     final openFrom = start.subtract(const Duration(minutes: 5));
     final openUntil = start.add(const Duration(minutes: 10));
@@ -2768,13 +3389,11 @@ class _BookingTopCardState extends State<_BookingTopCard>
               );
             }
 
-            final currentMeetInfoKey = '${next.teacherId}|${next.courseId}';
+            final currentMeetInfoKey =
+                '${next.source}|${next.teacherId}|${next.courseId}|${next.classId}';
             if (_meetInfoKey != currentMeetInfoKey || _meetInfoFuture == null) {
               _meetInfoKey = currentMeetInfoKey;
-              _meetInfoFuture = _loadMeetInfo(
-                teacherId: next.teacherId,
-                courseId: next.courseId,
-              );
+              _meetInfoFuture = _loadMeetInfo(next: next);
             }
 
             return FutureBuilder<_MeetInfo?>(
@@ -2785,16 +3404,21 @@ class _BookingTopCardState extends State<_BookingTopCard>
                 final teacherStr = next.teacherName;
 
                 final now = DateTime.now();
-                final openFrom = next.start.subtract(
-                  const Duration(minutes: 5),
+                final openFrom = next.start;
+                final safeDuration =
+                    meet?.durationMinutes ?? next.durationMinutes;
+                final openUntil = next.start.add(
+                  Duration(minutes: safeDuration > 0 ? safeDuration : 60),
                 );
-                final openUntil = next.start.add(const Duration(minutes: 10));
 
                 final beforeOpen = now.isBefore(openFrom);
                 final afterClose = now.isAfter(openUntil);
 
                 final opensIn = _untilJoinOpens(next.start);
-                final closesIn = _untilJoinCloses(next.start);
+                final closesIn = _untilJoinCloses(
+                  next.start,
+                  meet?.durationMinutes ?? next.durationMinutes,
+                );
 
                 final opensInText = _formatCountdown(opensIn);
                 final closesInText = _formatCountdown(closesIn);
@@ -3011,7 +3635,10 @@ class _BookingTopCardState extends State<_BookingTopCard>
                               child: LinearProgressIndicator(
                                 minHeight: 8,
                                 value: canJoin
-                                    ? _joinWindowProgress(next.start)
+                                    ? _joinWindowProgress(
+                                        next.start,
+                                        meet.durationMinutes,
+                                      )
                                     : beforeOpen
                                     ? _preJoinProgress(next.start)
                                     : 1,
@@ -3061,7 +3688,8 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
                                   await _openExternalUrl(context, meet.meetUrl);
 
-                                  if (uid.isNotEmpty) {
+                                  if (uid.isNotEmpty &&
+                                      next.source == 'flexible') {
                                     unawaited(
                                       _autoMarkPresentAndTaught(
                                         learnerUid: uid,
@@ -3096,18 +3724,24 @@ class _BookingTopCardState extends State<_BookingTopCard>
 }
 
 class _NextBooking {
+  final String source;
   final String courseId;
+  final String classId;
   final String dayKey;
   final String time;
   final DateTime start;
+  final int durationMinutes;
   final String teacherId;
   final String teacherName;
 
   _NextBooking({
+    required this.source,
     required this.courseId,
+    required this.classId,
     required this.dayKey,
     required this.time,
     required this.start,
+    required this.durationMinutes,
     required this.teacherId,
     required this.teacherName,
   });

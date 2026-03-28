@@ -909,6 +909,22 @@ class _LearnersListState extends State<_LearnersList>
     final sessionsPaidTotal = _LearnerExpandedTabsState._asInt(
       summaryMap['sessionsPaidTotal'],
     );
+    final totalPaid = _LearnerExpandedTabsState._asInt(summaryMap['totalPaid']);
+    final lastAmount = _LearnerExpandedTabsState._asInt(
+      summaryMap['lastAmount'],
+    );
+    final lastPaymentAt = _LearnerExpandedTabsState._asInt(
+      summaryMap['lastPaymentAt'],
+    );
+    final hasPaymentHistory =
+        totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
+    final effectiveSessionsPaidTotal = sessionsPaidTotal > 0
+        ? sessionsPaidTotal
+        : (hasPaymentHistory &&
+                  (_normalizeVariantKey(variantKey) == 'private' ||
+                      _normalizeVariantKey(variantKey) == 'inclass')
+              ? 8
+              : 0);
     final remindBeforeSession = _LearnerExpandedTabsState._asInt(
       summaryMap['remindBeforeSession'],
     );
@@ -938,17 +954,19 @@ class _LearnersListState extends State<_LearnersList>
         accessMap['expiresAt'],
       );
 
-      if (sessionsPaidTotal <= 0 && expiresAt <= 0) return _PayFlag.black;
+      if (effectiveSessionsPaidTotal <= 0 && expiresAt <= 0) {
+        return _PayFlag.black;
+      }
       if (expiresAt > 0 && _isExpiredMs(expiresAt)) return _PayFlag.red;
       if (isPaymentDueBySessions(
-        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPaidTotal: effectiveSessionsPaidTotal,
         sessionsPresent: sessionsDone,
       )) {
         return _PayFlag.red;
       }
       if (expiresAt > 0 && _isNearExpiryMs(expiresAt)) return _PayFlag.yellow;
       if (isPaymentWarningBySessions(
-        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPaidTotal: effectiveSessionsPaidTotal,
         sessionsPresent: sessionsDone,
         remindBeforeSession: 1,
       )) {
@@ -958,10 +976,10 @@ class _LearnersListState extends State<_LearnersList>
     }
 
     return _sessionPaymentFlag(
-      sessionsPaidTotal: sessionsPaidTotal,
+      sessionsPaidTotal: effectiveSessionsPaidTotal,
       sessionsDone: sessionsDone,
       remindBeforeSession: normalizeReminderForSessions(
-        sessionsPaidTotal: sessionsPaidTotal,
+        sessionsPaidTotal: effectiveSessionsPaidTotal,
         remindBeforeSession: remindBeforeSession,
       ),
     );
@@ -2477,6 +2495,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
+  final Set<String> _summaryRepairInFlight = <String>{};
 
   static const List<String> _variantKeys = [
     'inclass',
@@ -3275,6 +3294,41 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     return countPresentUniqueAttendanceDates(attendance);
   }
 
+  Future<void> _maybeRepairLearnerCourseSummary({
+    required String courseKey,
+    required int summarySessionsPaidTotal,
+    required int summaryTotalPaid,
+    required int summaryLastPaymentAt,
+    required int summaryLastAmount,
+    required int derivedSessionsPaidTotal,
+    required int derivedTotalPaid,
+    required int derivedLastPaymentAt,
+    required int derivedLastAmount,
+  }) async {
+    final needsRepair =
+        summarySessionsPaidTotal != derivedSessionsPaidTotal ||
+        summaryTotalPaid != derivedTotalPaid ||
+        summaryLastPaymentAt != derivedLastPaymentAt ||
+        summaryLastAmount != derivedLastAmount;
+    if (!needsRepair) return;
+
+    final repairKey = '${widget.uid}|$courseKey';
+    if (_summaryRepairInFlight.contains(repairKey)) return;
+
+    _summaryRepairInFlight.add(repairKey);
+    try {
+      await PaymentDialogShared.repairLearnerCourseSummary(
+        db: widget.db,
+        uid: widget.uid,
+        courseKey: courseKey,
+      );
+    } catch (_) {
+      // ignore; UI still shows derived values
+    } finally {
+      _summaryRepairInFlight.remove(repairKey);
+    }
+  }
+
   Widget _paymentTab(BuildContext context, List<String> keys) {
     return ListView(
       padding: const EdgeInsets.only(top: 0),
@@ -3379,6 +3433,17 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                 final sessionsPaidTotal = _asInt(sum['sessionsPaidTotal']);
                 final remindBeforeSession = _asInt(sum['remindBeforeSession']);
                 final totalPaid = _asInt(sum['totalPaid']);
+                final lastAmount = _asInt(sum['lastAmount']);
+                final lastPaymentAt = _asInt(sum['lastPaymentAt']);
+                final hasPaymentHistory =
+                    totalPaid > 0 || lastAmount > 0 || lastPaymentAt > 0;
+                final effectiveSessionsPaidTotal = sessionsPaidTotal > 0
+                    ? sessionsPaidTotal
+                    : (hasPaymentHistory &&
+                              (variantKey == 'private' ||
+                                  variantKey == 'inclass')
+                          ? 8
+                          : 0);
 
                 final flexibleExpiresAt = _asInt(flexibleAccess['expiresAt']);
                 final flexibleExpiryMonths = _asInt(
@@ -3396,7 +3461,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
                 final due = usesReminder
                     ? _isSessionDue(
-                        sessionsPaidTotal: sessionsPaidTotal,
+                        sessionsPaidTotal: effectiveSessionsPaidTotal,
                         sessionsDone: sessionsDone,
                         remindBeforeSession: remindBeforeSession > 0
                             ? remindBeforeSession
@@ -3404,9 +3469,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                       )
                     : false;
 
-                final sessionsLeft = (sessionsPaidTotal - sessionsDone) < 0
+                final sessionsLeft =
+                    (effectiveSessionsPaidTotal - sessionsDone) < 0
                     ? 0
-                    : (sessionsPaidTotal - sessionsDone);
+                    : (effectiveSessionsPaidTotal - sessionsDone);
 
                 final expiresAt = _variantIsRecorded(variantKey)
                     ? recordedExpiresAt
@@ -3490,7 +3556,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                             const SizedBox(height: 6),
                             if (usesSessions)
                               Text(
-                                'Sessions paid total: $sessionsPaidTotal',
+                                'Sessions paid total: $effectiveSessionsPaidTotal',
                                 style: TextStyle(
                                   color: Colors.black.withValues(alpha: 0.75),
                                   fontWeight: FontWeight.w700,
@@ -3510,6 +3576,17 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 style: TextStyle(
                                   color: Colors.black.withValues(alpha: 0.75),
                                   fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (usesSessions &&
+                                sessionsPaidTotal <= 0 &&
+                                hasPaymentHistory)
+                              Text(
+                                'Sessions are restored from payment history (legacy rows without sessions).',
+                                style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.62),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
                                 ),
                               ),
                             if (usesExpiry)
@@ -3595,6 +3672,83 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                               return const _MiniState(text: 'No payments yet.');
                             }
 
+                            int effectiveSessionsForPayment(
+                              Map<String, dynamic> pay,
+                            ) {
+                              final payVariant = _normalizeVariantKey(
+                                (pay['variantKey'] ??
+                                        pay['deliveryKey'] ??
+                                        pay['variant'] ??
+                                        variantKey)
+                                    .toString(),
+                              );
+                              if (!_variantUsesSessions(payVariant)) return 0;
+
+                              var sp = _asInt(pay['sessionsPaid']);
+                              final amount = _asInt(pay['amount']);
+                              if (sp <= 0 &&
+                                  amount > 0 &&
+                                  (payVariant == 'private' ||
+                                      payVariant == 'inclass')) {
+                                sp = 8;
+                              }
+                              return sp;
+                            }
+
+                            final oldestFirst = [...items]
+                              ..sort(
+                                (a, b) => _asInt(
+                                  a['paidAt'],
+                                ).compareTo(_asInt(b['paidAt'])),
+                              );
+
+                            var remainingToConsume = sessionsDone;
+                            final perPaymentLeft = <String, int>{};
+                            var derivedSessionsPaidTotal = 0;
+                            var derivedTotalPaid = 0;
+                            var derivedLastPaymentAt = 0;
+                            var derivedLastAmount = 0;
+                            for (final pay in oldestFirst) {
+                              final pid = (pay['paymentId'] ?? '').toString();
+                              if (pid.isEmpty) continue;
+
+                              final sp = effectiveSessionsForPayment(pay);
+                              derivedSessionsPaidTotal += sp;
+                              final amount = _asInt(pay['amount']);
+                              derivedTotalPaid += amount;
+                              final paidAt = _asInt(pay['paidAt']);
+                              if (paidAt >= derivedLastPaymentAt) {
+                                derivedLastPaymentAt = paidAt;
+                                derivedLastAmount = amount;
+                              }
+
+                              final consumed = remainingToConsume <= 0
+                                  ? 0
+                                  : (remainingToConsume >= sp
+                                        ? sp
+                                        : remainingToConsume);
+                              final leftAfterAllocation = sp - consumed;
+                              perPaymentLeft[pid] = leftAfterAllocation < 0
+                                  ? 0
+                                  : leftAfterAllocation;
+                              remainingToConsume -= consumed;
+                            }
+
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              _maybeRepairLearnerCourseSummary(
+                                courseKey: courseKey,
+                                summarySessionsPaidTotal: sessionsPaidTotal,
+                                summaryTotalPaid: totalPaid,
+                                summaryLastPaymentAt: lastPaymentAt,
+                                summaryLastAmount: lastAmount,
+                                derivedSessionsPaidTotal:
+                                    derivedSessionsPaidTotal,
+                                derivedTotalPaid: derivedTotalPaid,
+                                derivedLastPaymentAt: derivedLastPaymentAt,
+                                derivedLastAmount: derivedLastAmount,
+                              );
+                            });
+
                             return ListView.builder(
                               padding: EdgeInsets.zero,
                               itemCount: items.length,
@@ -3621,6 +3775,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                   p['durationMonths'],
                                 );
                                 final expiryMonths = _asInt(p['expiryMonths']);
+                                final paymentId = (p['paymentId'] ?? '')
+                                    .toString();
 
                                 final variantBadge =
                                     payVariant == 'private' &&
@@ -3628,10 +3784,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                     ? '${_variantLabel(payVariant)} • ${_studyModeLabel(payStudyMode)}'
                                     : _variantLabel(payVariant);
 
-                                final left =
-                                    (sessionsPaidTotal - sessionsDone) < 0
-                                    ? 0
-                                    : (sessionsPaidTotal - sessionsDone);
+                                final left = perPaymentLeft[paymentId] ?? 0;
 
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 6),
@@ -3658,7 +3811,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                             if (_variantUsesReminder(
                                               payVariant,
                                             ))
-                                              _miniPill('Left: $left'),
+                                              _miniPill(
+                                                'Left in this payment: $left',
+                                              ),
                                             if (_variantUsesStartDate(
                                               payVariant,
                                             ))
@@ -3698,6 +3853,23 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                             style: TextStyle(
                                               color: Colors.black.withValues(
                                                 alpha: 0.65,
+                                              ),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                        if (i == 0 &&
+                                            usesSessions &&
+                                            derivedSessionsPaidTotal > 0 &&
+                                            derivedSessionsPaidTotal !=
+                                                effectiveSessionsPaidTotal) ...[
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'Summary mismatch detected. History sessions: $derivedSessionsPaidTotal, summary: $effectiveSessionsPaidTotal.',
+                                            style: TextStyle(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.62,
                                               ),
                                               fontWeight: FontWeight.w700,
                                               fontSize: 12,
