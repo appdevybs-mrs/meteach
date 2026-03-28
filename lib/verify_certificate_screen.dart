@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_service.dart';
+import '../shared/app_feedback.dart';
 
 class VerifyCertificateScreen extends StatefulWidget {
   const VerifyCertificateScreen({super.key});
@@ -211,6 +213,52 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
     } else if (_currentStep == 3) {
       _reset();
     }
+  }
+
+  Future<void> _downloadCertificatePdf(Certificate cert) async {
+    if (!cert.downloadsEnabled) {
+      AppToast.show(
+        context,
+        'Downloads are disabled for this certificate.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final key = cert.key?.trim() ?? '';
+    final url = (cert.pdfUrl ?? '').trim();
+    if (key.isEmpty || url.isEmpty) {
+      AppToast.show(
+        context,
+        'PDF is not available for this certificate yet.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      AppToast.show(context, 'Invalid PDF URL', type: AppToastType.error);
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) {
+      if (!mounted) return;
+      AppToast.show(context, 'Could not open PDF', type: AppToastType.error);
+      return;
+    }
+
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Certificate PDF opened.',
+      type: AppToastType.success,
+    );
+
+    try {
+      await _service.incrementDownloadCount(key, cvn: cert.cvn);
+    } catch (_) {}
   }
 
   Color _getStatusColor(CertificateStatus status) {
@@ -675,6 +723,39 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
           ),
         ),
         const SizedBox(height: 16),
+        if ((cert.pdfUrl ?? '').trim().isNotEmpty && cert.downloadsEnabled)
+          FilledButton.icon(
+            onPressed: () => _downloadCertificatePdf(cert),
+            icon: const Icon(Icons.download_rounded),
+            label: const Text('Download Certificate PDF'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _actionOrange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+        if ((cert.pdfUrl ?? '').trim().isNotEmpty && cert.downloadsEnabled)
+          const SizedBox(height: 10),
+        if ((cert.pdfUrl ?? '').trim().isNotEmpty && !cert.downloadsEnabled)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Text(
+              'PDF download is disabled by administration.',
+              style: TextStyle(
+                color: Colors.orange.shade800,
+                fontWeight: FontWeight.w700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        if ((cert.pdfUrl ?? '').trim().isNotEmpty && !cert.downloadsEnabled)
+          const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed: _reset,
           icon: const Icon(Icons.refresh),

@@ -409,6 +409,67 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     }
   }
 
+  Future<void> _showThreadActions(_TopicRow row) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.open_in_new_rounded),
+              title: const Text('Open topic'),
+              onTap: () => Navigator.pop(context, 'open'),
+            ),
+            if (row.isHomework)
+              ListTile(
+                leading: const Icon(Icons.rate_review_rounded),
+                title: const Text('Review homework'),
+                onTap: () => Navigator.pop(context, 'review'),
+              ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.red,
+              ),
+              title: const Text('Delete for me'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'delete') {
+      await _deleteThreadForMe(row);
+      return;
+    }
+
+    if (action == 'review') {
+      await _tryOpenHomeworkReview(row);
+      return;
+    }
+
+    if (action == 'open') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          settings: RouteSettings(name: '/mail/thread/${row.threadId}'),
+          builder: (_) => TeacherMailThreadScreen(
+            threadId: row.threadId,
+            peerUid: row.peerUid,
+            peerName: _bestName(row),
+            subject: row.subject,
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _tryOpenHomeworkReview(_TopicRow r) async {
     try {
       final tSnap = await _db.ref('mail_threads/${r.threadId}').get();
@@ -849,6 +910,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 timeLabel: _timeLabel(r.updatedAtMs),
                 onDelete: () => _deleteThreadForMe(r),
                 onReview: r.isHomework ? () => _tryOpenHomeworkReview(r) : null,
+                onLongPress: () => _showThreadActions(r),
                 onOpen: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
@@ -1191,6 +1253,7 @@ class _ThreadTile extends StatelessWidget {
     required this.timeLabel,
     required this.onDelete,
     required this.onReview,
+    required this.onLongPress,
     required this.onOpen,
   });
 
@@ -1198,6 +1261,7 @@ class _ThreadTile extends StatelessWidget {
   final String timeLabel;
   final VoidCallback onDelete;
   final VoidCallback? onReview;
+  final VoidCallback onLongPress;
   final VoidCallback onOpen;
 
   List<String> _hwParts(String subject) {
@@ -1249,7 +1313,7 @@ class _ThreadTile extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onLongPress: onReview,
+        onLongPress: onLongPress,
         onTap: onOpen,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),

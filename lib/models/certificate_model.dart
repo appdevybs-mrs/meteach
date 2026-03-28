@@ -59,6 +59,11 @@ class Certificate {
   final int updatedAt;
   final String? issuedBy;
   final String? notes;
+  final String? pdfUrl;
+  final String? pdfPreviewUrl;
+  final int downloadCount;
+  final int? lastDownloadedAt;
+  final bool downloadsEnabled;
 
   Certificate({
     this.key,
@@ -73,6 +78,11 @@ class Certificate {
     required this.updatedAt,
     this.issuedBy,
     this.notes,
+    this.pdfUrl,
+    this.pdfPreviewUrl,
+    this.downloadCount = 0,
+    this.lastDownloadedAt,
+    this.downloadsEnabled = true,
   });
 
   Map<String, dynamic> toMap() {
@@ -88,6 +98,11 @@ class Certificate {
       'updatedAt': updatedAt,
       if (issuedBy != null) 'issuedBy': issuedBy,
       if (notes != null) 'notes': notes,
+      if (pdfUrl != null) 'pdfUrl': pdfUrl,
+      if (pdfPreviewUrl != null) 'pdfPreviewUrl': pdfPreviewUrl,
+      'downloadCount': downloadCount,
+      if (lastDownloadedAt != null) 'lastDownloadedAt': lastDownloadedAt,
+      'downloadsEnabled': downloadsEnabled,
     };
   }
 
@@ -107,6 +122,15 @@ class Certificate {
       updatedAt: _asInt(map['updatedAt']),
       issuedBy: map['issuedBy']?.toString(),
       notes: map['notes']?.toString(),
+      pdfUrl: map['pdfUrl']?.toString(),
+      pdfPreviewUrl: map['pdfPreviewUrl']?.toString(),
+      downloadCount: _asInt(map['downloadCount']),
+      lastDownloadedAt: map['lastDownloadedAt'] == null
+          ? null
+          : _asInt(map['lastDownloadedAt']),
+      downloadsEnabled: map['downloadsEnabled'] == null
+          ? true
+          : map['downloadsEnabled'] == true,
     );
   }
 
@@ -130,6 +154,11 @@ class Certificate {
     int? updatedAt,
     String? issuedBy,
     String? notes,
+    String? pdfUrl,
+    String? pdfPreviewUrl,
+    int? downloadCount,
+    int? lastDownloadedAt,
+    bool? downloadsEnabled,
   }) {
     return Certificate(
       key: key ?? this.key,
@@ -144,6 +173,11 @@ class Certificate {
       updatedAt: updatedAt ?? this.updatedAt,
       issuedBy: issuedBy ?? this.issuedBy,
       notes: notes ?? this.notes,
+      pdfUrl: pdfUrl ?? this.pdfUrl,
+      pdfPreviewUrl: pdfPreviewUrl ?? this.pdfPreviewUrl,
+      downloadCount: downloadCount ?? this.downloadCount,
+      lastDownloadedAt: lastDownloadedAt ?? this.lastDownloadedAt,
+      downloadsEnabled: downloadsEnabled ?? this.downloadsEnabled,
     );
   }
 

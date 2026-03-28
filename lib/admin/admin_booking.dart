@@ -192,6 +192,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return null;
   }
 
+  _CourseItem? _courseById(String courseId) {
+    for (final c in allCourses) {
+      if (c.id == courseId) return c;
+    }
+    return null;
+  }
+
+  String _courseTitle(String courseId) {
+    return _courseById(courseId)?.title ?? courseId;
+  }
+
   String _shortCourseLabel(_CourseItem c) {
     final parts = <String>[];
     if (c.levelText.isNotEmpty) parts.add(c.levelText);
@@ -313,8 +324,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       });
 
       String? nextSelected = selectedCourseId;
-      if (nextSelected == null || !out.any((c) => c.id == nextSelected)) {
-        nextSelected = out.isNotEmpty ? out.first.id : null;
+      if (nextSelected != null && !out.any((c) => c.id == nextSelected)) {
+        nextSelected = null;
       }
 
       setState(() {
@@ -323,9 +334,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         selectedCourseId = nextSelected;
       });
 
-      if (selectedCourseId != null) {
-        await _loadBookingsForCourse(selectedCourseId!);
-      }
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Failed loading courses: $e');
     } finally {
@@ -335,6 +344,95 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   }
 
   // ========================= Load Bookings =========================
+
+  Future<void> _loadAllBookedSlots() async {
+    setState(() {
+      loadingBookings = true;
+      bookedSlots = [];
+      teacherFilter = 'all';
+    });
+
+    try {
+      final snap = await _db.child('booking_reservations').get();
+      final v = snap.value;
+
+      final List<_AdminBookedSlot> out = [];
+
+      if (v is Map) {
+        final byCourse = v.map((k, vv) => MapEntry(k.toString(), vv));
+
+        for (final courseEntry in byCourse.entries) {
+          final cid = courseEntry.key;
+          final courseNode = courseEntry.value;
+          if (courseNode is! Map) continue;
+
+          final days = courseNode.map((k, vv) => MapEntry(k.toString(), vv));
+
+          for (final dayEntry in days.entries) {
+            final dayKey = dayEntry.key;
+            final dayNode = dayEntry.value;
+            if (dayNode is! Map) continue;
+
+            final times = dayNode.map((k, vv) => MapEntry(k.toString(), vv));
+
+            for (final timeEntry in times.entries) {
+              final hhmm = timeEntry.key;
+              final slotVal = timeEntry.value;
+              if (slotVal is! Map) continue;
+
+              final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
+
+              final learnersRaw = m['learners'];
+              if (learnersRaw is! Map) continue;
+
+              final learnersMap = learnersRaw.map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              );
+              final learnerUids = learnersMap.keys
+                  .map((e) => e.toString())
+                  .toList();
+              if (learnerUids.isEmpty) continue;
+
+              final start = _parseSlotStart(dayKey, hhmm);
+              if (start == null) continue;
+
+              out.add(
+                _AdminBookedSlot(
+                  courseId: cid,
+                  dayKey: dayKey,
+                  time: hhmm,
+                  start: start,
+                  teacherId: (m['teacherId'] ?? '').toString().trim(),
+                  teacherName: (m['teacherName'] ?? 'Teacher')
+                      .toString()
+                      .trim(),
+                  sessionNo: _toInt(m['sessionNo'], fallback: 0),
+                  learnerUids: learnerUids,
+                  createdAt: _toInt(m['createdAt'], fallback: 0),
+                ),
+              );
+            }
+          }
+        }
+      }
+
+      final now = DateTime.now();
+      out.sort((a, b) {
+        final aPast = a.start.isBefore(now) ? 1 : 0;
+        final bPast = b.start.isBefore(now) ? 1 : 0;
+        if (aPast != bPast) return aPast.compareTo(bPast);
+        return a.start.compareTo(b.start);
+      });
+
+      if (!mounted) return;
+      setState(() => bookedSlots = out);
+    } catch (e) {
+      _toast('Failed loading bookings: $e');
+    } finally {
+      if (!mounted) return;
+      setState(() => loadingBookings = false);
+    }
+  }
 
   Future<void> _loadBookingsForCourse(String cid) async {
     setState(() {
@@ -495,11 +593,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     final q = searchC.text.trim().toLowerCase();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final course = _selectedCourse();
 
     final out = <_AdminBookedSlot>[];
 
     for (final s in bookedSlots) {
+      if (selectedCourseId != null && s.courseId != selectedCourseId) continue;
       if (teacherFilter != 'all' && s.teacherId != teacherFilter) continue;
       if (onlyMultiLearner && s.learnerCount < 2) continue;
 
@@ -508,13 +606,15 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       if (dateFilter == 'future' && !s.start.isAfter(now)) continue;
 
       if (levelFilter != 'all') {
-        if (course == null || course.levelText != levelFilter) continue;
+        final c = _courseById(s.courseId);
+        if (c == null || c.levelText != levelFilter) continue;
       }
 
       if (q.isNotEmpty) {
         final haystack = [
           s.teacherName,
           s.teacherId,
+          _courseTitle(s.courseId),
           s.time,
           s.dayKey,
           s.sessionNo.toString(),
@@ -1339,10 +1439,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           ),
           IconButton(
             tooltip: 'Refresh',
-            onPressed:
-                (loadingCourses || loadingBookings || selectedCourseId == null)
+            onPressed: (loadingCourses || loadingBookings)
                 ? null
-                : () => _loadBookingsForCourse(selectedCourseId!),
+                : _loadAllBookedSlots,
             icon: const Icon(Icons.refresh_rounded, color: primaryBlue),
           ),
           const SizedBox(width: 4),
@@ -1354,7 +1453,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
               children: [
                 _Card(
-                  title: course?.title ?? 'Select a course',
+                  title: course == null
+                      ? 'All booked sessions (all courses)'
+                      : 'Booked sessions • ${course.title}',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1541,6 +1642,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                   columns: const [
                                     DataColumn(label: Text('Day')),
                                     DataColumn(label: Text('Time')),
+                                    DataColumn(label: Text('Course')),
                                     DataColumn(label: Text('Teacher')),
                                     DataColumn(label: Text('Sess')),
                                     DataColumn(label: Text('Lrnrs')),
@@ -1573,6 +1675,22 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                               color: isPast
                                                   ? Colors.grey.shade700
                                                   : actionOrange,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              maxWidth: 150,
+                                            ),
+                                            child: Text(
+                                              _courseTitle(s.courseId),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 12,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1677,12 +1795,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     final levels = _levelOptionsWithBookingsOnly();
     final filteredCourses = _coursesForSelectedLevel();
 
-    String? safeCourseId = selectedCourseId;
-    if (safeCourseId != null &&
+    String safeCourseId = selectedCourseId ?? 'all';
+    if (safeCourseId != 'all' &&
         !filteredCourses.any((c) => c.id == safeCourseId)) {
-      safeCourseId = filteredCourses.isNotEmpty
-          ? filteredCourses.first.id
-          : null;
+      safeCourseId = 'all';
     }
 
     return Column(
@@ -1696,17 +1812,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               _chip('All levels', levelFilter == 'all', () async {
                 setState(() {
                   levelFilter = 'all';
-                  if (!_coursesForSelectedLevel().any(
-                    (c) => c.id == selectedCourseId,
-                  )) {
-                    selectedCourseId = _coursesForSelectedLevel().isNotEmpty
-                        ? _coursesForSelectedLevel().first.id
-                        : null;
+                  if (selectedCourseId != null &&
+                      !_coursesForSelectedLevel().any(
+                        (c) => c.id == selectedCourseId,
+                      )) {
+                    selectedCourseId = null;
                   }
                 });
-                if (selectedCourseId != null) {
-                  await _loadBookingsForCourse(selectedCourseId!);
-                }
               }),
               ...levels.map(
                 (lvl) => _chip(lvl, levelFilter == lvl, () async {
@@ -1716,18 +1828,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
                   setState(() {
                     levelFilter = lvl;
-                    if (!matching.any((c) => c.id == selectedCourseId)) {
-                      selectedCourseId = matching.isNotEmpty
-                          ? matching.first.id
-                          : null;
+                    if (selectedCourseId != null &&
+                        !matching.any((c) => c.id == selectedCourseId)) {
+                      selectedCourseId = null;
                     }
                   });
-
-                  if (selectedCourseId != null) {
-                    await _loadBookingsForCourse(selectedCourseId!);
-                  } else {
-                    setState(() => bookedSlots = []);
-                  }
                 }),
               ),
             ],
@@ -1752,34 +1857,45 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     Icons.expand_more_rounded,
                     color: primaryBlue,
                   ),
-                  hint: const Text('No course'),
-                  items: filteredCourses
-                      .map(
-                        (c) => DropdownMenuItem(
-                          value: c.id,
-                          child: Text(
-                            _shortCourseLabel(c),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: primaryBlue,
-                              fontSize: 13,
-                            ),
+                  hint: const Text('All courses'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'all',
+                      child: Text(
+                        'All courses (booked first)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: primaryBlue,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    ...filteredCourses.map(
+                      (c) => DropdownMenuItem(
+                        value: c.id,
+                        child: Text(
+                          _shortCourseLabel(c),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryBlue,
+                            fontSize: 13,
                           ),
                         ),
-                      )
-                      .toList(),
+                      ),
+                    ),
+                  ],
                   onChanged: filteredCourses.isEmpty
                       ? null
                       : (v) async {
                           if (v == null) return;
                           setState(() {
-                            selectedCourseId = v;
-                            bookedSlots = [];
+                            selectedCourseId = v == 'all' ? null : v;
                             teacherFilter = 'all';
                           });
-                          await _loadBookingsForCourse(v);
                         },
                 ),
               ),

@@ -48,6 +48,96 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
     AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
+  Future<void> _deleteThreadForMe(_TopicRow row) async {
+    final ok =
+        await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete topic?'),
+            content: const Text(
+              'This deletes only for you.\nThe other side can still see it.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok) return;
+
+    try {
+      final now = _nowMs();
+      await _db.child('mail_index/$_meUid/${row.threadId}').update({
+        'deletedAt': now,
+      });
+      await _db.child('mail_state/$_meUid/${row.threadId}').remove();
+      _snack('Deleted for you.');
+    } catch (e) {
+      _snack('Could not delete this topic: $e');
+    }
+  }
+
+  Future<void> _showThreadActions(_TopicRow row) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.open_in_new_rounded),
+              title: const Text('Open topic'),
+              onTap: () => Navigator.pop(context, 'open'),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.red,
+              ),
+              title: const Text('Delete for me'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == 'delete') {
+      await _deleteThreadForMe(row);
+      return;
+    }
+
+    if (action == 'open') {
+      final peerName = row.peerName.trim().isEmpty
+          ? 'User'
+          : row.peerName.trim();
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => LearnerMailThreadScreen(
+            threadId: row.threadId,
+            peerUid: row.peerUid,
+            peerName: peerName,
+            subject: row.subject,
+          ),
+        ),
+      );
+    }
+  }
+
   bool _looksLikeThreadObject(Map<String, dynamic> m) {
     return m.containsKey('peerUid') ||
         m.containsKey('peerName') ||
@@ -430,6 +520,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen> {
 
                                   return InkWell(
                                     borderRadius: BorderRadius.circular(18),
+                                    onLongPress: () => _showThreadActions(r),
                                     onTap: () async {
                                       await Navigator.of(context).push(
                                         MaterialPageRoute(

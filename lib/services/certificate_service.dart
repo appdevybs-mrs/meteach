@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
+import 'package:http/http.dart' as http;
 import '../models/certificate_model.dart';
+import 'certificate_pdf_service.dart';
 
 class CertificateServiceException implements Exception {
   final String message;
@@ -15,10 +19,30 @@ class CertificateServiceException implements Exception {
 class CertificateService {
   static const String _certificatesPath = 'certificates';
   static const String _prefix = 'DZ01SB';
+  static const String _downloadPingUrl =
+      'https://www.yourbridgeschool.com/app/secure/certificate_download_ping.php';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
+  final CertificatePdfService _pdfService = CertificatePdfService();
 
   DatabaseReference get _certificatesRef => _db.ref(_certificatesPath);
+
+  static int _asInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  String _cvnFromKey(String key, {required int nowMs}) {
+    final year = DateTime.fromMillisecondsSinceEpoch(nowMs).year;
+    final hash = key.codeUnits.fold<int>(
+      0,
+      (a, b) => (a * 31 + b) & 0x7fffffff,
+    );
+    final sequence = (hash % 100000).toString().padLeft(5, '0');
+    return '$_prefix-$year-$sequence';
+  }
 
   Future<String> generateCVN() async {
     final now = DateTime.now();
@@ -58,6 +82,113 @@ class CertificateService {
       return true;
     } catch (e) {
       return true;
+    }
+  }
+
+  Future<void> attachGeneratedPdf(String key, Certificate cert) async {
+    try {
+      final bytes = await _pdfService.generateCertificatePdfBytes(cert);
+      final url = await _pdfService.uploadCertificatePdf(
+        cert: cert,
+        pdfBytes: bytes,
+      );
+      await _certificatesRef.child(key).update({
+        'pdfUrl': url,
+        'pdfPreviewUrl': url,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      throw CertificateServiceException(
+        'Certificate PDF generation/upload failed: $e',
+      );
+    }
+  }
+
+  Future<void> incrementDownloadCount(String key, {String? cvn}) async {
+    final k = key.trim();
+    if (k.isEmpty) return;
+
+    final response = await http
+        .post(
+          Uri.parse(_downloadPingUrl),
+          headers: const {'Content-Type': 'application/json'},
+          body: json.encode({
+            'certificateKey': k,
+            if ((cvn ?? '').trim().isNotEmpty) 'cvn': cvn!.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    final raw = response.body.trim();
+    if (!raw.startsWith('{')) {
+      throw CertificateServiceException('Invalid server response.');
+    }
+
+    final data = json.decode(raw);
+    if (data is! Map<String, dynamic>) {
+      throw CertificateServiceException('Invalid server response.');
+    }
+
+    if (data['success'] != true) {
+      final msg = (data['message'] ?? 'Could not update download count')
+          .toString();
+      throw CertificateServiceException(msg);
+    }
+  }
+
+  Future<Certificate> createCertificateWithPdf(Certificate draft) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final newRef = _certificatesRef.push();
+    final key = newRef.key;
+    if (key == null || key.isEmpty) {
+      throw CertificateServiceException('Failed to allocate certificate key');
+    }
+
+    try {
+      var cvn = _cvnFromKey(key, nowMs: now);
+      var unique = await isCVNUnique(cvn);
+      if (!unique) {
+        final fallbackSeq = (now % 100000).toString().padLeft(5, '0');
+        cvn = '$_prefix-${DateTime.now().year}-$fallbackSeq';
+        unique = await isCVNUnique(cvn);
+      }
+      if (!unique) {
+        throw CertificateServiceException(
+          'Could not allocate unique CVN. Please retry.',
+        );
+      }
+
+      final certBase = draft.copyWith(
+        key: key,
+        cvn: cvn,
+        createdAt: now,
+        updatedAt: now,
+        downloadCount: 0,
+      );
+
+      final bytes = await _pdfService.generateCertificatePdfBytes(certBase);
+      final url = await _pdfService.uploadCertificatePdf(
+        cert: certBase,
+        pdfBytes: bytes,
+      );
+
+      final certFinal = certBase.copyWith(pdfUrl: url, pdfPreviewUrl: url);
+      await newRef.set(certFinal.toMap());
+      return certFinal;
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw CertificateServiceException(
+          'Permission denied. Please ensure you are logged in as an admin or teacher.',
+          isPermissionError: true,
+        );
+      }
+      throw CertificateServiceException(
+        'Failed to create certificate: ${e.message}',
+      );
+    } on CertificateServiceException {
+      rethrow;
+    } catch (e) {
+      throw CertificateServiceException('Failed to create certificate: $e');
     }
   }
 

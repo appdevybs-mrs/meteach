@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/certificate_model.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart' show AppToast, AppToastType;
@@ -234,8 +234,9 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       builder: (_) => _CertificateFormSheet(service: _service),
     );
 
-    if (result != null && mounted) {
-      await _loadCertificates();
+    if (!mounted) return;
+    await _loadCertificates();
+    if (result != null) {
       AppToast.show(
         context,
         'Certificate created successfully',
@@ -253,8 +254,9 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           _CertificateFormSheet(service: _service, certificate: cert),
     );
 
-    if (result != null && mounted) {
-      await _loadCertificates();
+    if (!mounted) return;
+    await _loadCertificates();
+    if (result != null) {
       AppToast.show(
         context,
         'Certificate updated successfully',
@@ -956,7 +958,9 @@ class _CertificateListItem extends StatelessWidget {
                 style: const TextStyle(color: _softText, fontSize: 14),
               ),
               const SizedBox(height: 12),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   _InfoChip(
                     icon: Icons.calendar_today,
@@ -966,6 +970,19 @@ class _CertificateListItem extends StatelessWidget {
                   _InfoChip(
                     icon: Icons.event,
                     label: 'Expires: ${certificate.expirationDate}',
+                  ),
+                  const SizedBox(width: 8),
+                  _InfoChip(
+                    icon: Icons.download_rounded,
+                    label: 'Downloads: ${certificate.downloadCount}',
+                  ),
+                  _InfoChip(
+                    icon: certificate.downloadsEnabled
+                        ? Icons.lock_open_rounded
+                        : Icons.lock_outline_rounded,
+                    label: certificate.downloadsEnabled
+                        ? 'Download ON'
+                        : 'Download OFF',
                   ),
                 ],
               ),
@@ -994,13 +1011,21 @@ class _InfoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: _softText),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(color: _softText, fontSize: 12)),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: _softText),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(color: _softText, fontSize: 12)),
+        ],
+      ),
     );
   }
 }
@@ -1027,8 +1052,8 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
   String _expirationDate = '';
   int _durationYears = 1;
   CertificateStatus _status = CertificateStatus.valid;
+  bool _downloadsEnabled = true;
   bool _loading = false;
-  bool _cvnGenerated = false;
 
   bool get _isEditing => widget.certificate != null;
 
@@ -1045,8 +1070,8 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
       _expirationDate = cert.expirationDate;
       _calculateDurationFromDates();
       _status = cert.status;
+      _downloadsEnabled = cert.downloadsEnabled;
       _notesController.text = cert.notes ?? '';
-      _cvnGenerated = true;
     }
   }
 
@@ -1084,30 +1109,6 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
     _titleController.dispose();
     _notesController.dispose();
     super.dispose();
-  }
-
-  Future<void> _generateCVN() async {
-    try {
-      final cvn = await widget.service.generateCVN();
-      if (mounted) {
-        setState(() {
-          _cvn = cvn;
-          _cvnGenerated = true;
-        });
-      }
-    } on CertificateServiceException catch (e) {
-      if (mounted) {
-        AppToast.show(context, e.message, type: AppToastType.error);
-      }
-    } catch (e) {
-      if (mounted) {
-        AppToast.show(
-          context,
-          'Error generating CVN',
-          type: AppToastType.error,
-        );
-      }
-    }
   }
 
   Future<void> _selectDate() async {
@@ -1157,7 +1158,7 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
       final now = DateTime.now().millisecondsSinceEpoch;
       final cert = Certificate(
         key: widget.certificate?.key,
-        cvn: _cvn!,
+        cvn: _cvn ?? '',
         fullName: _fullNameController.text.trim(),
         nationalIdNumber: _nationalIdController.text.trim(),
         certificateTitle: _titleController.text.trim(),
@@ -1170,15 +1171,22 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
         notes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
+        pdfUrl: widget.certificate?.pdfUrl,
+        pdfPreviewUrl: widget.certificate?.pdfPreviewUrl,
+        downloadCount: widget.certificate?.downloadCount ?? 0,
+        lastDownloadedAt: widget.certificate?.lastDownloadedAt,
+        downloadsEnabled: _downloadsEnabled,
       );
 
       if (_isEditing) {
-        await widget.service.updateCertificate(widget.certificate!.key!, cert);
+        final key = widget.certificate!.key!;
+        await widget.service.updateCertificate(key, cert);
+        await widget.service.attachGeneratedPdf(key, cert.copyWith(key: key));
+        if (mounted) Navigator.pop(context, cert.copyWith(key: key));
       } else {
-        await widget.service.createCertificate(cert);
+        final created = await widget.service.createCertificateWithPdf(cert);
+        if (mounted) Navigator.pop(context, created);
       }
-
-      if (mounted) Navigator.pop(context, cert);
     } catch (e) {
       if (mounted) {
         AppToast.show(context, e.toString(), type: AppToastType.error);
@@ -1242,46 +1250,17 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
                     ),
                     child: Row(
                       children: [
-                        Expanded(
-                          child: _cvnGenerated && _cvn != null
-                              ? Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Certificate Validation Number (CVN)',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                        color: _softText,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _cvn!,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 16,
-                                        color: _primaryBlue,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : const Text(
-                                  'Generate a unique CVN for this certificate',
-                                  style: TextStyle(color: _softText),
-                                ),
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: _primaryBlue,
                         ),
-                        if (!_cvnGenerated)
-                          ElevatedButton(
-                            onPressed: _generateCVN,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _primaryBlue,
-                            ),
-                            child: const Text(
-                              'Generate',
-                              style: TextStyle(color: Colors.white),
-                            ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'CVN is generated automatically after PDF creation.',
+                            style: TextStyle(color: _softText),
                           ),
+                        ),
                       ],
                     ),
                   ),
@@ -1456,11 +1435,31 @@ class _CertificateFormSheetState extends State<_CertificateFormSheet> {
                   ),
                   maxLines: 3,
                 ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: _actionOrange,
+                  title: const Text(
+                    'Allow learner PDF downloads',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _primaryBlue,
+                    ),
+                  ),
+                  subtitle: Text(
+                    _downloadsEnabled
+                        ? 'Learners can download certificate PDF from CVN verification.'
+                        : 'Download button is hidden for learners.',
+                    style: const TextStyle(color: _softText, fontSize: 12),
+                  ),
+                  value: _downloadsEnabled,
+                  onChanged: _loading
+                      ? null
+                      : (v) => setState(() => _downloadsEnabled = v),
+                ),
                 const SizedBox(height: 24),
                 FilledButton(
-                  onPressed: _loading || (!_isEditing && !_cvnGenerated)
-                      ? null
-                      : _save,
+                  onPressed: _loading ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: _actionOrange,
                     minimumSize: const Size(double.infinity, 50),
@@ -1497,6 +1496,24 @@ class _CertificateViewSheet extends StatelessWidget {
   final Certificate certificate;
 
   const _CertificateViewSheet({required this.certificate});
+
+  Future<void> _openUrl(BuildContext context, String url) async {
+    final u = url.trim();
+    if (u.isEmpty) return;
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      AppToast.show(
+        context,
+        'Invalid certificate URL',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      AppToast.show(context, 'Could not open file', type: AppToastType.error);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1563,6 +1580,37 @@ class _CertificateViewSheet extends StatelessWidget {
                 label: 'Expiration Date',
                 value: certificate.expirationDate,
               ),
+              _DetailRow(
+                label: 'PDF Downloads',
+                value: '${certificate.downloadCount}',
+              ),
+              _DetailRow(
+                label: 'Learner Download Access',
+                value: certificate.downloadsEnabled ? 'Enabled' : 'Disabled',
+              ),
+              if ((certificate.pdfUrl ?? '').trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => _openUrl(context, certificate.pdfUrl!),
+                        icon: const Icon(Icons.download_rounded, size: 18),
+                        label: const Text('Open PDF'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _openUrl(
+                          context,
+                          (certificate.pdfPreviewUrl ?? certificate.pdfUrl)!,
+                        ),
+                        icon: const Icon(Icons.preview_rounded, size: 18),
+                        label: const Text('Preview'),
+                      ),
+                    ],
+                  ),
+                ),
               if (certificate.notes != null && certificate.notes!.isNotEmpty)
                 _DetailRow(label: 'Notes', value: certificate.notes!),
             ],
