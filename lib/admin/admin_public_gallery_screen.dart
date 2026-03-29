@@ -85,9 +85,11 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
   late final Stream<DatabaseEvent> _publicGalleryStream;
   late final Stream<DatabaseEvent> _usersStream;
   late final Stream<DatabaseEvent> _learnerGalleryStream;
+  late final Stream<DatabaseEvent> _teacherProfilesStream;
   dynamic _publicGalleryCache;
   dynamic _usersCache;
   dynamic _learnerGalleryCache;
+  dynamic _teacherProfilesCache;
   bool _uploadingPhoto = false;
   bool _uploadingVideo = false;
   String? _error;
@@ -107,6 +109,10 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     _usersStream = _db.child('users').onValue.asBroadcastStream();
     _learnerGalleryStream = _db
         .child('learner_gallery')
+        .onValue
+        .asBroadcastStream();
+    _teacherProfilesStream = _db
+        .child('website/teachers')
         .onValue
         .asBroadcastStream();
 
@@ -845,6 +851,89 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     return counts;
   }
 
+  Map<String, List<Map<String, dynamic>>> _parseLearnerGalleryPreviews(
+    dynamic value,
+  ) {
+    final out = <String, List<Map<String, dynamic>>>{};
+    if (value is! Map) return out;
+
+    final raw = Map<dynamic, dynamic>.from(value);
+    raw.forEach((learnerUid, learnerGalleryValue) {
+      if (learnerGalleryValue is! Map) {
+        out[learnerUid.toString()] = const <Map<String, dynamic>>[];
+        return;
+      }
+
+      final items = <Map<String, dynamic>>[];
+      final gallery = Map<dynamic, dynamic>.from(learnerGalleryValue);
+      gallery.forEach((itemId, itemRaw) {
+        if (itemRaw is! Map) return;
+        final m = itemRaw.map((k, v) => MapEntry(k.toString(), v));
+        final type = (m['type'] ?? '').toString().trim().toLowerCase();
+        final url = (m['url'] ?? '').toString().trim();
+        if (url.isEmpty || (type != 'photo' && type != 'video')) return;
+        items.add({
+          'id': itemId.toString(),
+          'type': type,
+          'url': url,
+          'createdAt': m['createdAt'],
+        });
+      });
+
+      items.sort(
+        (a, b) => _toInt(b['createdAt']).compareTo(_toInt(a['createdAt'])),
+      );
+      out[learnerUid.toString()] = items.take(6).toList();
+    });
+
+    return out;
+  }
+
+  static String _normUrl(dynamic raw) {
+    final v = (raw ?? '').toString().trim();
+    if (v.isEmpty) return '';
+    if (v.startsWith('//')) return 'https:$v';
+    if (v.startsWith('www.')) return 'https://$v';
+    return v;
+  }
+
+  static bool _isHttpUrl(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  static List<String> _urlsFromUnknown(dynamic raw) {
+    final out = <String>[];
+
+    void addOne(dynamic v) {
+      final s = _normUrl(v);
+      if (s.isNotEmpty && _isHttpUrl(s)) out.add(s);
+    }
+
+    if (raw is List) {
+      for (final item in raw) {
+        addOne(item);
+      }
+      return out;
+    }
+
+    if (raw is Map) {
+      final entries = raw.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final e in entries) {
+        addOne(e.value);
+      }
+      return out;
+    }
+
+    addOne(raw);
+    return out;
+  }
+
   Widget _buildLearnerGalleriesTab() {
     return StreamBuilder<DatabaseEvent>(
       stream: _usersStream,
@@ -875,6 +964,9 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
             }
 
             final counts = _parseLearnerGalleryCounts(
+              galleryValue ?? _learnerGalleryCache,
+            );
+            final previews = _parseLearnerGalleryPreviews(
               galleryValue ?? _learnerGalleryCache,
             );
 
@@ -965,25 +1057,46 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
                     ),
                   )
                 else
-                  ...filtered.map(
-                    (learner) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _AdminLearnerGalleryCard(
-                        key: ValueKey(learner.uid),
-                        learner: learner,
-                        itemCount: counts[learner.uid] ?? 0,
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => AdminLearnerGalleryScreen(
-                                learnerUid: learner.uid,
-                                learnerName: learner.fullName,
-                              ),
-                            ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final w = constraints.maxWidth;
+                      final crossAxisCount = w >= 1100
+                          ? 4
+                          : (w >= 780 ? 3 : (w >= 520 ? 2 : 1));
+
+                      return GridView.builder(
+                        itemCount: filtered.length,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1.06,
+                        ),
+                        itemBuilder: (context, index) {
+                          final learner = filtered[index];
+                          return _AdminLearnerGalleryCard(
+                            key: ValueKey(learner.uid),
+                            learner: learner,
+                            itemCount: counts[learner.uid] ?? 0,
+                            previewItems:
+                                previews[learner.uid] ??
+                                const <Map<String, dynamic>>[],
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AdminLearnerGalleryScreen(
+                                    learnerUid: learner.uid,
+                                    learnerName: learner.fullName,
+                                  ),
+                                ),
+                              );
+                            },
                           );
                         },
-                      ),
-                    ),
+                      );
+                    },
                   ),
               ],
             );
@@ -993,265 +1106,211 @@ class _AdminPublicGalleryScreenState extends State<AdminPublicGalleryScreen>
     );
   }
 
-  List<Map<String, dynamic>> _parseTeacherGalleryItems(dynamic value) {
-    if (value is! Map) return [];
+  List<_AdminTeacherProfileLite> _parseTeacherProfiles({
+    required dynamic usersValue,
+    required dynamic websiteTeachersValue,
+  }) {
+    if (usersValue is! Map) return [];
 
-    final out = <Map<String, dynamic>>[];
-    final root = Map<dynamic, dynamic>.from(value);
-
-    root.forEach((learnerUid, learnerNode) {
-      if (learnerNode is! Map) return;
-
-      final items = Map<dynamic, dynamic>.from(learnerNode);
-      items.forEach((itemId, rawVal) {
-        if (rawVal is! Map) return;
-        final m = rawVal.map((k, v) => MapEntry(k.toString(), v));
-
-        final type = (m['type'] ?? '').toString().trim().toLowerCase();
-        final url = (m['url'] ?? '').toString().trim();
-        if (url.isEmpty || (type != 'photo' && type != 'video')) return;
-
-        final role = (m['uploadedByRole'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
-        final teacherUid = (m['teacherUid'] ?? '').toString().trim();
-        if (role == 'admin' || teacherUid.isEmpty) return;
-
-        out.add({
-          'id': itemId.toString(),
-          'learnerUid': learnerUid.toString(),
-          'learnerName': (m['learnerName'] ?? '').toString().trim(),
-          'teacherUid': teacherUid,
-          'teacherName': (m['teacherName'] ?? m['uploadedByName'] ?? '')
-              .toString()
-              .trim(),
-          ...m,
-        });
+    final websiteByUid = <String, Map<String, dynamic>>{};
+    if (websiteTeachersValue is Map) {
+      final websiteRaw = Map<dynamic, dynamic>.from(websiteTeachersValue);
+      websiteRaw.forEach((uidRaw, teacherNodeRaw) {
+        if (teacherNodeRaw is! Map) return;
+        final teacherNode = teacherNodeRaw.map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        final profileRaw = teacherNode['profile'];
+        if (profileRaw is! Map) return;
+        websiteByUid[uidRaw.toString()] = profileRaw.map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
       });
-    });
+    }
 
-    out.sort((a, b) {
-      final aTs = _toInt(a['createdAt']);
-      final bTs = _toInt(b['createdAt']);
-      return bTs.compareTo(aTs);
-    });
+    final out = <_AdminTeacherProfileLite>[];
+    final users = Map<dynamic, dynamic>.from(usersValue);
+    users.forEach((uidRaw, userRaw) {
+      if (userRaw is! Map) return;
+      final m = userRaw.map((k, v) => MapEntry(k.toString(), v));
+      final role = (m['role'] ?? '').toString().trim().toLowerCase();
+      if (role != 'teacher') return;
 
-    return out;
-  }
+      final uid = uidRaw.toString().trim();
+      if (uid.isEmpty) return;
 
-  Future<void> _openTeacherViewer(Map<String, dynamic> item) async {
-    final itemId = (item['id'] ?? '').toString();
-    final type = (item['type'] ?? '').toString().trim().toLowerCase();
-    final url = (item['url'] ?? '').toString().trim();
-    final teacherName = (item['teacherName'] ?? '').toString().trim();
-    final learnerName = (item['learnerName'] ?? '').toString().trim();
-    final createdAt = _fmtDate(item['createdAt']);
+      final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+      final full = ('$first $last').trim();
+      final email = (m['email'] ?? '').toString().trim();
+      final phone = (m['phone1'] ?? m['phone2'] ?? '').toString().trim();
 
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _AdminLearnerGalleryViewerScreen(
-          itemId: itemId,
-          type: type,
-          url: url,
-          uploaderName: teacherName,
-          learnerName: learnerName,
-          createdAt: createdAt,
-          onDelete: null,
+      final profile = websiteByUid[uid] ?? const <String, dynamic>{};
+      final photos = <String>[];
+      photos.addAll(_urlsFromUnknown(profile['profile_photos']));
+      if (photos.isEmpty) {
+        final one = _normUrl(profile['profile_photo']);
+        if (one.isNotEmpty && _isHttpUrl(one)) photos.add(one);
+      }
+
+      final introVideoUrl = _normUrl(profile['intro_video_url']);
+      final safeVideoUrl = _isHttpUrl(introVideoUrl) ? introVideoUrl : '';
+      final previewItems = <Map<String, dynamic>>[
+        for (final p in photos) {'type': 'photo', 'url': p},
+        if (safeVideoUrl.isNotEmpty) {'type': 'video', 'url': safeVideoUrl},
+      ];
+
+      out.add(
+        _AdminTeacherProfileLite(
+          uid: uid,
+          name: full.isNotEmpty ? full : (email.isNotEmpty ? email : 'Teacher'),
+          email: email,
+          phone1: phone,
+          photoUrls: photos,
+          introVideoUrl: safeVideoUrl,
+          previewItems: previewItems,
         ),
-      ),
-    );
+      );
+    });
+
+    out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return out;
   }
 
   Widget _buildTeacherGalleryTab() {
     return StreamBuilder<DatabaseEvent>(
-      stream: _learnerGalleryStream,
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting &&
-            _learnerGalleryCache == null) {
+      stream: _usersStream,
+      builder: (context, usersSnap) {
+        if (usersSnap.connectionState == ConnectionState.waiting &&
+            _usersCache == null) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final raw = snap.data?.snapshot.value;
-        if (raw != null) {
-          _learnerGalleryCache = raw;
+        final usersValue = usersSnap.data?.snapshot.value;
+        if (usersValue != null) {
+          _usersCache = usersValue;
         }
 
-        final allItems = _parseTeacherGalleryItems(raw ?? _learnerGalleryCache);
-        final q = _teacherSearch.trim().toLowerCase();
-        final items = allItems.where((item) {
-          if (q.isEmpty) return true;
-          final teacherName = (item['teacherName'] ?? '')
-              .toString()
-              .toLowerCase();
-          final learnerName = (item['learnerName'] ?? '')
-              .toString()
-              .toLowerCase();
-          final type = (item['type'] ?? '').toString().toLowerCase();
-          return teacherName.contains(q) ||
-              learnerName.contains(q) ||
-              type.contains(q);
-        }).toList();
+        return StreamBuilder<DatabaseEvent>(
+          stream: _teacherProfilesStream,
+          builder: (context, profilesSnap) {
+            if (profilesSnap.connectionState == ConnectionState.waiting &&
+                _teacherProfilesCache == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              onChanged: (v) => setState(() => _teacherSearch = v),
-              decoration: InputDecoration(
-                hintText: 'Search teacher or learner…',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: uiBorder),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: uiBorder.withValues(alpha: 0.9),
-                  ),
-                ),
-                focusedBorder: const OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(14)),
-                  borderSide: BorderSide(color: primaryBlue),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${items.length} teacher item${items.length == 1 ? '' : 's'}',
-              style: const TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (items.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-                ),
-                child: const Text(
-                  'No teacher gallery items found.',
-                  style: TextStyle(
-                    color: mainText,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              )
-            else
-              GridView.builder(
-                itemCount: items.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1,
-                ),
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final type = (item['type'] ?? '')
-                      .toString()
-                      .trim()
-                      .toLowerCase();
-                  final url = (item['url'] ?? '').toString().trim();
-                  final teacherName = (item['teacherName'] ?? '')
-                      .toString()
-                      .trim();
-                  final learnerName = (item['learnerName'] ?? '')
-                      .toString()
-                      .trim();
+            final profilesValue = profilesSnap.data?.snapshot.value;
+            if (profilesValue != null) {
+              _teacherProfilesCache = profilesValue;
+            }
 
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () => _openTeacherViewer(item),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: uiBorder.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (type == 'video')
-                              _AdminVideoTile(url: url)
-                            else
-                              Image.network(
-                                url,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  color: Colors.grey.shade200,
-                                  alignment: Alignment.center,
-                                  child: const Icon(
-                                    Icons.broken_image_outlined,
-                                  ),
-                                ),
-                              ),
-                            Positioned(
-                              left: 8,
-                              right: 8,
-                              bottom: 8,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.58),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      teacherName.isEmpty
-                                          ? 'Teacher'
-                                          : teacherName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    if (learnerName.isNotEmpty)
-                                      Text(
-                                        learnerName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+            final teachers = _parseTeacherProfiles(
+              usersValue: usersValue ?? _usersCache,
+              websiteTeachersValue: profilesValue ?? _teacherProfilesCache,
+            );
+
+            final q = _teacherSearch.trim().toLowerCase();
+            final filtered = teachers.where((t) {
+              if (q.isEmpty) return true;
+              return t.name.toLowerCase().contains(q) ||
+                  t.email.toLowerCase().contains(q) ||
+                  t.phone1.toLowerCase().contains(q);
+            }).toList();
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextField(
+                  onChanged: (v) => setState(() => _teacherSearch = v),
+                  decoration: InputDecoration(
+                    hintText: 'Search teacher profile…',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: uiBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: uiBorder.withValues(alpha: 0.9),
                       ),
                     ),
-                  );
-                },
-              ),
-          ],
+                    focusedBorder: const OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(14)),
+                      borderSide: BorderSide(color: primaryBlue),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '${filtered.length} teacher${filtered.length == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    color: primaryBlue,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (filtered.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: uiBorder.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    child: const Text(
+                      'No teacher profiles found.',
+                      style: TextStyle(
+                        color: mainText,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                else
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final w = constraints.maxWidth;
+                      final crossAxisCount = w >= 1100
+                          ? 4
+                          : (w >= 780 ? 3 : (w >= 520 ? 2 : 1));
+
+                      return GridView.builder(
+                        itemCount: filtered.length,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1.02,
+                        ),
+                        itemBuilder: (context, index) {
+                          final teacher = filtered[index];
+                          return _AdminTeacherProfileCard(
+                            teacher: teacher,
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      _AdminTeacherProfileGalleryScreen(
+                                        teacher: teacher,
+                                      ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1333,16 +1392,152 @@ class _AdminLearnerLite {
   final String responsibleTeacher;
 }
 
+class _AdminTeacherProfileLite {
+  const _AdminTeacherProfileLite({
+    required this.uid,
+    required this.name,
+    required this.email,
+    required this.phone1,
+    required this.photoUrls,
+    required this.introVideoUrl,
+    required this.previewItems,
+  });
+
+  final String uid;
+  final String name;
+  final String email;
+  final String phone1;
+  final List<String> photoUrls;
+  final String introVideoUrl;
+  final List<Map<String, dynamic>> previewItems;
+}
+
+class _AdminTeacherProfileCard extends StatelessWidget {
+  const _AdminTeacherProfileCard({required this.teacher, required this.onTap});
+
+  final _AdminTeacherProfileLite teacher;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryBlue = _AdminPublicGalleryScreenState.primaryBlue;
+    const mainText = _AdminPublicGalleryScreenState.mainText;
+    const uiBorder = _AdminPublicGalleryScreenState.uiBorder;
+
+    final itemCount =
+        teacher.photoUrls.length +
+        (teacher.introVideoUrl.trim().isNotEmpty ? 1 : 0);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _MediaMiniPreviewStrip(
+              items: teacher.previewItems,
+              emptyIcon: Icons.person_rounded,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          teacher.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: primaryBlue.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$itemCount',
+                          style: const TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  if (teacher.email.trim().isNotEmpty)
+                    Text(
+                      teacher.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: mainText.withValues(alpha: 0.68),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    )
+                  else if (teacher.phone1.trim().isNotEmpty)
+                    Text(
+                      teacher.phone1,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: mainText.withValues(alpha: 0.68),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to open teacher profile media',
+                    style: TextStyle(
+                      color: mainText.withValues(alpha: 0.58),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _AdminLearnerGalleryCard extends StatelessWidget {
   const _AdminLearnerGalleryCard({
     super.key,
     required this.learner,
     required this.itemCount,
+    required this.previewItems,
     required this.onTap,
   });
 
   final _AdminLearnerLite learner;
   final int itemCount;
+  final List<Map<String, dynamic>> previewItems;
   final VoidCallback onTap;
 
   @override
@@ -1355,115 +1550,386 @@ class _AdminLearnerGalleryCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: primaryBlue.withValues(alpha: 0.08),
-              child: Text(
-                learner.fullName.trim().isNotEmpty
-                    ? learner.fullName.trim()[0].toUpperCase()
-                    : 'L',
-                style: const TextStyle(
-                  color: primaryBlue,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+            _MediaMiniPreviewStrip(
+              items: previewItems,
+              emptyIcon: Icons.photo_library_rounded,
             ),
-            const SizedBox(width: 12),
-            Expanded(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    learner.fullName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: primaryBlue,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          learner.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: primaryBlue.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$itemCount',
+                          style: const TextStyle(
+                            color: primaryBlue,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  if (learner.serial.trim().isNotEmpty)
-                    Text(
-                      learner.serial,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: mainText.withValues(alpha: 0.78),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  if (learner.email.trim().isNotEmpty)
-                    Text(
-                      learner.email,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: mainText.withValues(alpha: 0.72),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    )
-                  else if (learner.phone1.trim().isNotEmpty)
-                    Text(
-                      learner.phone1,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: mainText.withValues(alpha: 0.72),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 5),
                   Text(
-                    'Teacher: ${learner.responsibleTeacher}',
-                    maxLines: 2,
+                    learner.responsibleTeacher,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: mainText.withValues(alpha: 0.72),
                       fontWeight: FontWeight.w700,
-                      fontSize: 12,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to open learner gallery',
+                    style: TextStyle(
+                      color: mainText.withValues(alpha: 0.58),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: primaryBlue.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '$itemCount item${itemCount == 1 ? '' : 's'}',
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaMiniPreviewStrip extends StatelessWidget {
+  const _MediaMiniPreviewStrip({required this.items, required this.emptyIcon});
+
+  final List<Map<String, dynamic>> items;
+  final IconData emptyIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final previews = items.take(3).toList();
+
+    if (previews.isEmpty) {
+      return Container(
+        height: 90,
+        decoration: BoxDecoration(
+          color: _AdminPublicGalleryScreenState.appBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          border: Border(
+            bottom: BorderSide(
+              color: _AdminPublicGalleryScreenState.uiBorder.withValues(
+                alpha: 0.6,
+              ),
+            ),
+          ),
+        ),
+        child: Center(
+          child: Icon(
+            emptyIcon,
+            color: _AdminPublicGalleryScreenState.primaryBlue.withValues(
+              alpha: 0.35,
+            ),
+            size: 24,
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 90,
+      child: Row(
+        children: [
+          for (int i = 0; i < previews.length; i++) ...[
+            if (i > 0)
+              Container(
+                width: 1,
+                color: _AdminPublicGalleryScreenState.uiBorder.withValues(
+                  alpha: 0.5,
+                ),
+              ),
+            Expanded(child: _MiniPreviewTile(item: previews[i])),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniPreviewTile extends StatelessWidget {
+  const _MiniPreviewTile({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = (item['type'] ?? '').toString().trim().toLowerCase();
+    final url = (item['url'] ?? '').toString().trim();
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (type == 'video')
+          _AdminVideoTile(url: url)
+        else
+          Image.network(
+            url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Container(
+              color: Colors.grey.shade200,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image_outlined, size: 18),
+            ),
+          ),
+        if (type == 'video')
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.48),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _AdminTeacherProfileGalleryScreen extends StatelessWidget {
+  const _AdminTeacherProfileGalleryScreen({required this.teacher});
+
+  final _AdminTeacherProfileLite teacher;
+
+  List<Map<String, dynamic>> _items() {
+    final out = <Map<String, dynamic>>[];
+    for (int i = 0; i < teacher.photoUrls.length; i++) {
+      final url = teacher.photoUrls[i].trim();
+      if (url.isEmpty) continue;
+      out.add({'id': 'photo_$i', 'type': 'photo', 'url': url});
+    }
+    final video = teacher.introVideoUrl.trim();
+    if (video.isNotEmpty) {
+      out.insert(0, {'id': 'video_intro', 'type': 'video', 'url': video});
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryBlue = _AdminPublicGalleryScreenState.primaryBlue;
+    const mainText = _AdminPublicGalleryScreenState.mainText;
+    const appBg = _AdminPublicGalleryScreenState.appBg;
+    const uiBorder = _AdminPublicGalleryScreenState.uiBorder;
+
+    final items = _items();
+    final photos = items.where((e) => e['type'] == 'photo').length;
+    final videos = items.where((e) => e['type'] == 'video').length;
+
+    return Scaffold(
+      backgroundColor: appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: primaryBlue),
+        title: Text(
+          '${teacher.name} Profile',
+          style: const TextStyle(
+            color: primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    teacher.name,
                     style: const TextStyle(
                       color: primaryBlue,
                       fontWeight: FontWeight.w900,
-                      fontSize: 11,
+                      fontSize: 17,
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Icon(Icons.chevron_right_rounded, color: primaryBlue),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    'Teacher profile media (photos and intro video).',
+                    style: TextStyle(
+                      color: mainText.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _AdminCountPill(label: '${items.length} total'),
+                      _AdminCountPill(label: '$photos photos'),
+                      _AdminCountPill(label: '$videos videos'),
+                    ],
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 14),
+            if (items.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+                ),
+                child: const Text(
+                  'No teacher profile media yet.',
+                  style: TextStyle(
+                    color: mainText,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              )
+            else
+              GridView.builder(
+                itemCount: items.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.92,
+                ),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final type = (item['type'] ?? '').toString();
+                  final url = (item['url'] ?? '').toString();
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => _AdminLearnerGalleryViewerScreen(
+                            itemId: (item['id'] ?? '').toString(),
+                            type: type,
+                            url: url,
+                            uploaderName: teacher.name,
+                            learnerName: teacher.name,
+                            createdAt: 'Teacher profile media',
+                            onDelete: null,
+                            subjectLabel: 'Teacher',
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: uiBorder.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (type == 'video')
+                              _AdminVideoTile(url: url)
+                            else
+                              Image.network(
+                                url,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  color: Colors.grey.shade200,
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.broken_image_outlined,
+                                  ),
+                                ),
+                              ),
+                            Positioned(
+                              left: 8,
+                              top: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  type == 'video' ? 'Video' : 'Photo',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -2774,6 +3240,7 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
     required this.learnerName,
     required this.createdAt,
     required this.onDelete,
+    this.subjectLabel = 'Learner',
   });
 
   final String itemId;
@@ -2783,6 +3250,7 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
   final String learnerName;
   final String createdAt;
   final Future<void> Function()? onDelete;
+  final String subjectLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2907,7 +3375,7 @@ class _AdminLearnerGalleryViewerScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Learner: $learnerName',
+                            '$subjectLabel: $learnerName',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
