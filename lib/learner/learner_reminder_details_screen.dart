@@ -32,10 +32,19 @@ class _LearnerReminderDetailsScreenState
 
     final ref = _db.child('reminders/$uid/${widget.reminderId}');
 
-    final snap = await ref.child('readAt').get();
-    if (snap.exists) return; // already read
-
-    await ref.update({'readAt': ServerValue.timestamp, 'status': 'read'});
+    await ref.runTransaction((cur) {
+      if (cur == null || cur is! Map) {
+        return Transaction.abort();
+      }
+      final map = cur.map((k, v) => MapEntry(k.toString(), v));
+      final status = (map['status'] ?? '').toString().toLowerCase();
+      if (status == 'done' || status == 'read') {
+        return Transaction.success(cur);
+      }
+      map['status'] = 'read';
+      map['readAt'] = ServerValue.timestamp;
+      return Transaction.success(map);
+    });
   }
 
   @override

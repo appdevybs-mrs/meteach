@@ -158,12 +158,25 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
 
     setState(() => _markingRead.add(reminderId));
     try {
-      await _ref.child(reminderId).update({
-        'status': 'read',
-        'readAt': ServerValue.timestamp,
+      var updated = false;
+      final tx = await _ref.child(reminderId).runTransaction((cur) {
+        if (cur == null || cur is! Map) {
+          return Transaction.abort();
+        }
+        final map = cur.map((k, v) => MapEntry(k.toString(), v));
+        final currentStatus = (map['status'] ?? '').toString().toLowerCase();
+        if (currentStatus == 'done' || currentStatus == 'read') {
+          return Transaction.success(cur);
+        }
+        map['status'] = 'read';
+        map['readAt'] = ServerValue.timestamp;
+        updated = true;
+        return Transaction.success(map);
       });
 
-      await _notifyAdmins(action: 'read', reminderId: reminderId, r: r);
+      if (tx.committed && updated) {
+        await _notifyAdmins(action: 'read', reminderId: reminderId, r: r);
+      }
     } catch (e) {
       _snack('Failed to mark read: $e');
     } finally {
@@ -176,13 +189,26 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
 
     setState(() => _markingDone.add(reminderId));
     try {
-      await _ref.child(reminderId).update({
-        'status': 'done',
-        'doneAt': ServerValue.timestamp,
+      var updated = false;
+      final tx = await _ref.child(reminderId).runTransaction((cur) {
+        if (cur == null || cur is! Map) {
+          return Transaction.abort();
+        }
+        final map = cur.map((k, v) => MapEntry(k.toString(), v));
+        final currentStatus = (map['status'] ?? '').toString().toLowerCase();
+        if (currentStatus == 'done') {
+          return Transaction.success(cur);
+        }
+        map['status'] = 'done';
+        map['doneAt'] = ServerValue.timestamp;
+        updated = true;
+        return Transaction.success(map);
       });
 
-      _snack('Marked done ✅');
-      await _notifyAdmins(action: 'done', reminderId: reminderId, r: r);
+      if (tx.committed && updated) {
+        _snack('Marked done ✅');
+        await _notifyAdmins(action: 'done', reminderId: reminderId, r: r);
+      }
     } catch (e) {
       _snack('Failed to mark done: $e');
     } finally {

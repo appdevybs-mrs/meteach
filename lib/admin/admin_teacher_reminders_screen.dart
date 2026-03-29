@@ -265,6 +265,12 @@ class _AdminTeacherRemindersScreenState
       'status': 'new',
       'readAt': null,
       'doneAt': null,
+      'push': {
+        'status': 'pending',
+        'attemptedAt': null,
+        'sentAt': null,
+        'error': null,
+      },
       'teacher': {
         'uid': teacherUid,
         'name': (created.teacherName ?? '').trim(),
@@ -278,7 +284,22 @@ class _AdminTeacherRemindersScreenState
 
     try {
       final token = await _getTeacherFcmToken(teacherUid);
-      if (token == null) return;
+      final pushRef = ref.child('push');
+
+      if (token == null) {
+        await pushRef.update({
+          'attemptedAt': ServerValue.timestamp,
+          'status': 'skipped_no_token',
+          'error': 'missing_token',
+        });
+        return;
+      }
+
+      await pushRef.update({
+        'attemptedAt': ServerValue.timestamp,
+        'status': 'attempted',
+        'error': null,
+      });
 
       await PushClient.sendToToken(
         token: token,
@@ -292,8 +313,18 @@ class _AdminTeacherRemindersScreenState
           'teacherUid': teacherUid,
         },
       );
-    } catch (_) {
-      // Reminder already saved. Ignore push failure here.
+
+      await pushRef.update({
+        'sentAt': ServerValue.timestamp,
+        'status': 'sent',
+        'error': null,
+      });
+    } catch (e) {
+      await ref.child('push').update({
+        'status': 'error',
+        'error': e.toString(),
+      });
+      // Reminder already saved. Ignore push failure beyond storing status.
     }
   }
 

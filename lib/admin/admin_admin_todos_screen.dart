@@ -204,12 +204,34 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
 
     setState(() => _updatingIds.add(todoId));
     try {
-      await _db.ref('admin_todos/$myUid/$todoId').update({
-        'status': 'seen',
-        'seenAt': ServerValue.timestamp,
-        'updatedAt': ServerValue.timestamp,
+      var updated = false;
+      final tx = await _db.ref('admin_todos/$myUid/$todoId').runTransaction((
+        cur,
+      ) {
+        if (cur == null || cur is! Map) {
+          return Transaction.abort();
+        }
+        final map = cur.map((k, v) => MapEntry(k.toString(), v));
+        final currentStatus = (map['status'] ?? '').toString().toLowerCase();
+        if (currentStatus == 'seen' ||
+            currentStatus == 'read' ||
+            currentStatus == 'done') {
+          return Transaction.success(cur);
+        }
+        map['status'] = 'seen';
+        map['seenAt'] = ServerValue.timestamp;
+        map['updatedAt'] = ServerValue.timestamp;
+        updated = true;
+        return Transaction.success(map);
       });
-      await _notifyCreatorOnUpdate(todo: todo, todoId: todoId, action: 'seen');
+
+      if (tx.committed && updated) {
+        await _notifyCreatorOnUpdate(
+          todo: todo,
+          todoId: todoId,
+          action: 'seen',
+        );
+      }
     } catch (e) {
       _snack(toHumanError(e, fallback: 'Could not mark TODO as seen.'));
     } finally {
@@ -224,13 +246,33 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
 
     setState(() => _updatingIds.add(todoId));
     try {
-      await _db.ref('admin_todos/$myUid/$todoId').update({
-        'status': 'done',
-        'doneAt': ServerValue.timestamp,
-        'updatedAt': ServerValue.timestamp,
+      var updated = false;
+      final tx = await _db.ref('admin_todos/$myUid/$todoId').runTransaction((
+        cur,
+      ) {
+        if (cur == null || cur is! Map) {
+          return Transaction.abort();
+        }
+        final map = cur.map((k, v) => MapEntry(k.toString(), v));
+        final currentStatus = (map['status'] ?? '').toString().toLowerCase();
+        if (currentStatus == 'done') {
+          return Transaction.success(cur);
+        }
+        map['status'] = 'done';
+        map['doneAt'] = ServerValue.timestamp;
+        map['updatedAt'] = ServerValue.timestamp;
+        updated = true;
+        return Transaction.success(map);
       });
-      _snack('Marked done');
-      await _notifyCreatorOnUpdate(todo: todo, todoId: todoId, action: 'done');
+
+      if (tx.committed && updated) {
+        _snack('Marked done');
+        await _notifyCreatorOnUpdate(
+          todo: todo,
+          todoId: todoId,
+          action: 'done',
+        );
+      }
     } catch (e) {
       _snack(toHumanError(e, fallback: 'Could not mark TODO as done.'));
     } finally {
