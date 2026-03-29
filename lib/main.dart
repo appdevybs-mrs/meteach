@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2160,6 +2162,7 @@ class _CourseLite {
     required this.category,
     required this.content,
     required this.instructors,
+    required this.orderIndex,
     required this.updatedAt,
   });
 
@@ -2177,6 +2180,7 @@ class _CourseLite {
   final String deliveryOptionRaw;
   final Map<String, _DeliveryConfigLite> deliveryConfigs;
   final List<_InstructorLite> instructors;
+  final int? orderIndex;
   final String requirements;
   final List<String> tags;
   final String status;
@@ -2494,6 +2498,7 @@ class _CourseLite {
       category: pickString(['category']).trim().isEmpty
           ? 'Other'
           : pickString(['category']).trim(),
+      orderIndex: _parseInt(m['order_index']),
       updatedAt: _parseInt(
         m['updatedAt'] ?? m['updated_at'] ?? m['updatedAtMs'],
       ),
@@ -2514,7 +2519,13 @@ List<_CourseLite> _parseCoursesLite(dynamic data) {
     }
   });
 
-  out.sort((a, b) => (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0));
+  out.sort((a, b) {
+    final ao = a.orderIndex ?? (1 << 30);
+    final bo = b.orderIndex ?? (1 << 30);
+    final c = ao.compareTo(bo);
+    if (c != 0) return c;
+    return (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0);
+  });
 
   return out;
 }

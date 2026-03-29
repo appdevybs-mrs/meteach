@@ -72,5 +72,30 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
+	<key>FacebookAppID</key>
+	<string>2503982553366513</string>
+	<key>FacebookClientToken</key>
+	<string>90b0ac15b699e623966b2718aa641972</string>
+	<key>FacebookDisplayName</key>
+	<string>Your Bridge School</string>
+
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fb2503982553366513</string>
+			</array>
+		</dict>
+	</array>
+
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fbapi</string>
+		<string>fb-messenger-share-api</string>
+		<string>fbauth2</string>
+		<string>fbshareextension</string>
+	</array>
+
 </dict>
 </plist>

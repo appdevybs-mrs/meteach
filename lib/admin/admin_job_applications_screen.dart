@@ -1,4 +1,5 @@
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,7 +29,7 @@ class _AdminJobApplicationsScreenState
   final TextEditingController _searchCtrl = TextEditingController();
 
   String _query = '';
-  String _statusFilter = 'all';
+  String _stageFilter = 'all';
   String _priorityFilter = 'all';
 
   @override
@@ -47,6 +48,10 @@ class _AdminJobApplicationsScreenState
       if (val is! Map) return;
       final m = val.map((k, v) => MapEntry(k.toString(), v));
 
+      final status = _normStatus((m['status'] ?? '').toString());
+      final stage = _normStage(
+        (m['stage'] ?? _stageFromLegacyStatus(status)).toString(),
+      );
       out.add(
         _JobApplicationItem(
           id: key.toString(),
@@ -55,9 +60,14 @@ class _AdminJobApplicationsScreenState
           email: (m['email'] ?? '').toString().trim(),
           position: (m['position'] ?? '').toString().trim(),
           cvPdfUrl: (m['cv_pdf_url'] ?? '').toString().trim(),
-          status: _normStatus((m['status'] ?? '').toString()),
+          stage: stage,
+          status: status,
           priority: _normPriority((m['priority'] ?? '').toString()),
           createdAt: _toInt(m['createdAt']),
+          updatedAt: _toInt(m['updatedAt']),
+          updatedBy: (m['updatedBy'] ?? '').toString().trim(),
+          interviewAt: _toInt(m['interviewAt']),
+          timeline: _parseTimeline(m['timeline']),
           isGuest: m['isGuest'] == true,
           submittedByUid: (m['submittedByUid'] ?? '').toString().trim(),
         ),
@@ -75,7 +85,7 @@ class _AdminJobApplicationsScreenState
   List<_JobApplicationItem> _filtered(List<_JobApplicationItem> items) {
     final q = _query.trim().toLowerCase();
     return items.where((item) {
-      if (_statusFilter != 'all' && item.status != _statusFilter) return false;
+      if (_stageFilter != 'all' && item.stage != _stageFilter) return false;
       if (_priorityFilter != 'all' && item.priority != _priorityFilter) {
         return false;
       }
@@ -107,6 +117,106 @@ class _AdminJobApplicationsScreenState
       default:
         return 'new';
     }
+  }
+
+  static String _normStage(String raw) {
+    final v = raw.trim().toLowerCase();
+    switch (v) {
+      case 'new':
+      case 'called_reached':
+      case 'called_no_answer':
+      case 'callback_requested':
+      case 'interview_scheduled':
+      case 'interview_done':
+      case 'rejected':
+      case 'hired':
+        return v;
+      default:
+        return 'new';
+    }
+  }
+
+  static String _stageFromLegacyStatus(String status) {
+    switch (_normStatus(status)) {
+      case 'reviewed':
+        return 'called_reached';
+      case 'shortlisted':
+        return 'interview_scheduled';
+      case 'rejected':
+        return 'rejected';
+      case 'hired':
+        return 'hired';
+      case 'new':
+      default:
+        return 'new';
+    }
+  }
+
+  static String _legacyStatusFromStage(String stage) {
+    switch (_normStage(stage)) {
+      case 'called_reached':
+      case 'called_no_answer':
+      case 'callback_requested':
+        return 'reviewed';
+      case 'interview_scheduled':
+      case 'interview_done':
+        return 'shortlisted';
+      case 'rejected':
+        return 'rejected';
+      case 'hired':
+        return 'hired';
+      case 'new':
+      default:
+        return 'new';
+    }
+  }
+
+  static String _stageLabel(String stage) {
+    switch (_normStage(stage)) {
+      case 'new':
+        return 'New';
+      case 'called_reached':
+        return 'Called (Reached)';
+      case 'called_no_answer':
+        return 'Called (No Answer)';
+      case 'callback_requested':
+        return 'Call Back Requested';
+      case 'interview_scheduled':
+        return 'Interview Scheduled';
+      case 'interview_done':
+        return 'Interview Done';
+      case 'rejected':
+        return 'Rejected';
+      case 'hired':
+        return 'Hired';
+      default:
+        return 'New';
+    }
+  }
+
+  static List<_TimelineEvent> _parseTimeline(dynamic value) {
+    if (value is! Map) return const [];
+    final out = <_TimelineEvent>[];
+    value.forEach((k, v) {
+      if (v is! Map) return;
+      final m = v.map((mk, mv) => MapEntry(mk.toString(), mv));
+      final payloadRaw = m['payload'];
+      final payload = payloadRaw is Map
+          ? payloadRaw.map((pk, pv) => MapEntry(pk.toString(), pv))
+          : const <String, dynamic>{};
+      out.add(
+        _TimelineEvent(
+          id: k.toString(),
+          type: (m['type'] ?? '').toString().trim(),
+          at: _toInt(m['at']),
+          byUid: (m['byUid'] ?? '').toString().trim(),
+          byName: (m['byName'] ?? '').toString().trim(),
+          payload: payload,
+        ),
+      );
+    });
+    out.sort((a, b) => b.at.compareTo(a.at));
+    return out;
   }
 
   static String _normPriority(String raw) {
@@ -187,11 +297,246 @@ class _AdminJobApplicationsScreenState
     );
   }
 
-  Future<void> _setStatus(_JobApplicationItem item, String status) async {
-    await _ref.child(item.id).update({
-      'status': _normStatus(status),
+  String get _adminUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  String get _adminName {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return 'Admin';
+    final name = (user.displayName ?? '').trim();
+    if (name.isNotEmpty) return name;
+    final email = (user.email ?? '').trim();
+    if (email.isNotEmpty) return email;
+    return user.uid;
+  }
+
+  Future<void> _appendTimelineEvent(
+    _JobApplicationItem item, {
+    required String type,
+    required String stage,
+    Map<String, dynamic> payload = const <String, dynamic>{},
+    int? interviewAtMs,
+  }) async {
+    final stageValue = _normStage(stage);
+    final eventRef = _ref.child(item.id).child('timeline').push();
+    final updates = <String, dynamic>{
+      'stage': stageValue,
+      'status': _legacyStatusFromStage(stageValue),
       'updatedAt': ServerValue.timestamp,
-    });
+      'updatedBy': _adminUid,
+      'timeline/${eventRef.key}': {
+        'type': type,
+        'at': ServerValue.timestamp,
+        'byUid': _adminUid,
+        'byName': _adminName,
+        'payload': payload,
+      },
+    };
+    if (interviewAtMs != null) {
+      updates['interviewAt'] = interviewAtMs;
+    }
+    await _ref.child(item.id).update(updates);
+  }
+
+  Future<String?> _promptText({
+    required String title,
+    required String hint,
+    bool requiredText = false,
+  }) async {
+    final ctrl = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: ctrl,
+            maxLines: 3,
+            decoration: InputDecoration(hintText: hint),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final text = ctrl.text.trim();
+                if (requiredText && text.isEmpty) return;
+                Navigator.of(context).pop(text);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      ctrl.dispose();
+    }
+  }
+
+  Future<int?> _pickInterviewAtMs() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 3),
+      initialDate: now,
+    );
+    if (date == null) return null;
+    if (!mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now),
+    );
+    if (time == null) return null;
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    ).millisecondsSinceEpoch;
+  }
+
+  Future<void> _setCallOutcome(
+    _JobApplicationItem item, {
+    required String outcome,
+    required String stage,
+  }) async {
+    final note = await _promptText(
+      title: 'Call note',
+      hint: 'Optional note about this call',
+    );
+    if (!mounted) return;
+    await _appendTimelineEvent(
+      item,
+      type: 'call_outcome',
+      stage: stage,
+      payload: {
+        'outcome': outcome,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+    );
+  }
+
+  Future<void> _scheduleInterview(_JobApplicationItem item) async {
+    final whenMs = await _pickInterviewAtMs();
+    if (whenMs == null || !mounted) return;
+    final note = await _promptText(
+      title: 'Interview note',
+      hint: 'Optional interview details',
+    );
+    if (!mounted) return;
+    await _appendTimelineEvent(
+      item,
+      type: 'interview_scheduled',
+      stage: 'interview_scheduled',
+      interviewAtMs: whenMs,
+      payload: {
+        'interviewAt': whenMs,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+    );
+  }
+
+  Future<void> _markInterviewDone(_JobApplicationItem item) async {
+    String result = 'pass';
+    final noteCtrl = TextEditingController();
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setInnerState) => AlertDialog(
+            title: const Text('Interview result'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: result,
+                  decoration: const InputDecoration(labelText: 'Result'),
+                  items: const [
+                    DropdownMenuItem(value: 'pass', child: Text('Pass')),
+                    DropdownMenuItem(value: 'fail', child: Text('Fail')),
+                    DropdownMenuItem(value: 'hold', child: Text('Hold')),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setInnerState(() => result = v);
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: noteCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(hintText: 'Optional note'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (ok != true || !mounted) return;
+      final note = noteCtrl.text.trim();
+      await _appendTimelineEvent(
+        item,
+        type: 'interview_done',
+        stage: 'interview_done',
+        payload: {'result': result, if (note.isNotEmpty) 'note': note},
+      );
+    } finally {
+      noteCtrl.dispose();
+    }
+  }
+
+  Future<void> _reject(_JobApplicationItem item) async {
+    final reason = await _promptText(
+      title: 'Reject application',
+      hint: 'Reason for rejection',
+      requiredText: true,
+    );
+    if (!mounted || reason == null || reason.trim().isEmpty) return;
+    await _appendTimelineEvent(
+      item,
+      type: 'rejected',
+      stage: 'rejected',
+      payload: {'reason': reason.trim()},
+    );
+  }
+
+  Future<void> _hire(_JobApplicationItem item) async {
+    final note = await _promptText(
+      title: 'Hire note',
+      hint: 'Optional onboarding note',
+    );
+    if (!mounted) return;
+    await _appendTimelineEvent(
+      item,
+      type: 'hired',
+      stage: 'hired',
+      payload: {if (note != null && note.isNotEmpty) 'note': note},
+    );
+  }
+
+  Future<void> _setStage(_JobApplicationItem item, String stage) async {
+    await _appendTimelineEvent(
+      item,
+      type: 'stage_changed',
+      stage: stage,
+      payload: {'from': item.stage, 'to': _normStage(stage)},
+      interviewAtMs: stage == 'interview_scheduled'
+          ? (item.interviewAt > 0 ? item.interviewAt : null)
+          : null,
+    );
   }
 
   Future<void> _setPriority(_JobApplicationItem item, String priority) async {
@@ -254,6 +599,29 @@ class _AdminJobApplicationsScreenState
     }
   }
 
+  Color _stageColor(String stage) {
+    switch (_normStage(stage)) {
+      case 'new':
+        return _primaryBlue;
+      case 'called_reached':
+        return Colors.green.shade700;
+      case 'called_no_answer':
+        return Colors.orange.shade800;
+      case 'callback_requested':
+        return Colors.deepOrange;
+      case 'interview_scheduled':
+        return Colors.blue.shade700;
+      case 'interview_done':
+        return Colors.teal.shade700;
+      case 'rejected':
+        return Colors.red.shade700;
+      case 'hired':
+        return Colors.green.shade900;
+      default:
+        return _primaryBlue;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -305,73 +673,202 @@ class _AdminJobApplicationsScreenState
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _statusFilter,
-                        decoration: InputDecoration(
-                          labelText: 'Status',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 700;
+                    if (compact) {
+                      return Column(
+                        children: [
+                          DropdownButtonFormField<String>(
+                            initialValue: _stageFilter,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Stage',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'new',
+                                child: Text('New'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'called_reached',
+                                child: Text('Called (Reached)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'called_no_answer',
+                                child: Text('Called (No Answer)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'callback_requested',
+                                child: Text('Call Back Requested'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'interview_scheduled',
+                                child: Text('Interview Scheduled'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'interview_done',
+                                child: Text('Interview Done'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'rejected',
+                                child: Text('Rejected'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'hired',
+                                child: Text('Hired'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _stageFilter = v);
+                            },
                           ),
-                          filled: true,
-                          fillColor: Colors.white,
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'all', child: Text('All')),
-                          DropdownMenuItem(value: 'new', child: Text('New')),
-                          DropdownMenuItem(
-                            value: 'reviewed',
-                            child: Text('Reviewed'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'shortlisted',
-                            child: Text('Shortlisted'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'rejected',
-                            child: Text('Rejected'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'hired',
-                            child: Text('Hired'),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            initialValue: _priorityFilter,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Priority',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'high',
+                                child: Text('High'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'medium',
+                                child: Text('Medium'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'low',
+                                child: Text('Low'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _priorityFilter = v);
+                            },
                           ),
                         ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _statusFilter = v);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _priorityFilter,
-                        decoration: InputDecoration(
-                          labelText: 'Priority',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _stageFilter,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Stage',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'new',
+                                child: Text('New'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'called_reached',
+                                child: Text('Called (Reached)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'called_no_answer',
+                                child: Text('Called (No Answer)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'callback_requested',
+                                child: Text('Call Back Requested'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'interview_scheduled',
+                                child: Text('Interview Scheduled'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'interview_done',
+                                child: Text('Interview Done'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'rejected',
+                                child: Text('Rejected'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'hired',
+                                child: Text('Hired'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _stageFilter = v);
+                            },
                           ),
-                          filled: true,
-                          fillColor: Colors.white,
                         ),
-                        items: const [
-                          DropdownMenuItem(value: 'all', child: Text('All')),
-                          DropdownMenuItem(value: 'high', child: Text('High')),
-                          DropdownMenuItem(
-                            value: 'medium',
-                            child: Text('Medium'),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _priorityFilter,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Priority',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'all',
+                                child: Text('All'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'high',
+                                child: Text('High'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'medium',
+                                child: Text('Medium'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'low',
+                                child: Text('Low'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _priorityFilter = v);
+                            },
                           ),
-                          DropdownMenuItem(value: 'low', child: Text('Low')),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _priorityFilter = v);
-                        },
-                      ),
-                    ),
-                  ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -506,9 +1003,11 @@ class _AdminJobApplicationsScreenState
                                 runSpacing: 8,
                                 children: [
                                   _pill(
-                                    '${item.status[0].toUpperCase()}${item.status.substring(1)}',
-                                    bg: _primaryBlue.withValues(alpha: 0.10),
-                                    fg: _primaryBlue,
+                                    _stageLabel(item.stage),
+                                    bg: _stageColor(
+                                      item.stage,
+                                    ).withValues(alpha: 0.14),
+                                    fg: _stageColor(item.stage),
                                   ),
                                   _pill(
                                     'Priority: ${item.priority}',
@@ -532,10 +1031,23 @@ class _AdminJobApplicationsScreenState
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 'Submitted: ${_fmtDate(item.createdAt)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black54,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                item.interviewAt > 0
+                                    ? 'Interview: ${_fmtDate(item.interviewAt)}'
+                                    : 'Interview: -',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: Colors.black54,
@@ -580,92 +1092,453 @@ class _AdminJobApplicationsScreenState
                                 ],
                               ),
                               const SizedBox(height: 8),
-                              Row(
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
                                 children: [
-                                  Expanded(
-                                    child: DropdownButtonFormField<String>(
-                                      initialValue: item.status,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Status',
-                                        isDense: true,
-                                      ),
-                                      items: const [
-                                        DropdownMenuItem(
-                                          value: 'new',
-                                          child: Text('New'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'reviewed',
-                                          child: Text('Reviewed'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'shortlisted',
-                                          child: Text('Shortlisted'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'rejected',
-                                          child: Text('Rejected'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'hired',
-                                          child: Text('Hired'),
-                                        ),
-                                      ],
-                                      onChanged: (v) async {
-                                        if (v == null) return;
-                                        try {
-                                          await _setStatus(item, v);
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          AppToast.fromSnackBar(
-                                            context,
-                                            SnackBar(
-                                              content: Text(toHumanError(e)),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                    ),
+                                  FilledButton.tonal(
+                                    onPressed: () async {
+                                      try {
+                                        await _setCallOutcome(
+                                          item,
+                                          outcome: 'reached',
+                                          stage: 'called_reached',
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Called: Reached'),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: DropdownButtonFormField<String>(
-                                      initialValue: item.priority,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Priority',
-                                        isDense: true,
+                                  FilledButton.tonal(
+                                    onPressed: () async {
+                                      try {
+                                        await _setCallOutcome(
+                                          item,
+                                          outcome: 'no_answer',
+                                          stage: 'called_no_answer',
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Called: No Answer'),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: () async {
+                                      try {
+                                        await _setCallOutcome(
+                                          item,
+                                          outcome: 'callback',
+                                          stage: 'callback_requested',
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Call Back'),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: () async {
+                                      try {
+                                        await _scheduleInterview(item);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Schedule Interview'),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: () async {
+                                      try {
+                                        await _markInterviewDone(item);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Interview Done'),
+                                  ),
+                                  FilledButton.tonal(
+                                    onPressed: () async {
+                                      try {
+                                        await _reject(item);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    style: FilledButton.styleFrom(
+                                      foregroundColor: Colors.red.shade800,
+                                      backgroundColor: Colors.red.withValues(
+                                        alpha: 0.10,
                                       ),
-                                      items: const [
-                                        DropdownMenuItem(
-                                          value: 'high',
-                                          child: Text('High'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'medium',
-                                          child: Text('Medium'),
-                                        ),
-                                        DropdownMenuItem(
-                                          value: 'low',
-                                          child: Text('Low'),
-                                        ),
-                                      ],
-                                      onChanged: (v) async {
-                                        if (v == null) return;
-                                        try {
-                                          await _setPriority(item, v);
-                                        } catch (e) {
-                                          if (!mounted) return;
-                                          AppToast.fromSnackBar(
-                                            context,
-                                            SnackBar(
-                                              content: Text(toHumanError(e)),
-                                            ),
-                                          );
-                                        }
-                                      },
                                     ),
+                                    child: const Text('Reject'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () async {
+                                      try {
+                                        await _hire(item);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.fromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(toHumanError(e)),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: const Text('Hire'),
                                   ),
                                 ],
+                              ),
+                              const SizedBox(height: 8),
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final compact = constraints.maxWidth < 720;
+                                  if (compact) {
+                                    return Column(
+                                      children: [
+                                        DropdownButtonFormField<String>(
+                                          initialValue: item.stage,
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Stage',
+                                            isDense: true,
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'new',
+                                              child: Text('New'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'called_reached',
+                                              child: Text('Called (Reached)'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'called_no_answer',
+                                              child: Text('Called (No Answer)'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'callback_requested',
+                                              child: Text(
+                                                'Call Back Requested',
+                                              ),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'interview_scheduled',
+                                              child: Text(
+                                                'Interview Scheduled',
+                                              ),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'interview_done',
+                                              child: Text('Interview Done'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'rejected',
+                                              child: Text('Rejected'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'hired',
+                                              child: Text('Hired'),
+                                            ),
+                                          ],
+                                          onChanged: (v) async {
+                                            if (v == null) return;
+                                            try {
+                                              await _setStage(item, v);
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              AppToast.fromSnackBar(
+                                                context,
+                                                SnackBar(
+                                                  content: Text(
+                                                    toHumanError(e),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                        DropdownButtonFormField<String>(
+                                          initialValue: item.priority,
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Priority',
+                                            isDense: true,
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'high',
+                                              child: Text('High'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'medium',
+                                              child: Text('Medium'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'low',
+                                              child: Text('Low'),
+                                            ),
+                                          ],
+                                          onChanged: (v) async {
+                                            if (v == null) return;
+                                            try {
+                                              await _setPriority(item, v);
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              AppToast.fromSnackBar(
+                                                context,
+                                                SnackBar(
+                                                  content: Text(
+                                                    toHumanError(e),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                  return Row(
+                                    children: [
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          initialValue: item.stage,
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Stage',
+                                            isDense: true,
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'new',
+                                              child: Text('New'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'called_reached',
+                                              child: Text('Called (Reached)'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'called_no_answer',
+                                              child: Text('Called (No Answer)'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'callback_requested',
+                                              child: Text(
+                                                'Call Back Requested',
+                                              ),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'interview_scheduled',
+                                              child: Text(
+                                                'Interview Scheduled',
+                                              ),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'interview_done',
+                                              child: Text('Interview Done'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'rejected',
+                                              child: Text('Rejected'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'hired',
+                                              child: Text('Hired'),
+                                            ),
+                                          ],
+                                          onChanged: (v) async {
+                                            if (v == null) return;
+                                            try {
+                                              await _setStage(item, v);
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              AppToast.fromSnackBar(
+                                                context,
+                                                SnackBar(
+                                                  content: Text(
+                                                    toHumanError(e),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          initialValue: item.priority,
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Priority',
+                                            isDense: true,
+                                          ),
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'high',
+                                              child: Text('High'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'medium',
+                                              child: Text('Medium'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'low',
+                                              child: Text('Low'),
+                                            ),
+                                          ],
+                                          onChanged: (v) async {
+                                            if (v == null) return;
+                                            try {
+                                              await _setPriority(item, v);
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              AppToast.fromSnackBar(
+                                                context,
+                                                SnackBar(
+                                                  content: Text(
+                                                    toHumanError(e),
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 8),
+                              ExpansionTile(
+                                tilePadding: EdgeInsets.zero,
+                                childrenPadding: const EdgeInsets.only(
+                                  left: 4,
+                                  right: 4,
+                                  bottom: 4,
+                                ),
+                                title: Text(
+                                  'Timeline (${item.timeline.length})',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                children: item.timeline.isEmpty
+                                    ? const [
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Padding(
+                                            padding: EdgeInsets.only(bottom: 8),
+                                            child: Text(
+                                              'No timeline events yet.',
+                                            ),
+                                          ),
+                                        ),
+                                      ]
+                                    : item.timeline.map((event) {
+                                        final note =
+                                            (event.payload['note'] ?? '')
+                                                .toString()
+                                                .trim();
+                                        final outcome =
+                                            (event.payload['outcome'] ?? '')
+                                                .toString()
+                                                .trim();
+                                        final result =
+                                            (event.payload['result'] ?? '')
+                                                .toString()
+                                                .trim();
+                                        final reason =
+                                            (event.payload['reason'] ?? '')
+                                                .toString()
+                                                .trim();
+                                        final interviewAt = _toInt(
+                                          event.payload['interviewAt'],
+                                        );
+
+                                        String details = '';
+                                        if (outcome.isNotEmpty) {
+                                          details = 'Outcome: $outcome';
+                                        }
+                                        if (result.isNotEmpty) {
+                                          details = details.isEmpty
+                                              ? 'Result: $result'
+                                              : '$details • Result: $result';
+                                        }
+                                        if (interviewAt > 0) {
+                                          details = details.isEmpty
+                                              ? 'Interview: ${_fmtDate(interviewAt)}'
+                                              : '$details • Interview: ${_fmtDate(interviewAt)}';
+                                        }
+                                        if (reason.isNotEmpty) {
+                                          details = details.isEmpty
+                                              ? 'Reason: $reason'
+                                              : '$details • Reason: $reason';
+                                        }
+                                        if (note.isNotEmpty) {
+                                          details = details.isEmpty
+                                              ? note
+                                              : '$details • $note';
+                                        }
+
+                                        final actor = event.byName.isNotEmpty
+                                            ? event.byName
+                                            : (event.byUid.isNotEmpty
+                                                  ? event.byUid
+                                                  : 'Admin');
+
+                                        return ListTile(
+                                          dense: true,
+                                          contentPadding: EdgeInsets.zero,
+                                          title: Text(
+                                            event.type.replaceAll('_', ' '),
+                                          ),
+                                          subtitle: Text(
+                                            '${_fmtDate(event.at)} • $actor${details.isEmpty ? '' : '\n$details'}',
+                                          ),
+                                        );
+                                      }).toList(),
                               ),
                             ],
                           ),
@@ -705,9 +1578,14 @@ class _JobApplicationItem {
     required this.email,
     required this.position,
     required this.cvPdfUrl,
+    required this.stage,
     required this.status,
     required this.priority,
     required this.createdAt,
+    required this.updatedAt,
+    required this.updatedBy,
+    required this.interviewAt,
+    required this.timeline,
     required this.isGuest,
     required this.submittedByUid,
   });
@@ -718,9 +1596,32 @@ class _JobApplicationItem {
   final String email;
   final String position;
   final String cvPdfUrl;
+  final String stage;
   final String status;
   final String priority;
   final int createdAt;
+  final int updatedAt;
+  final String updatedBy;
+  final int interviewAt;
+  final List<_TimelineEvent> timeline;
   final bool isGuest;
   final String submittedByUid;
+}
+
+class _TimelineEvent {
+  const _TimelineEvent({
+    required this.id,
+    required this.type,
+    required this.at,
+    required this.byUid,
+    required this.byName,
+    required this.payload,
+  });
+
+  final String id;
+  final String type;
+  final int at;
+  final String byUid;
+  final String byName;
+  final Map<String, dynamic> payload;
 }
