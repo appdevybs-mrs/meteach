@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum AppThemeMode {
@@ -90,7 +91,17 @@ class AppThemeController extends ChangeNotifier {
   AppThemeMode get mode => _mode;
   AppFontMode get fontMode => _fontMode;
 
-  AppPalette get palette => _paletteFromMode(_mode);
+  static const AppPalette _websitePalette = AppPalette(
+    primary: Color(0xFF0E7C86),
+    accent: Color(0xFFBF5D39),
+    text: Color(0xFF213038),
+    appBg: Color(0xFFF6F2E8),
+    cardBg: Color(0xFFFFFCF5),
+    border: Color(0xFFD8CFC1),
+    soft: Color(0xFFECE4D7),
+  );
+
+  AppPalette get palette => kIsWeb ? _websitePalette : _paletteFromMode(_mode);
 
   String? get selectedFontFamily => _fontFamilyFromMode(_fontMode);
 
@@ -331,6 +342,7 @@ class AppThemeController extends ChangeNotifier {
   }
 
   AppPalette paletteForMode(AppThemeMode mode) {
+    if (kIsWeb) return _websitePalette;
     return _paletteFromMode(mode);
   }
 

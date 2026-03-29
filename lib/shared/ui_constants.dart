@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 
 class UiK {
-  // Same style as Teacher
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
-  static const appBg = Color(0xFFF4F7F9);
-  static const uiBorder = Color(0xFFD1D9E0);
+  static const primaryBlue = Color(0xFF0E7C86);
+  static const actionOrange = Color(0xFFBF5D39);
+  static const mainText = Color(0xFF213038);
+  static const appBg = Color(0xFFF6F2E8);
+  static const uiBorder = Color(0xFFD8CFC1);
 
   static RoundedRectangleBorder cardShape() => RoundedRectangleBorder(
     borderRadius: BorderRadius.circular(18),
@@ -22,8 +21,10 @@ class UiK {
   static TextStyle labelText() =>
       const TextStyle(color: mainText, fontWeight: FontWeight.w900);
 
-  static TextStyle subtleText() =>
-      TextStyle(color: mainText.withValues(alpha: 0.7), fontWeight: FontWeight.w700);
+  static TextStyle subtleText() => TextStyle(
+    color: mainText.withValues(alpha: 0.7),
+    fontWeight: FontWeight.w700,
+  );
 
   static String yyyyMmDd(DateTime d) {
     final mm = d.month.toString().padLeft(2, '0');

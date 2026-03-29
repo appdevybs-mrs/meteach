@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -463,6 +464,7 @@ class _LearnerHomeState extends State<LearnerHome> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final isWebDashboard = kIsWeb && MediaQuery.of(context).size.width >= 1100;
 
     LearnerTourGuide.schedule(
       context,
@@ -541,6 +543,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       ),
 
       appBar: AppBar(
+        toolbarHeight: isWebDashboard ? 74 : kToolbarHeight,
         backgroundColor: p.cardBg,
         elevation: 0,
         centerTitle: false,
@@ -561,7 +564,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                   style: TextStyle(
                     color: p.primary,
                     fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                    fontSize: isWebDashboard ? 18 : 16,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -572,7 +575,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                   style: TextStyle(
                     color: p.text.withValues(alpha: 0.72),
                     fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    fontSize: isWebDashboard ? 13 : 12,
                   ),
                 ),
               ],

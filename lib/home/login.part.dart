@@ -178,6 +178,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
   bool loading = false;
   bool showPass = false;
+  final bool _showSocialAuthButtons = false;
   String error = '';
 
   bool showCaptcha = true;
@@ -367,6 +368,132 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
     final pass = passCtrl.text;
 
     await _signInWithFirebase(email, pass);
+  }
+
+  Future<bool> _ensurePortalAccess() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final db = FirebaseDatabase.instance.ref();
+    final usersSnap = await db.child('users/${user.uid}').get();
+    if (usersSnap.exists) return true;
+    final adminSnap = await db.child('admins/${user.uid}').get();
+    if (adminSnap.exists) return true;
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return false;
+    setState(() {
+      error =
+          'Your account is not activated yet. Please contact administration.';
+    });
+    return false;
+  }
+
+  Future<void> _loginWithGoogle() async {
+    if (loading || _isCoolingDown) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      if (kIsWeb) {
+        await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+      } else {
+        final googleUser = await GoogleSignIn().signIn();
+        if (googleUser == null) {
+          if (mounted) setState(() => loading = false);
+          return;
+        }
+        final googleAuth = await googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+        await FirebaseAuth.instance.signInWithCredential(credential);
+      }
+
+      final allowed = await _ensurePortalAccess();
+      if (!allowed || !mounted) return;
+      setState(() {
+        loading = false;
+        failedAttempts = 0;
+      });
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Welcome back!')),
+      );
+      Navigator.of(context).pop();
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = _friendlyAuthMsg(e);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = 'Google sign-in failed. Please try again.';
+      });
+    }
+  }
+
+  Future<void> _loginWithFacebook() async {
+    if (loading || _isCoolingDown) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      if (kIsWeb) {
+        await FirebaseAuth.instance.signInWithPopup(FacebookAuthProvider());
+      } else {
+        final result = await FacebookAuth.instance.login(
+          permissions: const ['email', 'public_profile'],
+        );
+        if (result.status == LoginStatus.cancelled) {
+          if (mounted) setState(() => loading = false);
+          return;
+        }
+        if (result.status != LoginStatus.success ||
+            result.accessToken == null) {
+          throw FirebaseAuthException(
+            code: 'facebook-login-failed',
+            message: result.message ?? 'Facebook sign-in failed.',
+          );
+        }
+        final credential = FacebookAuthProvider.credential(
+          result.accessToken!.tokenString,
+        );
+        await FirebaseAuth.instance.signInWithCredential(credential);
+      }
+
+      final allowed = await _ensurePortalAccess();
+      if (!allowed || !mounted) return;
+      setState(() {
+        loading = false;
+        failedAttempts = 0;
+      });
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Welcome back!')),
+      );
+      Navigator.of(context).pop();
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = e.message?.trim().isNotEmpty == true
+            ? e.message!.trim()
+            : 'Facebook sign-in failed. Please try again.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = 'Facebook sign-in failed. Please try again.';
+      });
+    }
   }
 
   Future<void> _forgotPassword() async {
@@ -744,6 +871,48 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
               : const Icon(Icons.login_rounded),
           label: Text(loading ? 'Signing in...' : 'Sign in'),
         ),
+        if (_showSocialAuthButtons) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Divider(color: Brand.uiBorder.withValues(alpha: 0.9)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  'or continue with',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Brand.mainText.withValues(alpha: 0.70),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Divider(color: Brand.uiBorder.withValues(alpha: 0.9)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: loading ? null : _loginWithGoogle,
+                icon: const Icon(Icons.g_mobiledata_rounded),
+                label: const Text('Google'),
+              ),
+              OutlinedButton.icon(
+                onPressed: loading ? null : _loginWithFacebook,
+                icon: const Icon(Icons.facebook_rounded),
+                label: const Text('Facebook'),
+              ),
+            ],
+          ),
+        ],
         _supportRow(),
         if (error.isNotEmpty) ...[
           const SizedBox(height: 12),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../shared/first_login_agreement.dart';
 import '../shared/screen_help_guide.dart';
 import '../shared/session_manager.dart';
 import '../shared/teacher_tour_guide.dart';
+import '../shared/web_page_frame.dart';
 import 'TeacherStoriesScreen.dart';
 import 'teacher_classes.dart';
 import 'teacher_games_screen.dart';
@@ -584,6 +586,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
+    final isWideWeb = kIsWeb && MediaQuery.of(context).size.width >= 1180;
+    final pagePadding = EdgeInsets.fromLTRB(
+      isWideWeb ? 24 : 16,
+      isWideWeb ? 20 : 14,
+      isWideWeb ? 24 : 16,
+      100,
+    );
 
     TeacherTourGuide.schedule(
       context,
@@ -817,155 +826,159 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.05,
-                child: Center(
-                  child: Image.asset(
-                    'assets/images/ybs_logo.png',
-                    width: 280,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      body: webPageFrame(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: 0.05,
+                  child: Center(
+                    child: Image.asset(
+                      'assets/images/ybs_logo.png',
+                      width: 280,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          RefreshIndicator(
-            onRefresh: _refreshHome,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
-              children: [
-                FutureBuilder<String>(
-                  future: _displayNameFuture,
-                  builder: (context, snap) {
-                    final name = (snap.data ?? 'Teacher').trim();
-                    return KeyedSubtree(
-                      key: _heroCardKey,
-                      child: _HeroSummaryCard(
-                        palette: p,
-                        teacherName: name.isEmpty ? 'Teacher' : name,
-                        onOpenProfile: () =>
-                            _pushScreen(const TeacherProfileScreen()),
-                        onOpenSchedule: () =>
-                            _pushScreen(const TeacherSchedule()),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: StreamBuilder<DatabaseEvent>(
-                        stream: _mailIndexStream,
-                        builder: (context, snap) {
-                          final unread = _countUnreadMail(
-                            snap.data?.snapshot.value,
-                          );
-                          return KeyedSubtree(
-                            key: _inboxCardKey,
-                            child: _MiniStatCard(
-                              palette: p,
-                              label: 'Inbox',
-                              value: unread == 0 ? 'Clear' : '$unread unread',
-                              icon: Icons.email_rounded,
-                              badgeCount: unread,
-                              badgeColor: Colors.red,
-                              onTap: () =>
-                                  _pushScreen(const TeacherMailScreen()),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: StreamBuilder<DatabaseEvent>(
-                        stream: _remindersStream,
-                        builder: (context, snap) {
-                          final pending = _countNotDoneReminders(
-                            snap.data?.snapshot.value,
-                          );
-                          return KeyedSubtree(
-                            key: _remindersCardKey,
-                            child: _MiniStatCard(
-                              palette: p,
-                              label: 'Reminders',
-                              value: pending == 0 ? 'None' : '$pending pending',
-                              icon: Icons.alarm_rounded,
-                              badgeCount: pending,
-                              badgeColor: p.accent,
-                              onTap: () =>
-                                  _pushScreen(const TeacherReminderScreen()),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                FutureBuilder<_ClassesSummary>(
-                  future: _classesSummaryFuture,
-                  builder: (context, classSnap) {
-                    final s =
-                        classSnap.data ??
-                        const _ClassesSummary(
-                          classesCount: 0,
-                          learnersCount: 0,
-                        );
-
-                    return FutureBuilder<int>(
-                      future: _upcomingOnlineCountFuture,
-                      builder: (context, onlineSnap) {
-                        final upcoming = onlineSnap.data ?? 0;
-
-                        return KeyedSubtree(
-                          key: _overviewPanelKey,
-                          child: _OverviewPanel(
-                            palette: p,
-                            classesCount: s.classesCount,
-                            learnersCount: s.learnersCount,
-                            upcomingOnlineCount: upcoming,
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 14),
-                KeyedSubtree(
-                  key: _classesCardKey,
-                  child: _SingleDashboardActionCard(
-                    palette: p,
-                    icon: Icons.school_rounded,
-                    title: 'My Classes',
-                    subtitle: 'Open your classes',
-                    onTap: () => _pushScreen(const TeacherClassesScreen()),
+            RefreshIndicator(
+              onRefresh: _refreshHome,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: pagePadding,
+                children: [
+                  FutureBuilder<String>(
+                    future: _displayNameFuture,
+                    builder: (context, snap) {
+                      final name = (snap.data ?? 'Teacher').trim();
+                      return KeyedSubtree(
+                        key: _heroCardKey,
+                        child: _HeroSummaryCard(
+                          palette: p,
+                          teacherName: name.isEmpty ? 'Teacher' : name,
+                          onOpenProfile: () =>
+                              _pushScreen(const TeacherProfileScreen()),
+                          onOpenSchedule: () =>
+                              _pushScreen(const TeacherSchedule()),
+                        ),
+                      );
+                    },
                   ),
-                ),
-                const SizedBox(height: 12),
-                FutureBuilder<_HomeUpcomingClass?>(
-                  future: _nextUpcomingClassFuture,
-                  builder: (context, snap) {
-                    return KeyedSubtree(
-                      key: _nextClassCardKey,
-                      child: _NextComingClassCard(
-                        palette: p,
-                        upcomingClass: snap.data,
-                        onTap: () => _pushScreen(const TeacherSchedule()),
+                  SizedBox(height: isWideWeb ? 16 : 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: StreamBuilder<DatabaseEvent>(
+                          stream: _mailIndexStream,
+                          builder: (context, snap) {
+                            final unread = _countUnreadMail(
+                              snap.data?.snapshot.value,
+                            );
+                            return KeyedSubtree(
+                              key: _inboxCardKey,
+                              child: _MiniStatCard(
+                                palette: p,
+                                label: 'Inbox',
+                                value: unread == 0 ? 'Clear' : '$unread unread',
+                                icon: Icons.email_rounded,
+                                badgeCount: unread,
+                                badgeColor: Colors.red,
+                                onTap: () =>
+                                    _pushScreen(const TeacherMailScreen()),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    );
-                  },
-                ),
-              ],
+                      SizedBox(width: isWideWeb ? 16 : 12),
+                      Expanded(
+                        child: StreamBuilder<DatabaseEvent>(
+                          stream: _remindersStream,
+                          builder: (context, snap) {
+                            final pending = _countNotDoneReminders(
+                              snap.data?.snapshot.value,
+                            );
+                            return KeyedSubtree(
+                              key: _remindersCardKey,
+                              child: _MiniStatCard(
+                                palette: p,
+                                label: 'Reminders',
+                                value: pending == 0
+                                    ? 'None'
+                                    : '$pending pending',
+                                icon: Icons.alarm_rounded,
+                                badgeCount: pending,
+                                badgeColor: p.accent,
+                                onTap: () =>
+                                    _pushScreen(const TeacherReminderScreen()),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  FutureBuilder<_ClassesSummary>(
+                    future: _classesSummaryFuture,
+                    builder: (context, classSnap) {
+                      final s =
+                          classSnap.data ??
+                          const _ClassesSummary(
+                            classesCount: 0,
+                            learnersCount: 0,
+                          );
+
+                      return FutureBuilder<int>(
+                        future: _upcomingOnlineCountFuture,
+                        builder: (context, onlineSnap) {
+                          final upcoming = onlineSnap.data ?? 0;
+
+                          return KeyedSubtree(
+                            key: _overviewPanelKey,
+                            child: _OverviewPanel(
+                              palette: p,
+                              classesCount: s.classesCount,
+                              learnersCount: s.learnersCount,
+                              upcomingOnlineCount: upcoming,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  KeyedSubtree(
+                    key: _classesCardKey,
+                    child: _SingleDashboardActionCard(
+                      palette: p,
+                      icon: Icons.school_rounded,
+                      title: 'My Classes',
+                      subtitle: 'Open your classes',
+                      onTap: () => _pushScreen(const TeacherClassesScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FutureBuilder<_HomeUpcomingClass?>(
+                    future: _nextUpcomingClassFuture,
+                    builder: (context, snap) {
+                      return KeyedSubtree(
+                        key: _nextClassCardKey,
+                        child: _NextComingClassCard(
+                          palette: p,
+                          upcomingClass: snap.data,
+                          onTap: () => _pushScreen(const TeacherSchedule()),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -30,6 +30,7 @@ import '../shared/admin_tour_guide.dart';
 import '../shared/app_tour_guide.dart' show AppTourHighlightShape;
 import '../shared/payment_status.dart';
 import '../shared/screen_help_guide.dart';
+import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
 import 'admin_certificates.dart';
 
@@ -37,14 +38,14 @@ class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
 
   // ===== Brand / UI colors =====
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const deepBlue = Color(0xFF223554);
-  static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF243042);
-  static const appBg = Color(0xFFF6F8FC);
-  static const cardBg = Colors.white;
-  static const uiBorder = Color(0xFFE3EAF2);
-  static const softText = Color(0xFF6E7B8C);
+  static const primaryBlue = Color(0xFF0E7C86);
+  static const deepBlue = Color(0xFF135C7A);
+  static const actionOrange = Color(0xFFBF5D39);
+  static const mainText = Color(0xFF213038);
+  static const appBg = Color(0xFFF6F2E8);
+  static const cardBg = Color(0xFFFFFCF5);
+  static const uiBorder = Color(0xFFD8CFC1);
+  static const softText = Color(0xFF5E6B70);
 
   // vivid accents for cards
   static const accentBlue = Color(0xFF3B82F6);
@@ -190,16 +191,20 @@ class _AdminHomeState extends State<AdminHome> {
     final user = FirebaseAuth.instance.currentUser;
 
     final width = MediaQuery.of(context).size.width;
-    final crossAxisCount = width >= 1100 ? 4 : (width >= 700 ? 3 : 2);
+    final crossAxisCount = width >= 1440
+        ? 5
+        : (width >= 1160 ? 4 : (width >= 760 ? 3 : 2));
     final double cardRatio;
-    if (crossAxisCount >= 4) {
+    if (crossAxisCount >= 5) {
+      cardRatio = _isAdminMode ? 1.24 : 1.30;
+    } else if (crossAxisCount >= 4) {
       cardRatio = _isAdminMode ? 1.18 : 1.22;
     } else if (crossAxisCount == 3) {
       cardRatio = _isAdminMode ? 1.02 : 1.06;
     } else {
       cardRatio = width >= 420 ? 0.96 : 0.88;
     }
-    final gridGap = width >= 900 ? 12.0 : 10.0;
+    final gridGap = width >= 1200 ? 14.0 : (width >= 900 ? 12.0 : 10.0);
 
     final allCards = <Widget>[
       KeyedSubtree(
@@ -557,38 +562,41 @@ class _AdminHomeState extends State<AdminHome> {
             ),
           ),
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Grid
-                  Expanded(
-                    child: KeyedSubtree(
-                      key: _cardsGridKey,
-                      child: GridView.count(
-                        crossAxisCount: crossAxisCount,
-                        mainAxisSpacing: gridGap,
-                        crossAxisSpacing: gridGap,
-                        childAspectRatio: cardRatio,
-                        children: visibleCards,
+            child: webPageFrame(
+              maxWidth: 1500,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: KeyedSubtree(
+                        key: _cardsGridKey,
+                        child: GridView.count(
+                          crossAxisCount: crossAxisCount,
+                          mainAxisSpacing: gridGap,
+                          crossAxisSpacing: gridGap,
+                          childAspectRatio: cardRatio,
+                          children: visibleCards,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      _isAdminMode
-                          ? 'Your Bridge School • Admin View'
-                          : 'Your Bridge School • Receptionist View',
-                      style: const TextStyle(
-                        color: AdminHome.softText,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        _isAdminMode
+                            ? 'Your Bridge School • Admin View'
+                            : 'Your Bridge School • Receptionist View',
+                        style: const TextStyle(
+                          color: AdminHome.softText,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1010,8 +1018,14 @@ class _JobApplicationsDashCard extends StatelessWidget {
           v.forEach((_, raw) {
             if (raw is! Map) return;
             final m = raw.map((k, val) => MapEntry(k.toString(), val));
+            final stage = (m['stage'] ?? '').toString().trim().toLowerCase();
             final status = (m['status'] ?? '').toString().trim().toLowerCase();
-            if (status.isEmpty || status == 'new') {
+            final effective = stage.isEmpty
+                ? (status.isEmpty ? 'new' : status)
+                : stage;
+            if (effective == 'new' ||
+                effective == 'called_no_answer' ||
+                effective == 'callback_requested') {
               newCount += 1;
             }
           });

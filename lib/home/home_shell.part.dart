@@ -348,6 +348,11 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
     return '${h}h ${m}m';
   }
 
+  String _fieldLabel(String en, String ar, bool forGuest) {
+    if (!forGuest) return en;
+    return '$en | $ar';
+  }
+
   Future<void> _pickPdf() async {
     if (_submitting) return;
     final result = await FilePicker.platform.pickFiles(
@@ -525,6 +530,7 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isGuestViewer = FirebaseAuth.instance.currentUser == null;
     return Form(
       key: _formKey,
       child: Column(
@@ -541,7 +547,13 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
           TextFormField(
             controller: _fullNameCtrl,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Full name'),
+            decoration: InputDecoration(
+              labelText: _fieldLabel(
+                'Full name',
+                'الاسم الكامل',
+                isGuestViewer,
+              ),
+            ),
             validator: (v) =>
                 (v ?? '').trim().isEmpty ? 'Please enter your full name' : null,
           ),
@@ -550,7 +562,13 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
             controller: _phoneCtrl,
             keyboardType: TextInputType.phone,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Phone number'),
+            decoration: InputDecoration(
+              labelText: _fieldLabel(
+                'Phone number',
+                'رقم الهاتف',
+                isGuestViewer,
+              ),
+            ),
             validator: (v) {
               final value = (v ?? '').replaceAll(RegExp(r'\s+'), '');
               if (value.isEmpty) return 'Please enter your phone number';
@@ -563,7 +581,13 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
             controller: _emailCtrl,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Email'),
+            decoration: InputDecoration(
+              labelText: _fieldLabel(
+                'Email',
+                'البريد الإلكتروني',
+                isGuestViewer,
+              ),
+            ),
             validator: (v) {
               final value = (v ?? '').trim().toLowerCase();
               if (value.isEmpty) return 'Please enter your email';
@@ -575,7 +599,9 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
           TextFormField(
             controller: _positionCtrl,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Position'),
+            decoration: InputDecoration(
+              labelText: _fieldLabel('Position', 'الوظيفة', isGuestViewer),
+            ),
             validator: (v) =>
                 (v ?? '').trim().isEmpty ? 'Please enter a position' : null,
           ),
@@ -585,7 +611,11 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
             icon: const Icon(Icons.picture_as_pdf_rounded),
             label: Text(
               _cvPdf == null
-                  ? 'Upload CV (PDF)'
+                  ? _fieldLabel(
+                      'Upload CV (PDF)',
+                      'رفع السيرة الذاتية (PDF)',
+                      isGuestViewer,
+                    )
                   : 'CV selected: ${_cvPdf!.name}',
             ),
           ),
@@ -597,7 +627,11 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
                   controller: _captchaCtrl,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: 'Captcha: $_captchaA + $_captchaB = ?',
+                    labelText: _fieldLabel(
+                      'Captcha: $_captchaA + $_captchaB = ?',
+                      'التحقق: $_captchaA + $_captchaB = ؟',
+                      isGuestViewer,
+                    ),
                   ),
                   validator: (v) => (v ?? '').trim().isEmpty
                       ? 'Please solve the captcha'
@@ -624,7 +658,15 @@ class _JobApplicationScreenState extends State<JobApplicationScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.send_rounded),
-              label: Text(_submitting ? 'Submitting...' : 'Submit Application'),
+              label: Text(
+                _submitting
+                    ? 'Submitting...'
+                    : _fieldLabel(
+                        'Submit Application',
+                        'إرسال الطلب',
+                        isGuestViewer,
+                      ),
+              ),
             ),
           ),
         ],
