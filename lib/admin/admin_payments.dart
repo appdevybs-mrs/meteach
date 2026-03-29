@@ -1097,7 +1097,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       }
 
                       if (!mounted) return;
-                      Navigator.pop(dialogCtx);
+                      if (dialogCtx.mounted &&
+                          Navigator.of(dialogCtx).canPop()) {
+                        Navigator.pop(dialogCtx);
+                      }
                       _toast(
                         'Exported ${savedPaths.length} file(s) to ${dir.path}',
                       );
@@ -1163,6 +1166,18 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         all.sort(
           (a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])),
         );
+
+        if (all.isEmpty) {
+          return Scaffold(
+            body: Center(
+              child: TextButton.icon(
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('No payments yet. Tap to refresh'),
+                onPressed: () => setState(() {}),
+              ),
+            ),
+          );
+        }
 
         final monthsSet = <String>{};
         for (final p in all) {

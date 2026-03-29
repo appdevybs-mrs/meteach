@@ -18,7 +18,8 @@ class LearnerRemindersListScreen extends StatelessWidget {
       hints: const [
         LearnerTourHint(
           title: 'قائمة التذكيرات',
-          line: 'تظهر في هذه القائمة جميع تنبيهاتك المهمة. اضغط أي تذكير لقراءة التفاصيل.',
+          line:
+              'تظهر في هذه القائمة جميع تنبيهاتك المهمة. اضغط أي تذكير لقراءة التفاصيل.',
         ),
       ],
     );
@@ -42,6 +43,15 @@ class LearnerRemindersListScreen extends StatelessWidget {
         child: StreamBuilder<DatabaseEvent>(
           stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
           builder: (context, snap) {
+            if (snap.hasError) {
+              return const Center(
+                child: Text('Could not load reminders. Check your connection.'),
+              );
+            }
+            if (snap.connectionState == ConnectionState.waiting &&
+                !snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
             final v = snap.data?.snapshot.value;
 
             final items = <Map<String, dynamic>>[];

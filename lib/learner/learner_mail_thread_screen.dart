@@ -2211,6 +2211,17 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
               child: StreamBuilder<DatabaseEvent>(
                 stream: _msgStream,
                 builder: (_, snap) {
+                  if (snap.hasError) {
+                    return const Center(
+                      child: Text(
+                        'Could not load messages. Check your internet.',
+                      ),
+                    );
+                  }
+                  if (snap.connectionState == ConnectionState.waiting &&
+                      !snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
                   final msgsAll = _parseMessages(snap.data?.snapshot.value);
                   final msgs = _applyLocalSearch(msgsAll);
                   _visibleMessages = msgs;

@@ -767,7 +767,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       await _loadAllBookedSlots();
 
       if (!mounted) return;
-      if (Navigator.of(detailsSheetContext).canPop()) {
+      if (detailsSheetContext.mounted &&
+          Navigator.of(detailsSheetContext).canPop()) {
         Navigator.of(detailsSheetContext).pop();
       }
     } catch (e) {
@@ -1217,7 +1218,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       await _loadAllBookedSlots();
 
       if (!mounted) return;
-      if (Navigator.of(detailsSheetContext).canPop()) {
+      if (detailsSheetContext.mounted &&
+          Navigator.of(detailsSheetContext).canPop()) {
         Navigator.of(detailsSheetContext).pop();
       }
     } catch (e) {
